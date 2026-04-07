@@ -119,8 +119,15 @@ function ReceiveGoods() {
 
   /* ── Shared panels ── */
   const ProductsPanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '0.6rem', overflow: 'hidden' }}>
-      <div style={{ position: 'relative' }}>
+    <div className="card pos-products-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexShrink: 0 }}>
+        <h3 style={{ fontSize: '0.95rem', fontWeight: 700 }}>المنتجات</h3>
+        <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
+      </div>
+
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '0.6rem', flexShrink: 0 }}>
         <Search size={16} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
         <input
           type="text" placeholder="بحث بالاسم أو الباركود…" className="input"
@@ -128,16 +135,14 @@ function ReceiveGoods() {
           value={search} onChange={e => handleSearch(e.target.value)}
         />
       </div>
-      <div style={{ overflowY: 'auto', flex: 1 }}>
+
+      {/* Grid */}
+      <div className="product-grid" style={{ overflowY: 'auto', flex: 1, alignContent: 'start' }}>
         {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.5rem', alignContent: 'start' }}>
-            {products.map(p => (
-              <ProductCard key={p.id} product={p} onAdd={() => { addToCart(p); setMobileTab('cart') }} />
-            ))}
-          </div>
-        )}
+          <div style={{ gridColumn: '1/-1', padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
+        ) : products.map(p => (
+          <ProductCard key={p.id} product={p} onAdd={() => { addToCart(p); setMobileTab('cart') }} />
+        ))}
       </div>
     </div>
   )
@@ -324,25 +329,45 @@ function ReceiveGoods() {
 }
 
 function ProductCard({ product, onAdd }) {
-  const inStock = product.quantity > 0
+  const isOutOfStock = product.quantity <= 0
+  const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
+
   return (
     <button
       onClick={onAdd}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-        padding: '0.5rem', background: 'var(--surface)',
-        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-        cursor: 'pointer', textAlign: 'right', transition: 'border-color .15s, box-shadow .15s',
-        fontFamily: 'inherit', touchAction: 'manipulation',
+        background: 'var(--surface)',
+        border: `1px solid ${isLowStock ? 'var(--warning)' : isOutOfStock ? '#fca5a5' : 'var(--border)'}`,
+        borderRadius: 'var(--radius)',
+        padding: '0.5rem 0.6rem',
+        cursor: 'pointer',
+        textAlign: 'right',
+        transition: 'transform .1s, box-shadow .1s',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        height: '72px',
+        overflow: 'hidden',
+        touchAction: 'manipulation',
+        fontFamily: 'inherit',
+        width: '100%',
       }}
     >
-      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, marginBottom: '0.25rem', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+      <div style={{
+        fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.3,
+        overflow: 'hidden', display: '-webkit-box',
+        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+        color: 'var(--text)',
+      }}>
         {product.name}
-      </span>
-      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--secondary)' }}>{formatCurrency(product.price)}</span>
-      <span style={{ fontSize: '0.75rem', color: inStock ? 'var(--text-muted)' : 'var(--danger)', marginTop: '0.15rem' }}>
-        {inStock ? `المخزون: ${formatNumber(product.quantity)}` : 'نفد'}
-      </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem' }}>
+        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)' }}>
+          {formatCurrency(product.cost > 0 ? product.cost : product.price)}
+        </span>
+        {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
+        {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
+      </div>
     </button>
   )
 }

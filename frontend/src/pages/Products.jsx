@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse } from '
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
-  getInventory, getLowStock, adjustInventory,
+  getLowStock,
 } from '../api/endpoints'
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
@@ -13,7 +13,7 @@ const emptyProduct = { name: '', barcode: '', price: '', cost: '', quantity: '',
 export default function Products() {
   const [tab, setTab] = useState('products')
 
-  // ── Products state ─────────────────────────────────────────
+  // ── Products ───────────────────────────────────────────────
   const [products,        setProducts]        = useState([])
   const [search,          setSearch]          = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
@@ -21,9 +21,10 @@ export default function Products() {
   const [productForm,     setProductForm]     = useState(emptyProduct)
   const [editProductId,   setEditProductId]   = useState(null)
   const [savingProduct,   setSavingProduct]   = useState(false)
+  const [lowStock,        setLowStock]        = useState([])
   const searchTimer = useRef(null)
 
-  // ── Categories state ───────────────────────────────────────
+  // ── Categories ─────────────────────────────────────────────
   const [categories,        setCategories]        = useState([])
   const [loadingCategories, setLoadingCategories] = useState(false)
   const [categoryModal,     setCategoryModal]     = useState(null)
@@ -31,16 +32,7 @@ export default function Products() {
   const [editCategoryId,    setEditCategoryId]    = useState(null)
   const [savingCategory,    setSavingCategory]    = useState(false)
 
-  // ── Inventory state ────────────────────────────────────────
-  const [invProducts,  setInvProducts]  = useState([])
-  const [lowStock,     setLowStock]     = useState([])
-  const [invSearch,    setInvSearch]    = useState('')
-  const [invLoading,   setInvLoading]   = useState(false)
-  const [editModal,    setEditModal]    = useState(null)
-  const [newQty,       setNewQty]       = useState(0)
-  const invSearchTimer = useRef(null)
-
-  // ── Load data ──────────────────────────────────────────────
+  // ── Load ───────────────────────────────────────────────────
   const loadProducts = async (s = '') => {
     setLoadingProducts(true)
     try { setProducts((await getProducts({ search: s })).data.data) }
@@ -53,29 +45,15 @@ export default function Products() {
     finally { setLoadingCategories(false) }
   }
 
-  const loadInventory = async (s = '') => {
-    setInvLoading(true)
-    try {
-      const [invRes, lowRes] = await Promise.all([getInventory({ search: s }), getLowStock()])
-      setInvProducts(invRes.data.data)
-      setLowStock(lowRes.data.data)
-    } catch { toast.error('فشل تحميل المخزون') }
-    finally { setInvLoading(false) }
-  }
-
   useEffect(() => {
     loadProducts()
     loadCategories()
+    getLowStock().then(r => setLowStock(r.data.data ?? []))
   }, [])
-
-  // Load inventory data when tab switches to inventory
-  useEffect(() => {
-    if (tab === 'inventory' && invProducts.length === 0) loadInventory()
-  }, [tab])
 
   // ── Product actions ────────────────────────────────────────
   const openCreateProduct = () => { setProductForm(emptyProduct); setEditProductId(null); setProductModal('create') }
-  const openEditProduct = (p) => { setProductForm({ ...p, category_id: p.category_id ?? '' }); setEditProductId(p.id); setProductModal('edit') }
+  const openEditProduct   = (p) => { setProductForm({ ...p, category_id: p.category_id ?? '' }); setEditProductId(p.id); setProductModal('edit') }
 
   const handleSaveProduct = async () => {
     setSavingProduct(true)
@@ -84,7 +62,6 @@ export default function Products() {
       else { await updateProduct(editProductId, productForm); toast.success('تم تحديث المنتج') }
       setProductModal(null)
       loadProducts(search)
-      if (tab === 'inventory') loadInventory(invSearch)
     } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
     finally { setSavingProduct(false) }
   }
@@ -97,7 +74,7 @@ export default function Products() {
 
   // ── Category actions ───────────────────────────────────────
   const openCreateCategory = () => { setCategoryForm({ name: '' }); setEditCategoryId(null); setCategoryModal('create') }
-  const openEditCategory = (c) => { setCategoryForm({ name: c.name }); setEditCategoryId(c.id); setCategoryModal('edit') }
+  const openEditCategory   = (c) => { setCategoryForm({ name: c.name }); setEditCategoryId(c.id); setCategoryModal('edit') }
 
   const handleSaveCategory = async () => {
     if (!categoryForm.name.trim()) { toast.error('اسم الفئة مطلوب'); return }
@@ -116,38 +93,21 @@ export default function Products() {
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
-  // ── Inventory actions ──────────────────────────────────────
-  const handleInvSearch = (val) => {
-    setInvSearch(val)
-    clearTimeout(invSearchTimer.current)
-    invSearchTimer.current = setTimeout(() => loadInventory(val), 400)
-  }
-
-  const handleAdjust = async () => {
-    try {
-      await adjustInventory(editModal.id, { quantity: newQty })
-      toast.success('تم تحديث الكمية')
-      setEditModal(null)
-      loadInventory(invSearch)
-    } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
-  }
-
-  // ── Tab header action button ───────────────────────────────
-  const headerBtn = {
-    products:   <button className="btn btn-primary" onClick={openCreateProduct}><Plus size={16} /> إضافة منتج</button>,
-    inventory:  null,
-    categories: <button className="btn btn-primary" onClick={openCreateCategory}><Plus size={16} /> إضافة فئة</button>,
-  }
-
-  const tabLabels = { products: 'المنتجات', inventory: 'المخزون', categories: 'الفئات' }
+  // ── Computed stats ─────────────────────────────────────────
+  const totalUnits  = products.reduce((s, p) => s + Number(p.quantity), 0)
+  const stockValue  = products.reduce((s, p) => s + Number(p.quantity) * Number(p.cost), 0)
+  const outOfStock  = products.filter(p => p.quantity <= 0).length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
       {/* Header */}
       <div className="page-header">
-        <h2>{tabLabels[tab]}</h2>
-        {headerBtn[tab]}
+        <h2>{tab === 'products' ? 'المنتجات' : 'الفئات'}</h2>
+        {tab === 'products'
+          ? <button className="btn btn-primary" onClick={openCreateProduct}><Plus size={16} /> إضافة منتج</button>
+          : <button className="btn btn-primary" onClick={openCreateCategory}><Plus size={16} /> إضافة فئة</button>
+        }
       </div>
 
       {/* Tabs */}
@@ -155,13 +115,6 @@ export default function Products() {
         <TabBtn active={tab === 'products'} onClick={() => setTab('products')}>
           المنتجات
           <span className="badge badge-gray" style={{ fontSize: '0.72rem', marginRight: '0.3rem' }}>{formatNumber(products.length)}</span>
-        </TabBtn>
-        <TabBtn active={tab === 'inventory'} onClick={() => setTab('inventory')}>
-          <Warehouse size={14} style={{ marginLeft: '0.3rem' }} />
-          المخزون
-          {lowStock.length > 0 && (
-            <span className="badge badge-yellow" style={{ fontSize: '0.72rem', marginRight: '0.3rem' }}>{formatNumber(lowStock.length)}</span>
-          )}
         </TabBtn>
         <TabBtn active={tab === 'categories'} onClick={() => setTab('categories')}>
           <Tag size={14} style={{ marginLeft: '0.3rem' }} />
@@ -173,6 +126,40 @@ export default function Products() {
       {/* ── Products Tab ─────────────────────────────────────── */}
       {tab === 'products' && (
         <>
+          {/* Inventory widgets */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+            <StatCard icon={<Warehouse size={20} color="var(--secondary)" />}  label="إجمالي المنتجات"  value={formatNumber(products.length)} />
+            <StatCard icon={<span style={{ fontSize: '1.1rem' }}>📦</span>}      label="إجمالي الوحدات"   value={formatNumber(totalUnits)} />
+            <StatCard icon={<span style={{ fontSize: '1.1rem' }}>💰</span>}      label="قيمة المخزون"    value={formatCurrency(stockValue)} />
+            <StatCard
+              icon={<AlertTriangle size={20} color={lowStock.length > 0 ? 'var(--warning)' : 'var(--text-muted)'} />}
+              label="مخزون منخفض"
+              value={formatNumber(lowStock.length)}
+              color={lowStock.length > 0 ? 'var(--warning)' : undefined}
+            />
+            <StatCard
+              icon={<span style={{ fontSize: '1.1rem' }}>🚫</span>}
+              label="نفد المخزون"
+              value={formatNumber(outOfStock)}
+              color={outOfStock > 0 ? 'var(--danger)' : undefined}
+            />
+          </div>
+
+          {/* Low stock alert banner */}
+          {lowStock.length > 0 && (
+            <div style={{ background: '#fef9c3', border: '1px solid #fbbf24', borderRadius: 'var(--radius)', padding: '0.65rem 1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: '#92400e', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+                <AlertTriangle size={16} /> {formatNumber(lowStock.length)} منتج بمخزون منخفض
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {lowStock.map(p => (
+                  <span key={p.id} className="badge badge-yellow">{p.name} ({formatNumber(p.quantity)})</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Search */}
           <div className="card" style={{ padding: '0.75rem' }}>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
@@ -189,6 +176,7 @@ export default function Products() {
             </div>
           </div>
 
+          {/* Table */}
           <div className="card">
             <div className="table-wrapper">
               <table>
@@ -213,7 +201,7 @@ export default function Products() {
                       <td style={{ fontWeight: 600 }}>
                         {p.name}
                         <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                          {p.barcode} {p.category_name && `· ${p.category_name}`}
+                          {p.barcode}{p.category_name ? ` · ${p.category_name}` : ''}
                         </div>
                       </td>
                       <td className="hide-mobile"><code style={{ fontSize: '0.8rem' }}>{p.barcode}</code></td>
@@ -237,97 +225,6 @@ export default function Products() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ── Inventory Tab ────────────────────────────────────── */}
-      {tab === 'inventory' && (
-        <>
-          {/* Low stock alert */}
-          {lowStock.length > 0 && (
-            <div style={{ background: '#fef9c3', border: '1px solid #fbbf24', borderRadius: 'var(--radius)', padding: '0.75rem 1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: '#92400e', marginBottom: '0.5rem' }}>
-                <AlertTriangle size={18} /> {formatNumber(lowStock.length)} منتج بمخزون منخفض
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                {lowStock.map((p) => (
-                  <span key={p.id} className="badge badge-yellow">{p.name} ({formatNumber(p.quantity)})</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
-            <StatCard icon={<Warehouse size={22} color="var(--secondary)" />} label="إجمالي المنتجات" value={formatNumber(invProducts.length)} />
-            <StatCard icon={<AlertTriangle size={22} color="var(--warning)" />} label="مخزون منخفض" value={formatNumber(lowStock.length)} color="var(--warning)" />
-            <StatCard icon={<span style={{ fontSize: '1.2rem' }}>📦</span>} label="إجمالي الوحدات"
-              value={formatNumber(invProducts.reduce((s, p) => s + p.quantity, 0))} />
-            <StatCard icon={<span style={{ fontSize: '1.2rem' }}>💰</span>} label="قيمة المخزون"
-              value={formatCurrency(invProducts.reduce((s, p) => s + p.quantity * p.cost, 0))} />
-          </div>
-
-          {/* Search */}
-          <div className="card" style={{ padding: '0.75rem' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
-              <input className="input" style={{ paddingRight: '2.5rem' }} placeholder="بحث..."
-                value={invSearch} onChange={(e) => handleInvSearch(e.target.value)} />
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="card">
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>المنتج</th>
-                    <th className="hide-mobile">الباركود</th>
-                    <th>الكمية</th>
-                    <th className="hide-mobile">حد التنبيه</th>
-                    <th>الحالة</th>
-                    <th className="hide-mobile">قيمة المخزون</th>
-                    <th>تعديل</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invLoading ? (
-                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}><span className="spinner" /></td></tr>
-                  ) : invProducts.map((p) => {
-                    const isNeg = p.quantity < 0
-                    const isOut = p.quantity === 0
-                    const isLow = p.quantity > 0 && p.quantity <= p.low_stock_threshold
-                    return (
-                      <tr key={p.id}>
-                        <td style={{ fontWeight: 600 }}>
-                          {p.name}
-                          <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                            {p.barcode}
-                          </div>
-                        </td>
-                        <td className="hide-mobile"><code style={{ fontSize: '0.8rem' }}>{p.barcode}</code></td>
-                        <td style={{ fontWeight: 700, color: isNeg ? '#ef4444' : undefined }}>{formatNumber(p.quantity)}</td>
-                        <td className="hide-mobile">{formatNumber(p.low_stock_threshold)}</td>
-                        <td>
-                          {isNeg ? <span className="badge badge-red">سالب</span>
-                            : isOut ? <span className="badge badge-red">نفد</span>
-                            : isLow ? <span className="badge badge-yellow">منخفض</span>
-                            : <span className="badge badge-green">جيد</span>}
-                        </td>
-                        <td className="hide-mobile">{formatCurrency(p.quantity * p.cost)}</td>
-                        <td>
-                          <button className="btn btn-ghost btn-sm" onClick={() => { setEditModal(p); setNewQty(p.quantity) }}>
-                            <Pencil size={13} /> تعديل
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
                 </tbody>
               </table>
             </div>
@@ -359,7 +256,7 @@ export default function Products() {
                     </td>
                   </tr>
                 ) : categories.map((c, i) => {
-                  const count = products.filter((p) => p.category_id === c.id).length
+                  const count = products.filter(p => p.category_id === c.id).length
                   return (
                     <tr key={c.id}>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(i + 1)}</td>
@@ -429,31 +326,23 @@ export default function Products() {
           </div>
         </div>
       )}
-
-      {/* ── Inventory Adjust Modal ────────────────────────────── */}
-      {editModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditModal(null)}>
-          <div className="modal" style={{ maxWidth: '380px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h3 style={{ fontWeight: 700 }}>تعديل الكمية</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setEditModal(null)}><X size={18} /></button>
-            </div>
-            <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>المنتج: <strong>{editModal.name}</strong></p>
-            <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>الكمية الجديدة</label>
-            <input className="input input-lg" type="number" min={0} value={newQty}
-              onChange={(e) => setNewQty(parseInt(e.target.value) || 0)} />
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-              <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={handleAdjust}>حفظ</button>
-              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setEditModal(null)}>إلغاء</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 // ── Helper components ──────────────────────────────────────────────────────
+
+function StatCard({ icon, label, value, color }) {
+  return (
+    <div className="stat-card">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        {icon}
+        <span className="stat-label">{label}</span>
+      </div>
+      <div className="stat-value" style={{ color: color || 'var(--text)' }}>{value}</div>
+    </div>
+  )
+}
 
 function ProductForm({ form, setForm, categories }) {
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
@@ -490,18 +379,6 @@ function ProductForm({ form, setForm, categories }) {
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
-    </div>
-  )
-}
-
-function StatCard({ icon, label, value, color }) {
-  return (
-    <div className="stat-card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        {icon}
-        <span className="stat-label">{label}</span>
-      </div>
-      <div className="stat-value" style={{ color: color || 'var(--text)' }}>{value}</div>
     </div>
   )
 }

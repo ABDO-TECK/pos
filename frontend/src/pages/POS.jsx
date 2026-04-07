@@ -179,15 +179,6 @@ export default function POS() {
           gap: 0.5rem;
           overflow: hidden;
         }
-        .product-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-          gap: 0.4rem;
-          overflow-y: auto;
-          flex: 1;
-          align-content: start;
-        }
-
         /* Mobile */
         @media (max-width: 767px) {
           .pos-desktop { display: none !important; }
