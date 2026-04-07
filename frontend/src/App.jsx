@@ -9,7 +9,6 @@ import useSettingsStore from './store/settingsStore'
 const Login     = lazy(() => import('./pages/Login'))
 const POS       = lazy(() => import('./pages/POS'))
 const Products  = lazy(() => import('./pages/Products'))
-const Inventory = lazy(() => import('./pages/Inventory'))
 const Suppliers = lazy(() => import('./pages/Suppliers'))
 const Reports   = lazy(() => import('./pages/Reports'))
 const Users     = lazy(() => import('./pages/Users'))
@@ -67,14 +66,6 @@ export default function App() {
             <PrivateRoute>
               <AdminRoute>
                 <Layout><Products /></Layout>
-              </AdminRoute>
-            </PrivateRoute>
-          } />
-
-          <Route path="/inventory" element={
-            <PrivateRoute>
-              <AdminRoute>
-                <Layout><Inventory /></Layout>
               </AdminRoute>
             </PrivateRoute>
           } />

@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  ShoppingCart, Package, Warehouse, Truck, BarChart2,
+  ShoppingCart, Package, Truck, BarChart2,
   Users, LogOut, Store, Receipt, Settings, X,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
@@ -11,7 +11,6 @@ const navItems = [
   { to: '/',          label: 'نقطة البيع',   icon: ShoppingCart, roles: ['admin', 'cashier'] },
   { to: '/sales',     label: 'سجل المبيعات', icon: Receipt,      roles: ['admin', 'cashier'] },
   { to: '/products',  label: 'المنتجات',     icon: Package,      roles: ['admin'] },
-  { to: '/inventory', label: 'المخزون',       icon: Warehouse,    roles: ['admin'] },
   { to: '/suppliers', label: 'الموردون',      icon: Truck,        roles: ['admin'] },
   { to: '/reports',   label: 'التقارير',      icon: BarChart2,    roles: ['admin'] },
   { to: '/users',     label: 'المستخدمون',   icon: Users,        roles: ['admin'] },
