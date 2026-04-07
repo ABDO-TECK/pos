@@ -126,4 +126,31 @@ class SaleController extends Controller {
             'low_stock_alerts' => array_values($lowStock),
         ], 'Sale completed', 201);
     }
+
+    /**
+     * Permanently delete invoice and its lines; restore product quantities to stock.
+     */
+    public function destroy(string $id): void {
+        $invoiceId = (int) $id;
+        $invoice   = $this->invoiceModel->findById($invoiceId);
+        if (!$invoice) {
+            Response::notFound('Invoice not found');
+        }
+
+        $db = $this->db;
+        $db->beginTransaction();
+        try {
+            foreach ($invoice['items'] as $item) {
+                $this->productModel->incrementQuantity((int) $item['product_id'], (int) $item['quantity']);
+            }
+            $db->prepare('DELETE FROM invoices WHERE id = ?')->execute([$invoiceId]);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            error_log($e->getMessage());
+            Response::serverError('Failed to delete invoice');
+        }
+
+        Response::success(null, 'Invoice deleted');
+    }
 }

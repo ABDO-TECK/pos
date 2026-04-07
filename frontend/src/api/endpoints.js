@@ -22,6 +22,7 @@ export const deleteProduct = (id) => api.delete(`/products/${id}`)
 export const createSale = (data) => api.post('/sales', data)
 export const getSales = (params) => api.get('/sales', { params })
 export const getSale = (id) => api.get(`/sales/${id}`)
+export const deleteSale = (id) => api.delete(`/sales/${id}`)
 
 // Inventory
 export const getInventory = (params) => api.get('/inventory', { params })

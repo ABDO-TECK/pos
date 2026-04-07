@@ -46,6 +46,38 @@ const useCartStore = create((set, get) => ({
 
   clearCart: () => set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash' }),
 
+  /** Merge invoice lines into cart (same prices/qty as on receipt). Merges qty if product already in cart. */
+  mergeInvoiceLines: (lines) => {
+    if (!lines?.length) return
+    set((state) => {
+      let items = [...state.items]
+      for (const line of lines) {
+        const id = Number(line.product_id)
+        const price = parseFloat(line.price) || 0
+        const qty = parseInt(line.quantity, 10) || 0
+        if (qty <= 0 || !id) continue
+        const name = line.product_name ?? line.name ?? 'منتج'
+        const barcode = line.barcode ?? ''
+        const idx = items.findIndex((i) => i.id === id)
+        if (idx >= 0) {
+          const i = items[idx]
+          const nq = i.quantity + qty
+          items[idx] = { ...i, name, barcode, price, quantity: nq, subtotal: nq * price }
+        } else {
+          items.push({
+            id,
+            name,
+            barcode,
+            price,
+            quantity: qty,
+            subtotal: price * qty,
+          })
+        }
+      }
+      return { items }
+    })
+  },
+
   // Computed subtotal only — tax is read from settingsStore in components
   get subtotal() {
     return get().items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0)

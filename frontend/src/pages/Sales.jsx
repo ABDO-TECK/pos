@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { Eye, X, Printer } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Eye, X, Printer, Trash2, ShoppingCart } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getSales, getSale } from '../api/endpoints'
+import { getSales, getSale, deleteSale } from '../api/endpoints'
 import { formatCurrency, formatDate, formatNumber } from '../utils/formatters'
 import { browserPrint } from '../utils/receiptBuilder'
 import useSettingsStore from '../store/settingsStore'
+import useAuthStore from '../store/authStore'
+import useCartStore from '../store/cartStore'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -19,9 +22,14 @@ export default function Sales() {
   const [loading, setLoading]   = useState(false)
   const [selected, setSelected] = useState(null)
   const [detailLoading, setDL]  = useState(false)
+  const [deleting, setDeleting]  = useState(false)
   const [filters, setFilters]   = useState({ date: '', month: '', year: '' })
   const searchTimer             = useRef(null)
   const settings                = useSettingsStore()
+  const navigate                = useNavigate()
+  const user                    = useAuthStore((s) => s.user)
+  const mergeInvoiceLines       = useCartStore((s) => s.mergeInvoiceLines)
+  const isAdmin                 = user?.role === 'admin'
 
   const load = async (f = filters) => {
     setLoading(true)
@@ -63,6 +71,34 @@ export default function Sales() {
       toast.error('فشل تحميل تفاصيل الفاتورة')
     } finally {
       setDL(false)
+    }
+  }
+
+  const handleReturnToCart = () => {
+    const items = selected?.items ?? []
+    if (!items.length) {
+      toast.error('لا توجد أصناف في الفاتورة')
+      return
+    }
+    mergeInvoiceLines(items)
+    toast.success('تمت إضافة أصناف الفاتورة إلى السلة — انتقل إلى نقطة البيع')
+    setSelected(null)
+    navigate('/')
+  }
+
+  const handleDeleteInvoice = async () => {
+    if (!selected?.id) return
+    if (!confirm('سيتم حذف الفاتورة نهائياً من السجل وإرجاع كميات المنتجات إلى المخزون. هل أنت متأكد؟')) return
+    setDeleting(true)
+    try {
+      await deleteSale(selected.id)
+      toast.success('تم حذف الفاتورة')
+      setSelected(null)
+      load()
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -224,6 +260,30 @@ export default function Sales() {
                   <TotalRow label="الإجمالي" value={formatCurrency(selected.total)} bold green />
                   {parseFloat(selected.change_due) > 0 && (
                     <TotalRow label="الباقي" value={formatCurrency(selected.change_due)} />
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                    onClick={handleReturnToCart}
+                  >
+                    <ShoppingCart size={16} />
+                    إرجاع المنتجات للسلة
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                      onClick={handleDeleteInvoice}
+                      disabled={deleting}
+                    >
+                      {deleting ? <span className="spinner" /> : <Trash2 size={16} />}
+                      حذف الفاتورة
+                    </button>
                   )}
                 </div>
               </>
