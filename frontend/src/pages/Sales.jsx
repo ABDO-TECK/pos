@@ -69,25 +69,14 @@ export default function Sales() {
 
       {/* Filters */}
       <div className="card" style={{ padding: '1rem' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
-          <div>
+        <div className="filter-bar">
+          <div className="form-group">
             <label style={labelSt}>تاريخ محدد</label>
-            <input
-              type="date"
-              className="input"
-              style={{ width: 'auto' }}
-              value={filters.date}
-              onChange={e => handleFilter('date', e.target.value)}
-            />
+            <input type="date" className="input" value={filters.date} onChange={e => handleFilter('date', e.target.value)} />
           </div>
-          <div>
+          <div className="form-group">
             <label style={labelSt}>الشهر</label>
-            <select
-              className="input"
-              style={{ width: 'auto' }}
-              value={filters.month}
-              onChange={e => handleFilter('month', e.target.value)}
-            >
+            <select className="input" value={filters.month} onChange={e => handleFilter('month', e.target.value)}>
               <option value="">كل الأشهر</option>
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i + 1} value={i + 1}>
@@ -96,19 +85,14 @@ export default function Sales() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="form-group">
             <label style={labelSt}>السنة</label>
-            <select
-              className="input"
-              style={{ width: 'auto' }}
-              value={filters.year}
-              onChange={e => handleFilter('year', e.target.value)}
-            >
+            <select className="input" value={filters.year} onChange={e => handleFilter('year', e.target.value)}>
               <option value="">كل السنوات</option>
               {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{formatNumber(y)}</option>)}
             </select>
           </div>
-          <button onClick={clearFilters} className="btn btn-ghost btn-sm">مسح الفلاتر</button>
+          <button onClick={clearFilters} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>مسح الفلاتر</button>
         </div>
       </div>
 
@@ -178,7 +162,7 @@ export default function Sales() {
             {selected && (
               <>
                 {/* Invoice meta */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div className="resp-2col" style={{ marginBottom: '1rem' }}>
                   <InfoCard label="الكاشير"      value={selected.cashier_name ?? '—'} />
                   <InfoCard label="طريقة الدفع"  value={METHOD_LABELS[selected.payment_method] ?? selected.payment_method} />
                   <InfoCard label="التاريخ"       value={formatDate(selected.created_at)} />

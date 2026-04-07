@@ -60,10 +60,10 @@ export default function Reports() {
       <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>التقارير والتحليلات</h1>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid var(--border)' }}>
+      <div className="tabs-scroll">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: '0.5rem 1.25rem', background: 'none', border: 'none', cursor: 'pointer',
+            padding: '0.5rem 1.1rem', background: 'none', border: 'none', cursor: 'pointer',
             fontWeight: tab === t.id ? 700 : 400,
             color: tab === t.id ? 'var(--primary)' : 'var(--text-muted)',
             borderBottom: `2px solid ${tab === t.id ? 'var(--primary)' : 'transparent'}`,

@@ -48,8 +48,8 @@ export default function Users() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>إدارة المستخدمين</h1>
+      <div className="page-header">
+        <h2>إدارة المستخدمين</h2>
         <button className="btn btn-primary" onClick={openCreate}><Plus size={16} /> إضافة مستخدم</button>
       </div>
 
@@ -104,7 +104,7 @@ export default function Users() {
                 </label>
                 <input className="input" type="password" {...f('password')} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div className="resp-2col">
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>الدور</label>
                   <select className="input" {...f('role')}>

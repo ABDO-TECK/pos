@@ -44,7 +44,7 @@ export default function Inventory() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>إدارة المخزون</h1>
+      <h2 style={{ fontWeight: 700 }}>إدارة المخزون</h2>
 
       {/* Low stock alert */}
       {lowStock.length > 0 && (

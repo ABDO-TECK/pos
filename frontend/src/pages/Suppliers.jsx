@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, Plus, Trash2, ShoppingCart, Check, X } from 'lucide-react'
+import { Search, Plus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
@@ -12,10 +12,15 @@ export default function Suppliers() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-      {/* Header + tabs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>الموردون</h1>
-        <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.25rem', border: '1px solid var(--border)' }}>
+      {/* Header + tab selector */}
+      <div className="page-header" style={{ marginBottom: 0 }}>
+        <h2>الموردون</h2>
+        <div style={{
+          display: 'flex', gap: '0.25rem',
+          background: 'var(--bg)', borderRadius: 'var(--radius)',
+          padding: '0.25rem', border: '1px solid var(--border)',
+          flexShrink: 0,
+        }}>
           {['استلام بضاعة', 'إدارة الموردين'].map((t, i) => (
             <button
               key={i}
@@ -31,6 +36,7 @@ export default function Suppliers() {
                 boxShadow: tab === i ? 'var(--shadow)' : 'none',
                 cursor: 'pointer',
                 transition: 'all .15s',
+                whiteSpace: 'nowrap',
               }}
             >
               {t}
@@ -50,9 +56,10 @@ function ReceiveGoods() {
   const [supplierId, setSupplierId] = useState('')
   const [products, setProducts]     = useState([])
   const [search, setSearch]         = useState('')
-  const [cart, setCart]             = useState([]) // [{ product, quantity, cost }]
+  const [cart, setCart]             = useState([])
   const [loading, setLoading]       = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [mobileTab, setMobileTab]   = useState('products') // mobile only
   const searchTimer                 = useRef(null)
 
   useEffect(() => {
@@ -77,22 +84,19 @@ function ReceiveGoods() {
   const addToCart = (product) => {
     setCart(prev => {
       const existing = prev.find(c => c.product.id === product.id)
-      if (existing) {
-        return prev.map(c =>
-          c.product.id === product.id ? { ...c, quantity: c.quantity + 1 } : c
-        )
-      }
+      if (existing) return prev.map(c => c.product.id === product.id ? { ...c, quantity: c.quantity + 1 } : c)
       return [...prev, { product, quantity: 1, cost: product.cost ?? product.price }]
     })
+    toast.success(product.name, { duration: 700 })
   }
 
   const updateCartItem = (id, field, val) =>
     setCart(prev => prev.map(c => c.product.id === id ? { ...c, [field]: parseFloat(val) || 0 } : c))
 
-  const removeFromCart = (id) =>
-    setCart(prev => prev.filter(c => c.product.id !== id))
+  const removeFromCart = (id) => setCart(prev => prev.filter(c => c.product.id !== id))
 
   const cartTotal = cart.reduce((s, c) => s + c.cost * c.quantity, 0)
+  const cartCount = cart.reduce((s, c) => s + c.quantity, 0)
 
   const handleConfirm = async () => {
     if (!supplierId) { toast.error('يرجى اختيار مورد'); return }
@@ -101,15 +105,11 @@ function ReceiveGoods() {
     try {
       await createBulkPurchase({
         supplier_id: parseInt(supplierId),
-        items: cart.map(c => ({
-          product_id:  c.product.id,
-          quantity:    c.quantity,
-          cost:        c.cost,
-          update_cost: true,
-        })),
+        items: cart.map(c => ({ product_id: c.product.id, quantity: c.quantity, cost: c.cost, update_cost: true })),
       })
       toast.success('تم تسجيل الشراء وتحديث المخزون')
       setCart([])
+      setMobileTab('products')
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
     } finally {
@@ -117,133 +117,209 @@ function ReceiveGoods() {
     }
   }
 
-  return (
-    <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+  /* ── Shared panels ── */
+  const ProductsPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '0.6rem', overflow: 'hidden' }}>
+      <div style={{ position: 'relative' }}>
+        <Search size={16} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
+        <input
+          type="text" placeholder="بحث بالاسم أو الباركود…" className="input"
+          style={{ paddingRight: '2.5rem' }}
+          value={search} onChange={e => handleSearch(e.target.value)}
+        />
+      </div>
+      <div style={{ overflowY: 'auto', flex: 1 }}>
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.5rem', alignContent: 'start' }}>
+            {products.map(p => (
+              <ProductCard key={p.id} product={p} onAdd={() => { addToCart(p); setMobileTab('cart') }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
-      {/* Left: products grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '0.75rem' }}>
-        {/* Search */}
-        <div style={{ position: 'relative' }}>
-          <Search size={16} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="بحث بالاسم أو الباركود…"
-            className="input"
-            style={{ paddingRight: '2.5rem' }}
-            value={search}
-            onChange={e => handleSearch(e.target.value)}
-          />
-        </div>
+  const CartPanel = (
+    <div style={{
+      display: 'flex', flexDirection: 'column', flex: 1,
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden',
+    }}>
+      {/* Supplier select */}
+      <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>المورد</label>
+        <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+          <option value="">اختر مورد…</option>
+          {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
 
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
-          ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-              gap: '0.5rem',
-              alignContent: 'start',
+      {/* Items */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        {cart.length === 0 ? (
+          <div className="empty-state" style={{ padding: '2rem' }}>
+            <ShoppingCart size={28} style={{ opacity: 0.3 }} />
+            <span style={{ fontSize: '0.85rem' }}>اضغط على منتج لإضافته</span>
+          </div>
+        ) : (
+          cart.map(c => (
+            <div key={c.product.id} style={{
+              border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              padding: '0.5rem', background: 'var(--bg)', fontSize: '0.82rem',
             }}>
-              {products.map(p => (
-                <ProductCard key={p.id} product={p} onAdd={() => addToCart(p)} />
-              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
+                  {c.product.name}
+                </span>
+                <button onClick={() => removeFromCart(c.product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}>
+                  <X size={13}/>
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكمية</label>
+                  <input type="number" min="1" className="input"
+                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
+                    value={c.quantity} onChange={e => updateCartItem(c.product.id, 'quantity', e.target.value)}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>التكلفة</label>
+                  <input type="number" min="0" step="0.5" className="input"
+                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
+                    value={c.cost} onChange={e => updateCartItem(c.product.id, 'cost', e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={{ textAlign: 'left', color: 'var(--secondary)', fontWeight: 600, marginTop: '0.3rem', fontSize: '0.82rem' }}>
+                = {formatCurrency(c.cost * c.quantity)}
+              </div>
             </div>
-          )}
+          ))
+        )}
+      </div>
+
+      {/* Total + confirm */}
+      <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '1rem' }}>
+          <span>الإجمالي</span>
+          <span style={{ color: 'var(--secondary)' }}>{formatCurrency(cartTotal)}</span>
+        </div>
+        <button onClick={handleConfirm} disabled={confirming || cart.length === 0 || !supplierId}
+          className="btn btn-primary" style={{ justifyContent: 'center', width: '100%' }}>
+          {confirming ? <span className="spinner" /> : <Check size={16}/>}
+          تأكيد الاستلام
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <>
+      {/* ── Desktop layout ── */}
+      <div className="sup-desktop">
+        {ProductsPanel}
+        <div style={{ width: '300px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+          {CartPanel}
         </div>
       </div>
 
-      {/* Right: Purchase cart */}
-      <div style={{
-        width: '300px', flexShrink: 0, display: 'flex', flexDirection: 'column',
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-        boxShadow: 'var(--shadow)', overflow: 'hidden',
-      }}>
-        {/* Supplier select */}
-        <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>
-          <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>المورد</label>
-          <select
-            className="input"
-            value={supplierId}
-            onChange={e => setSupplierId(e.target.value)}
-          >
-            <option value="">اختر مورد…</option>
-            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+      {/* ── Mobile layout ── */}
+      <div className="sup-mobile">
+        {/* Tab content */}
+        <div className="sup-mobile-content">
+          {mobileTab === 'products' ? ProductsPanel : CartPanel}
         </div>
 
-        {/* Cart items */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          {cart.length === 0 ? (
-            <div className="empty-state" style={{ padding: '2rem' }}>
-              <ShoppingCart size={28} style={{ opacity: 0.3 }} />
-              <span style={{ fontSize: '0.85rem' }}>اضغط على منتج لإضافته</span>
-            </div>
-          ) : (
-            cart.map(c => (
-              <div key={c.product.id} style={{
-                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                padding: '0.5rem', background: 'var(--bg)', fontSize: '0.82rem',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
-                    {c.product.name}
-                  </span>
-                  <button
-                    onClick={() => removeFromCart(c.product.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}
-                  >
-                    <X size={13}/>
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكمية</label>
-                    <input
-                      type="number" min="1"
-                      className="input"
-                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                      value={c.quantity}
-                      onChange={e => updateCartItem(c.product.id, 'quantity', e.target.value)}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>التكلفة</label>
-                    <input
-                      type="number" min="0" step="0.5"
-                      className="input"
-                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                      value={c.cost}
-                      onChange={e => updateCartItem(c.product.id, 'cost', e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div style={{ textAlign: 'left', color: 'var(--secondary)', fontWeight: 600, marginTop: '0.3rem', fontSize: '0.82rem' }}>
-                  = {formatCurrency(c.cost * c.quantity)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Total + confirm */}
-        <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '1rem' }}>
-            <span>الإجمالي</span>
-            <span style={{ color: 'var(--secondary)' }}>{formatCurrency(cartTotal)}</span>
-          </div>
-          <button
-            onClick={handleConfirm}
-            disabled={confirming || cart.length === 0 || !supplierId}
-            className="btn btn-primary"
-            style={{ justifyContent: 'center', width: '100%' }}
-          >
-            {confirming ? <span className="spinner" /> : <Check size={16}/>}
-            تأكيد الاستلام
+        {/* Bottom tab bar */}
+        <div className="pos-tab-bar">
+          <button className={`pos-tab${mobileTab === 'products' ? ' active' : ''}`} onClick={() => setMobileTab('products')}>
+            <Package size={20} />
+            <span>المنتجات</span>
+          </button>
+          <button className={`pos-tab${mobileTab === 'cart' ? ' active' : ''}`} onClick={() => setMobileTab('cart')}>
+            <ShoppingCart size={20} />
+            <span>الفاتورة</span>
+            {cartCount > 0 && <span className="tab-badge">{formatNumber(cartCount)}</span>}
           </button>
         </div>
       </div>
-    </div>
+
+      <style>{`
+        .sup-desktop {
+          display: flex;
+          gap: 1rem;
+          flex: 1;
+          min-height: 0;
+          overflow: hidden;
+        }
+        .sup-mobile { display: none; }
+
+        @media (max-width: 767px) {
+          .sup-desktop { display: none !important; }
+          .sup-mobile {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+          }
+          .sup-mobile-content {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          }
+          /* Reuse POS tab-bar styles */
+          .pos-tab-bar {
+            display: flex;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-top: 0.5rem;
+            overflow: hidden;
+            flex-shrink: 0;
+          }
+          .pos-tab {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.2rem;
+            padding: 0.6rem 0.5rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            transition: background .15s;
+          }
+          .pos-tab.active {
+            color: var(--primary);
+            background: rgba(34,197,94,.08);
+          }
+          .tab-badge {
+            position: absolute;
+            top: 4px;
+            right: calc(50% - 22px);
+            background: var(--primary);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border-radius: 9999px;
+            padding: 0 5px;
+            min-width: 18px;
+            text-align: center;
+            line-height: 18px;
+          }
+        }
+      `}</style>
+    </>
   )
 }
 
@@ -257,10 +333,8 @@ function ProductCard({ product, onAdd }) {
         padding: '0.5rem', background: 'var(--surface)',
         border: '1px solid var(--border)', borderRadius: 'var(--radius)',
         cursor: 'pointer', textAlign: 'right', transition: 'border-color .15s, box-shadow .15s',
-        fontFamily: 'inherit',
+        fontFamily: 'inherit', touchAction: 'manipulation',
       }}
-      onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = 'var(--shadow)' }}
-      onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none' }}
     >
       <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, marginBottom: '0.25rem', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
         {product.name}
@@ -290,17 +364,8 @@ function ManageSuppliers() {
 
   useEffect(() => { load() }, [])
 
-  const openNew = () => {
-    setEditing(null)
-    setForm({ name: '', phone: '', email: '', address: '' })
-    setShowForm(true)
-  }
-
-  const openEdit = (s) => {
-    setEditing(s)
-    setForm({ name: s.name, phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '' })
-    setShowForm(true)
-  }
+  const openNew = () => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '' }); setShowForm(true) }
+  const openEdit = (s) => { setEditing(s); setForm({ name: s.name, phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '' }); setShowForm(true) }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -322,9 +387,7 @@ function ManageSuppliers() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div>
-        <button onClick={openNew} className="btn btn-primary">
-          <Plus size={16}/> إضافة مورد
-        </button>
+        <button onClick={openNew} className="btn btn-primary"><Plus size={16}/> إضافة مورد</button>
       </div>
 
       <div className="card">
@@ -338,19 +401,23 @@ function ManageSuppliers() {
               <thead>
                 <tr>
                   <th>الاسم</th>
-                  <th>الهاتف</th>
-                  <th>البريد</th>
-                  <th>العنوان</th>
+                  <th className="hide-mobile">الهاتف</th>
+                  <th className="hide-mobile">البريد</th>
+                  <th className="hide-mobile">العنوان</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {suppliers.map(s => (
                   <tr key={s.id}>
-                    <td style={{ fontWeight: 600 }}>{s.name}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>{s.phone ?? '—'}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>{s.email ?? '—'}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>{s.address ?? '—'}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {s.name}
+                      {/* Show phone under name on mobile */}
+                      {s.phone && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }} className="show-mobile">{s.phone}</div>}
+                    </td>
+                    <td style={{ color: 'var(--text-muted)' }} className="hide-mobile">{s.phone ?? '—'}</td>
+                    <td style={{ color: 'var(--text-muted)' }} className="hide-mobile">{s.email ?? '—'}</td>
+                    <td style={{ color: 'var(--text-muted)' }} className="hide-mobile">{s.address ?? '—'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                         <button onClick={() => openEdit(s)} className="btn btn-ghost btn-sm">تعديل</button>
@@ -375,19 +442,15 @@ function ManageSuppliers() {
             </div>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {[
-                { key: 'name',    label: 'الاسم *',             type: 'text',  required: true },
-                { key: 'phone',   label: 'الهاتف',              type: 'text' },
-                { key: 'email',   label: 'البريد الإلكتروني',  type: 'email' },
-                { key: 'address', label: 'العنوان',             type: 'text' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>{f.label}</label>
-                  <input
-                    type={f.type}
-                    className="input"
-                    required={f.required}
-                    value={form[f.key]}
-                    onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                { key: 'name',    label: 'الاسم *',            type: 'text',  required: true },
+                { key: 'phone',   label: 'الهاتف',             type: 'text' },
+                { key: 'email',   label: 'البريد الإلكتروني', type: 'email' },
+                { key: 'address', label: 'العنوان',            type: 'text' },
+              ].map(fi => (
+                <div key={fi.key}>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>{fi.label}</label>
+                  <input type={fi.type} className="input" required={fi.required}
+                    value={form[fi.key]} onChange={e => setForm({ ...form, [fi.key]: e.target.value })}
                   />
                 </div>
               ))}

@@ -151,10 +151,8 @@ export default function Products() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>
-          {tab === 'products' ? 'المنتجات' : 'الفئات'}
-        </h1>
+      <div className="page-header">
+        <h2>{tab === 'products' ? 'المنتجات' : 'الفئات'}</h2>
         {tab === 'products' ? (
           <button className="btn btn-primary" onClick={openCreateProduct}>
             <Plus size={16} /> إضافة منتج
@@ -167,7 +165,7 @@ export default function Products() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0', borderBottom: '2px solid var(--border)' }}>
+      <div className="tabs-scroll" style={{ marginTop: '-0.5rem' }}>
         <TabBtn active={tab === 'products'} onClick={() => setTab('products')}>
           المنتجات
           <span className="badge badge-gray" style={{ fontSize: '0.72rem', marginRight: '0.3rem' }}>{formatNumber(products.length)}</span>
@@ -364,7 +362,7 @@ export default function Products() {
 function ProductForm({ form, setForm, categories }) {
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
       <div style={{ gridColumn: 'span 2' }}>
         <Label>اسم المنتج *</Label>
         <input className="input" {...f('name')} placeholder="مثال: أرز بسمتي 1كغ" required />
