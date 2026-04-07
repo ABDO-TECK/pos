@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Printer, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { formatCurrency, formatDate, formatNumber, formatPercent } from '../../utils/formatters'
+import { formatCurrency, formatNumber, formatPercent, formatDate } from '../../utils/formatters'
+import { browserPrint } from '../../utils/receiptBuilder'
 import useSettingsStore from '../../store/settingsStore'
 import {
     isQZAvailable,
@@ -15,26 +16,25 @@ import {
 
 const METHOD_LABELS = {
     cash:          'نقدي',
-    card:          'بطاقة',
+    card:          'بطاقة ائتمان',
     vodafone_cash: 'فودافون كاش',
     instapay:      'انستاباي',
-    other_wallet:  'محفظة أخرى',
+    other_wallet:  'محفظة إلكترونية',
 }
 
 export default function Receipt({ invoice, change, onClose }) {
     const { storeName, taxEnabled, taxRate } = useSettingsStore()
+    const settings = { storeName, taxEnabled, taxRate }
 
-    const [qzStatus, setQzStatus]       = useState('idle')   // idle | connecting | ready | error
-    const [printers, setPrinters]       = useState([])
-    const [selectedPrinter, setSelectedPrinter] = useState(getSavedPrinter() ?? '')
-    const [showPrinterPicker, setShowPrinterPicker] = useState(false)
-    const [printing, setPrinting]       = useState(false)
+    const [qzStatus,         setQzStatus]         = useState('idle')
+    const [printers,         setPrinters]         = useState([])
+    const [selectedPrinter,  setSelectedPrinter]  = useState(getSavedPrinter() ?? '')
+    const [showPrinterPicker,setShowPrinterPicker] = useState(false)
+    const [printing,         setPrinting]         = useState(false)
 
-    // ── Try to connect to QZ Tray on mount ──
     useEffect(() => {
         if (!isQZAvailable()) { setQzStatus('unavailable'); return }
         if (isQZConnected())  { setQzStatus('ready'); loadPrinters(); return }
-
         setQzStatus('connecting')
         connectQZ()
             .then(() => { setQzStatus('ready'); loadPrinters() })
@@ -45,7 +45,6 @@ export default function Receipt({ invoice, change, onClose }) {
         try {
             const list = await listPrinters()
             setPrinters(list)
-            // Auto-select saved printer if available
             const saved = getSavedPrinter()
             if (saved && list.includes(saved)) setSelectedPrinter(saved)
             else if (list.length === 1) { savePrinter(list[0]); setSelectedPrinter(list[0]) }
@@ -54,12 +53,15 @@ export default function Receipt({ invoice, change, onClose }) {
 
     if (!invoice) return null
 
+    const isCash    = invoice.payment_method === 'cash'
+    const changeAmt = invoice.change_due ?? change
+
     // ── QZ Tray print ──
     const handleQZPrint = async () => {
         if (!selectedPrinter) { setShowPrinterPicker(true); return }
         setPrinting(true)
         try {
-            await printInvoice(invoice, change, { storeName, taxEnabled, taxRate }, selectedPrinter)
+            await printInvoice(invoice, change, settings, selectedPrinter)
             toast.success('تمت الطباعة بنجاح')
         } catch (err) {
             toast.error('فشل الطباعة: ' + (err.message ?? ''))
@@ -68,8 +70,8 @@ export default function Receipt({ invoice, change, onClose }) {
         }
     }
 
-    // ── Browser print fallback ──
-    const handleBrowserPrint = () => window.print()
+    // ── Browser print — opens a new clean window (fixes blank-page issue) ──
+    const handleBrowserPrint = () => browserPrint(invoice, changeAmt, settings)
 
     const handlePrinterSelect = (name) => {
         savePrinter(name)
@@ -78,64 +80,88 @@ export default function Receipt({ invoice, change, onClose }) {
         toast.success(`تم اختيار الطابعة: ${name}`)
     }
 
-    const isCash   = invoice.payment_method === 'cash'
-    const changeAmt = invoice.change_due ?? change
-
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="modal" style={{ maxWidth: '400px' }}>
+            <div className="modal" style={{ maxWidth: '420px' }}>
 
-                {/* Header */}
+                {/* ── Modal header ── */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontWeight: 700 }}>فاتورة #{formatNumber(invoice.id)}</h3>
                     <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
                 </div>
 
-                {/* ── Receipt content (printed via browser print too) ── */}
-                <div
-                    id="receipt-print"
-                    className="invoice-container"
-                    style={{ fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.8 }}
-                >
-                    {/* Store header */}
-                    <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
-                            <div style={{ fontWeight: 900, fontSize: '1.05rem' }}>🛒 {storeName || 'سوبر ماركت'}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{formatDate(invoice.created_at)}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكاشير: {invoice.cashier_name}</div>
+                {/* ── Receipt preview (screen only — uses invoice-container CSS) ── */}
+                <div style={{
+                    border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                    padding: '0.75rem', background: '#fff',
+                    fontFamily: "Arial, Tahoma, 'DejaVu Sans', sans-serif",
+                    fontSize: '0.82rem', lineHeight: 1.5, color: '#000',
+                    maxHeight: '55vh', overflowY: 'auto',
+                }}>
+                    {/* Header */}
+                    <div style={{ textAlign: 'center', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1.5px solid #000' }}>
+                        <div style={{ fontWeight: 900, fontSize: '1rem' }}> {storeName || 'سوبر ماركت'}</div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                            فاتورة رقم: #{formatNumber(invoice.id)}
+                        </div>
                     </div>
 
-                    {/* Items */}
-                    <div style={{ borderTop: '1px dashed var(--border)', borderBottom: '1px dashed var(--border)', padding: '0.5rem 0', marginBottom: '0.5rem' }}>
-                        {(invoice.items ?? []).map((item) => (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{item.product_name ?? item.name} × {formatNumber(item.quantity)}</span>
-                                <span>{formatCurrency(item.price * item.quantity)}</span>
-                            </div>
-                        ))}
+                    {/* Info rows */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '8px', paddingBottom: '4px' }}>
+                        <div>
+                            <InfoRow label="التاريخ" value={formatDate(invoice.created_at)} />
+                            <InfoRow label="الكاشير" value={invoice.cashier_name ?? '—'} />
+                        </div>
+                        <div>
+                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method} />
+                        </div>
                     </div>
+
+                    {/* Items table */}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '8px' }}>
+                        <thead>
+                            <tr style={{ background: '#f8f8f8' }}>
+                                <Th>#</Th>
+                                <Th align="right">المنتج</Th>
+                                <Th>الكمية</Th>
+                                <Th>السعر</Th>
+                                <Th>الإجمالي</Th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(invoice.items ?? []).map((item, i) => (
+                                <tr key={item.id ?? i}>
+                                    <Td>{formatNumber(i + 1)}</Td>
+                                    <Td align="right">{item.product_name ?? item.name}</Td>
+                                    <Td>{formatNumber(item.quantity)}</Td>
+                                    <Td>{formatCurrency(item.price)}</Td>
+                                    <Td>{formatCurrency(parseFloat(item.price) * parseFloat(item.quantity))}</Td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
 
                     {/* Totals */}
-                    <TotalRow label="المجموع الجزئي" value={formatCurrency(invoice.subtotal)} />
-                    {parseFloat(invoice.discount) > 0 && (
-                        <TotalRow label="الخصم" value={`- ${formatCurrency(invoice.discount)}`} color="var(--danger)" />
-                    )}
-                    {taxEnabled && parseFloat(invoice.tax) > 0 && (
-                        <TotalRow label={`ضريبة ${formatPercent(taxRate)}`} value={formatCurrency(invoice.tax)} color="var(--text-muted)" />
-                    )}
-                    <div style={{ borderTop: '1px solid var(--border)', marginTop: '0.25rem', paddingTop: '0.25rem' }}>
-                        <TotalRow label="الإجمالي" value={formatCurrency(invoice.total)} bold green />
+                    <div style={{ paddingTop: '4px' }}>
+                        <TotalLine label="المجموع الجزئي" value={formatCurrency(invoice.subtotal)} />
+                        {parseFloat(invoice.discount) > 0 && (
+                            <TotalLine label="الخصم" value={`- ${formatCurrency(invoice.discount)}`} />
+                        )}
+                        {taxEnabled && parseFloat(invoice.tax) > 0 && (
+                            <TotalLine label={`ضريبة (${formatPercent(taxRate)})`} value={formatCurrency(invoice.tax)} />
+                        )}
+                        <TotalLine label="الإجمالي" value={formatCurrency(invoice.total)} bold />
+                        {isCash && (
+                            <>
+                                <TotalLine label="المدفوع" value={formatCurrency(invoice.amount_paid)} />
+                                <TotalLine label="المسترد" value={formatCurrency(changeAmt)} />
+                            </>
+                        )}
                     </div>
 
-                    <TotalRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method} />
-                    {isCash && (
-                        <>
-                            <TotalRow label="المدفوع" value={formatCurrency(invoice.amount_paid)} />
-                            <TotalRow label="الباقي" value={formatCurrency(changeAmt)} color="var(--secondary)" bold />
-                        </>
-                    )}
-
-                    <div style={{ textAlign: 'center', marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        شكراً لزيارتكم ✨
+                    {/* Footer */}
+                    <div style={{ textAlign: 'center', marginTop: '8px', paddingTop: '4px', fontSize: '0.78rem', fontWeight: 700 }}>
+                        شكراً لزيارتكم 
                     </div>
                 </div>
 
@@ -148,7 +174,6 @@ export default function Receipt({ invoice, change, onClose }) {
 
                 {/* ── Action buttons ── */}
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                    {/* QZ Tray print — shown when QZ is available */}
                     {qzStatus === 'ready' ? (
                         <button
                             className="btn btn-primary"
@@ -160,7 +185,6 @@ export default function Receipt({ invoice, change, onClose }) {
                             {printing ? 'جاري الطباعة…' : 'طباعة QZ'}
                         </button>
                     ) : (
-                        /* Browser print fallback */
                         <button
                             className="btn btn-primary"
                             style={{ flex: 1, justifyContent: 'center' }}
@@ -169,84 +193,110 @@ export default function Receipt({ invoice, change, onClose }) {
                             <Printer size={16} /> طباعة
                         </button>
                     )}
-                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={onClose}>
+                    <button
+                        className="btn btn-ghost"
+                        style={{ flex: 1, justifyContent: 'center' }}
+                        onClick={onClose}
+                    >
                         إغلاق
                     </button>
                 </div>
 
-                {/* Always offer browser print as secondary option when QZ is available */}
+                {/* Always offer browser print as secondary */}
                 {qzStatus === 'ready' && (
                     <button
                         className="btn btn-ghost btn-sm"
-                        style={{ width: '100%', justifyContent: 'center', marginTop: '0.4rem', color: 'var(--text-muted)' }}
+                        style={{ width: '100%', justifyContent: 'center', marginTop: '0.4rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}
                         onClick={handleBrowserPrint}
                     >
-                        طباعة عبر المتصفح (بديل)
+                        <Printer size={13} style={{ marginLeft: '4px' }} /> طباعة عبر المتصفح (بديل)
                     </button>
                 )}
             </div>
 
-            {/* Printer picker modal */}
+            {/* ── Printer picker modal ── */}
             {showPrinterPicker && (
-                <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={(e) => e.target === e.currentTarget && setShowPrinterPicker(false)}>
+                <div className="modal-overlay" style={{ zIndex: 1100 }}
+                    onClick={(e) => e.target === e.currentTarget && setShowPrinterPicker(false)}>
                     <div className="modal" style={{ maxWidth: '380px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <h3 style={{ fontWeight: 700 }}>اختر الطابعة</h3>
                             <button className="btn btn-ghost btn-icon" onClick={() => setShowPrinterPicker(false)}><X size={18}/></button>
                         </div>
-
                         {printers.length === 0 ? (
                             <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1rem' }}>لا توجد طابعات متاحة</p>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                                 {printers.map(p => (
-                                    <button
-                                        key={p}
-                                        onClick={() => handlePrinterSelect(p)}
-                                        style={{
-                                            padding: '0.65rem 1rem', textAlign: 'right',
-                                            border: `2px solid ${p === selectedPrinter ? 'var(--primary)' : 'var(--border)'}`,
-                                            borderRadius: 'var(--radius)',
-                                            background: p === selectedPrinter ? '#f0fdf4' : 'var(--surface)',
-                                            cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.9rem',
-                                            fontWeight: p === selectedPrinter ? 600 : 400,
-                                        }}
-                                    >
+                                    <button key={p} onClick={() => handlePrinterSelect(p)} style={{
+                                        padding: '0.65rem 1rem', textAlign: 'right',
+                                        border: `2px solid ${p === selectedPrinter ? 'var(--primary)' : 'var(--border)'}`,
+                                        borderRadius: 'var(--radius)',
+                                        background: p === selectedPrinter ? '#f0fdf4' : 'var(--surface)',
+                                        cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.9rem',
+                                        fontWeight: p === selectedPrinter ? 600 : 400,
+                                    }}>
                                         🖨 {p}
                                     </button>
                                 ))}
                             </div>
                         )}
-
-                        <button
-                            className="btn btn-ghost"
+                        <button className="btn btn-ghost"
                             style={{ width: '100%', justifyContent: 'center', marginTop: '0.75rem' }}
-                            onClick={() => setShowPrinterPicker(false)}
-                        >
+                            onClick={() => setShowPrinterPicker(false)}>
                             إغلاق
                         </button>
                     </div>
                 </div>
             )}
-
-            {/* Browser print styles */}
-            <style>{`
-                @media print {
-                    body > * { display: none !important; }
-                    #receipt-print { display: block !important; }
-                }
-            `}</style>
         </div>
     )
 }
 
-function TotalRow({ label, value, bold, green, color }) {
+// ── Small helper components ────────────────────────────────────────────────
+
+function InfoRow({ label, value }) {
+    return (
+        <div style={{ display: 'flex', gap: '4px', margin: '2px 0', fontSize: '0.78rem' }}>
+            <span style={{ fontWeight: 800 }}>{label}:</span>
+            <span>{value}</span>
+        </div>
+    )
+}
+
+function Th({ children, align = 'center' }) {
+    return (
+        <th style={{
+            padding: '3px 4px', fontSize: '0.78rem', fontWeight: 900,
+            border: '1.5px solid #000', textAlign: align,
+            background: '#fff', color: '#000',
+        }}>
+            {children}
+        </th>
+    )
+}
+
+function Td({ children, align = 'center' }) {
+    return (
+        <td style={{
+            padding: '3px 4px', fontSize: '0.78rem', fontWeight: 700,
+            border: '1.5px solid #000', textAlign: align,
+            background: '#fff', color: '#000',
+        }}>
+            {children}
+        </td>
+    )
+}
+
+function TotalLine({ label, value, bold }) {
     return (
         <div style={{
             display: 'flex', justifyContent: 'space-between',
-            fontWeight: bold ? 700 : 400,
-            fontSize: bold ? '1rem' : '0.88rem',
-            color: color ?? (green ? 'var(--primary)' : 'var(--text)'),
+            padding: bold ? '2px 0' : '1px 0',
+            fontWeight: bold ? 900 : 700,
+            fontSize: bold ? '0.92rem' : '0.82rem',
+            borderTop: bold ? '1.5px solid #000' : 'none',
+            borderBottom: bold ? '1.5px solid #000' : 'none',
         }}>
             <span>{label}</span>
             <span>{value}</span>
@@ -255,35 +305,27 @@ function TotalRow({ label, value, bold, green, color }) {
 }
 
 function QZStatusBar({ status, printer, onPickPrinter }) {
-    const colors = {
-        idle:        { bg: '#f3f4f6', text: '#6b7280' },
-        connecting:  { bg: '#fef9c3', text: '#854d0e' },
-        ready:       { bg: '#dcfce7', text: '#166534' },
-        error:       { bg: '#fee2e2', text: '#991b1b' },
-        unavailable: { bg: '#f3f4f6', text: '#6b7280' },
+    const cfg = {
+        idle:        { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray: جاري التحميل…' },
+        connecting:  { bg: '#fef9c3', text: '#854d0e', label: 'QZ Tray: جاري الاتصال…' },
+        ready:       { bg: '#dcfce7', text: '#166534',
+                       label: printer
+                           ? `QZ Tray ✓ — ${printer.length > 28 ? printer.slice(0,28)+'…' : printer}`
+                           : 'QZ Tray: متصل — انقر لاختيار الطابعة' },
+        error:       { bg: '#fee2e2', text: '#991b1b', label: 'QZ Tray: فشل الاتصال — سيُستخدم طباعة المتصفح' },
+        unavailable: { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray غير مثبت — سيُستخدم طباعة المتصفح' },
     }
-    const labels = {
-        idle:        'QZ Tray: جاري التحميل…',
-        connecting:  'QZ Tray: جاري الاتصال…',
-        ready:       printer ? `QZ Tray: متصل ✓  —  ${printer.length > 25 ? printer.slice(0,25)+'…' : printer}` : 'QZ Tray: متصل — لم تُختر طابعة بعد',
-        error:       'QZ Tray: فشل الاتصال — سيُستخدم طباعة المتصفح',
-        unavailable: 'QZ Tray: غير مثبت — سيُستخدم طباعة المتصفح',
-    }
-    const { bg, text } = colors[status] ?? colors.idle
-    const label = labels[status] ?? ''
-
+    const { bg, text, label } = cfg[status] ?? cfg.idle
     return (
-        <div
-            onClick={status === 'ready' ? onPickPrinter : undefined}
-            style={{
-                marginTop: '0.75rem', padding: '0.45rem 0.75rem',
-                background: bg, color: text, borderRadius: 'var(--radius)',
-                fontSize: '0.78rem', fontWeight: 600,
-                cursor: status === 'ready' ? 'pointer' : 'default',
-                display: 'flex', alignItems: 'center', gap: '0.4rem',
-            }}
+        <div onClick={status === 'ready' ? onPickPrinter : undefined}
             title={status === 'ready' ? 'انقر لتغيير الطابعة' : undefined}
-        >
+            style={{
+                marginTop: '0.6rem', padding: '0.4rem 0.7rem',
+                background: bg, color: text, borderRadius: 'var(--radius)',
+                fontSize: '0.76rem', fontWeight: 600,
+                cursor: status === 'ready' ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', gap: '0.35rem',
+            }}>
             {status === 'ready' && <Settings size={12} />}
             {label}
         </div>
