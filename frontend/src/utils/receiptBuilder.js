@@ -21,6 +21,10 @@ function fc(n) {
 function fn(n) {
     return new Intl.NumberFormat(AR).format(n ?? 0)
 }
+// number with 2 decimal places, no currency symbol (for table cells)
+function fd2(n) {
+    return new Intl.NumberFormat(AR, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0)
+}
 function fp(n) {
     return `${new Intl.NumberFormat(AR).format(n ?? 0)}%`
 }
@@ -37,14 +41,14 @@ function ft(d) {
     }).format(new Date(d))
 }
 
-// ── CSS (from print-invoice.css) ────────────────────────────────────────────
+// ── CSS ──────────────────────────────────────────────────────────────────────
 const PRINT_CSS = `
 * { box-sizing: border-box; }
 body {
     font-family: Arial, Tahoma, 'DejaVu Sans', sans-serif;
-    font-size: 10px;
-    font-weight: 900;
-    line-height: 1.3;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.2;
     margin: 0; padding: 0;
     direction: rtl;
     unicode-bidi: embed;
@@ -54,116 +58,91 @@ body {
 }
 .invoice-container {
     width: 100%;
-    max-width: 600px;
+    max-width: 80mm;
     margin: 0 auto;
     background: #fff;
-    padding: 5mm;
+    padding: 2mm;
 }
 .invoice-header {
     text-align: center;
-    margin-bottom: 3mm;
-    padding-bottom: 3mm;
+    margin-bottom: 2mm;
+    padding-bottom: 2mm;
     border-bottom: 1.5pt solid #000;
 }
 .invoice-header h2 {
-    font-size: 7mm;
-    margin: 1mm 0;
-    font-weight: 900;
-    color: #000;
-}
-.invoice-header p {
-    font-size: 4mm;
+    font-size: 5mm;
     margin: 0.5mm 0;
-    font-weight: 700;
+    font-weight: 900;
     color: #000;
 }
 .invoice-title {
     font-weight: 900;
-    font-size: 4.5mm;
-    margin: 2mm 0 1mm;
+    font-size: 3.5mm;
+    margin: 1mm 0 0;
     text-align: center;
-    padding: 0;
-    display: inline-block;
 }
 .invoice-details {
-    margin: 2mm 0;
-    padding-bottom: 2mm;
-}
-.invoice-details .row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2mm;
+    margin: 1.5mm 0;
+    padding-bottom: 1mm;
 }
 .info-row {
     display: flex;
-    gap: 2mm;
-    margin: 1mm 0;
-    font-size: 3.5mm;
-    align-items: flex-start;
+    justify-content: space-between;
+    margin: 0.8mm 0;
+    font-size: 3mm;
 }
-.info-row span:first-child {
-    font-weight: 800;
-    white-space: nowrap;
-}
+.info-row .lbl { font-weight: 900; white-space: nowrap; }
+.info-row .val { text-align: left; }
 .table {
     width: 100%;
     border-collapse: collapse;
-    margin: 2mm 0;
+    margin: 1.5mm 0;
 }
 .table th, .table td {
-    padding: 1.5mm;
-    font-size: 3.5mm;
-    border: 1.5pt solid #000;
+    padding: 0.8mm 1mm;
+    font-size: 2.8mm;
+    border: 1pt solid #000;
     text-align: center;
     vertical-align: middle;
     font-weight: 700;
     color: #000;
     background: #fff;
 }
-.table th { font-weight: 900; }
-.table td:nth-child(2) { text-align: right; }
-.total-section {
-    margin-top: 1mm;
-    padding-top: 1mm;
-}
+.table th { font-weight: 900; font-size: 2.8mm; }
+.table .name { text-align: right; max-width: 25mm; word-break: break-word; }
+.total-section { margin-top: 1mm; }
 .total-row {
     display: flex;
     justify-content: space-between;
-    margin: 1mm 0;
-    font-size: 3.8mm;
+    margin: 0.8mm 0;
+    font-size: 3mm;
     font-weight: 700;
     color: #000;
 }
 .total-row.grand {
-    font-size: 5mm;
+    font-size: 4mm;
     font-weight: 900;
     border-top: 1.5pt solid #000;
     border-bottom: 1.5pt solid #000;
-    padding: 1.5mm 0;
-    margin-top: 1mm;
+    padding: 1mm 0;
+    margin-top: 0.5mm;
 }
-.total-row.discount { color: #000; }
 .invoice-footer {
     text-align: center;
-    margin-top: 3mm;
-    padding-top: 0;
-    font-size: 3.5mm;
+    margin-top: 2mm;
+    font-size: 3mm;
     font-weight: 700;
     color: #000;
 }
-.invoice-footer p { margin: 1mm 0; padding: 0; }
+.invoice-footer p { margin: 0.5mm 0; }
 .no-print { display: none !important; }
 @media print {
     @page { size: 80mm auto; margin: 0; }
-    * { margin: 0 !important; padding: 0 !important; }
     body {
-        font-size: 10px !important;
-        font-weight: 900 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
-        padding-bottom: 10mm !important;
     }
-    .invoice-container { padding: 2mm !important; }
+    .invoice-container { padding: 2mm; }
     .no-print { display: none !important; }
 }
 `
@@ -178,14 +157,14 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
     const changeAmt = invoice.change_due ?? change
     const payLabel  = PAYMENT_LABELS[invoice.payment_method] ?? invoice.payment_method
 
-    // ── Items rows ──
+    // ── Items rows — no currency symbol in table ──
     const itemRows = (invoice.items ?? []).map((item, i) => `
         <tr>
             <td>${fn(i + 1)}</td>
-            <td style="text-align:right">${item.product_name ?? item.name ?? ''}</td>
+            <td class="name">${item.product_name ?? item.name ?? ''}</td>
             <td>${fn(item.quantity)}</td>
-            <td>${fc(item.price)}</td>
-            <td>${fc(parseFloat(item.price) * parseFloat(item.quantity))}</td>
+            <td>${fd2(item.price)}</td>
+            <td>${fd2(parseFloat(item.price) * parseFloat(item.quantity))}</td>
         </tr>`).join('')
 
     // ── Totals ──
@@ -212,21 +191,19 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
 
     <!-- Header -->
     <div class="invoice-header">
-        <h2>🛒 ${storeName}</h2>
+        <h2> ${storeName}</h2>
         <div class="invoice-title">فاتورة رقم: #${fn(invoice.id)}</div>
     </div>
 
     <!-- Details -->
     <div class="invoice-details">
-        <div class="row">
-            <div>
-                <div class="info-row"><span>التاريخ:</span><span>${fd(invoice.created_at)}</span></div>
-                <div class="info-row"><span>الوقت:</span><span>${ft(invoice.created_at)}</span></div>
-                <div class="info-row"><span>الكاشير:</span><span>${invoice.cashier_name ?? ''}</span></div>
-            </div>
-            <div>
-                <div class="info-row"><span>طريقة الدفع:</span><span>${payLabel}</span></div>
-            </div>
+        <div class="info-row">
+            <span><span class="lbl">التاريخ:</span> ${fd(invoice.created_at)}</span>
+            <span><span class="lbl">طريقة الدفع:</span> ${payLabel}</span>
+        </div>
+        <div class="info-row">
+            <span><span class="lbl">الوقت:</span> ${ft(invoice.created_at)}</span>
+            <span><span class="lbl">الكاشير:</span> ${invoice.cashier_name ?? ''}</span>
         </div>
     </div>
 

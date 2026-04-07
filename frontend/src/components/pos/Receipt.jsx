@@ -99,28 +99,27 @@ export default function Receipt({ invoice, change, onClose }) {
                     maxHeight: '55vh', overflowY: 'auto',
                 }}>
                     {/* Header */}
-                    <div style={{ textAlign: 'center', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1.5px solid #000' }}>
-                        <div style={{ fontWeight: 900, fontSize: '1rem' }}> {storeName || 'سوبر ماركت'}</div>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 700 }}>
-                            فاتورة رقم: #{formatNumber(invoice.id)}
+                    <div style={{ textAlign: 'center', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1.5px solid #000' }}>
+                        <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>🛒 {storeName || 'سوبر ماركت'}</div>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>فاتورة رقم: #{formatNumber(invoice.id)}</div>
+                    </div>
+
+                    {/* Info rows — time + cashier on same line */}
+                    <div style={{ marginBottom: '6px', fontSize: '0.72rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                            <span><strong>التاريخ:</strong> {formatDate(invoice.created_at)}</span>
+                            <span><strong>طريقة الدفع:</strong> {METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                            <span><strong>الوقت:</strong> {new Date(invoice.created_at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span><strong>الكاشير:</strong> {invoice.cashier_name ?? '—'}</span>
                         </div>
                     </div>
 
-                    {/* Info rows */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '8px', paddingBottom: '4px' }}>
-                        <div>
-                            <InfoRow label="التاريخ" value={formatDate(invoice.created_at)} />
-                            <InfoRow label="الكاشير" value={invoice.cashier_name ?? '—'} />
-                        </div>
-                        <div>
-                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method} />
-                        </div>
-                    </div>
-
-                    {/* Items table */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '8px' }}>
+                    {/* Items table — no currency symbol in price/total columns */}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px', fontSize: '0.7rem' }}>
                         <thead>
-                            <tr style={{ background: '#f8f8f8' }}>
+                            <tr style={{ background: '#f0f0f0' }}>
                                 <Th>#</Th>
                                 <Th align="right">المنتج</Th>
                                 <Th>الكمية</Th>
@@ -134,8 +133,8 @@ export default function Receipt({ invoice, change, onClose }) {
                                     <Td>{formatNumber(i + 1)}</Td>
                                     <Td align="right">{item.product_name ?? item.name}</Td>
                                     <Td>{formatNumber(item.quantity)}</Td>
-                                    <Td>{formatCurrency(item.price)}</Td>
-                                    <Td>{formatCurrency(parseFloat(item.price) * parseFloat(item.quantity))}</Td>
+                                    <Td>{formatNumber(parseFloat(item.price).toFixed(2))}</Td>
+                                    <Td>{formatNumber((parseFloat(item.price) * parseFloat(item.quantity)).toFixed(2))}</Td>
                                 </tr>
                             ))}
                         </tbody>
