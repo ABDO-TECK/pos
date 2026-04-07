@@ -1,0 +1,65 @@
+<?php
+
+class AuthMiddleware {
+
+    public function handle(callable $next): void {
+        $token = $this->extractToken();
+
+        if (!$token) {
+            Response::unauthorized('No authentication token provided');
+        }
+
+        $db   = Database::getInstance();
+        $stmt = $db->prepare(
+            'SELECT t.user_id, t.expires_at, u.role, u.is_active, u.name, u.email
+             FROM tokens t
+             JOIN users u ON u.id = t.user_id
+             WHERE t.token = ?'
+        );
+        $stmt->execute([$token]);
+        $row = $stmt->fetch();
+
+        if (!$row) {
+            Response::unauthorized('Invalid token');
+        }
+
+        if (!$row['is_active']) {
+            Response::unauthorized('Account is disabled');
+        }
+
+        if ($row['expires_at'] && strtotime($row['expires_at']) < time()) {
+            Response::unauthorized('Token expired');
+        }
+
+        // Store auth user in request context
+        $_SERVER['AUTH_USER'] = [
+            'id'    => $row['user_id'],
+            'name'  => $row['name'],
+            'email' => $row['email'],
+            'role'  => $row['role'],
+        ];
+
+        $next();
+    }
+
+    private function extractToken(): ?string {
+        // 1. Standard $_SERVER key (works when .htaccess passes the header)
+        $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+
+        // 2. Fallback: REDIRECT_HTTP_AUTHORIZATION (some Apache configs)
+        if (empty($header)) {
+            $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        }
+
+        // 3. Fallback: apache_request_headers() (works when mod_php is used)
+        if (empty($header) && function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            $header  = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        }
+
+        if (str_starts_with($header, 'Bearer ')) {
+            return substr($header, 7);
+        }
+        return null;
+    }
+}

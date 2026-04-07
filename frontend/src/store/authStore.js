@@ -1,0 +1,41 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { login as loginApi, logout as logoutApi } from '../api/endpoints'
+
+const useAuthStore = create(
+  persist(
+    (set) => ({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      _hasHydrated: false,
+
+      setHasHydrated: (val) => set({ _hasHydrated: val }),
+
+      login: async (email, password) => {
+        const res = await loginApi({ email, password })
+        const { token, user } = res.data.data
+        localStorage.setItem('pos_token', token)
+        set({ user, token, isAuthenticated: true })
+        return user
+      },
+
+      logout: async () => {
+        try { await logoutApi() } catch {}
+        localStorage.removeItem('pos_token')
+        set({ user: null, token: null, isAuthenticated: false })
+      },
+
+      setUser: (user) => set({ user }),
+    }),
+    {
+      name: 'pos_auth',
+      partialize: (s) => ({ user: s.user, token: s.token, isAuthenticated: s.isAuthenticated }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
+    }
+  )
+)
+
+export default useAuthStore

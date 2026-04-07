@@ -1,0 +1,436 @@
+# 🧾 Product Requirements Document (PRD)
+
+## 🛒 Supermarket POS System (PHP Native + React)
+
+---
+
+# 1. 📌 Overview
+
+## 🎯 الهدف
+
+تطوير نظام كاشير (POS) متكامل لإدارة سوبر ماركت يشمل:
+
+* عمليات البيع (Checkout)
+* إدارة المنتجات
+* إدارة المخزون
+* إدارة الموردين
+* التقارير والتحليلات
+* إدارة المستخدمين
+
+## 👥 المستخدمين المستهدفين
+
+* 🧑‍💼 الكاشير
+* 🧑‍💻 مدير النظام
+* 🧑‍💼 صاحب السوبر ماركت
+
+---
+
+# 2. 🧱 System Architecture
+
+## 🔹 Frontend
+
+* React (Vite)
+* إدارة الحالة: Zustand
+* الاتصال: Axios / Fetch
+
+## 🔹 Backend
+
+* PHP Native (Custom MVC Architecture)
+
+## 🔹 Database
+
+* MySQL
+
+## 🔹 Communication
+
+* REST API (JSON)
+
+---
+
+# 3. 🏗️ Backend Architecture (PHP Native)
+
+## 📁 Structure
+
+```bash
+/backend
+ ├── config/
+ ├── core/
+ │    ├── Router.php
+ │    ├── Database.php
+ │    └── Controller.php
+ ├── controllers/
+ ├── models/
+ ├── middleware/
+ ├── routes/
+ └── helpers/
+```
+
+---
+
+## ⚙️ Core Systems
+
+### 🔹 Router System
+
+* استقبال جميع الطلبات عبر index.php
+* تحديد route
+* توجيه الطلب للـ Controller المناسب
+
+### 🔹 Controller Layer
+
+* استقبال request
+* تنفيذ logic
+* إرجاع JSON response
+
+### 🔹 Model Layer
+
+* التعامل مع قاعدة البيانات باستخدام PDO
+* تنفيذ Queries بشكل آمن
+
+---
+
+# 4. 🔌 API Design
+
+## 📌 Endpoints
+
+### المنتجات:
+
+* GET /api/products
+* POST /api/products
+* PUT /api/products/{id}
+* DELETE /api/products/{id}
+
+### المبيعات:
+
+* POST /api/sales
+
+### التقارير:
+
+* GET /api/reports/daily
+* GET /api/reports/monthly
+
+### المستخدمين:
+
+* POST /api/login
+* GET /api/user
+
+---
+
+## 📦 Response Format
+
+```json
+{
+  "status": "success",
+  "data": {}
+}
+```
+
+أو
+
+```json
+{
+  "status": "error",
+  "message": "Error message"
+}
+```
+
+---
+
+# 5. 🛒 Core Modules
+
+---
+
+## 5.1 🛒 POS / Checkout System
+
+### 📌 الوصف:
+
+الشاشة الأساسية للبيع — يجب أن تكون ultra fast.
+
+### ⚙️ الوظائف:
+
+#### 🔹 Barcode Scanning
+
+* إدخال barcode في input
+* React يبحث محليًا أو عبر API
+* إضافة المنتج فورًا
+
+#### 🔹 Cart System
+
+* قائمة المنتجات المختارة
+* تعديل الكمية (+ / -)
+* حذف منتج
+
+#### 🔹 Pricing Engine
+
+* حساب:
+
+  * subtotal
+  * discount
+  * tax
+  * total
+
+#### 🔹 Payment System
+
+* Cash / Card
+* حساب الباقي
+
+#### 🔹 Order Completion
+
+* إرسال الطلب إلى API
+* حفظ الفاتورة
+* طباعة الفاتورة
+
+---
+
+## 5.2 📦 Product Management
+
+### ⚙️ الوظائف:
+
+* إضافة منتج
+* تعديل / حذف
+* البحث بالاسم أو barcode
+
+### 📊 Fields:
+
+* name
+* barcode
+* price
+* cost
+* quantity
+* category_id
+
+---
+
+## 5.3 📊 Inventory Management
+
+### ⚙️ الوظائف:
+
+* خصم تلقائي بعد البيع
+* تنبيه low stock
+* جرد يدوي
+
+---
+
+## 5.4 🧾 Invoice System
+
+### ⚙️ الوظائف:
+
+* إنشاء فاتورة
+* حفظ المنتجات والكميات
+* طباعة receipt
+
+---
+
+## 5.5 🚚 Supplier Management
+
+### ⚙️ الوظائف:
+
+* إضافة مورد
+* تسجيل عمليات الشراء
+* تحديث المخزون تلقائي
+
+---
+
+## 5.6 👤 User Management
+
+### ⚙️ الوظائف:
+
+* تسجيل دخول
+* Roles:
+
+  * Admin
+  * Cashier
+
+---
+
+## 5.7 📈 Reports
+
+### ⚙️ الوظائف:
+
+* Daily sales
+* Monthly sales
+* Top products
+* Profit
+
+---
+
+# 6. 🎨 UI / UX Design
+
+## 🖥️ POS Layout
+
+```plaintext
+---------------------------------
+| Barcode Input                |
+---------------------------------
+| Products       | Cart        |
+| List           | Items       |
+|                |             |
+---------------------------------
+| Total | Payment | Checkout  |
+---------------------------------
+```
+
+---
+
+## 🎯 UX Rules
+
+* بدون Reload
+* سرعة عالية جدًا
+* دعم Keyboard
+* صوت عند scan
+* Auto focus على input
+
+---
+
+## 🎨 Color Palette
+
+* Primary: #22c55e (Green)
+* Secondary: #3b82f6 (Blue)
+* Danger: #ef4444 (Red)
+* Background: #f9fafb
+
+---
+
+## 🧱 UI Components
+
+* Buttons: واضحة وكبيرة
+* Inputs: مناسبة للكاشير
+* Tables: بسيطة وسريعة
+
+---
+
+# 7. 🧠 Database Design
+
+## Tables:
+
+### products
+
+* id
+* name
+* barcode
+* price
+* cost
+* quantity
+* category_id
+
+---
+
+### invoices
+
+* id
+* total
+* payment_method
+* created_at
+
+---
+
+### invoice_items
+
+* id
+* invoice_id
+* product_id
+* quantity
+* price
+
+---
+
+### users
+
+* id
+* name
+* email
+* password
+* role
+
+---
+
+### tokens
+
+* id
+* user_id
+* token
+
+---
+
+### suppliers
+
+* id
+* name
+* phone
+
+---
+
+### purchases
+
+* id
+* supplier_id
+* total
+
+---
+
+# 8. 🔐 Security
+
+* Password hashing (password_hash)
+* Token-based auth
+* Input validation
+* SQL Injection protection (PDO)
+
+---
+
+# 9. ⚡ Performance
+
+* React يتحكم في UI
+* PHP API فقط
+* Queries محسنة
+* Indexing في DB
+
+---
+
+# 10. 📴 Offline Support
+
+* IndexedDB
+* Sync عند رجوع الإنترنت
+
+---
+
+# 11. ❗ Error Handling
+
+* JSON responses
+* Logging للأخطاء
+
+---
+
+# 12. 🚀 Future Features
+
+* Mobile App (React Native)
+* AI Analytics
+* Multi-branch system
+* Loyalty system
+
+---
+
+# 13. 📅 Roadmap
+
+## Phase 1:
+
+* POS
+* Products
+* Inventory
+
+## Phase 2:
+
+* Suppliers
+* Reports
+
+## Phase 3:
+
+* Offline
+* Optimization
+
+---
+
+# 🏁 Final Notes
+
+* السرعة أهم من أي شيء
+* الكاشير لازم يكون بدون Lag
+* التصميم بسيط وعملي
+* كل العمليات تكون فورية

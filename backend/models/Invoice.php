@@ -1,0 +1,152 @@
+<?php
+
+class Invoice {
+    private PDO $db;
+
+    public function __construct() {
+        $this->db = Database::getInstance();
+    }
+
+    public function all(array $filters = []): array {
+        $where  = ['1=1'];
+        $params = [];
+
+        if (!empty($filters['date'])) {
+            $where[]        = 'DATE(i.created_at) = :date';
+            $params['date'] = $filters['date'];
+        }
+        if (!empty($filters['month']) && !empty($filters['year'])) {
+            $where[]         = 'MONTH(i.created_at) = :month AND YEAR(i.created_at) = :year';
+            $params['month'] = $filters['month'];
+            $params['year']  = $filters['year'];
+        }
+
+        $sql = 'SELECT i.*, u.name AS cashier_name
+                FROM invoices i
+                JOIN users u ON u.id = i.user_id
+                WHERE ' . implode(' AND ', $where) . '
+                ORDER BY i.created_at DESC
+                LIMIT 200';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function findById(int $id): ?array {
+        $stmt = $this->db->prepare(
+            'SELECT i.*, u.name AS cashier_name
+             FROM invoices i
+             JOIN users u ON u.id = i.user_id
+             WHERE i.id = ?'
+        );
+        $stmt->execute([$id]);
+        $invoice = $stmt->fetch();
+        if (!$invoice) return null;
+
+        $invoice['items'] = $this->getItems($id);
+        return $invoice;
+    }
+
+    public function getItems(int $invoiceId): array {
+        $stmt = $this->db->prepare(
+            'SELECT ii.*, p.name AS product_name, p.barcode
+             FROM invoice_items ii
+             JOIN products p ON p.id = ii.product_id
+             WHERE ii.invoice_id = ?'
+        );
+        $stmt->execute([$invoiceId]);
+        return $stmt->fetchAll();
+    }
+
+    public function create(array $data): int {
+        $stmt = $this->db->prepare(
+            'INSERT INTO invoices (user_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due)
+             VALUES (:user_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due)'
+        );
+        $stmt->execute([
+            'user_id'        => $data['user_id'],
+            'subtotal'       => $data['subtotal'],
+            'discount'       => $data['discount'] ?? 0,
+            'tax'            => $data['tax'] ?? 0,
+            'total'          => $data['total'],
+            'payment_method' => $data['payment_method'] ?? 'cash',
+            'amount_paid'    => $data['amount_paid'] ?? $data['total'],
+            'change_due'     => $data['change_due'] ?? 0,
+        ]);
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function addItem(int $invoiceId, array $item): void {
+        $stmt = $this->db->prepare(
+            'INSERT INTO invoice_items (invoice_id, product_id, quantity, price, subtotal)
+             VALUES (:invoice_id, :product_id, :quantity, :price, :subtotal)'
+        );
+        $stmt->execute([
+            'invoice_id' => $invoiceId,
+            'product_id' => $item['product_id'],
+            'quantity'   => $item['quantity'],
+            'price'      => $item['price'],
+            'subtotal'   => $item['quantity'] * $item['price'],
+        ]);
+    }
+
+    public function getDailySummary(string $date): array {
+        $stmt = $this->db->prepare(
+            'SELECT
+                COUNT(*) AS total_invoices,
+                SUM(total) AS total_revenue,
+                SUM(discount) AS total_discount,
+                SUM(tax) AS total_tax,
+                SUM(total - tax) AS net_revenue
+             FROM invoices
+             WHERE DATE(created_at) = ? AND status = "completed"'
+        );
+        $stmt->execute([$date]);
+        return $stmt->fetch() ?: [];
+    }
+
+    public function getMonthlySummary(int $month, int $year): array {
+        $stmt = $this->db->prepare(
+            'SELECT
+                DATE(created_at) AS date,
+                COUNT(*) AS total_invoices,
+                SUM(total) AS total_revenue
+             FROM invoices
+             WHERE MONTH(created_at) = ? AND YEAR(created_at) = ? AND status = "completed"
+             GROUP BY DATE(created_at)
+             ORDER BY date ASC'
+        );
+        $stmt->execute([$month, $year]);
+        return $stmt->fetchAll();
+    }
+
+    public function getTopProducts(int $limit = 10, ?string $fromDate = null, ?string $toDate = null): array {
+        $where  = ['1=1'];
+        $params = [];
+        if ($fromDate) {
+            $where[]           = 'i.created_at >= :from';
+            $params['from']    = $fromDate . ' 00:00:00';
+        }
+        if ($toDate) {
+            $where[]         = 'i.created_at <= :to';
+            $params['to']    = $toDate . ' 23:59:59';
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT p.id, p.name, p.barcode,
+                    SUM(ii.quantity) AS total_sold,
+                    SUM(ii.subtotal) AS total_revenue,
+                    SUM((ii.price - p.cost) * ii.quantity) AS total_profit
+             FROM invoice_items ii
+             JOIN invoices i ON i.id = ii.invoice_id AND i.status = "completed"
+             JOIN products p ON p.id = ii.product_id
+             WHERE ' . implode(' AND ', $where) . '
+             GROUP BY p.id
+             ORDER BY total_sold DESC
+             LIMIT ' . (int)$limit
+        );
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+}

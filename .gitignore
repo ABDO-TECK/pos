@@ -1,0 +1,32 @@
+# ── Private keys & secrets ─────────────────────────────
+private-key.pem
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# ── Frontend ────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+frontend/*.local
+
+# ── Backend / PHP ───────────────────────────────────────
+backend/cache/
+backend/logs/
+backend/*.log
+
+# ── Database ────────────────────────────────────────────
+database/*.sql.bak
+database/backups/
+
+# ── OS / Editor ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
