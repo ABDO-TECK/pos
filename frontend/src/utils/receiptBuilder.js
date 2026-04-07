@@ -244,13 +244,12 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
  * Works correctly from inside modals because the content is in a separate window.
  */
 export function browserPrint(invoice, change, settings) {
-    const html = buildReceiptHTML(invoice, change, settings)
-    const win  = window.open('', '_blank', 'width=420,height=700,scrollbars=yes')
+    const html    = buildReceiptHTML(invoice, change, settings)
+    const win     = window.open('', '_blank', 'width=420,height=700,scrollbars=yes')
     if (!win) { alert('يرجى السماح بالنوافذ المنبثقة لهذا الموقع'); return }
     win.document.open()
     win.document.write(html)
     win.document.close()
-    win.addEventListener('load', () => { win.focus(); win.print(); })
-    // Fallback if load event doesn't fire
-    setTimeout(() => { try { win.focus(); win.print() } catch { /* ignore */ } }, 800)
+    // Use only one print trigger to avoid double dialog
+    win.addEventListener('load', () => { win.focus(); win.print() })
 }

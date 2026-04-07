@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Eye, X } from 'lucide-react'
+import { Eye, X, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getSales, getSale } from '../api/endpoints'
 import { formatCurrency, formatDate, formatNumber } from '../utils/formatters'
+import { browserPrint } from '../utils/receiptBuilder'
+import useSettingsStore from '../store/settingsStore'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -19,6 +21,7 @@ export default function Sales() {
   const [detailLoading, setDL]  = useState(false)
   const [filters, setFilters]   = useState({ date: '', month: '', year: '' })
   const searchTimer             = useRef(null)
+  const settings                = useSettingsStore()
 
   const load = async (f = filters) => {
     setLoading(true)
@@ -152,7 +155,22 @@ export default function Sales() {
               <h2 style={{ fontWeight: 700, fontSize: '1.1rem' }}>
                 {selected ? `فاتورة #${formatNumber(selected.id)}` : 'جاري التحميل…'}
               </h2>
-              <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                {selected && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => browserPrint(
+                      { ...selected, items: (selected.items ?? []).map(i => ({ ...i, product_name: i.product_name ?? i.name })) },
+                      parseFloat(selected.change_due) || 0,
+                      settings
+                    )}
+                    title="طباعة الفاتورة"
+                  >
+                    <Printer size={15} /> طباعة
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
+              </div>
             </div>
 
             {detailLoading && (

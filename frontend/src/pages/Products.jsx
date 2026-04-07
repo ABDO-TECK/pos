@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse } from 'lucide-react'
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
   getLowStock,
 } from '../api/endpoints'
+
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 
@@ -14,7 +15,7 @@ export default function Products() {
   const [tab, setTab] = useState('products')
 
   // ── Products ───────────────────────────────────────────────
-  const [products,        setProducts]        = useState([])
+  const [allProducts,     setAllProducts]     = useState([])   // full list from API
   const [search,          setSearch]          = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [productModal,    setProductModal]    = useState(null)
@@ -22,7 +23,14 @@ export default function Products() {
   const [editProductId,   setEditProductId]   = useState(null)
   const [savingProduct,   setSavingProduct]   = useState(false)
   const [lowStock,        setLowStock]        = useState([])
-  const searchTimer = useRef(null)
+
+  // Derived: client-side filtering (instant, no debounce needed)
+  const products = search.trim()
+    ? allProducts.filter(p =>
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.barcode && p.barcode.includes(search))
+      )
+    : allProducts
 
   // ── Categories ─────────────────────────────────────────────
   const [categories,        setCategories]        = useState([])
@@ -33,9 +41,9 @@ export default function Products() {
   const [savingCategory,    setSavingCategory]    = useState(false)
 
   // ── Load ───────────────────────────────────────────────────
-  const loadProducts = async (s = '') => {
+  const loadProducts = async () => {
     setLoadingProducts(true)
-    try { setProducts((await getProducts({ search: s })).data.data) }
+    try { setAllProducts((await getProducts({ limit: 9999 })).data.data ?? []) }
     finally { setLoadingProducts(false) }
   }
 
@@ -46,9 +54,10 @@ export default function Products() {
   }
 
   useEffect(() => {
-    loadProducts()
-    loadCategories()
-    getLowStock().then(r => setLowStock(r.data.data ?? []))
+      loadProducts()
+      loadCategories()
+      getLowStock().then(r => setLowStock(r.data.data ?? []))
+
   }, [])
 
   // ── Product actions ────────────────────────────────────────
@@ -61,14 +70,14 @@ export default function Products() {
       if (productModal === 'create') { await createProduct(productForm); toast.success('تم إضافة المنتج') }
       else { await updateProduct(editProductId, productForm); toast.success('تم تحديث المنتج') }
       setProductModal(null)
-      loadProducts(search)
+      loadProducts()
     } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
     finally { setSavingProduct(false) }
   }
 
   const handleDeleteProduct = async (id, name) => {
     if (!confirm(`هل تريد حذف "${name}"؟`)) return
-    try { await deleteProduct(id); toast.success('تم حذف المنتج'); loadProducts(search) }
+    try { await deleteProduct(id); toast.success('تم حذف المنتج'); loadProducts() }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
@@ -89,7 +98,7 @@ export default function Products() {
 
   const handleDeleteCategory = async (id, name) => {
     if (!confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`)) return
-    try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts(search) }
+    try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
@@ -167,11 +176,7 @@ export default function Products() {
                 className="input" style={{ paddingRight: '2.5rem' }}
                 placeholder="بحث بالاسم أو الباركود..."
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  clearTimeout(searchTimer.current)
-                  searchTimer.current = setTimeout(() => loadProducts(e.target.value), 400)
-                }}
+                onChange={(e) => setSearch(e.target.value)}
               />
             </div>
           </div>

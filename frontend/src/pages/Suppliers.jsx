@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, Plus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
+import { Search, Plus, Trash2, ShoppingCart, Check, X, Package, Scan } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
@@ -126,16 +126,6 @@ function ReceiveGoods() {
         <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
       </div>
 
-      {/* Search */}
-      <div style={{ position: 'relative', marginBottom: '0.6rem', flexShrink: 0 }}>
-        <Search size={16} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
-        <input
-          type="text" placeholder="بحث بالاسم أو الباركود…" className="input"
-          style={{ paddingRight: '2.5rem' }}
-          value={search} onChange={e => handleSearch(e.target.value)}
-        />
-      </div>
-
       {/* Grid */}
       <div className="product-grid" style={{ overflowY: 'auto', flex: 1, alignContent: 'start' }}>
         {loading ? (
@@ -224,6 +214,28 @@ function ReceiveGoods() {
 
   return (
     <>
+      {/* ── Search bar — top of page like POS ── */}
+      <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', flexShrink: 0 }}>
+        <div style={{ position: 'relative' }}>
+          <Scan
+            size={20}
+            style={{
+              position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+              right: '1rem', color: 'var(--text-muted)',
+              transition: 'color .2s', pointerEvents: 'none',
+            }}
+          />
+          <input
+            className="input input-lg"
+            style={{ paddingRight: '2.8rem', paddingLeft: '1rem' }}
+            placeholder="امسح الباركود أو اكتب اسم المنتج..."
+            value={search}
+            onChange={e => handleSearch(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
       {/* ── Desktop layout ── */}
       <div className="sup-desktop">
         {ProductsPanel}
