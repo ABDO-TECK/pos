@@ -24,15 +24,17 @@ class ReportController extends Controller {
         $year  = (int)$this->getParam('year', date('Y'));
         $data  = $this->invoiceModel->getMonthlySummary($month, $year);
 
-        $totalRevenue = array_sum(array_column($data, 'total_revenue'));
+        $totalRevenue  = array_sum(array_column($data, 'total_revenue'));
         $totalInvoices = array_sum(array_column($data, 'total_invoices'));
+        $totalProfit   = $this->invoiceModel->getTotalProfitForMonth($month, $year);
 
         Response::success([
-            'month'          => $month,
-            'year'           => $year,
-            'total_revenue'  => $totalRevenue,
-            'total_invoices' => $totalInvoices,
-            'daily_breakdown'=> $data,
+            'month'           => $month,
+            'year'            => $year,
+            'total_revenue'   => $totalRevenue,
+            'total_invoices'  => $totalInvoices,
+            'total_profit'    => $totalProfit,
+            'daily_breakdown' => $data,
         ]);
     }
 
@@ -134,19 +136,14 @@ class ReportController extends Controller {
             'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
         )->fetchColumn();
 
-        // Monthly profit
-        $monthProfit = $db->query(
-            'SELECT COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0)
-             FROM invoice_items ii
-             JOIN invoices i ON i.id = ii.invoice_id AND i.status="completed"
-             JOIN products p ON p.id = ii.product_id
-             WHERE MONTH(i.created_at) = MONTH(CURDATE()) AND YEAR(i.created_at) = YEAR(CURDATE())'
-        )->fetchColumn();
+        $monthProfit = $this->invoiceModel->getTotalProfitForMonth((int)date('n'), (int)date('Y'));
+        $todayProfit = $this->invoiceModel->getTotalProfitForDate(date('Y-m-d'));
 
         Response::success([
             'today_revenue'  => (float)$todayRevenue,
             'month_revenue'  => (float)$monthRevenue,
-            'month_profit'   => (float)$monthProfit,
+            'today_profit'   => $todayProfit,
+            'month_profit'   => $monthProfit,
             'today_invoices' => (int)$todayInvoices,
             'total_products' => (int)$totalProducts,
             'low_stock_count'=> (int)$lowStockCount,

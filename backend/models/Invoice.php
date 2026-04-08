@@ -131,7 +131,34 @@ class Invoice {
              WHERE DATE(created_at) = ? AND status = "completed"'
         );
         $stmt->execute([$date]);
-        return $stmt->fetch() ?: [];
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $row['total_profit'] = $this->getTotalProfitForDate($date);
+        return $row;
+    }
+
+    /** صافي الربح من البنود (سعر البيع − التكلفة) × الكمية — فواتير مكتملة فقط */
+    public function getTotalProfitForDate(string $date): float {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0)
+             FROM invoice_items ii
+             INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             INNER JOIN products p ON p.id = ii.product_id
+             WHERE DATE(inv.created_at) = ?'
+        );
+        $stmt->execute([$date]);
+        return (float)$stmt->fetchColumn();
+    }
+
+    public function getTotalProfitForMonth(int $month, int $year): float {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0)
+             FROM invoice_items ii
+             INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             INNER JOIN products p ON p.id = ii.product_id
+             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
+        );
+        $stmt->execute([$month, $year]);
+        return (float)$stmt->fetchColumn();
     }
 
     public function getMonthlySummary(int $month, int $year): array {
