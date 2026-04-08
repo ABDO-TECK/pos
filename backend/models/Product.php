@@ -184,6 +184,25 @@ class Product {
         ]);
     }
 
+    /**
+     * أسطر تمنع حذف المنتج بسبب مفاتيح أجنبية (فواتير، مشتريات).
+     *
+     * @return array{invoice_items: int, purchases: int}
+     */
+    public function referenceCounts(int $id): array {
+        $stmt = $this->db->prepare(
+            'SELECT
+                (SELECT COUNT(*) FROM invoice_items WHERE product_id = ?) AS invoice_items,
+                (SELECT COUNT(*) FROM purchases WHERE product_id = ?) AS purchases'
+        );
+        $stmt->execute([$id, $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        return [
+            'invoice_items' => (int) ($row['invoice_items'] ?? 0),
+            'purchases'     => (int) ($row['purchases'] ?? 0),
+        ];
+    }
+
     public function delete(int $id): void {
         $this->db->prepare('DELETE FROM products WHERE id = ?')->execute([$id]);
     }

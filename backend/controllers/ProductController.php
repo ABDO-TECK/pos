@@ -101,12 +101,42 @@ class ProductController extends Controller {
     }
 
     public function destroy(string $id): void {
-        $product = $this->productModel->findById((int) $id);
+        $pid     = (int) $id;
+        $product = $this->productModel->findById($pid);
         if (!$product) {
             Response::notFound('Product not found');
         }
 
-        $this->productModel->delete((int) $id);
+        $refs = $this->productModel->referenceCounts($pid);
+        if ($refs['invoice_items'] > 0 || $refs['purchases'] > 0) {
+            $parts = [];
+            if ($refs['invoice_items'] > 0) {
+                $parts[] = sprintf('موجود في %d سطر من فواتير البيع', $refs['invoice_items']);
+            }
+            if ($refs['purchases'] > 0) {
+                $parts[] = sprintf('موجود في %d سجل مشتريات', $refs['purchases']);
+            }
+            $detail = implode('، ', $parts);
+            Response::error(
+                'لا يمكن حذف المنتج: ' . $detail
+                . '. احذف الفواتير المرتبطة من صفحة المبيعات أو عدّل سجلات المشتريات، أو أبقِ المنتج للحفاظ على السجل المحاسبي.',
+                409
+            );
+        }
+
+        try {
+            $this->productModel->delete($pid);
+        } catch (PDOException $e) {
+            if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
+                Response::error(
+                    'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.',
+                    409
+                );
+            }
+            error_log($e->getMessage());
+            Response::serverError('Failed to delete product');
+        }
+
         Response::success(null, 'Product deleted');
     }
 }
