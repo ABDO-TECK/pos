@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ShoppingCart, Trash2, CreditCard, Grid3X3 } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import Cart from '../components/pos/Cart'
@@ -15,10 +15,29 @@ export default function POS() {
   const [invoice, setInvoice]         = useState(null)
   const [change, setChange]           = useState(0)
   const [mobileTab, setMobileTab]     = useState('products') // 'products' | 'cart'
+  const [productSearch, setProductSearch] = useState('')
+  const [barcodeInputKey, setBarcodeInputKey] = useState(0)
 
   const { items, clearCart, itemCount } = useCartStore()
   const { fetchProducts, products }     = useProductStore()
   const { taxEnabled, taxRate }         = useSettingsStore()
+
+  const filteredProducts = useMemo(() => {
+    const t = productSearch.trim().toLowerCase()
+    if (!t) return products
+    return products.filter((p) => {
+      const nm = (p.name || '').toLowerCase().includes(t)
+      const bc = (p.barcode || '').toLowerCase().includes(t)
+      const ex = (p.additional_barcodes || []).some((b) => String(b).toLowerCase().includes(t))
+      return nm || bc || ex
+    })
+  }, [products, productSearch])
+
+  /** بدون بحث: حد معقول للأداء؛ مع بحث: كل النتائج المطابقة */
+  const gridProducts = useMemo(() => {
+    if (productSearch.trim()) return filteredProducts
+    return filteredProducts.slice(0, 100)
+  }, [filteredProducts, productSearch])
 
   const subtotal = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0)
   const rate     = taxEnabled ? taxRate / 100 : 0
@@ -33,6 +52,8 @@ export default function POS() {
     setShowPayment(false)
     clearCart()
     setMobileTab('products')
+    setProductSearch('')
+    setBarcodeInputKey((k) => k + 1)
   }
 
   // Switch to cart tab automatically when an item is added on mobile
@@ -47,7 +68,7 @@ export default function POS() {
       <div className="pos-desktop">
         {/* Barcode */}
         <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem' }}>
-          <BarcodeInput />
+          <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
         </div>
 
         <div style={{ display: 'flex', flex: 1, gap: '0.75rem', overflow: 'hidden', minHeight: 0 }}>
@@ -55,10 +76,14 @@ export default function POS() {
           <div className="card pos-products-panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700 }}>المنتجات</h3>
-              <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
+              <span className="badge badge-gray">
+                {productSearch.trim()
+                  ? `${formatNumber(filteredProducts.length)} مطابقة`
+                  : `${formatNumber(products.length)} منتج`}
+              </span>
             </div>
             <div className="product-grid">
-              {products.slice(0, 60).map(p => (
+              {gridProducts.map(p => (
                 <ProductCard key={p.id} product={p} onAdd={() => handleAddItem(p)} />
               ))}
             </div>
@@ -86,7 +111,7 @@ export default function POS() {
       <div className="pos-mobile">
         {/* Barcode */}
         <div className="card" style={{ padding: '0.6rem', marginBottom: '0.6rem' }}>
-          <BarcodeInput />
+          <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
         </div>
 
         {/* Tab content */}
@@ -95,10 +120,14 @@ export default function POS() {
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 700 }}>المنتجات</h3>
-                <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
+                <span className="badge badge-gray">
+                  {productSearch.trim()
+                    ? `${formatNumber(filteredProducts.length)} مطابقة`
+                    : `${formatNumber(products.length)} منتج`}
+                </span>
               </div>
               <div className="product-grid">
-                {products.slice(0, 60).map(p => (
+                {gridProducts.map(p => (
                   <ProductCard key={p.id} product={p} onAdd={() => {
                     handleAddItem(p)
                     if (itemCount >= 0) setMobileTab('cart')

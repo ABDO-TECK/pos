@@ -37,14 +37,22 @@ export default function Cart() {
         <div
           key={item.id}
           style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
             padding: '0.6rem 0.75rem', background: 'var(--surface)',
             borderRadius: '0.4rem', border: '1px solid var(--border)',
           }}
         >
-          {/* Product info */}
+          {/* Product info — اسم كامل متعدد الأسطر بدون اقتصاص */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: '0.88rem',
+                lineHeight: 1.4,
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+              }}
+            >
               {item.name}
             </div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{item.barcode}</div>
@@ -54,7 +62,7 @@ export default function Cart() {
           </div>
 
           {/* Qty controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, marginTop: '0.1rem' }}>
             <button
               className="btn btn-ghost btn-icon"
               style={{ padding: '0.3rem', borderRadius: '0.3rem' }}
@@ -83,14 +91,14 @@ export default function Cart() {
           </div>
 
           {/* Unit price */}
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', minWidth: '55px', textAlign: 'left', flexShrink: 0 }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', minWidth: '55px', textAlign: 'left', flexShrink: 0, marginTop: '0.1rem' }}>
             {formatCurrency(item.price)}
           </div>
 
           {/* Delete */}
           <button
             className="btn btn-icon"
-            style={{ padding: '0.3rem', color: 'var(--danger)', background: 'transparent', border: 'none', flexShrink: 0 }}
+            style={{ padding: '0.3rem', color: 'var(--danger)', background: 'transparent', border: 'none', flexShrink: 0, marginTop: '0.1rem' }}
             onClick={() => removeItem(item.id)}
           >
             <Trash2 size={16} />

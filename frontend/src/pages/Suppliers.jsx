@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { Search, Plus, Trash2, ShoppingCart, Check, X, Package, Scan } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Trash2, ShoppingCart, Check, X, Package, Scan } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
@@ -54,32 +54,31 @@ export default function Suppliers() {
 function ReceiveGoods() {
   const [suppliers, setSuppliers]   = useState([])
   const [supplierId, setSupplierId] = useState('')
-  const [products, setProducts]     = useState([])
+  const [allProducts, setAllProducts] = useState([])
   const [search, setSearch]         = useState('')
   const [cart, setCart]             = useState([])
   const [loading, setLoading]       = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [mobileTab, setMobileTab]   = useState('products') // mobile only
-  const searchTimer                 = useRef(null)
+
+  const q = search.trim().toLowerCase()
+  const products = q
+    ? allProducts.filter((p) => {
+        const nm = (p.name || '').toLowerCase().includes(q)
+        const bc = (p.barcode || '').toLowerCase().includes(q)
+        const ex = (p.additional_barcodes || []).some((b) => String(b).toLowerCase().includes(q))
+        return nm || bc || ex
+      })
+    : allProducts
 
   useEffect(() => {
     getSuppliers().then(r => setSuppliers(r.data.data ?? []))
-    loadProducts('')
-  }, [])
-
-  const loadProducts = (q) => {
     setLoading(true)
-    getProducts({ search: q, limit: 100 })
-      .then(r => setProducts(r.data.data ?? []))
+    getProducts({ limit: 9999 })
+      .then(r => setAllProducts(r.data.data ?? []))
       .catch(() => toast.error('فشل تحميل المنتجات'))
       .finally(() => setLoading(false))
-  }
-
-  const handleSearch = (val) => {
-    setSearch(val)
-    clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => loadProducts(val), 350)
-  }
+  }, [])
 
   const addToCart = (product) => {
     setCart(prev => {
@@ -230,7 +229,7 @@ function ReceiveGoods() {
             style={{ paddingRight: '2.8rem', paddingLeft: '1rem' }}
             placeholder="امسح الباركود أو اكتب اسم المنتج..."
             value={search}
-            onChange={e => handleSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             autoComplete="off"
           />
         </div>

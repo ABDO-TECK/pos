@@ -23,7 +23,7 @@ const beep = () => {
 // Debounce delay in ms — barcode scanners type all chars in < 100ms then stop
 const SCANNER_DEBOUNCE = 350
 
-export default function BarcodeInput() {
+export default function BarcodeInput({ onFilterChange }) {
   const inputRef      = useRef(null)
   const debounceTimer = useRef(null)
   const lastTypeTime  = useRef(0)
@@ -69,13 +69,15 @@ export default function BarcodeInput() {
     }
 
     setValue('')
+    onFilterChange?.('')
     typeCount.current = 0
     inputRef.current?.focus()
-  }, [addItem, findByBarcode])
+  }, [addItem, findByBarcode, onFilterChange])
 
   const handleChange = (e) => {
     const newVal = e.target.value
     setValue(newVal)
+    onFilterChange?.(newVal)
 
     if (!newVal.trim()) return
 
@@ -110,6 +112,7 @@ export default function BarcodeInput() {
     }
     if (e.key === 'Escape') {
       setValue('')
+      onFilterChange?.('')
       typeCount.current = 0
     }
   }
@@ -139,7 +142,7 @@ export default function BarcodeInput() {
         ref={inputRef}
         className="input input-lg"
         style={{ paddingRight: '2.8rem', paddingLeft: loading ? '2.8rem' : '1rem' }}
-        placeholder="امسح الباركود أو اكتب اسم المنتج واضغط Enter..."
+        placeholder="امسح الباركود، أو اكتب لتصفية المنتجات فوراً، ثم Enter لإضافة بالباركود…"
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
