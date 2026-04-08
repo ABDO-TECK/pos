@@ -51,7 +51,16 @@ class SaleController extends Controller {
             Response::error('Cart cannot be empty', 400);
         }
 
-        $db = Database::getInstance();
+        $replaceInvoiceId = isset($data['invoice_id']) ? (int) $data['invoice_id'] : 0;
+        $existingInvoice  = null;
+        if ($replaceInvoiceId > 0) {
+            $existingInvoice = $this->invoiceModel->findById($replaceInvoiceId);
+            if (!$existingInvoice) {
+                Response::notFound('Invoice not found');
+            }
+        }
+
+        $db = $this->db;
 
         // Validate all products and stock before starting transaction
         $enrichedItems = [];
@@ -90,16 +99,33 @@ class SaleController extends Controller {
         // Begin transaction
         $db->beginTransaction();
         try {
-            $invoiceId = $this->invoiceModel->create([
-                'user_id'        => $auth['id'],
-                'subtotal'       => $subtotal,
-                'discount'       => $discount,
-                'tax'            => $tax,
-                'total'          => $total,
-                'payment_method' => $data['payment_method'],
-                'amount_paid'    => $amountPaid,
-                'change_due'     => max(0, $changeDue),
-            ]);
+            if ($replaceInvoiceId > 0) {
+                foreach ($existingInvoice['items'] as $old) {
+                    $this->productModel->incrementQuantity((int) $old['product_id'], (int) $old['quantity']);
+                }
+                $this->invoiceModel->deleteItemsByInvoiceId($replaceInvoiceId);
+                $this->invoiceModel->updateTotals($replaceInvoiceId, [
+                    'subtotal'       => $subtotal,
+                    'discount'       => $discount,
+                    'tax'            => $tax,
+                    'total'          => $total,
+                    'payment_method' => $data['payment_method'],
+                    'amount_paid'    => $amountPaid,
+                    'change_due'     => max(0, $changeDue),
+                ]);
+                $invoiceId = $replaceInvoiceId;
+            } else {
+                $invoiceId = $this->invoiceModel->create([
+                    'user_id'        => $auth['id'],
+                    'subtotal'       => $subtotal,
+                    'discount'       => $discount,
+                    'tax'            => $tax,
+                    'total'          => $total,
+                    'payment_method' => $data['payment_method'],
+                    'amount_paid'    => $amountPaid,
+                    'change_due'     => max(0, $changeDue),
+                ]);
+            }
 
             foreach ($enrichedItems as $item) {
                 $this->invoiceModel->addItem($invoiceId, $item);
@@ -121,10 +147,11 @@ class SaleController extends Controller {
             fn($p) => $p['quantity'] <= $p['low_stock_threshold']
         );
 
+        $isUpdate = $replaceInvoiceId > 0;
         Response::success([
-            'invoice'         => $invoice,
+            'invoice'          => $invoice,
             'low_stock_alerts' => array_values($lowStock),
-        ], 'Sale completed', 201);
+        ], $isUpdate ? 'Invoice updated' : 'Sale completed', $isUpdate ? 200 : 201);
     }
 
     /**

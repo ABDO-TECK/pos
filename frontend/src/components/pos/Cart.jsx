@@ -1,9 +1,9 @@
 import { Trash2, Plus, Minus, ShoppingCart } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
-import { formatCurrency } from '../../utils/formatters'
+import { formatCurrency, formatNumber } from '../../utils/formatters'
 
 export default function Cart() {
-  const { items, removeItem, updateQuantity } = useCartStore()
+  const { items, removeItem, updateQuantity, rebillingInvoiceId } = useCartStore()
 
   if (items.length === 0) {
     return (
@@ -17,6 +17,22 @@ export default function Cart() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto', flex: 1 }}>
+      {rebillingInvoiceId != null && rebillingInvoiceId > 0 && (
+        <div
+          style={{
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            color: '#92400e',
+            background: '#fef9c3',
+            border: '1px solid #fbbf24',
+            borderRadius: 'var(--radius)',
+            padding: '0.45rem 0.6rem',
+            textAlign: 'center',
+          }}
+        >
+          تعديل الفاتورة #{formatNumber(rebillingInvoiceId)} — عند الدفع يُحفظ على نفس رقم الفاتورة
+        </div>
+      )}
       {items.map((item) => (
         <div
           key={item.id}

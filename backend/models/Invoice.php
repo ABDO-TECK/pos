@@ -91,6 +91,34 @@ class Invoice {
         ]);
     }
 
+    public function deleteItemsByInvoiceId(int $invoiceId): void {
+        $this->db->prepare('DELETE FROM invoice_items WHERE invoice_id = ?')->execute([$invoiceId]);
+    }
+
+    public function updateTotals(int $id, array $data): void {
+        $stmt = $this->db->prepare(
+            'UPDATE invoices SET
+                subtotal = :subtotal,
+                discount = :discount,
+                tax = :tax,
+                total = :total,
+                payment_method = :payment_method,
+                amount_paid = :amount_paid,
+                change_due = :change_due
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'id'               => $id,
+            'subtotal'         => $data['subtotal'],
+            'discount'         => $data['discount'] ?? 0,
+            'tax'              => $data['tax'] ?? 0,
+            'total'            => $data['total'],
+            'payment_method'   => $data['payment_method'],
+            'amount_paid'      => $data['amount_paid'],
+            'change_due'       => $data['change_due'] ?? 0,
+        ]);
+    }
+
     public function getDailySummary(string $date): array {
         $stmt = $this->db->prepare(
             'SELECT

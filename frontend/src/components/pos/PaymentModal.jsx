@@ -16,7 +16,7 @@ const PAYMENT_METHODS = [
 ]
 
 export default function PaymentModal({ onClose, onSuccess }) {
-  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod } = useCartStore()
+  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId } = useCartStore()
   const { taxEnabled, taxRate } = useSettingsStore()
 
   const [loading, setLoading]             = useState(false)
@@ -54,13 +54,19 @@ export default function PaymentModal({ onClose, onSuccess }) {
       discount: clampedDiscount,
       payment_method: paymentMethod,
       amount_paid: currentMethod.cashInput ? localAmountPaid : computedTotal,
+      ...(rebillingInvoiceId ? { invoice_id: rebillingInvoiceId } : {}),
     }
 
     setLoading(true)
     try {
       const res = await createSale(salePayload)
       const { invoice, low_stock_alerts } = res.data.data
-      toast.success('تمت عملية البيع بنجاح!', { icon: '🎉', duration: 3000 })
+      toast.success(
+        rebillingInvoiceId
+          ? `تم تحديث الفاتورة #${formatNumber(rebillingInvoiceId)} بنفس الرقم`
+          : 'تمت عملية البيع بنجاح!',
+        { icon: '🎉', duration: 3000 }
+      )
       if (low_stock_alerts?.length > 0) {
         low_stock_alerts.forEach((p) =>
           toast(`تحذير: ${p.name} — كمية منخفضة (${formatNumber(p.quantity)})`, { icon: '⚠️', duration: 5000 })
@@ -85,7 +91,9 @@ export default function PaymentModal({ onClose, onSuccess }) {
       <div className="modal" style={{ maxWidth: '520px' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>إتمام الدفع</h2>
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+            {rebillingInvoiceId ? `تحديث فاتورة #${formatNumber(rebillingInvoiceId)}` : 'إتمام الدفع'}
+          </h2>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 
@@ -170,7 +178,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
           disabled={loading}
         >
           {loading ? <span className="spinner" /> : <CheckCircle2 size={20} />}
-          تأكيد البيع — {formatCurrency(computedTotal)}
+          {rebillingInvoiceId ? 'حفظ التعديل على الفاتورة — ' : 'تأكيد البيع — '}
+          {formatCurrency(computedTotal)}
         </button>
       </div>
     </div>

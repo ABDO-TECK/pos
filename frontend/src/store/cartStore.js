@@ -5,6 +5,8 @@ const useCartStore = create((set, get) => ({
   discount: 0,
   paymentMethod: 'cash',
   amountPaid: 0,
+  /** When set, checkout updates this invoice instead of creating a new one (مرتجع / إعادة فوترة) */
+  rebillingInvoiceId: null,
 
   addItem: (product) => {
     const items = get().items
@@ -26,17 +28,23 @@ const useCartStore = create((set, get) => ({
     }
   },
 
-  removeItem: (id) => set({ items: get().items.filter((i) => i.id !== id) }),
+  removeItem: (id) =>
+    set((state) => {
+      const items = state.items.filter((i) => i.id !== id)
+      return { items, rebillingInvoiceId: items.length === 0 ? null : state.rebillingInvoiceId }
+    }),
 
   updateQuantity: (id, qty) => {
-    if (qty <= 0) {
-      set({ items: get().items.filter((i) => i.id !== id) })
-      return
-    }
-    set({
-      items: get().items.map((i) =>
-        i.id === id ? { ...i, quantity: qty, subtotal: qty * parseFloat(i.price) } : i
-      ),
+    set((state) => {
+      let items
+      if (qty <= 0) {
+        items = state.items.filter((i) => i.id !== id)
+      } else {
+        items = state.items.map((i) =>
+          i.id === id ? { ...i, quantity: qty, subtotal: qty * parseFloat(i.price) } : i
+        )
+      }
+      return { items, rebillingInvoiceId: items.length === 0 ? null : state.rebillingInvoiceId }
     })
   },
 
@@ -44,10 +52,11 @@ const useCartStore = create((set, get) => ({
   setPaymentMethod: (method) => set({ paymentMethod: method }),
   setAmountPaid: (amount) => set({ amountPaid: parseFloat(amount) || 0 }),
 
-  clearCart: () => set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash' }),
+  clearCart: () =>
+    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null }),
 
-  /** Merge invoice lines into cart (same prices/qty as on receipt). Merges qty if product already in cart. */
-  mergeInvoiceLines: (lines) => {
+  /** Merge invoice lines into cart; `invoiceId` links checkout to that invoice (same رقم فاتورة). */
+  mergeInvoiceLines: (lines, invoiceId = null) => {
     if (!lines?.length) return
     set((state) => {
       let items = [...state.items]
@@ -74,7 +83,11 @@ const useCartStore = create((set, get) => ({
           })
         }
       }
-      return { items }
+      const rid = invoiceId != null && invoiceId !== '' ? Number(invoiceId) : null
+      return {
+        items,
+        rebillingInvoiceId: Number.isFinite(rid) && rid > 0 ? rid : state.rebillingInvoiceId,
+      }
     })
   },
 
