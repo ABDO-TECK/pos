@@ -57,6 +57,7 @@ $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddle
 
 // ── Backup ─────────────────────────────────────────────────────
 $router->get('/api/backup', [BackupController::class, 'download', [AuthMiddleware::class, AdminMiddleware::class]]);
+$router->post('/api/backup/restore', [BackupController::class, 'restore', [AuthMiddleware::class, AdminMiddleware::class]]);
 
 // ── Bulk Purchases ─────────────────────────────────────────────
 $router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);

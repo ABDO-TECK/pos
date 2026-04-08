@@ -17,4 +17,9 @@ class Database {
         }
         return self::$instance;
     }
+
+    /** بعد استعادة النسخة الاحتياطية يُفضّل إعادة الاتصال */
+    public static function resetInstance(): void {
+        self::$instance = null;
+    }
 }

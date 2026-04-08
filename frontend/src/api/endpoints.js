@@ -56,6 +56,16 @@ export const deleteUser = (id) => api.delete(`/users/${id}`)
 export const getSettings = () => api.get('/settings')
 export const updateSettings = (data) => api.post('/settings', data)
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
+/** FormData مع الحقل sql_file */
+export const restoreBackup = (formData) =>
+  api.post('/backup/restore', formData, {
+    transformRequest: [
+      (data, headers) => {
+        if (data instanceof FormData) delete headers['Content-Type']
+        return data
+      },
+    ],
+  })
 
 // Purchases (bulk)
 export const createBulkPurchase = (data) => api.post('/purchases/bulk', data)

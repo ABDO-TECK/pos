@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Save, Download, Store, Percent, Database } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Save, Download, Upload, Store, Percent, Database } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { updateSettings, downloadBackup } from '../api/endpoints'
+import { updateSettings, downloadBackup, restoreBackup } from '../api/endpoints'
 import useSettingsStore from '../store/settingsStore'
 
 export default function Settings() {
@@ -10,6 +10,8 @@ export default function Settings() {
   const [form, setForm]       = useState({ store_name: '', tax_enabled: '1', tax_rate: '15' })
   const [saving, setSaving]   = useState(false)
   const [backing, setBacking] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const restoreInputRef = useRef(null)
 
   useEffect(() => {
     fetchSettings().then(() => {
@@ -55,6 +57,43 @@ export default function Settings() {
       toast.error('فشل تحميل النسخة الاحتياطية')
     } finally {
       setBacking(false)
+    }
+  }
+
+  const handleRestorePick = () => restoreInputRef.current?.click()
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.sql')) {
+      toast.error('اختر ملفاً بصيغة .sql')
+      return
+    }
+    if (
+      !confirm(
+        'سيتم استبدال قاعدة البيانات الحالية بالكامل بمحتوى الملف. لن يمكن التراجع تلقائياً. هل تريد المتابعة؟'
+      )
+    ) {
+      return
+    }
+    setRestoring(true)
+    try {
+      const fd = new FormData()
+      fd.append('sql_file', file)
+      await restoreBackup(fd)
+      toast.success('تمت استعادة قاعدة البيانات')
+      await fetchSettings()
+      const s = useSettingsStore.getState()
+      setForm({
+        store_name: s.storeName,
+        tax_enabled: s.taxEnabled ? '1' : '0',
+        tax_rate: String(s.taxRate),
+      })
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'فشلت الاستعادة')
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -125,17 +164,38 @@ export default function Settings() {
       <section className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <SectionTitle icon={<Database size={16}/>} label="النسخ الاحتياطي" />
         <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          تحميل نسخة احتياطية كاملة من قاعدة البيانات بصيغة SQL.
+          تحميل نسخة احتياطية كاملة من قاعدة البيانات بصيغة SQL، أو استعادة نسخة سابقة من ملف تم تصديره من هنا.
         </p>
-        <button
-          onClick={handleBackup}
-          disabled={backing}
-          className="btn btn-secondary"
-          style={{ alignSelf: 'flex-start' }}
-        >
-          {backing ? <span className="spinner" /> : <Download size={16}/>}
-          {backing ? 'جاري التحميل…' : 'تحميل نسخة احتياطية'}
-        </button>
+        <input
+          ref={restoreInputRef}
+          type="file"
+          accept=".sql,text/plain"
+          style={{ display: 'none' }}
+          onChange={handleRestoreFile}
+        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <button
+            type="button"
+            onClick={handleBackup}
+            disabled={backing || restoring}
+            className="btn btn-secondary"
+          >
+            {backing ? <span className="spinner" /> : <Download size={16}/>}
+            {backing ? 'جاري التحميل…' : 'تحميل نسخة احتياطية'}
+          </button>
+          <button
+            type="button"
+            onClick={handleRestorePick}
+            disabled={backing || restoring}
+            className="btn btn-danger"
+          >
+            {restoring ? <span className="spinner" /> : <Upload size={16}/>}
+            {restoring ? 'جاري الاستعادة…' : 'استعادة من ملف SQL'}
+          </button>
+        </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--danger)', margin: 0 }}>
+          تحذير: الاستعادة تمسح البيانات الحالية وتستبدلها بمحتوى الملف. استخدم نسخاً احتياطياً موثوقاً فقط.
+        </p>
       </section>
     </div>
   )
