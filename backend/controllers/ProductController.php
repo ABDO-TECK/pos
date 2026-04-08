@@ -35,15 +35,21 @@ class ProductController extends Controller {
     public function store(): void {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
-            'name'    => 'required',
-            'barcode' => 'required',
-            'price'   => 'required|numeric',
+            'name'  => 'required',
+            'price' => 'required|numeric',
         ]);
         if ($errors) {
             Response::error('Validation failed', 422, $errors);
         }
 
-        $main   = trim($data['barcode']);
+        // توليد باركود تلقائي إذا كان فارغاً
+        $main = trim($data['barcode'] ?? '');
+        $isAutoBarcode = ($main === '');
+        if ($isAutoBarcode) {
+            // باركود مؤقت فريد ريثما نحصل على الـ ID
+            $main = 'TEMP-' . uniqid('', true);
+        }
+
         $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
         $this->productModel->assertBarcodesAvailable(null, $main, $extras);
 
@@ -52,6 +58,12 @@ class ProductController extends Controller {
         try {
             $data['barcode'] = $main;
             $id              = $this->productModel->create($data);
+
+            // استبدال الباركود المؤقت برقم ID (1، 2، 3 ...)
+            if ($isAutoBarcode) {
+                $this->productModel->updateMainBarcode($id, (string)$id);
+            }
+
             $this->productModel->syncAdditionalBarcodes($id, $extras);
             $db->commit();
         } catch (Throwable $e) {
@@ -66,9 +78,8 @@ class ProductController extends Controller {
     public function update(string $id): void {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
-            'name'    => 'required',
-            'barcode' => 'required',
-            'price'   => 'required|numeric',
+            'name'  => 'required',
+            'price' => 'required|numeric',
         ]);
         if ($errors) {
             Response::error('Validation failed', 422, $errors);
@@ -80,7 +91,12 @@ class ProductController extends Controller {
             Response::notFound('Product not found');
         }
 
-        $main   = trim($data['barcode']);
+        // إذا كان الباركود فارغاً احتفظ بالباركود القديم
+        $main = trim($data['barcode'] ?? '');
+        if ($main === '') {
+            $main = $product['barcode'];
+        }
+
         $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
         $this->productModel->assertBarcodesAvailable($pid, $main, $extras);
 

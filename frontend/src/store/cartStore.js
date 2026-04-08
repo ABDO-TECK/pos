@@ -12,6 +12,7 @@ const useCartStore = create((set, get) => ({
     const items = get().items
     // Always store price as a proper float to avoid NaN from API strings
     const price = parseFloat(product.price) || 0
+    const unitsPerBox = Math.max(1, parseInt(product.units_per_box) || 1)
     const existing = items.find((i) => i.id === product.id)
     if (existing) {
       set({
@@ -23,7 +24,7 @@ const useCartStore = create((set, get) => ({
       })
     } else {
       set({
-        items: [...items, { ...product, price, quantity: 1, subtotal: price }],
+        items: [...items, { ...product, price, quantity: 1, subtotal: price, units_per_box: unitsPerBox }],
       })
     }
   },

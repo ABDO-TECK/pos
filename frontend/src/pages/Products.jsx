@@ -16,6 +16,7 @@ const emptyProduct = {
   cost: '',
   quantity: '',
   low_stock_threshold: 5,
+  units_per_box: 1,
   category_id: '',
 }
 
@@ -177,6 +178,7 @@ export default function Products() {
     setProductForm({
       ...p,
       category_id: p.category_id ?? '',
+      units_per_box: p.units_per_box ?? 1,
       barcodes: [p.barcode || '', ...extras],
     })
     setEditProductId(p.id)
@@ -186,10 +188,7 @@ export default function Products() {
   const handleSaveProduct = async () => {
     const raw = Array.isArray(productForm.barcodes) ? productForm.barcodes : [productForm.barcode || '']
     const main = String(raw[0] ?? '').trim()
-    if (!main) {
-      toast.error('الباركود الأساسي مطلوب')
-      return
-    }
+    // الباركود اختياري — إذا كان فارغاً سيُولَّد تلقائياً من الباكند
     const additional_barcodes = raw.slice(1).map((b) => String(b).trim()).filter(Boolean)
     const { barcodes: _b, barcode: _old, ...rest } = productForm
     const payload = { ...rest, barcode: main, additional_barcodes }
@@ -597,9 +596,9 @@ function ProductForm({ form, setForm, categories }) {
         <input className="input" {...f('name')} placeholder="مثال: أرز بسمتي 1كغ" required />
       </div>
       <div style={{ gridColumn: 'span 2' }}>
-        <Label>الباركودات</Label>
+      <Label>الباركود</Label>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
-          الأول إلزامي ولا يمكن حذفه؛ الباركودات الإضافية اختيارية.
+          اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية.
         </p>
         {barcodes.map((bc, idx) => (
           <div
@@ -611,8 +610,7 @@ function ProductForm({ form, setForm, categories }) {
               style={{ flex: 1 }}
               value={bc}
               onChange={(e) => setBarcodeAt(idx, e.target.value)}
-              placeholder={idx === 0 ? 'الباركود الأساسي (إلزامي)' : 'باركود إضافي'}
-              required={idx === 0}
+              placeholder={idx === 0 ? 'باركود المنتج (أو اتركه فارغًا لتوليد تلقائي)' : 'باركود إضافي'}
             />
             {idx > 0 ? (
               <button
@@ -648,6 +646,13 @@ function ProductForm({ form, setForm, categories }) {
       <div>
         <Label>حد التنبيه المنخفض</Label>
         <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
+      </div>
+      <div style={{ gridColumn: 'span 2', background: 'rgba(59,130,246,0.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
+        <Label>📦 عدد القطع في الصندوق</Label>
+        <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
+          عند البيع بالصندوق في نقطة البيع، سيتم إضافة هذا العدد من القطع دفعةً واحدة إلى السلة.
+        </p>
+        <input className="input" type="number" min="1" step="1" {...f('units_per_box')} placeholder="1" />
       </div>
       <div style={{ gridColumn: 'span 2' }}>
         <Label>الفئة</Label>

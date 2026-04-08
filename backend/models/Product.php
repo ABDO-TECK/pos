@@ -145,8 +145,8 @@ class Product {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, barcode, price, cost, quantity, low_stock_threshold, category_id)
-             VALUES (:name, :barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id)'
+            'INSERT INTO products (name, barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box)
+             VALUES (:name, :barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box)'
         );
         $stmt->execute([
             'name'                => $data['name'],
@@ -156,8 +156,14 @@ class Product {
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
+            'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
         ]);
         return (int) $this->db->lastInsertId();
+    }
+
+    /** تحديث الباركود الأساسي فقط (يُستخدم لتعيين رقم ID كباركود تلقائي) */
+    public function updateMainBarcode(int $id, string $barcode): void {
+        $this->db->prepare('UPDATE products SET barcode = ? WHERE id = ?')->execute([$barcode, $id]);
     }
 
     public function update(int $id, array $data): void {
@@ -169,7 +175,8 @@ class Product {
                 cost = :cost,
                 quantity = :quantity,
                 low_stock_threshold = :low_stock_threshold,
-                category_id = :category_id
+                category_id = :category_id,
+                units_per_box = :units_per_box
              WHERE id = :id'
         );
         $stmt->execute([
@@ -180,6 +187,7 @@ class Product {
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
+            'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
             'id'                  => $id,
         ]);
     }

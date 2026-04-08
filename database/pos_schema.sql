@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS products (
     cost  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     quantity INT NOT NULL DEFAULT 0,
     low_stock_threshold INT NOT NULL DEFAULT 5,
+    units_per_box INT NOT NULL DEFAULT 1 COMMENT 'عدد القطع في الصندوق الواحد — للبيع بالكرتون',
     category_id INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
