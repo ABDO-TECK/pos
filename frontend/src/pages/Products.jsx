@@ -9,7 +9,15 @@ import {
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 
-const emptyProduct = { name: '', barcode: '', price: '', cost: '', quantity: '', low_stock_threshold: 5, category_id: '' }
+const emptyProduct = {
+  name: '',
+  barcodes: [''],
+  price: '',
+  cost: '',
+  quantity: '',
+  low_stock_threshold: 5,
+  category_id: '',
+}
 
 export default function Products() {
   const [tab, setTab] = useState('products')
@@ -25,11 +33,12 @@ export default function Products() {
   const [lowStock,        setLowStock]        = useState([])
 
   // Derived: client-side filtering (instant, no debounce needed)
-  const products = search.trim()
-    ? allProducts.filter(p =>
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        (p.barcode && p.barcode.includes(search))
-      )
+  const q = search.trim().toLowerCase()
+  const products = q
+    ? allProducts.filter((p) => {
+        const extra = (p.additional_barcodes || []).some((b) => String(b).toLowerCase().includes(q))
+        return p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.toLowerCase().includes(q)) || extra
+      })
     : allProducts
 
   // ── Categories ─────────────────────────────────────────────
@@ -61,14 +70,42 @@ export default function Products() {
   }, [])
 
   // ── Product actions ────────────────────────────────────────
-  const openCreateProduct = () => { setProductForm(emptyProduct); setEditProductId(null); setProductModal('create') }
-  const openEditProduct   = (p) => { setProductForm({ ...p, category_id: p.category_id ?? '' }); setEditProductId(p.id); setProductModal('edit') }
+  const openCreateProduct = () => {
+    setProductForm({ ...emptyProduct })
+    setEditProductId(null)
+    setProductModal('create')
+  }
+  const openEditProduct = (p) => {
+    const extras = p.additional_barcodes || []
+    setProductForm({
+      ...p,
+      category_id: p.category_id ?? '',
+      barcodes: [p.barcode || '', ...extras],
+    })
+    setEditProductId(p.id)
+    setProductModal('edit')
+  }
 
   const handleSaveProduct = async () => {
+    const raw = Array.isArray(productForm.barcodes) ? productForm.barcodes : [productForm.barcode || '']
+    const main = String(raw[0] ?? '').trim()
+    if (!main) {
+      toast.error('الباركود الأساسي مطلوب')
+      return
+    }
+    const additional_barcodes = raw.slice(1).map((b) => String(b).trim()).filter(Boolean)
+    const { barcodes: _b, barcode: _old, ...rest } = productForm
+    const payload = { ...rest, barcode: main, additional_barcodes }
+
     setSavingProduct(true)
     try {
-      if (productModal === 'create') { await createProduct(productForm); toast.success('تم إضافة المنتج') }
-      else { await updateProduct(editProductId, productForm); toast.success('تم تحديث المنتج') }
+      if (productModal === 'create') {
+        await createProduct(payload)
+        toast.success('تم إضافة المنتج')
+      } else {
+        await updateProduct(editProductId, payload)
+        toast.success('تم تحديث المنتج')
+      }
       setProductModal(null)
       loadProducts()
     } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
@@ -206,10 +243,19 @@ export default function Products() {
                       <td style={{ fontWeight: 600 }}>
                         {p.name}
                         <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                          {p.barcode}{p.category_name ? ` · ${p.category_name}` : ''}
+                          {p.barcode}
+                          {(p.additional_barcodes || []).length > 0 && ` (+${formatNumber((p.additional_barcodes || []).length)})`}
+                          {p.category_name ? ` · ${p.category_name}` : ''}
                         </div>
                       </td>
-                      <td className="hide-mobile"><code style={{ fontSize: '0.8rem' }}>{p.barcode}</code></td>
+                      <td className="hide-mobile">
+                        <code style={{ fontSize: '0.8rem' }}>{p.barcode}</code>
+                        {(p.additional_barcodes || []).length > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                            +{formatNumber((p.additional_barcodes || []).length)} باركود إضافي
+                          </div>
+                        )}
+                      </td>
                       <td>{formatCurrency(p.price)}</td>
                       <td className="hide-mobile">{formatCurrency(p.cost)}</td>
                       <td>
@@ -261,7 +307,7 @@ export default function Products() {
                     </td>
                   </tr>
                 ) : categories.map((c, i) => {
-                  const count = products.filter(p => p.category_id === c.id).length
+                  const count = allProducts.filter((p) => p.category_id === c.id).length
                   return (
                     <tr key={c.id}>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(i + 1)}</td>
@@ -351,6 +397,29 @@ function StatCard({ icon, label, value, color }) {
 
 function ProductForm({ form, setForm, categories }) {
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
+  const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
+
+  const setBarcodeAt = (i, v) => {
+    setForm((p) => {
+      const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
+      b[i] = v
+      return { ...p, barcodes: b }
+    })
+  }
+  const addBarcodeRow = () =>
+    setForm((p) => {
+      const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
+      return { ...p, barcodes: [...b, ''] }
+    })
+  const removeBarcodeRow = (i) => {
+    if (i === 0) return
+    setForm((p) => {
+      const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
+      const next = b.filter((_, j) => j !== i)
+      return { ...p, barcodes: next.length ? next : [''] }
+    })
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
       <div style={{ gridColumn: 'span 2' }}>
@@ -358,8 +427,41 @@ function ProductForm({ form, setForm, categories }) {
         <input className="input" {...f('name')} placeholder="مثال: أرز بسمتي 1كغ" required />
       </div>
       <div style={{ gridColumn: 'span 2' }}>
-        <Label>الباركود *</Label>
-        <input className="input" {...f('barcode')} placeholder="امسح الباركود أو اكتبه يدويًا" required />
+        <Label>الباركودات</Label>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
+          الأول إلزامي ولا يمكن حذفه؛ الباركودات الإضافية اختيارية.
+        </p>
+        {barcodes.map((bc, idx) => (
+          <div
+            key={idx}
+            style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', marginBottom: '0.45rem' }}
+          >
+            <input
+              className="input"
+              style={{ flex: 1 }}
+              value={bc}
+              onChange={(e) => setBarcodeAt(idx, e.target.value)}
+              placeholder={idx === 0 ? 'الباركود الأساسي (إلزامي)' : 'باركود إضافي'}
+              required={idx === 0}
+            />
+            {idx > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                title="حذف هذا الباركود"
+                onClick={() => removeBarcodeRow(idx)}
+              >
+                <X size={16} />
+              </button>
+            ) : (
+              <span style={{ width: '40px', flexShrink: 0 }} />
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={addBarcodeRow} style={{ marginTop: '0.15rem' }}>
+          <Plus size={14} style={{ marginLeft: '0.25rem' }} />
+          إضافة باركود
+        </button>
       </div>
       <div>
         <Label>سعر البيع *</Label>

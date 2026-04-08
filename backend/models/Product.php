@@ -12,7 +12,8 @@ class Product {
         $params = [];
 
         if (!empty($filters['search'])) {
-            $where[]          = '(p.name LIKE :search OR p.barcode LIKE :search)';
+            $where[]          = '(p.name LIKE :search OR p.barcode LIKE :search
+                OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode LIKE :search))';
             $params['search'] = '%' . $filters['search'] . '%';
         }
         if (!empty($filters['category_id'])) {
@@ -31,7 +32,12 @@ class Product {
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
+        }
+        unset($row);
+        return $rows;
     }
 
     public function findById(int $id): ?array {
@@ -42,7 +48,12 @@ class Product {
              WHERE p.id = ?'
         );
         $stmt->execute([$id]);
-        return $stmt->fetch() ?: null;
+        $product = $stmt->fetch();
+        if (!$product) {
+            return null;
+        }
+        $product['additional_barcodes'] = $this->getAdditionalBarcodesList($id);
+        return $product;
     }
 
     public function findByBarcode(string $barcode): ?array {
@@ -50,10 +61,86 @@ class Product {
             'SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
-             WHERE p.barcode = ?'
+             WHERE p.barcode = ?
+                OR p.id IN (SELECT product_id FROM product_barcodes WHERE barcode = ?)
+             LIMIT 1'
         );
+        $stmt->execute([$barcode, $barcode]);
+        $product = $stmt->fetch();
+        if (!$product) {
+            return null;
+        }
+        $product['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $product['id']);
+        return $product;
+    }
+
+    /** @return list<string> */
+    public function getAdditionalBarcodesList(int $productId): array {
+        $stmt = $this->db->prepare('SELECT barcode FROM product_barcodes WHERE product_id = ? ORDER BY id ASC');
+        $stmt->execute([$productId]);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'barcode');
+    }
+
+    public function findOwnerProductIdByBarcode(string $barcode): ?int {
+        $stmt = $this->db->prepare('SELECT id FROM products WHERE barcode = ? LIMIT 1');
         $stmt->execute([$barcode]);
-        return $stmt->fetch() ?: null;
+        $id = $stmt->fetchColumn();
+        if ($id !== false && $id !== null) {
+            return (int) $id;
+        }
+        $stmt = $this->db->prepare('SELECT product_id FROM product_barcodes WHERE barcode = ? LIMIT 1');
+        $stmt->execute([$barcode]);
+        $pid = $stmt->fetchColumn();
+        return ($pid !== false && $pid !== null) ? (int) $pid : null;
+    }
+
+    /**
+     * @param list<string> $extras
+     * @throws void calls Response::error on conflict
+     */
+    public function assertBarcodesAvailable(?int $excludeProductId, string $main, array $extras): void {
+        $main = trim($main);
+        $all  = array_merge([$main], $extras);
+        foreach ($all as $code) {
+            if ($code === '') {
+                continue;
+            }
+            $owner = $this->findOwnerProductIdByBarcode($code);
+            if ($owner !== null && ($excludeProductId === null || (int) $owner !== (int) $excludeProductId)) {
+                Response::error('الباركود "' . $code . '" مستخدم لمنتج آخر', 422);
+            }
+        }
+    }
+
+    /** Replace additional barcodes (not the main `products.barcode`). */
+    public function syncAdditionalBarcodes(int $productId, array $extras): void {
+        $this->db->prepare('DELETE FROM product_barcodes WHERE product_id = ?')->execute([$productId]);
+        $ins = $this->db->prepare('INSERT INTO product_barcodes (product_id, barcode) VALUES (?, ?)');
+        foreach ($extras as $code) {
+            $code = trim((string) $code);
+            if ($code === '') {
+                continue;
+            }
+            $ins->execute([$productId, $code]);
+        }
+    }
+
+    public static function normalizeAdditionalBarcodes(string $main, $raw): array {
+        $main = trim($main);
+        if (!is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        $seen = [$main => true];
+        foreach ($raw as $e) {
+            $t = trim((string) $e);
+            if ($t === '' || isset($seen[$t])) {
+                continue;
+            }
+            $seen[$t] = true;
+            $out[]    = $t;
+        }
+        return $out;
     }
 
     public function create(array $data): int {
@@ -110,12 +197,17 @@ class Product {
     }
 
     public function getLowStock(): array {
-        return $this->db->query(
+        $rows = $this->db->query(
             'SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
              WHERE p.quantity <= p.low_stock_threshold
              ORDER BY p.quantity ASC'
         )->fetchAll();
+        foreach ($rows as &$row) {
+            $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
+        }
+        unset($row);
+        return $rows;
     }
 }

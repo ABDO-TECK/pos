@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_category (category_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Extra barcodes for the same product (primary remains products.barcode)
+CREATE TABLE IF NOT EXISTS product_barcodes (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id INT UNSIGNED NOT NULL,
+    barcode VARCHAR(100) NOT NULL,
+    UNIQUE KEY uq_product_barcodes_barcode (barcode),
+    KEY idx_product_barcodes_product (product_id),
+    CONSTRAINT fk_pb_product FOREIGN KEY (product_id)
+        REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ============================================================
 -- Users
 -- ============================================================

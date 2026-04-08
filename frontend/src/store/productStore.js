@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getProducts, getCategories } from '../api/endpoints'
+import { getProducts, getCategories, getProductByBarcode } from '../api/endpoints'
 import { saveProductsToIDB, getProductsFromIDB, getProductByBarcodeFromIDB } from '../utils/idb'
 
 const useProductStore = create((set, get) => ({
@@ -33,17 +33,15 @@ const useProductStore = create((set, get) => ({
   },
 
   findByBarcode: async (barcode) => {
-    // First check in memory
-    const found = get().products.find((p) => p.barcode === barcode)
+    const match = (p) =>
+      p.barcode === barcode || (p.additional_barcodes || []).includes(barcode)
+    const found = get().products.find(match)
     if (found) return found
-    // Then check IndexedDB
     const idbResult = await getProductByBarcodeFromIDB(barcode)
     if (idbResult) return idbResult
-    // Finally hit API
     try {
-      const res = await getProducts({ search: barcode })
-      const product = res.data.data.find((p) => p.barcode === barcode)
-      return product || null
+      const res = await getProductByBarcode(barcode)
+      return res.data.data ?? null
     } catch {
       return null
     }

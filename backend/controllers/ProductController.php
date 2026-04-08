@@ -23,10 +23,12 @@ class ProductController extends Controller {
         if ($id === 'barcode' && $barcode) {
             $product = $this->productModel->findByBarcode($barcode);
         } else {
-            $product = $this->productModel->findById((int)$id);
+            $product = $this->productModel->findById((int) $id);
         }
 
-        if (!$product) Response::notFound('Product not found');
+        if (!$product) {
+            Response::notFound('Product not found');
+        }
         Response::success($product);
     }
 
@@ -37,11 +39,28 @@ class ProductController extends Controller {
             'barcode' => 'required',
             'price'   => 'required|numeric',
         ]);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) {
+            Response::error('Validation failed', 422, $errors);
+        }
 
-        $id      = $this->productModel->create($data);
-        $product = $this->productModel->findById($id);
-        Response::success($product, 'Product created', 201);
+        $main   = trim($data['barcode']);
+        $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
+        $this->productModel->assertBarcodesAvailable(null, $main, $extras);
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $data['barcode'] = $main;
+            $id              = $this->productModel->create($data);
+            $this->productModel->syncAdditionalBarcodes($id, $extras);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            error_log($e->getMessage());
+            Response::serverError('Failed to create product');
+        }
+
+        Response::success($this->productModel->findById($id), 'Product created', 201);
     }
 
     public function update(string $id): void {
@@ -51,20 +70,43 @@ class ProductController extends Controller {
             'barcode' => 'required',
             'price'   => 'required|numeric',
         ]);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) {
+            Response::error('Validation failed', 422, $errors);
+        }
 
-        $product = $this->productModel->findById((int)$id);
-        if (!$product) Response::notFound('Product not found');
+        $pid = (int) $id;
+        $product = $this->productModel->findById($pid);
+        if (!$product) {
+            Response::notFound('Product not found');
+        }
 
-        $this->productModel->update((int)$id, $data);
-        Response::success($this->productModel->findById((int)$id), 'Product updated');
+        $main   = trim($data['barcode']);
+        $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
+        $this->productModel->assertBarcodesAvailable($pid, $main, $extras);
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $data['barcode'] = $main;
+            $this->productModel->update($pid, $data);
+            $this->productModel->syncAdditionalBarcodes($pid, $extras);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            error_log($e->getMessage());
+            Response::serverError('Failed to update product');
+        }
+
+        Response::success($this->productModel->findById($pid), 'Product updated');
     }
 
     public function destroy(string $id): void {
-        $product = $this->productModel->findById((int)$id);
-        if (!$product) Response::notFound('Product not found');
+        $product = $this->productModel->findById((int) $id);
+        if (!$product) {
+            Response::notFound('Product not found');
+        }
 
-        $this->productModel->delete((int)$id);
+        $this->productModel->delete((int) $id);
         Response::success(null, 'Product deleted');
     }
 }

@@ -35,7 +35,10 @@ export const getProductsFromIDB = async () => {
 
 export const getProductByBarcodeFromIDB = async (barcode) => {
   const db = await getDB()
-  return db.getFromIndex('products', 'barcode', barcode)
+  const direct = await db.getFromIndex('products', 'barcode', barcode)
+  if (direct) return direct
+  const all = await db.getAll('products')
+  return all.find((p) => (p.additional_barcodes || []).includes(barcode)) ?? null
 }
 
 export const savePendingSale = async (saleData) => {
