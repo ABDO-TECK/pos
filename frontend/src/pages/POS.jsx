@@ -322,6 +322,8 @@ function ProductCard({ product, onAdd }) {
 
   return (
     <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onAdd}
       style={{
         background: 'var(--surface)',

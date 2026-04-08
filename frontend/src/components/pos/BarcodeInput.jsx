@@ -20,25 +20,32 @@ const beep = () => {
   } catch {}
 }
 
-// Debounce delay in ms — barcode scanners type all chars in < 100ms then stop
-const SCANNER_DEBOUNCE = 350
+// بعد توقف الماسح قليلاً نفّذ البحث (لا نعطّل الحقل أثناء الطلب حتى لا يُفقد التركيز)
+const SCANNER_DEBOUNCE = 280
 
-export default function BarcodeInput({ onFilterChange }) {
+/**
+ * @param {object} props
+ * @param {(q: string) => void} [props.onFilterChange]
+ * @param {(product: object) => void} [props.onAddProduct] — بدل الإضافة الافتراضية للسلة (مثلاً استلام بضاعة)
+ * @param {boolean} [props.allowOutOfStock] — السماح بإضافة منتج نافد المخزون (للموردين)
+ */
+export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }) {
   const inputRef      = useRef(null)
   const debounceTimer = useRef(null)
   const lastTypeTime  = useRef(0)
   const typeCount     = useRef(0)
+  const busyRef       = useRef(false)
 
   const [value, setValue]     = useState('')
   const [loading, setLoading] = useState(false)
 
   const addItem       = useCartStore((s) => s.addItem)
   const findByBarcode = useProductStore((s) => s.findByBarcode)
+  const addFn         = onAddProduct ?? addItem
 
-  // Keep focus on barcode input at all times
+  // إعادة التركيز عند النقر خارج حقول الإدخال (لا نسرق التركيز من مودال أو حقل آخر)
   useEffect(() => {
     const refocus = (e) => {
-      // Don't steal focus from modals or interactive elements
       const tag = e.target.tagName
       if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return
       inputRef.current?.focus()
@@ -52,15 +59,30 @@ export default function BarcodeInput({ onFilterChange }) {
     const trimmed = barcode.trim()
     if (!trimmed) return
 
+    if (busyRef.current) {
+      clearTimeout(debounceTimer.current)
+      debounceTimer.current = setTimeout(() => {
+        handleSearch((inputRef.current?.value ?? '').trim() || trimmed)
+      }, 90)
+      return
+    }
+
+    busyRef.current = true
+    const snapshot = trimmed
+
     setLoading(true)
-    const product = await findByBarcode(trimmed)
-    setLoading(false)
+    let product = null
+    try {
+      product = await findByBarcode(trimmed)
+    } finally {
+      setLoading(false)
+    }
 
     if (product) {
-      if (product.quantity <= 0) {
+      if (!allowOutOfStock && product.quantity <= 0) {
         toast.error(`${product.name} — نفد من المخزون`, { icon: '⚠️' })
       } else {
-        addItem(product)
+        addFn(product)
         beep()
         toast.success(product.name, { duration: 1200, icon: '✅' })
       }
@@ -68,11 +90,26 @@ export default function BarcodeInput({ onFilterChange }) {
       toast.error('المنتج غير موجود', { icon: '❌' })
     }
 
-    setValue('')
-    onFilterChange?.('')
+    // لا تمسح محتوى الحقل إذا وصلت مسحة جديدة أثناء انتظار الشبكة
+    setValue((v) => (v.trim() === snapshot ? '' : v))
     typeCount.current = 0
-    inputRef.current?.focus()
-  }, [addItem, findByBarcode, onFilterChange])
+
+    busyRef.current = false
+
+    queueMicrotask(() => {
+      const el = inputRef.current
+      const v = el?.value ?? ''
+      onFilterChange?.(v)
+      requestAnimationFrame(() => {
+        el?.focus()
+        const rest = (el?.value ?? '').trim()
+        if (rest && rest !== snapshot) {
+          clearTimeout(debounceTimer.current)
+          debounceTimer.current = setTimeout(() => handleSearch(rest), SCANNER_DEBOUNCE)
+        }
+      })
+    })
+  }, [addFn, allowOutOfStock, findByBarcode, onFilterChange])
 
   const handleChange = (e) => {
     const newVal = e.target.value
@@ -81,24 +118,20 @@ export default function BarcodeInput({ onFilterChange }) {
 
     if (!newVal.trim()) return
 
-    // Track typing speed to detect barcode scanner (types very fast)
     const now = Date.now()
     const gap = now - lastTypeTime.current
     lastTypeTime.current = now
 
     if (gap < 60) {
-      // Fast typing = likely a scanner; increment counter
       typeCount.current += 1
     } else {
-      // Slow typing = manual keyboard; reset counter
       typeCount.current = 1
     }
 
-    // Clear any pending debounce
     clearTimeout(debounceTimer.current)
 
-    // If scanner detected (≥5 chars typed rapidly), auto-search after short pause
-    if (typeCount.current >= 4) {
+    // ≥3 أحرف بسرعة = غالباً ماسح (يدعم باركودات قصيرة)
+    if (typeCount.current >= 3) {
       debounceTimer.current = setTimeout(() => {
         handleSearch(newVal)
       }, SCANNER_DEBOUNCE)
@@ -148,7 +181,7 @@ export default function BarcodeInput({ onFilterChange }) {
         onKeyDown={handleKeyDown}
         autoComplete="off"
         autoFocus
-        disabled={loading}
+        /* مهم: لا تستخدم disabled أثناء التحميل — في المتصفح يزيل التركيز ويقطع المسح المتكرر */
       />
     </div>
   )

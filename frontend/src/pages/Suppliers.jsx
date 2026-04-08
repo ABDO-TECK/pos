@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ShoppingCart, Check, X, Package, Scan } from 'lucide-react'
+import { Plus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
+import BarcodeInput from '../components/pos/BarcodeInput'
+import useProductStore from '../store/productStore'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
@@ -75,7 +77,11 @@ function ReceiveGoods() {
     getSuppliers().then(r => setSuppliers(r.data.data ?? []))
     setLoading(true)
     getProducts({ limit: 9999 })
-      .then(r => setAllProducts(r.data.data ?? []))
+      .then((r) => {
+        const list = r.data.data ?? []
+        setAllProducts(list)
+        useProductStore.getState().setProducts(list)
+      })
       .catch(() => toast.error('فشل تحميل المنتجات'))
       .finally(() => setLoading(false))
   }, [])
@@ -213,26 +219,16 @@ function ReceiveGoods() {
 
   return (
     <>
-      {/* ── Search bar — top of page like POS ── */}
+      {/* ── Search + barcode (نفس سلوك نقطة البيع: تركيز دائم ومسح متكرر) ── */}
       <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', flexShrink: 0 }}>
-        <div style={{ position: 'relative' }}>
-          <Scan
-            size={20}
-            style={{
-              position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-              right: '1rem', color: 'var(--text-muted)',
-              transition: 'color .2s', pointerEvents: 'none',
-            }}
-          />
-          <input
-            className="input input-lg"
-            style={{ paddingRight: '2.8rem', paddingLeft: '1rem' }}
-            placeholder="امسح الباركود أو اكتب اسم المنتج..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
+        <BarcodeInput
+          onFilterChange={setSearch}
+          allowOutOfStock
+          onAddProduct={(p) => {
+            addToCart(p)
+            setMobileTab('cart')
+          }}
+        />
       </div>
 
       {/* ── Desktop layout ── */}
@@ -345,6 +341,8 @@ function ProductCard({ product, onAdd }) {
 
   return (
     <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onAdd}
       style={{
         background: 'var(--surface)',
