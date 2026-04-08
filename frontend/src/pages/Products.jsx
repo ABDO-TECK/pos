@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse, SlidersHorizontal } from 'lucide-react'
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
@@ -19,6 +19,26 @@ const emptyProduct = {
   category_id: '',
 }
 
+const STOCK_FILTERS = [
+  { id: 'all', label: 'الكل' },
+  { id: 'available', label: 'متوفر' },
+  { id: 'low', label: 'مخزون منخفض' },
+  { id: 'low_available', label: 'منخفض (يوجد رصيد)' },
+  { id: 'out', label: 'نفد المخزون' },
+]
+
+const SORT_OPTIONS = [
+  { id: 'name_asc', label: 'الاسم (أ ← ي)' },
+  { id: 'name_desc', label: 'الاسم (ي ← أ)' },
+  { id: 'newest', label: 'الأحدث إضافة' },
+  { id: 'oldest', label: 'الأقدم إضافة' },
+  { id: 'updated_desc', label: 'آخر تعديل' },
+  { id: 'qty_desc', label: 'الكمية (الأعلى أولاً)' },
+  { id: 'qty_asc', label: 'الكمية (الأدنى أولاً)' },
+  { id: 'price_desc', label: 'السعر (الأعلى أولاً)' },
+  { id: 'price_asc', label: 'السعر (الأدنى أولاً)' },
+]
+
 export default function Products() {
   const [tab, setTab] = useState('products')
 
@@ -31,15 +51,92 @@ export default function Products() {
   const [editProductId,   setEditProductId]   = useState(null)
   const [savingProduct,   setSavingProduct]   = useState(false)
   const [lowStock,        setLowStock]        = useState([])
+  const [categoryFilter, setCategoryFilter]  = useState('')
+  const [stockFilter,    setStockFilter]     = useState('all')
+  const [sortKey,        setSortKey]         = useState('name_asc')
 
-  // Derived: client-side filtering (instant, no debounce needed)
   const q = search.trim().toLowerCase()
-  const products = q
-    ? allProducts.filter((p) => {
+
+  const displayProducts = useMemo(() => {
+    let list = allProducts
+
+    if (categoryFilter) {
+      list = list.filter((p) => String(p.category_id ?? '') === categoryFilter)
+    }
+
+    if (q) {
+      list = list.filter((p) => {
         const extra = (p.additional_barcodes || []).some((b) => String(b).toLowerCase().includes(q))
-        return p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.toLowerCase().includes(q)) || extra
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+          extra
+        )
       })
-    : allProducts
+    }
+
+    switch (stockFilter) {
+      case 'low':
+        list = list.filter((p) => Number(p.quantity) <= Number(p.low_stock_threshold ?? 5))
+        break
+      case 'out':
+        list = list.filter((p) => Number(p.quantity) <= 0)
+        break
+      case 'available':
+        list = list.filter((p) => Number(p.quantity) > 0)
+        break
+      case 'low_available':
+        list = list.filter((p) => {
+          const qn = Number(p.quantity)
+          const th = Number(p.low_stock_threshold ?? 5)
+          return qn > 0 && qn <= th
+        })
+        break
+      default:
+        break
+    }
+
+    const sorted = [...list]
+    const nameCmp = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ar', { sensitivity: 'base' })
+
+    switch (sortKey) {
+      case 'name_desc':
+        sorted.sort((a, b) => nameCmp(b, a))
+        break
+      case 'newest':
+        sorted.sort((a, b) => Number(b.id) - Number(a.id))
+        break
+      case 'oldest':
+        sorted.sort((a, b) => Number(a.id) - Number(b.id))
+        break
+      case 'updated_desc':
+        sorted.sort((a, b) => {
+          const ta = new Date(a.updated_at || 0).getTime()
+          const tb = new Date(b.updated_at || 0).getTime()
+          if (tb !== ta) return tb - ta
+          return Number(b.id) - Number(a.id)
+        })
+        break
+      case 'qty_desc':
+        sorted.sort((a, b) => Number(b.quantity) - Number(a.quantity) || nameCmp(a, b))
+        break
+      case 'qty_asc':
+        sorted.sort((a, b) => Number(a.quantity) - Number(b.quantity) || nameCmp(a, b))
+        break
+      case 'price_desc':
+        sorted.sort((a, b) => Number(b.price) - Number(a.price) || nameCmp(a, b))
+        break
+      case 'price_asc':
+        sorted.sort((a, b) => Number(a.price) - Number(b.price) || nameCmp(a, b))
+        break
+      case 'name_asc':
+      default:
+        sorted.sort(nameCmp)
+        break
+    }
+
+    return sorted
+  }, [allProducts, q, categoryFilter, stockFilter, sortKey])
 
   // ── Categories ─────────────────────────────────────────────
   const [categories,        setCategories]        = useState([])
@@ -139,10 +236,23 @@ export default function Products() {
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
-  // ── Computed stats ─────────────────────────────────────────
-  const totalUnits  = products.reduce((s, p) => s + Number(p.quantity), 0)
-  const stockValue  = products.reduce((s, p) => s + Number(p.quantity) * Number(p.cost), 0)
-  const outOfStock  = products.filter(p => p.quantity <= 0).length
+  // ── Computed stats (على كل المنتجات المحمّلة، وليس على المصفّاة فقط) ──
+  const totalUnits  = allProducts.reduce((s, p) => s + Number(p.quantity), 0)
+  const stockValue  = allProducts.reduce((s, p) => s + Number(p.quantity) * Number(p.cost), 0)
+  const outOfStock  = allProducts.filter((p) => p.quantity <= 0).length
+
+  const filtersActive =
+    stockFilter !== 'all' ||
+    sortKey !== 'name_asc' ||
+    Boolean(categoryFilter) ||
+    Boolean(search.trim())
+
+  const clearProductFilters = () => {
+    setStockFilter('all')
+    setSortKey('name_asc')
+    setCategoryFilter('')
+    setSearch('')
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -160,7 +270,7 @@ export default function Products() {
       <div className="tabs-scroll" style={{ marginTop: '-0.5rem' }}>
         <TabBtn active={tab === 'products'} onClick={() => setTab('products')}>
           المنتجات
-          <span className="badge badge-gray" style={{ fontSize: '0.72rem', marginRight: '0.3rem' }}>{formatNumber(products.length)}</span>
+          <span className="badge badge-gray" style={{ fontSize: '0.72rem', marginRight: '0.3rem' }}>{formatNumber(displayProducts.length)}</span>
         </TabBtn>
         <TabBtn active={tab === 'categories'} onClick={() => setTab('categories')}>
           <Tag size={14} style={{ marginLeft: '0.3rem' }} />
@@ -174,7 +284,7 @@ export default function Products() {
         <>
           {/* Inventory widgets */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-            <StatCard icon={<Warehouse size={20} color="var(--secondary)" />}  label="إجمالي المنتجات"  value={formatNumber(products.length)} />
+            <StatCard icon={<Warehouse size={20} color="var(--secondary)" />}  label="إجمالي المنتجات"  value={formatNumber(allProducts.length)} />
             <StatCard icon={<span style={{ fontSize: '1.1rem' }}>📦</span>}      label="إجمالي الوحدات"   value={formatNumber(totalUnits)} />
             <StatCard icon={<span style={{ fontSize: '1.1rem' }}>💰</span>}      label="قيمة المخزون"    value={formatCurrency(stockValue)} />
             <StatCard
@@ -205,8 +315,8 @@ export default function Products() {
             </div>
           )}
 
-          {/* Search */}
-          <div className="card" style={{ padding: '0.75rem' }}>
+          {/* Search + filters */}
+          <div className="card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
               <input
@@ -215,6 +325,66 @@ export default function Products() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                <SlidersHorizontal size={16} />
+                المخزون
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', flex: 1 }}>
+                {STOCK_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setStockFilter(f.id)}
+                    className={`btn btn-sm ${stockFilter === f.id ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.3rem' }}>الفئة</label>
+                <select
+                  className="input"
+                  style={{ width: '100%' }}
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="">كل الفئات</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={String(c.id)}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.3rem' }}>الترتيب</label>
+                <select
+                  className="input"
+                  style={{ width: '100%' }}
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value)}
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {filtersActive && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearProductFilters} style={{ alignSelf: 'center' }}>
+                  <X size={14} /> مسح التصفية
+                </button>
+              )}
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              معروض {formatNumber(displayProducts.length)} من {formatNumber(allProducts.length)} منتج
+              {filtersActive && ' — تم تطبيق تصفية أو ترتيب'}
             </div>
           </div>
 
@@ -236,9 +406,9 @@ export default function Products() {
                 <tbody>
                   {loadingProducts ? (
                     <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}><span className="spinner" /></td></tr>
-                  ) : products.length === 0 ? (
+                  ) : displayProducts.length === 0 ? (
                     <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد منتجات</td></tr>
-                  ) : products.map((p) => (
+                  ) : displayProducts.map((p) => (
                     <tr key={p.id}>
                       <td style={{ fontWeight: 600 }}>
                         {p.name}
