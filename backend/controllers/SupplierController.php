@@ -82,7 +82,11 @@ class SupplierController extends Controller {
     }
 
     public function purchases(): void {
-        $filters = ['supplier_id' => $this->getParam('supplier_id')];
+        $filters = [
+            'supplier_id' => $this->getParam('supplier_id'),
+            'date_from'   => $this->getParam('date_from'),
+            'date_to'     => $this->getParam('date_to'),
+        ];
         Response::success($this->supplierModel->getPurchases($filters));
     }
 

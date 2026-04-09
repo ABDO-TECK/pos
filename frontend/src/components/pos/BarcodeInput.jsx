@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { Scan } from 'lucide-react'
+import { Scan, Camera } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
@@ -38,6 +38,8 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
 
   const [value, setValue]     = useState('')
   const [loading, setLoading] = useState(false)
+  const [showCameraScanner, setShowCameraScanner] = useState(false)
+  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState(null)
 
   const addItem       = useCartStore((s) => s.addItem)
   const findByBarcode = useProductStore((s) => s.findByBarcode)
@@ -150,39 +152,79 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     }
   }
 
+  const openCameraScanner = async () => {
+    try {
+      if (!BarcodeScannerLazy) {
+        const m = await import('../BarcodeCameraScanner')
+        setBarcodeScannerLazy(() => m.default)
+      }
+      setShowCameraScanner(true)
+    } catch {
+      toast.error('تعذر تحميل ماسح الباركود')
+    }
+  }
+
+  const handleCameraScan = (text) => {
+    setShowCameraScanner(false)
+    setValue(text)
+    onFilterChange?.(text)
+    handleSearch(text)
+  }
+
   return (
-    <div style={{ position: 'relative' }}>
-      <Scan
-        size={20}
-        style={{
-          position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-          right: '1rem', color: loading ? 'var(--primary)' : 'var(--text-muted)',
-          transition: 'color .2s',
-          pointerEvents: 'none',
-        }}
-      />
-      {loading && (
-        <span
-          className="spinner"
+    <>
+    <div style={{ position: 'relative', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <Scan
+          size={20}
           style={{
-            position: 'absolute', top: '50%', left: '1rem',
-            transform: 'translateY(-50%)',
-            width: '1rem', height: '1rem',
+            position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+            right: '1rem', color: loading ? 'var(--primary)' : 'var(--text-muted)',
+            transition: 'color .2s',
+            pointerEvents: 'none',
           }}
         />
-      )}
-      <input
-        ref={inputRef}
-        className="input input-lg"
-        style={{ paddingRight: '2.8rem', paddingLeft: loading ? '2.8rem' : '1rem' }}
-        placeholder="امسح الباركود، أو اكتب لتصفية المنتجات فوراً، ثم Enter لإضافة بالباركود…"
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        autoComplete="off"
-        autoFocus
-        /* مهم: لا تستخدم disabled أثناء التحميل — في المتصفح يزيل التركيز ويقطع المسح المتكرر */
-      />
+        {loading && (
+          <span
+            className="spinner"
+            style={{
+              position: 'absolute', top: '50%', left: '1rem',
+              transform: 'translateY(-50%)',
+              width: '1rem', height: '1rem',
+            }}
+          />
+        )}
+        <input
+          ref={inputRef}
+          className="input input-lg"
+          style={{ paddingRight: '2.8rem', paddingLeft: loading ? '2.8rem' : '1rem' }}
+          placeholder="امسح الباركود، أو اكتب لتصفية المنتجات فوراً، ثم Enter لإضافة بالباركود…"
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          autoComplete="off"
+          autoFocus
+          /* مهم: لا تستخدم disabled أثناء التحميل — في المتصفح يزيل التركيز ويقطع المسح المتكرر */
+        />
+      </div>
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon"
+        style={{ flexShrink: 0, padding: '0.55rem' }}
+        title="مسح الباركود بالكاميرا"
+        aria-label="مسح الباركود بالكاميرا"
+        onClick={openCameraScanner}
+      >
+        <Camera size={20} />
+      </button>
     </div>
+
+    {BarcodeScannerLazy && showCameraScanner && (
+      <BarcodeScannerLazy
+        onResult={handleCameraScan}
+        onClose={() => setShowCameraScanner(false)}
+      />
+    )}
+    </>
   )
 }

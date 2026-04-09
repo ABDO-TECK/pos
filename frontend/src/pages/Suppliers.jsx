@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react'
-import { Plus, Minus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Plus, Minus, Trash2, ShoppingCart, Check, X, Package, Search, FileText, Calendar, ChevronDown, ChevronUp, Eye, Filter, TrendingUp, Hash, DollarSign, Clock } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
-  getProducts, createBulkPurchase,
+  getProducts, createBulkPurchase, getPurchases,
 } from '../api/endpoints'
-import { formatCurrency, formatNumber } from '../utils/formatters'
+import { formatCurrency, formatNumber, formatDate, formatShortDate, formatTime } from '../utils/formatters'
 
 export default function Suppliers() {
   const [tab, setTab] = useState(0)
@@ -23,7 +23,7 @@ export default function Suppliers() {
           padding: '0.25rem', border: '1px solid var(--border)',
           flexShrink: 0,
         }}>
-          {['استلام بضاعة', 'إدارة الموردين'].map((t, i) => (
+          {['استلام بضاعة', 'سجل المشتريات', 'إدارة الموردين'].map((t, i) => (
             <button
               key={i}
               onClick={() => setTab(i)}
@@ -47,7 +47,9 @@ export default function Suppliers() {
         </div>
       </div>
 
-      {tab === 0 ? <ReceiveGoods /> : <ManageSuppliers />}
+      {tab === 0 && <ReceiveGoods />}
+      {tab === 1 && <PurchaseHistory />}
+      {tab === 2 && <ManageSuppliers />}
     </div>
   )
 }
@@ -612,6 +614,577 @@ function ProductCard({ product, onAdd }) {
         </div>
       </div>
     </button>
+  )
+}
+
+/* ──────────────────────────── Purchase History ── */
+function PurchaseHistory() {
+  const [purchases, setPurchases]     = useState([])
+  const [suppliers, setSuppliers]     = useState([])
+  const [loading, setLoading]         = useState(false)
+  const [supplierId, setSupplierId]   = useState('')
+  const [dateFrom, setDateFrom]       = useState('')
+  const [dateTo, setDateTo]           = useState('')
+  const [expandedDays, setExpandedDays] = useState({})
+  const [detailPurchase, setDetailPurchase] = useState(null)
+  const [showFilters, setShowFilters] = useState(true)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const params = {}
+      if (supplierId) params.supplier_id = supplierId
+      if (dateFrom) params.date_from = dateFrom
+      if (dateTo) params.date_to = dateTo
+      const res = await getPurchases(params)
+      setPurchases(res.data.data ?? [])
+    } catch {
+      toast.error('فشل تحميل سجل المشتريات')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    getSuppliers().then(r => setSuppliers(r.data.data ?? []))
+  }, [])
+
+  useEffect(() => { load() }, [supplierId, dateFrom, dateTo])
+
+  /* ── Group purchases by date ── */
+  const grouped = useMemo(() => {
+    const map = {}
+    purchases.forEach(p => {
+      const day = p.created_at ? p.created_at.split(' ')[0] : 'unknown'
+      if (!map[day]) map[day] = []
+      map[day].push(p)
+    })
+    // Sort days descending
+    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a))
+  }, [purchases])
+
+  /* ── Summary stats ── */
+  const stats = useMemo(() => {
+    const totalCost = purchases.reduce((s, p) => s + parseFloat(p.total || 0), 0)
+    const totalItems = purchases.reduce((s, p) => s + parseInt(p.quantity || 0, 10), 0)
+    const uniqueSuppliers = new Set(purchases.map(p => p.supplier_id)).size
+    const uniqueProducts = new Set(purchases.map(p => p.product_id)).size
+    return { totalCost, totalItems, uniqueSuppliers, uniqueProducts }
+  }, [purchases])
+
+  const toggleDay = (day) => {
+    setExpandedDays(prev => ({ ...prev, [day]: !prev[day] }))
+  }
+
+  const clearFilters = () => {
+    setSupplierId('')
+    setDateFrom('')
+    setDateTo('')
+  }
+
+  const hasFilters = supplierId || dateFrom || dateTo
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {/* ── Filters ── */}
+      <div className="card" style={{ padding: '0.75rem', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showFilters ? '0.75rem' : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Filter size={16} style={{ color: 'var(--primary)' }} />
+            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>فلاتر البحث</span>
+            {hasFilters && (
+              <span className="badge badge-green" style={{ fontSize: '0.7rem' }}>نشط</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            {hasFilters && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={clearFilters}
+                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
+              >
+                <X size={14} /> مسح
+              </button>
+            )}
+            <button
+              className="btn btn-ghost btn-icon btn-sm"
+              onClick={() => setShowFilters(!showFilters)}
+              style={{ padding: '0.25rem' }}
+            >
+              {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {showFilters && (
+          <div className="ph-filters-grid">
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                المورد
+              </label>
+              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                <option value="">جميع الموردين</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                <Calendar size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
+                من تاريخ
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                <Calendar size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
+                إلى تاريخ
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats Cards ── */}
+      {purchases.length > 0 && (
+        <div className="ph-stats-grid" style={{ flexShrink: 0 }}>
+          <div className="ph-stat-card">
+            <div className="ph-stat-icon" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--primary)' }}>
+              <DollarSign size={18} />
+            </div>
+            <div>
+              <div className="ph-stat-value">{formatCurrency(stats.totalCost)}</div>
+              <div className="ph-stat-label">إجمالي المشتريات</div>
+            </div>
+          </div>
+          <div className="ph-stat-card">
+            <div className="ph-stat-icon" style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--secondary)' }}>
+              <Hash size={18} />
+            </div>
+            <div>
+              <div className="ph-stat-value">{formatNumber(stats.totalItems)}</div>
+              <div className="ph-stat-label">إجمالي القطع</div>
+            </div>
+          </div>
+          <div className="ph-stat-card">
+            <div className="ph-stat-icon" style={{ background: 'rgba(168,85,247,0.1)', color: '#a855f7' }}>
+              <TrendingUp size={18} />
+            </div>
+            <div>
+              <div className="ph-stat-value">{formatNumber(stats.uniqueProducts)}</div>
+              <div className="ph-stat-label">منتجات مختلفة</div>
+            </div>
+          </div>
+          <div className="ph-stat-card">
+            <div className="ph-stat-icon" style={{ background: 'rgba(249,115,22,0.1)', color: '#f97316' }}>
+              <Package size={18} />
+            </div>
+            <div>
+              <div className="ph-stat-value">{formatNumber(stats.uniqueSuppliers)}</div>
+              <div className="ph-stat-label">موردون</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Purchase List Grouped by Date ── */}
+      <div className="card" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0.75rem', borderBottom: '1px solid var(--border)', flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <FileText size={16} style={{ color: 'var(--primary)' }} />
+            <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>سجل المشتريات</span>
+          </div>
+          <span className="badge badge-gray">{formatNumber(purchases.length)} سجل</span>
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.5rem 0.75rem' }}>
+          {loading ? (
+            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
+          ) : purchases.length === 0 ? (
+            <div className="empty-state" style={{ padding: '3rem' }}>
+              <FileText size={36} style={{ opacity: 0.25 }} />
+              <span style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                {hasFilters ? 'لا توجد نتائج للفلاتر المحددة' : 'لا توجد مشتريات مسجلة بعد'}
+              </span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {grouped.map(([day, items]) => {
+                const expanded = expandedDays[day] !== false // default expanded
+                const dayTotal = items.reduce((s, p) => s + parseFloat(p.total || 0), 0)
+                const dayItems = items.reduce((s, p) => s + parseInt(p.quantity || 0, 10), 0)
+
+                return (
+                  <div key={day} className="ph-day-group">
+                    <button
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      className="ph-day-header"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="ph-day-dot" />
+                        <div>
+                          <span className="ph-day-date">{formatShortDate(day)}</span>
+                          <span className="ph-day-meta">
+                            {formatNumber(items.length)} عملية  •  {formatNumber(dayItems)} قطعة
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span className="ph-day-total">{formatCurrency(dayTotal)}</span>
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </div>
+                    </button>
+
+                    {expanded && (
+                      <div className="ph-day-items">
+                        {/* Desktop table */}
+                        <div className="ph-table-wrap hide-mobile">
+                          <table className="ph-table">
+                            <thead>
+                              <tr>
+                                <th>الوقت</th>
+                                <th>المنتج</th>
+                                <th>الباركود</th>
+                                <th>المورد</th>
+                                <th>الكمية</th>
+                                <th>التكلفة</th>
+                                <th>الإجمالي</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {items.map(p => (
+                                <tr key={p.id} onClick={() => setDetailPurchase(p)} style={{ cursor: 'pointer' }}>
+                                  <td>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                      <Clock size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
+                                      {formatTime(p.created_at)}
+                                    </span>
+                                  </td>
+                                  <td style={{ fontWeight: 600 }}>{p.product_name}</td>
+                                  <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                    {p.product_barcode || '—'}
+                                  </td>
+                                  <td>
+                                    <span className="badge badge-blue" style={{ fontSize: '0.72rem' }}>
+                                      {p.supplier_name}
+                                    </span>
+                                  </td>
+                                  <td style={{ fontWeight: 600 }}>{formatNumber(p.quantity)}</td>
+                                  <td style={{ color: 'var(--text-muted)' }}>{formatCurrency(p.cost)}</td>
+                                  <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>{formatCurrency(p.total)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile cards */}
+                        <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '0.4rem' }}>
+                          {items.map(p => (
+                            <div
+                              key={p.id}
+                              className="ph-mobile-card"
+                              onClick={() => setDetailPurchase(p)}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: '0.85rem', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                                    {p.product_name}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                                    {p.supplier_name}  •  {formatTime(p.created_at)}
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'left', flexShrink: 0, marginRight: '0.5rem' }}>
+                                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--primary-d)' }}>
+                                    {formatCurrency(p.total)}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {formatNumber(p.quantity)} × {formatCurrency(p.cost)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Detail Modal ── */}
+      {detailPurchase && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDetailPurchase(null)}>
+          <div className="modal" style={{ maxWidth: '420px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontWeight: 700, fontSize: '1rem' }}>تفاصيل عملية الشراء</h2>
+              <button className="btn btn-ghost btn-icon" onClick={() => setDetailPurchase(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">رقم العملية</span>
+                <span className="ph-detail-value" style={{ fontFamily: 'monospace' }}>#{detailPurchase.id}</span>
+              </div>
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">المنتج</span>
+                <span className="ph-detail-value" style={{ fontWeight: 600 }}>{detailPurchase.product_name}</span>
+              </div>
+              {detailPurchase.product_barcode && (
+                <div className="ph-detail-row">
+                  <span className="ph-detail-label">الباركود</span>
+                  <span className="ph-detail-value" style={{ fontFamily: 'monospace' }}>{detailPurchase.product_barcode}</span>
+                </div>
+              )}
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">المورد</span>
+                <span className="ph-detail-value">
+                  <span className="badge badge-blue">{detailPurchase.supplier_name}</span>
+                </span>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', margin: '0.25rem 0' }} />
+
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">الكمية</span>
+                <span className="ph-detail-value" style={{ fontWeight: 700 }}>{formatNumber(detailPurchase.quantity)} قطعة</span>
+              </div>
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">تكلفة الوحدة</span>
+                <span className="ph-detail-value">{formatCurrency(detailPurchase.cost)}</span>
+              </div>
+              <div className="ph-detail-row" style={{ background: 'rgba(34,197,94,0.06)', padding: '0.5rem 0.6rem', borderRadius: '0.4rem' }}>
+                <span className="ph-detail-label" style={{ fontWeight: 700, color: 'var(--text)' }}>الإجمالي</span>
+                <span className="ph-detail-value" style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--primary-d)' }}>
+                  {formatCurrency(detailPurchase.total)}
+                </span>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', margin: '0.25rem 0' }} />
+
+              <div className="ph-detail-row">
+                <span className="ph-detail-label">التاريخ والوقت</span>
+                <span className="ph-detail-value">{formatDate(detailPurchase.created_at)}</span>
+              </div>
+              {detailPurchase.notes && (
+                <div className="ph-detail-row" style={{ flexDirection: 'column', gap: '0.25rem' }}>
+                  <span className="ph-detail-label">ملاحظات</span>
+                  <span className="ph-detail-value" style={{ fontSize: '0.85rem' }}>{detailPurchase.notes}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        /* ── Filters Grid ── */
+        .ph-filters-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 0.6rem;
+        }
+
+        /* ── Stats Grid ── */
+        .ph-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 0.5rem;
+        }
+        .ph-stat-card {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          padding: 0.65rem 0.75rem;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+        }
+        .ph-stat-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 0.5rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .ph-stat-value {
+          font-weight: 700;
+          font-size: 0.92rem;
+          line-height: 1.2;
+        }
+        .ph-stat-label {
+          font-size: 0.72rem;
+          color: var(--text-muted);
+          margin-top: 0.1rem;
+        }
+
+        /* ── Day Group ── */
+        .ph-day-group {
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          overflow: hidden;
+          background: var(--surface);
+        }
+        .ph-day-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          padding: 0.6rem 0.75rem;
+          border: none;
+          background: var(--bg);
+          cursor: pointer;
+          font-family: inherit;
+          font-size: 0.85rem;
+          color: var(--text);
+          transition: background .15s;
+        }
+        .ph-day-header:hover {
+          background: rgba(34,197,94,0.04);
+        }
+        .ph-day-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--primary);
+          flex-shrink: 0;
+        }
+        .ph-day-date {
+          font-weight: 700;
+          font-size: 0.88rem;
+        }
+        .ph-day-meta {
+          margin-right: 0.5rem;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+        }
+        .ph-day-total {
+          font-weight: 700;
+          font-size: 0.88rem;
+          color: var(--primary-d);
+        }
+        .ph-day-items {
+          padding: 0.5rem 0.75rem 0.75rem;
+          border-top: 1px solid var(--border);
+        }
+
+        /* ── Table ── */
+        .ph-table-wrap {
+          overflow-x: auto;
+        }
+        .ph-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.82rem;
+        }
+        .ph-table th {
+          text-align: right;
+          padding: 0.45rem 0.5rem;
+          font-weight: 600;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          background: var(--bg);
+          border-bottom: 1px solid var(--border);
+          white-space: nowrap;
+        }
+        .ph-table td {
+          padding: 0.45rem 0.5rem;
+          border-bottom: 1px solid var(--border);
+          white-space: nowrap;
+        }
+        .ph-table tbody tr:last-child td {
+          border-bottom: none;
+        }
+        .ph-table tbody tr:hover {
+          background: rgba(34,197,94,0.03);
+        }
+
+        /* ── Mobile Card ── */
+        .ph-mobile-card {
+          padding: 0.6rem 0.7rem;
+          border: 1px solid var(--border);
+          border-radius: 0.4rem;
+          background: var(--bg);
+          cursor: pointer;
+          transition: background .15s;
+        }
+        .ph-mobile-card:active {
+          background: rgba(34,197,94,0.05);
+        }
+
+        /* ── Detail Modal ── */
+        .ph-detail-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.5rem;
+        }
+        .ph-detail-label {
+          font-size: 0.82rem;
+          color: var(--text-muted);
+          flex-shrink: 0;
+        }
+        .ph-detail-value {
+          font-size: 0.88rem;
+          text-align: left;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 767px) {
+          .ph-filters-grid {
+            grid-template-columns: 1fr;
+          }
+          .ph-stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .ph-day-meta {
+            display: none;
+          }
+          .show-mobile {
+            display: flex !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .ph-stats-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+          .ph-stat-card {
+            padding: 0.5rem 0.6rem;
+          }
+          .ph-stat-icon {
+            width: 30px;
+            height: 30px;
+          }
+          .ph-stat-value {
+            font-size: 0.82rem;
+          }
+        }
+      `}</style>
+    </div>
   )
 }
 

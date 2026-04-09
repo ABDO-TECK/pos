@@ -114,6 +114,8 @@ export default function Products() {
   const [categoryFilter, setCategoryFilter]  = useState('')
   const [stockFilter,    setStockFilter]     = useState('all')
   const [sortKey,        setSortKey]         = useState('name_asc')
+  const [searchCameraOpen, setSearchCameraOpen] = useState(false)
+  const [SearchScannerLazy, setSearchScannerLazy] = useState(null)
 
   const q = search.trim().toLowerCase()
 
@@ -382,14 +384,36 @@ export default function Products() {
 
           {/* Search + filters */}
           <div className="card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
-              <input
-                className="input" style={{ paddingRight: '2.5rem' }}
-                placeholder="بحث بالاسم أو الباركود..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)' }} />
+                <input
+                  className="input" style={{ paddingRight: '2.5rem' }}
+                  placeholder="بحث بالاسم أو الباركود..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                style={{ flexShrink: 0, padding: '0.5rem' }}
+                title="مسح الباركود بالكاميرا"
+                aria-label="مسح الباركود بالكاميرا"
+                onClick={async () => {
+                  try {
+                    if (!SearchScannerLazy) {
+                      const m = await import('../components/BarcodeCameraScanner')
+                      setSearchScannerLazy(() => m.default)
+                    }
+                    setSearchCameraOpen(true)
+                  } catch {
+                    toast.error('تعذر تحميل ماسح الباركود')
+                  }
+                }}
+              >
+                <Camera size={18} />
+              </button>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -643,6 +667,18 @@ export default function Products() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Search Barcode Camera Scanner ──────────────────────── */}
+      {SearchScannerLazy && searchCameraOpen && (
+        <SearchScannerLazy
+          onResult={(text) => {
+            setSearch(text)
+            setSearchCameraOpen(false)
+            toast.success('تمت قراءة الباركود')
+          }}
+          onClose={() => setSearchCameraOpen(false)}
+        />
       )}
     </div>
   )

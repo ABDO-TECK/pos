@@ -72,14 +72,24 @@ class Supplier {
             $params['supplier_id']   = $filters['supplier_id'];
         }
 
+        if (!empty($filters['date_from'])) {
+            $where[]              = 'DATE(pu.created_at) >= :date_from';
+            $params['date_from']  = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where[]            = 'DATE(pu.created_at) <= :date_to';
+            $params['date_to']  = $filters['date_to'];
+        }
+
         $stmt = $this->db->prepare(
-            'SELECT pu.*, s.name AS supplier_name, p.name AS product_name
+            'SELECT pu.*, s.name AS supplier_name, p.name AS product_name, p.barcode AS product_barcode
              FROM purchases pu
              JOIN suppliers s ON s.id = pu.supplier_id
              JOIN products p ON p.id = pu.product_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY pu.created_at DESC
-             LIMIT 200'
+             LIMIT 500'
         );
         $stmt->execute($params);
         return $stmt->fetchAll();
