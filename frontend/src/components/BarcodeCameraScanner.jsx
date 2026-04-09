@@ -5,6 +5,61 @@ import { NotFoundException } from '@zxing/library'
 import { X } from 'lucide-react'
 
 /**
+ * على HTTP (ما عدا localhost) المتصفحات الحديثة لا تعرّف `navigator.mediaDevices` — فينهار ZXing عند قراءة getUserMedia.
+ * بعض الأجهزة تعرض فقط الواجهة المسبوقة (webkitGetUserMedia).
+ */
+function ensureCameraApi() {
+  if (typeof navigator === 'undefined') return false
+
+  if (typeof navigator.mediaDevices?.getUserMedia === 'function') {
+    return true
+  }
+
+  const legacy =
+    navigator.getUserMedia ||
+    navigator.webkitGetUserMedia ||
+    navigator.mozGetUserMedia ||
+    navigator.msGetUserMedia
+
+  if (typeof legacy !== 'function') {
+    return false
+  }
+
+  try {
+    if (!navigator.mediaDevices) {
+      navigator.mediaDevices = {}
+    }
+    if (typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      navigator.mediaDevices.getUserMedia = function (constraints) {
+        return new Promise((resolve, reject) => {
+          legacy.call(navigator, constraints, resolve, reject)
+        })
+      }
+    }
+  } catch {
+    return false
+  }
+
+  return true
+}
+
+function cameraUnavailableMessage() {
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  const localhost =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]'
+  const secure =
+    (typeof window !== 'undefined' && window.isSecureContext === true) || localhost
+
+  if (!secure) {
+    return 'الكاميرا غير متاحة على هذا الرابط لأن الاتصال غير آمن (HTTP). افتح النظام عبر https:// أو استخدم شهادة SSL على الخادم (حتى على الشبكة الداخلية).'
+  }
+
+  return 'المتصفح لا يوفّر واجهة الكاميرا هنا. جرّب Chrome أو Safari المحدّث، وتأكد من أذونات الكاميرا للموقع.'
+}
+
+/**
  * ملء الشاشة فوق المودال: قراءة باركود/QR من كاميرا الجهاز (مفيد على الهاتف دون قارئ).
  * يُعرض عبر portal على document.body حتى لا يُقصّه overflow المودال.
  */
@@ -19,6 +74,12 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
   useEffect(() => {
     const video = videoRef.current
     if (!video) return undefined
+
+    if (!ensureCameraApi()) {
+      setStarting(false)
+      setError(cameraUnavailableMessage())
+      return undefined
+    }
 
     const reader = new BrowserMultiFormatReader()
     let finished = false
@@ -77,13 +138,21 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
         } catch {
           /* ignore */
         }
+        const raw = String(e?.message || '')
         const name = e?.name || ''
         let msg = 'تعذر تشغيل الكاميرا.'
-        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+
+        if (
+          raw.includes('getUserMedia') ||
+          raw.includes('mediaDevices') ||
+          raw.includes('undefined')
+        ) {
+          msg = cameraUnavailableMessage()
+        } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
           msg = 'تم رفض إذن الكاميرا. اسمح بالوصول من إعدادات المتصفح أو أيقونة القفل في شريط العنوان.'
         } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
           msg = 'لم يُعثر على كاميرا في هذا الجهاز.'
-        } else if (String(e?.message || '').toLowerCase().includes('secure')) {
+        } else if (raw.toLowerCase().includes('secure')) {
           msg = 'الكاميرا تتطلب اتصالاً آمناً (HTTPS) في معظم المتصفحات.'
         } else if (e?.message) {
           msg = String(e.message)
