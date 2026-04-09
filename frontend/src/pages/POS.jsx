@@ -319,6 +319,7 @@ function CartTotals({ items, subtotal, tax, total, taxEnabled, taxRate }) {
 function ProductCard({ product, onAdd }) {
   const isOutOfStock = product.quantity <= 0
   const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
+  const upb          = parseInt(product.units_per_box, 10) || 1
 
   return (
     <button
@@ -336,7 +337,7 @@ function ProductCard({ product, onAdd }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        height: '72px',
+        height: '78px',
         overflow: 'hidden',
         touchAction: 'manipulation',
       }}
@@ -349,12 +350,19 @@ function ProductCard({ product, onAdd }) {
       }}>
         {product.name}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem', gap: '0.25rem', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)' }}>
           {formatCurrency(product.price)}
         </span>
-        {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
-        {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
+        <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexShrink: 0 }}>
+          {upb > 1 && (
+            <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
+              📦 {formatNumber(upb)}
+            </span>
+          )}
+          {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
+          {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
+        </div>
       </div>
     </button>
   )

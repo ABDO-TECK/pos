@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ShoppingCart, Check, X, Package, Box } from 'lucide-react'
+import { Plus, Minus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
 import toast from 'react-hot-toast'
@@ -52,6 +52,202 @@ export default function Suppliers() {
   )
 }
 
+/** سطر سلة استلام — نفس منطق وواجهة الصندوق في `components/pos/Cart.jsx` */
+function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
+  const product     = line.product
+  const unitsPerBox = Math.max(1, parseInt(product.units_per_box, 10) || 1)
+  const hasBox      = unitsPerBox > 1
+  const [unitMode, setUnitMode] = useState('piece')
+
+  const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(line.quantity / unitsPerBox)) : null
+  const displayQty = unitMode === 'box' ? boxCount : line.quantity
+
+  const handleUnitModeChange = (mode) => {
+    if (mode === unitMode) return
+    setUnitMode(mode)
+    if (mode === 'piece') {
+      onUpdateQty(product.id, 1)
+    } else {
+      onUpdateQty(product.id, unitsPerBox)
+    }
+  }
+
+  const handleDecrement = () => {
+    if (unitMode === 'box') {
+      const newBoxes = Math.max(1, boxCount - 1)
+      onUpdateQty(product.id, newBoxes * unitsPerBox)
+    } else {
+      onUpdateQty(product.id, line.quantity - 1)
+    }
+  }
+
+  const handleIncrement = () => {
+    if (unitMode === 'box') {
+      onUpdateQty(product.id, (boxCount + 1) * unitsPerBox)
+    } else {
+      onUpdateQty(product.id, line.quantity + 1)
+    }
+  }
+
+  const handleQtyInputChange = (raw) => {
+    const val = parseInt(raw, 10) || 1
+    if (unitMode === 'box') {
+      onUpdateQty(product.id, Math.max(1, val) * unitsPerBox)
+    } else {
+      onUpdateQty(product.id, Math.max(1, val))
+    }
+  }
+
+  return (
+    <div
+      style={{
+        padding: '0.6rem 0.75rem',
+        background: 'var(--surface)',
+        borderRadius: '0.4rem',
+        border: '1px solid var(--border)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: '0.88rem',
+              lineHeight: 1.4,
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {product.name}
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{product.barcode}</div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--secondary)', fontWeight: 700 }}>
+            {formatCurrency(line.cost * line.quantity)}
+          </div>
+        </div>
+        <div
+          style={{
+            fontSize: '0.8rem',
+            color: 'var(--text-muted)',
+            minWidth: '50px',
+            textAlign: 'left',
+            flexShrink: 0,
+            marginTop: '0.1rem',
+          }}
+        >
+          {formatCurrency(line.cost)}
+        </div>
+        <button
+          type="button"
+          className="btn btn-icon"
+          style={{
+            padding: '0.3rem',
+            color: 'var(--danger)',
+            background: 'transparent',
+            border: 'none',
+            flexShrink: 0,
+            marginTop: '0.1rem',
+          }}
+          onClick={onRemove}
+          title="إزالة"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+
+      <div style={{ marginTop: '0.45rem' }}>
+        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>
+          التكلفة للقطعة
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className="input"
+          style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+          value={line.cost}
+          onChange={(e) => onUpdateCost(product.id, e.target.value)}
+        />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+        {hasBox && (
+          <select
+            value={unitMode}
+            onChange={(e) => handleUnitModeChange(e.target.value)}
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '0.22rem 0.35rem',
+              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : 'var(--border)'}`,
+              borderRadius: '0.3rem',
+              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
+              color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text)',
+              cursor: 'pointer',
+              flexShrink: 0,
+              fontFamily: 'inherit',
+            }}
+          >
+            <option value="piece">قطعة</option>
+            <option value="box">صندوق ({unitsPerBox})</option>
+          </select>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: 1, minWidth: '140px' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon"
+            style={{ padding: '0.3rem', borderRadius: '0.3rem' }}
+            onClick={handleDecrement}
+          >
+            <Minus size={14} />
+          </button>
+          <input
+            type="number"
+            min={1}
+            value={displayQty}
+            onChange={(e) => handleQtyInputChange(e.target.value)}
+            style={{
+              width: '3rem',
+              textAlign: 'center',
+              border: '1px solid var(--border)',
+              borderRadius: '0.3rem',
+              padding: '0.25rem 0.2rem',
+              fontSize: '0.9rem',
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon"
+            style={{ padding: '0.3rem', borderRadius: '0.3rem' }}
+            onClick={handleIncrement}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+
+        <span
+          style={{
+            fontSize: '0.72rem',
+            color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text-muted)',
+            fontWeight: 600,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.2rem',
+          }}
+        >
+          {unitMode === 'box' ? (
+            <>
+              <Package size={11} /> {formatNumber(line.quantity)} قطعة
+            </>
+          ) : null}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 /* ──────────────────────────── Receive Goods (POS-like) ── */
 function ReceiveGoods() {
   const [suppliers, setSuppliers]     = useState([])
@@ -88,37 +284,42 @@ function ReceiveGoods() {
 
   /* ── Cart helpers ── */
   const addToCart = (product) => {
-    setCart(prev => {
-      const existing = prev.find(c => c.product.id === product.id)
+    setCart((prev) => {
+      const existing = prev.find((c) => c.product.id === product.id)
       if (existing) {
-        return prev.map(c =>
-          c.product.id === product.id
-            ? { ...c, quantity: c.quantity + (c.byBox ? (c.product.units_per_box || 1) : 1) }
-            : c
+        return prev.map((c) =>
+          c.product.id === product.id ? { ...c, quantity: c.quantity + 1 } : c
         )
       }
-      return [...prev, {
-        product,
-        quantity: 1,
-        cost: parseFloat(product.cost) > 0 ? parseFloat(product.cost) : parseFloat(product.price) || 0,
-        byBox: false,
-      }]
+      return [
+        ...prev,
+        {
+          product,
+          quantity: 1,
+          cost:
+            parseFloat(product.cost) > 0
+              ? parseFloat(product.cost)
+              : parseFloat(product.price) || 0,
+        },
+      ]
     })
     toast.success(product.name, { duration: 700 })
   }
 
-  const updateCartItem = (id, field, val) =>
-    setCart(prev => prev.map(c => c.product.id === id ? { ...c, [field]: parseFloat(val) || 0 } : c))
+  const updateLineQuantity = (productId, qty) => {
+    const q = Math.max(1, parseInt(qty, 10) || 1)
+    setCart((prev) =>
+      prev.map((c) => (c.product.id === productId ? { ...c, quantity: q } : c))
+    )
+  }
 
-  const toggleByBox = (id) =>
-    setCart(prev => prev.map(c => {
-      if (c.product.id !== id) return c
-      const upb = c.product.units_per_box || 1
-      const byBox = !c.byBox
-      // round quantity to nearest box multiple
-      const qty = byBox ? Math.max(upb, Math.round(c.quantity / upb) * upb) : c.quantity
-      return { ...c, byBox, quantity: qty }
-    }))
+  const updateLineCost = (productId, raw) => {
+    const v = parseFloat(raw)
+    const cost = Number.isFinite(v) && v >= 0 ? v : 0
+    setCart((prev) =>
+      prev.map((c) => (c.product.id === productId ? { ...c, cost } : c))
+    )
+  }
 
   const removeFromCart = (id) => setCart(prev => prev.filter(c => c.product.id !== id))
 
@@ -196,71 +397,15 @@ function ReceiveGoods() {
             <span style={{ fontSize: '0.85rem' }}>اضغط على منتج لإضافته</span>
           </div>
         ) : (
-          cart.map(c => {
-            const upb = c.product.units_per_box || 1
-            const hasBox = upb > 1
-            return (
-              <div key={c.product.id} style={{
-                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                padding: '0.5rem', background: 'var(--bg)', fontSize: '0.82rem',
-              }}>
-                {/* Product name + remove */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
-                    {c.product.name}
-                  </span>
-                  <button onClick={() => removeFromCart(c.product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}>
-                    <X size={13} />
-                  </button>
-                </div>
-
-                {/* Qty + Cost */}
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكمية</label>
-                    <input type="number" min="1" className="input"
-                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                      value={c.quantity} onChange={e => updateCartItem(c.product.id, 'quantity', e.target.value)}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>التكلفة / وحدة</label>
-                    <input type="number" min="0" step="0.5" className="input"
-                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                      value={c.cost} onChange={e => updateCartItem(c.product.id, 'cost', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Box toggle — only if product has units_per_box > 1 */}
-                {hasBox && (
-                  <button
-                    onClick={() => toggleByBox(c.product.id)}
-                    style={{
-                      marginTop: '0.35rem',
-                      display: 'flex', alignItems: 'center', gap: '0.3rem',
-                      fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                      padding: '0.25rem 0.5rem', borderRadius: 'var(--radius)',
-                      border: `1px solid ${c.byBox ? 'var(--secondary)' : 'var(--border)'}`,
-                      background: c.byBox ? 'rgba(59,130,246,.1)' : 'var(--surface)',
-                      color: c.byBox ? 'var(--secondary)' : 'var(--text-muted)',
-                      width: '100%',
-                    }}
-                  >
-                    <Box size={12} />
-                    {c.byBox
-                      ? `بالكرتون — ${formatNumber(upb)} قطعة/كرتون`
-                      : `تحويل للكرتون (${formatNumber(upb)} قطعة)`}
-                  </button>
-                )}
-
-                {/* Line total */}
-                <div style={{ textAlign: 'left', color: 'var(--secondary)', fontWeight: 600, marginTop: '0.3rem', fontSize: '0.82rem' }}>
-                  = {formatCurrency(c.cost * c.quantity)}
-                </div>
-              </div>
-            )
-          })
+          cart.map((c) => (
+            <ReceiveGoodsCartLine
+              key={c.product.id}
+              line={c}
+              onUpdateQty={updateLineQuantity}
+              onUpdateCost={updateLineCost}
+              onRemove={() => removeFromCart(c.product.id)}
+            />
+          ))
         )}
       </div>
 

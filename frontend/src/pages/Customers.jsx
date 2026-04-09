@@ -11,10 +11,19 @@ import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+/** تاريخ/وقت كشف الحساب بالإنجليزية (أسماء الأشهر والأرقام اللاتينية) */
 const fmtDate = (s) => {
   if (!s) return '—'
   const d = new Date(s)
-  return d.toLocaleDateString('ar-EG', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  if (Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
 }
 
 const emptyForm = { name: '', phone: '', address: '', initial_balance: '' }
