@@ -2,11 +2,28 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/config/config.php';
+
 // ── CORS ──────────────────────────────────────────────────────
-$allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'];
+$allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'https://localhost:5173',
+    'https://127.0.0.1:5173',
+];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-if (in_array($origin, $allowedOrigins)) {
+$originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
+// في وضع التطوير: السماح بأصل Vite من IP الشبكة المحلية (HTTP/HTTPS) للهاتف والكمبيوتر
+if (!$originAllowed && APP_DEBUG && $origin !== '') {
+    $lanOrigin = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
+    if (preg_match($lanOrigin, $origin) === 1) {
+        $originAllowed = true;
+    }
+}
+
+if ($originAllowed) {
     header("Access-Control-Allow-Origin: $origin");
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -20,7 +37,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Autoload ───────────────────────────────────────────────────
-require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/Database.php';
 require_once __DIR__ . '/helpers/Migrations.php';
 try {

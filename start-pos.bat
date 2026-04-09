@@ -1,11 +1,16 @@
 @echo off
 setlocal
 
+:: Use project folder (where this .bat lives)
+set "POS_ROOT=%~dp0"
+if "%POS_ROOT:~-1%"=="\" set "POS_ROOT=%POS_ROOT:~0,-1%"
+
 :: ═══════════════════════════════════════════════════════════════
-::  واجهة الفرونت إند — اختر أحد الخيارين (غيّر السطر التالي فقط):
-::    start أو dev  → تطوير مع Vite (منفذ 5173، نفس npm run dev)
-::    preview       → تشغيل نسخة الإنتاج بعد build (منفذ 4173)
-::  ملاحظة: preview يحتاج تشغيل "npm run build" مرة واحدة على الأقل
+:: Frontend mode — change only the next line:
+::   start or dev  → Vite dev server (port 5173, same as npm start / npm run dev)
+::                   Opens https:// if certs\*-key.pem exists, else http://
+::   preview       → Production preview after build (port 4173, default HTTP)
+:: Note: run "npm run build" at least once before using preview
 :: ═══════════════════════════════════════════════════════════════
 set FRONTEND_MODE=start
 
@@ -42,7 +47,8 @@ if /I "%FRONTEND_MODE%"=="preview" (
     set NPM_CMD=npm run preview
 ) else (
     set FRONTEND_PORT=5173
-    set FRONTEND_URL=http://localhost:5173
+    set "FRONTEND_URL=http://localhost:5173"
+    for /f "delims=" %%F in ('dir /b "%POS_ROOT%\certs\*-key.pem" 2^>nul') do set "FRONTEND_URL=https://localhost:5173"
     if /I "%FRONTEND_MODE%"=="dev" (
         set NPM_CMD=npm run dev
     ) else (
@@ -51,11 +57,10 @@ if /I "%FRONTEND_MODE%"=="preview" (
 )
 
 echo [%date% %time%] Checking frontend on port %FRONTEND_PORT%... >> "%LOG%"
-:: يجب أن يكون المنفذ في حالة LISTENING فقط — تجاهل TIME_WAIT/CLOSE_WAIT بعد إغلاق cmd
 call :port_listening %FRONTEND_PORT%
 if errorlevel 1 (
     echo [%date% %time%] Starting: %NPM_CMD% >> "%LOG%"
-    cd /d "C:\xampp\htdocs\pos\frontend"
+    cd /d "%POS_ROOT%\frontend"
     start "" /min cmd /k "%NPM_CMD%"
 ) else (
     echo [%date% %time%] Frontend already listening on %FRONTEND_PORT%. >> "%LOG%"
@@ -81,6 +86,5 @@ goto :eof
 :: ── Returns 0 if TCP port is LISTENING, 1 otherwise ───────────
 :port_listening
 set "_p=%~1"
-:: LISTENING + مسافة بعد رقم المنفذ لتجنب مطابقة 5173 داخل 51730
 netstat -an 2>nul | find "LISTENING" | find ":%_p% " >nul
 exit /b %errorlevel%

@@ -2,6 +2,9 @@
 private-key.pem
 *.pem
 *.key
+# مجلد الشهادات المحلية — اترك README فقط إن رغبت
+certs/*.pem
+certs/*-key.pem
 .env
 .env.*
 !.env.example
