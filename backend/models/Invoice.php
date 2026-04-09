@@ -61,11 +61,12 @@ class Invoice {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO invoices (user_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due)
-             VALUES (:user_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due)'
+            'INSERT INTO invoices (user_id, customer_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due, amount_due)
+             VALUES (:user_id, :customer_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due, :amount_due)'
         );
         $stmt->execute([
             'user_id'        => $data['user_id'],
+            'customer_id'    => $data['customer_id'] ?? null,
             'subtotal'       => $data['subtotal'],
             'discount'       => $data['discount'] ?? 0,
             'tax'            => $data['tax'] ?? 0,
@@ -73,6 +74,7 @@ class Invoice {
             'payment_method' => $data['payment_method'] ?? 'cash',
             'amount_paid'    => $data['amount_paid'] ?? $data['total'],
             'change_due'     => $data['change_due'] ?? 0,
+            'amount_due'     => $data['amount_due'] ?? 0,
         ]);
         return (int) $this->db->lastInsertId();
     }

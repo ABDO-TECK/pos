@@ -72,3 +72,11 @@ export const createBulkPurchase = (data) => api.post('/purchases/bulk', data)
 
 // Reports (profit)
 export const getProfitReport = (params) => api.get('/reports/profit', { params })
+
+// Customers
+export const getCustomers    = ()           => api.get('/customers')
+export const getCustomer     = (id)         => api.get(`/customers/${id}`)
+export const createCustomer  = (data)       => api.post('/customers', data)
+export const updateCustomer  = (id, data)   => api.put(`/customers/${id}`, data)
+export const deleteCustomer  = (id)         => api.delete(`/customers/${id}`)
+export const addCustomerPayment = (id, data) => api.post(`/customers/${id}/payment`, data)

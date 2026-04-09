@@ -74,23 +74,40 @@ CREATE TABLE IF NOT EXISTS tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- Customers (نظام العملاء والبيع بالآجل)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS customers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    phone VARCHAR(30) NULL,
+    address TEXT NULL,
+    initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لعميل قديم له دين مسبق',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Invoices
 -- ============================================================
 CREATE TABLE IF NOT EXISTS invoices (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NULL COMMENT 'رابط العميل — فارغ للمبيعات النقدية',
     subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     discount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tax DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    payment_method ENUM('cash','card') NOT NULL DEFAULT 'cash',
+    payment_method ENUM('cash','card','vodafone_cash','instapay','other_wallet','credit') NOT NULL DEFAULT 'cash',
     amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     change_due DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    amount_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'المتبقي على ذمة العميل بعد خصم العربون',
     status ENUM('completed','refunded') NOT NULL DEFAULT 'completed',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_invoice_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_invoice_user     FOREIGN KEY (user_id)     REFERENCES users(id),
+    CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
     INDEX idx_created_at (created_at),
-    INDEX idx_user (user_id)
+    INDEX idx_user       (user_id),
+    INDEX idx_customer   (customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -137,6 +154,24 @@ CREATE TABLE IF NOT EXISTS purchases (
     CONSTRAINT fk_purchase_product FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_supplier (supplier_id),
     INDEX idx_created_at_purchase (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Customer Ledger (كشف الحساب — دفتر الأستاذ)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS customer_ledger (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT UNSIGNED NOT NULL,
+    type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مبيعات آجلة), credit=دائن (دفعات)',
+    amount DECIMAL(10,2) NOT NULL,
+    description VARCHAR(500) NULL COMMENT 'البيان: فاتورة بيع / دفعة نقدية / رصيد مبدئي...',
+    invoice_id INT UNSIGNED NULL COMMENT 'رابط للفاتورة إن وجدت',
+    created_by INT UNSIGNED NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ledger_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ledger_invoice  FOREIGN KEY (invoice_id)  REFERENCES invoices(id)  ON DELETE SET NULL,
+    INDEX idx_customer_ledger (customer_id),
+    INDEX idx_ledger_created  (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

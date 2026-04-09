@@ -5,11 +5,13 @@ class SaleController extends Controller {
     private Invoice $invoiceModel;
     private Product $productModel;
     private PDO     $db;
+    private Customer $customerModel;
 
     public function __construct() {
-        $this->invoiceModel = new Invoice();
-        $this->productModel = new Product();
-        $this->db           = Database::getInstance();
+        $this->invoiceModel  = new Invoice();
+        $this->productModel  = new Product();
+        $this->customerModel = new Customer();
+        $this->db            = Database::getInstance();
     }
 
     private function getSettings(): array {
@@ -94,6 +96,19 @@ class SaleController extends Controller {
         $amountPaid = (float)($data['amount_paid'] ?? $total);
         $changeDue  = round($amountPaid - $total, 2);
 
+        // البيع الآجل — معرف العميل وقيمة العربون
+        $customerId = isset($data['customer_id']) && $data['customer_id'] > 0
+            ? (int)$data['customer_id']
+            : null;
+        $isCreditSale = ($data['payment_method'] ?? '') === 'credit' || $customerId !== null;
+        // العربون: المبلغ المدفوع فعلاً عند البيع الآجل
+        $deposit = $isCreditSale ? (float)($data['deposit'] ?? 0) : 0;
+        if ($isCreditSale) {
+            $amountPaid = $deposit;
+            $changeDue  = 0;
+        }
+        $amountDue = $isCreditSale ? round($total - $deposit, 2) : 0;
+
         $auth = $_SERVER['AUTH_USER'];
 
         // Begin transaction
@@ -115,8 +130,20 @@ class SaleController extends Controller {
                 ]);
                 $invoiceId = $replaceInvoiceId;
             } else {
+                // إنشاء عميل جديد داخل الـ transaction إذا أُرسلت بياناته
+                if ($customerId === null && !empty($data['new_customer']['name'])) {
+                    $nc = $data['new_customer'];
+                    $customerId = $this->customerModel->create([
+                        'name'            => trim($nc['name']),
+                        'phone'           => $nc['phone'] ?? null,
+                        'address'         => $nc['address'] ?? null,
+                        'initial_balance' => 0,
+                    ]);
+                }
+
                 $invoiceId = $this->invoiceModel->create([
                     'user_id'        => $auth['id'],
+                    'customer_id'    => $customerId,
                     'subtotal'       => $subtotal,
                     'discount'       => $discount,
                     'tax'            => $tax,
@@ -124,7 +151,32 @@ class SaleController extends Controller {
                     'payment_method' => $data['payment_method'],
                     'amount_paid'    => $amountPaid,
                     'change_due'     => max(0, $changeDue),
+                    'amount_due'     => $amountDue,
                 ]);
+
+                // تسجيل قيد مدين في كشف حساب العميل
+                if ($customerId !== null) {
+                    $depositDesc = $deposit > 0 ? " (عربون {$deposit})" : '';
+                    $this->customerModel->addLedgerEntry([
+                        'customer_id' => $customerId,
+                        'type'        => 'debit',
+                        'amount'      => $total,
+                        'description' => "فاتورة بيع #{$invoiceId}{$depositDesc}",
+                        'invoice_id'  => $invoiceId,
+                        'created_by'  => $auth['id'],
+                    ]);
+                    // تسجيل العربون كقيد دائن إذا كان موجوداً
+                    if ($deposit > 0) {
+                        $this->customerModel->addLedgerEntry([
+                            'customer_id' => $customerId,
+                            'type'        => 'credit',
+                            'amount'      => $deposit,
+                            'description' => "عربون فاتورة #{$invoiceId}",
+                            'invoice_id'  => $invoiceId,
+                            'created_by'  => $auth['id'],
+                        ]);
+                    }
+                }
             }
 
             foreach ($enrichedItems as $item) {

@@ -59,5 +59,13 @@ $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddle
 $router->get('/api/backup', [BackupController::class, 'download', [AuthMiddleware::class, AdminMiddleware::class]]);
 $router->post('/api/backup/restore', [BackupController::class, 'restore', [AuthMiddleware::class, AdminMiddleware::class]]);
 
-// ── Bulk Purchases ─────────────────────────────────────────────
+// ── Bulk Purchases ─────────────────────────────────────────────────────────────────────────────────────────
 $router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);
+
+// ── Customers ──────────────────────────────────────────────────────────────────────────────────────────
+$router->get('/api/customers',                 [CustomerController::class, 'index',      [AuthMiddleware::class]]);
+$router->post('/api/customers',                [CustomerController::class, 'store',      [AuthMiddleware::class]]);
+$router->get('/api/customers/{id}',            [CustomerController::class, 'show',       [AuthMiddleware::class]]);
+$router->put('/api/customers/{id}',            [CustomerController::class, 'update',     [AuthMiddleware::class]]);
+$router->delete('/api/customers/{id}',         [CustomerController::class, 'destroy',    [AuthMiddleware::class, AdminMiddleware::class]]);
+$router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment', [AuthMiddleware::class]]);

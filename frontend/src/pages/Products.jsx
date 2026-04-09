@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse, SlidersHorizontal } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
@@ -146,6 +146,13 @@ export default function Products() {
   const [categoryForm,      setCategoryForm]      = useState({ name: '' })
   const [editCategoryId,    setEditCategoryId]    = useState(null)
   const [savingCategory,    setSavingCategory]    = useState(false)
+  const [categoryTabSearch, setCategoryTabSearch] = useState('')
+
+  const categoryTabQ = categoryTabSearch.trim().toLowerCase()
+  const filteredCategoriesTab = useMemo(() => {
+    if (!categoryTabQ) return categories
+    return categories.filter((c) => (c.name || '').toLowerCase().includes(categoryTabQ))
+  }, [categories, categoryTabQ])
 
   // ── Load ───────────────────────────────────────────────────
   const loadProducts = async () => {
@@ -454,51 +461,76 @@ export default function Products() {
 
       {/* ── Categories Tab ───────────────────────────────────── */}
       {tab === 'categories' && (
-        <div className="card">
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>اسم الفئة</th>
-                  <th>عدد المنتجات</th>
-                  <th>الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingCategories ? (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: '2rem' }}><span className="spinner" /></td></tr>
-                ) : categories.length === 0 ? (
+        <>
+          <div className="card" style={{ padding: '0.75rem' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={18} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.75rem', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                className="input"
+                style={{ paddingRight: '2.5rem' }}
+                placeholder="بحث في أسماء الفئات…"
+                value={categoryTabSearch}
+                onChange={(e) => setCategoryTabSearch(e.target.value)}
+              />
+            </div>
+            {categories.length > 0 && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                معروض {formatNumber(filteredCategoriesTab.length)} من {formatNumber(categories.length)} فئة
+              </div>
+            )}
+          </div>
+          <div className="card">
+            <div className="table-wrapper">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-                      <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🏷️</div>
-                      لا توجد فئات — أضف فئة جديدة للبدء
-                    </td>
+                    <th>#</th>
+                    <th>اسم الفئة</th>
+                    <th>عدد المنتجات</th>
+                    <th>الإجراءات</th>
                   </tr>
-                ) : categories.map((c, i) => {
-                  const count = allProducts.filter((p) => p.category_id === c.id).length
-                  return (
-                    <tr key={c.id}>
-                      <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(i + 1)}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <Tag size={14} color="var(--secondary)" />{c.name}
-                        </span>
-                      </td>
-                      <td><span className="badge badge-gray">{formatNumber(count)} منتج</span></td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEditCategory(c)}><Pencil size={13} /> تعديل</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDeleteCategory(c.id, c.name)}><Trash2 size={13} /> حذف</button>
-                        </div>
+                </thead>
+                <tbody>
+                  {loadingCategories ? (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: '2rem' }}><span className="spinner" /></td></tr>
+                  ) : categories.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🏷️</div>
+                        لا توجد فئات — أضف فئة جديدة للبدء
                       </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  ) : filteredCategoriesTab.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                        لا توجد فئات تطابق البحث
+                      </td>
+                    </tr>
+                  ) : filteredCategoriesTab.map((c, i) => {
+                    const count = allProducts.filter((p) => p.category_id === c.id).length
+                    return (
+                      <tr key={c.id}>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(i + 1)}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <Tag size={14} color="var(--secondary)" />{c.name}
+                          </span>
+                        </td>
+                        <td><span className="badge badge-gray">{formatNumber(count)} منتج</span></td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openEditCategory(c)}><Pencil size={13} /> تعديل</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDeleteCategory(c.id, c.name)}><Trash2 size={13} /> حذف</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Product Modal ─────────────────────────────────────── */}
@@ -509,7 +541,12 @@ export default function Products() {
               <h2 style={{ fontWeight: 700 }}>{productModal === 'create' ? 'إضافة منتج جديد' : 'تعديل المنتج'}</h2>
               <button className="btn btn-ghost btn-icon" onClick={() => setProductModal(null)}><X size={18} /></button>
             </div>
-            <ProductForm form={productForm} setForm={setProductForm} categories={categories} />
+            <ProductForm
+              form={productForm}
+              setForm={setProductForm}
+              categories={categories}
+              modalKey={productModal + (editProductId ?? 'new')}
+            />
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
               <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={handleSaveProduct} disabled={savingProduct}>
                 {savingProduct ? <span className="spinner" /> : null} حفظ
@@ -564,7 +601,7 @@ function StatCard({ icon, label, value, color }) {
   )
 }
 
-function ProductForm({ form, setForm, categories }) {
+function ProductForm({ form, setForm, categories, modalKey }) {
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
@@ -656,10 +693,12 @@ function ProductForm({ form, setForm, categories }) {
       </div>
       <div style={{ gridColumn: 'span 2' }}>
         <Label>الفئة</Label>
-        <select className="input" {...f('category_id')}>
-          <option value="">— بدون فئة —</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <CategoryCombobox
+          key={modalKey}
+          categories={categories}
+          value={form.category_id ?? ''}
+          onChange={(id) => setForm((p) => ({ ...p, category_id: id }))}
+        />
       </div>
     </div>
   )
@@ -667,6 +706,125 @@ function ProductForm({ form, setForm, categories }) {
 
 function Label({ children }) {
   return <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>{children}</label>
+}
+
+/** قائمة فئات مع بحث فوري؛ «بدون فئة» أولاً دائماً */
+function CategoryCombobox({ categories, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const rootRef = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  useEffect(() => {
+    if (!open) setQ('')
+  }, [open])
+
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    if (!t) return categories
+    return categories.filter((c) => (c.name || '').toLowerCase().includes(t))
+  }, [categories, q])
+
+  const selected = categories.find((c) => String(c.id) === String(value))
+  const displayLabel =
+    value === '' || value == null ? 'بدون فئة' : (selected?.name ?? 'فئة غير معروفة')
+
+  const pickNone = () => {
+    onChange('')
+    setOpen(false)
+  }
+  const pick = (id) => {
+    onChange(String(id))
+    setOpen(false)
+  }
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="input"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          cursor: 'pointer',
+          textAlign: 'right',
+          background: 'var(--surface)',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
+        <ChevronDown size={18} style={{ flexShrink: 0, opacity: 0.6, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
+      {open && (
+        <div
+          className="card"
+          style={{
+            position: 'absolute',
+            zIndex: 50,
+            left: 0,
+            right: 0,
+            top: 'calc(100% + 4px)',
+            padding: '0.5rem',
+            maxHeight: 'min(320px, 70vh)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.4rem',
+            boxShadow: 'var(--shadow-lg, 0 12px 40px rgba(0,0,0,.12))',
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div style={{ position: 'relative' }}>
+            <Search size={16} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '0.65rem', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              className="input"
+              style={{ paddingRight: '2.2rem', fontSize: '0.88rem' }}
+              placeholder="ابحث عن فئة…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${value === '' || value == null ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ justifyContent: 'flex-start', fontWeight: 600 }}
+              onClick={pickNone}
+            >
+              بدون فئة
+            </button>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                لا توجد فئات تطابق البحث
+              </div>
+            ) : (
+              filtered.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`btn btn-sm ${String(value) === String(c.id) ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ justifyContent: 'flex-start' }}
+                  onClick={() => pick(c.id)}
+                >
+                  {c.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TabBtn({ active, onClick, children }) {

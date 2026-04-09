@@ -33,6 +33,7 @@ require_once __DIR__ . '/models/User.php';
 require_once __DIR__ . '/models/Product.php';
 require_once __DIR__ . '/models/Invoice.php';
 require_once __DIR__ . '/models/Supplier.php';
+require_once __DIR__ . '/models/Customer.php';
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/ProductController.php';
 require_once __DIR__ . '/controllers/CategoryController.php';
@@ -43,6 +44,7 @@ require_once __DIR__ . '/controllers/ReportController.php';
 require_once __DIR__ . '/controllers/UserController.php';
 require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/BackupController.php';
+require_once __DIR__ . '/controllers/CustomerController.php';
 
 // ── Error handling ─────────────────────────────────────────────
 set_exception_handler(function (Throwable $e) {

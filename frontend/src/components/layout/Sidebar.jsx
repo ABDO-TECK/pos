@@ -1,20 +1,21 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Package, Truck, BarChart2,
-  Users, LogOut, Store, Receipt, Settings, X,
+  Users, LogOut, Store, Receipt, Settings, X, UserCheck,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import useSettingsStore from '../../store/settingsStore'
 import toast from 'react-hot-toast'
 
 const navItems = [
-  { to: '/',          label: 'نقطة البيع',   icon: ShoppingCart, roles: ['admin', 'cashier'] },
-  { to: '/sales',     label: 'سجل المبيعات', icon: Receipt,      roles: ['admin', 'cashier'] },
-  { to: '/products',  label: 'المنتجات',     icon: Package,      roles: ['admin'] },
-  { to: '/suppliers', label: 'الموردون',      icon: Truck,        roles: ['admin'] },
-  { to: '/reports',   label: 'التقارير',      icon: BarChart2,    roles: ['admin'] },
-  { to: '/users',     label: 'المستخدمون',   icon: Users,        roles: ['admin'] },
-  { to: '/settings',  label: 'الإعدادات',    icon: Settings,     roles: ['admin'] },
+  { to: '/',           label: 'نقطة البيع',   icon: ShoppingCart, roles: ['admin', 'cashier'] },
+  { to: '/sales',      label: 'سجل المبيعات', icon: Receipt,      roles: ['admin', 'cashier'] },
+  { to: '/products',   label: 'المنتجات',     icon: Package,      roles: ['admin'] },
+  { to: '/customers',  label: 'العملاء',       icon: UserCheck,    roles: ['admin'] },
+  { to: '/suppliers',  label: 'الموردون',      icon: Truck,        roles: ['admin'] },
+  { to: '/reports',    label: 'التقارير',      icon: BarChart2,    roles: ['admin'] },
+  { to: '/users',      label: 'المستخدمون',   icon: Users,        roles: ['admin'] },
+  { to: '/settings',   label: 'الإعدادات',    icon: Settings,     roles: ['admin'] },
 ]
 
 export default function Sidebar({ onClose }) {

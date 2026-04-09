@@ -14,6 +14,7 @@ const Reports   = lazy(() => import('./pages/Reports'))
 const Users     = lazy(() => import('./pages/Users'))
 const Sales     = lazy(() => import('./pages/Sales'))
 const Settings  = lazy(() => import('./pages/Settings'))
+const Customers = lazy(() => import('./pages/Customers'))
 
 function PageLoader() {
   return (
@@ -104,6 +105,14 @@ export default function App() {
             <PrivateRoute>
               <AdminRoute>
                 <Layout><Settings /></Layout>
+              </AdminRoute>
+            </PrivateRoute>
+          } />
+
+          <Route path="/customers" element={
+            <PrivateRoute>
+              <AdminRoute>
+                <Layout><Customers /></Layout>
               </AdminRoute>
             </PrivateRoute>
           } />
