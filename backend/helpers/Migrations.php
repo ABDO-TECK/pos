@@ -42,7 +42,7 @@ class Migrations {
                 $this->db->exec(
                     "ALTER TABLE invoices
                      MODIFY COLUMN payment_method
-                     ENUM('cash','card','vodafone_cash','instapay','other_wallet')
+                     ENUM('cash','card','vodafone_cash','instapay','other_wallet','credit')
                      NOT NULL DEFAULT 'cash'"
                 );
             } catch (Throwable $e) {
@@ -66,6 +66,21 @@ class Migrations {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
             );
             $this->mark('002_product_barcodes');
+        }
+
+        // ── 003: add 'credit' to payment_method ENUM (fix for DBs that ran 001 without it) ─
+        if (!$this->applied('003_payment_method_credit')) {
+            try {
+                $this->db->exec(
+                    "ALTER TABLE invoices
+                     MODIFY COLUMN payment_method
+                     ENUM('cash','card','vodafone_cash','instapay','other_wallet','credit')
+                     NOT NULL DEFAULT 'cash'"
+                );
+            } catch (Throwable $e) {
+                error_log('Migration 003 notice: ' . $e->getMessage());
+            }
+            $this->mark('003_payment_method_credit');
         }
     }
 }

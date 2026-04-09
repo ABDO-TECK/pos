@@ -15,6 +15,7 @@ const METHOD_LABELS = {
   vodafone_cash: 'فودافون كاش',
   instapay:      'انستاباي',
   other_wallet:  'محفظة أخرى',
+  credit:        'آجل',
 }
 
 export default function Sales() {
@@ -260,6 +261,12 @@ export default function Sales() {
                   <TotalRow label="الإجمالي" value={formatCurrency(selected.total)} bold green />
                   {parseFloat(selected.change_due) > 0 && (
                     <TotalRow label="الباقي" value={formatCurrency(selected.change_due)} />
+                  )}
+                  {selected.payment_method === 'credit' && (
+                    <TotalRow label="المدفوع (عربون)" value={formatCurrency(selected.amount_paid)} />
+                  )}
+                  {selected.payment_method === 'credit' && parseFloat(selected.amount_due) > 0 && (
+                    <TotalRow label="المتبقي على الذمة" value={formatCurrency(selected.amount_due)} danger bold />
                   )}
                 </div>
 

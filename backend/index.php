@@ -26,7 +26,6 @@ require_once __DIR__ . '/core/Router.php';
 require_once __DIR__ . '/core/Controller.php';
 require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Cache.php';
-require_once __DIR__ . '/helpers/Migrations.php';
 require_once __DIR__ . '/middleware/AuthMiddleware.php';
 require_once __DIR__ . '/middleware/AdminMiddleware.php';
 require_once __DIR__ . '/models/User.php';
@@ -52,9 +51,6 @@ set_exception_handler(function (Throwable $e) {
     error_log($e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     Response::serverError($message);
 });
-
-// ── Auto-migrations ────────────────────────────────────────────
-(new Migrations())->run();
 
 // ── Routes ─────────────────────────────────────────────────────
 $router = new Router();

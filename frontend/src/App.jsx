@@ -47,7 +47,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster
-        position="top-left"
+        position="top-center"
         toastOptions={{ style: { fontFamily: 'Tajawal, sans-serif', fontSize: '0.9rem', direction: 'rtl' } }}
       />
       <SettingsLoader />

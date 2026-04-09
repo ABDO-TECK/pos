@@ -11,6 +11,7 @@ const PAYMENT_LABELS = {
     vodafone_cash: 'فودافون كاش',
     instapay:      'انستاباي',
     other_wallet:  'محفظة إلكترونية',
+    credit:        'آجل',
 }
 
 const AR = 'ar-EG-u-nu-latn'
@@ -178,6 +179,12 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
         <div class="total-row"><span>المبلغ المدفوع</span><span>${fc(invoice.amount_paid)}</span></div>
         <div class="total-row"><span>المبلغ المسترد</span><span>${fc(changeAmt)}</span></div>` : ''
 
+    const isCredit = invoice.payment_method === 'credit'
+    const amountDue = parseFloat(invoice.amount_due ?? (invoice.total - invoice.amount_paid))
+    const creditRows = isCredit ? `
+        ${parseFloat(invoice.amount_paid) > 0 ? `<div class="total-row"><span>عربون مدفوع</span><span>${fc(invoice.amount_paid)}</span></div>` : ''}
+        <div class="total-row grand"><span>متبقي آجلاً</span><span>${fc(amountDue)}</span></div>` : ''
+
     return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -227,6 +234,7 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
         ${discountRow}${taxRow}
         <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
         ${cashRows}
+        ${creditRows}
     </div>
 
     <!-- Footer -->

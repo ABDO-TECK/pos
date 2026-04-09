@@ -20,6 +20,7 @@ const METHOD_LABELS = {
     vodafone_cash: 'فودافون كاش',
     instapay:      'انستاباي',
     other_wallet:  'محفظة إلكترونية',
+    credit:        'آجل',
 }
 
 export default function Receipt({ invoice, change, onClose }) {
@@ -154,6 +155,14 @@ export default function Receipt({ invoice, change, onClose }) {
                             <>
                                 <TotalLine label="المدفوع" value={formatCurrency(invoice.amount_paid)} />
                                 <TotalLine label="المسترد" value={formatCurrency(changeAmt)} />
+                            </>
+                        )}
+                        {invoice.payment_method === 'credit' && (
+                            <>
+                                {parseFloat(invoice.amount_paid) > 0 && (
+                                    <TotalLine label="عربون مدفوع" value={formatCurrency(invoice.amount_paid)} />
+                                )}
+                                <TotalLine label="متبقي آجلاً" value={formatCurrency(invoice.amount_due ?? (invoice.total - invoice.amount_paid))} bold />
                             </>
                         )}
                     </div>

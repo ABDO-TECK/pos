@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ShoppingCart, Check, X, Package } from 'lucide-react'
+import { Plus, Trash2, ShoppingCart, Check, X, Package, Box } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
 import toast from 'react-hot-toast'
@@ -13,7 +13,7 @@ export default function Suppliers() {
   const [tab, setTab] = useState(0)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: 'calc(100vh - 3rem)' }}>
       {/* Header + tab selector */}
       <div className="page-header" style={{ marginBottom: 0 }}>
         <h2>الموردون</h2>
@@ -54,14 +54,14 @@ export default function Suppliers() {
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
 function ReceiveGoods() {
-  const [suppliers, setSuppliers]   = useState([])
-  const [supplierId, setSupplierId] = useState('')
+  const [suppliers, setSuppliers]     = useState([])
+  const [supplierId, setSupplierId]   = useState('')
   const [allProducts, setAllProducts] = useState([])
-  const [search, setSearch]         = useState('')
-  const [cart, setCart]             = useState([])
-  const [loading, setLoading]       = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const [mobileTab, setMobileTab]   = useState('products') // mobile only
+  const [search, setSearch]           = useState('')
+  const [cart, setCart]               = useState([])
+  const [loading, setLoading]         = useState(false)
+  const [confirming, setConfirming]   = useState(false)
+  const [mobileTab, setMobileTab]     = useState('products')
 
   const q = search.trim().toLowerCase()
   const products = q
@@ -86,17 +86,39 @@ function ReceiveGoods() {
       .finally(() => setLoading(false))
   }, [])
 
+  /* ── Cart helpers ── */
   const addToCart = (product) => {
     setCart(prev => {
       const existing = prev.find(c => c.product.id === product.id)
-      if (existing) return prev.map(c => c.product.id === product.id ? { ...c, quantity: c.quantity + 1 } : c)
-      return [...prev, { product, quantity: 1, cost: product.cost ?? product.price }]
+      if (existing) {
+        return prev.map(c =>
+          c.product.id === product.id
+            ? { ...c, quantity: c.quantity + (c.byBox ? (c.product.units_per_box || 1) : 1) }
+            : c
+        )
+      }
+      return [...prev, {
+        product,
+        quantity: 1,
+        cost: parseFloat(product.cost) > 0 ? parseFloat(product.cost) : parseFloat(product.price) || 0,
+        byBox: false,
+      }]
     })
     toast.success(product.name, { duration: 700 })
   }
 
   const updateCartItem = (id, field, val) =>
     setCart(prev => prev.map(c => c.product.id === id ? { ...c, [field]: parseFloat(val) || 0 } : c))
+
+  const toggleByBox = (id) =>
+    setCart(prev => prev.map(c => {
+      if (c.product.id !== id) return c
+      const upb = c.product.units_per_box || 1
+      const byBox = !c.byBox
+      // round quantity to nearest box multiple
+      const qty = byBox ? Math.max(upb, Math.round(c.quantity / upb) * upb) : c.quantity
+      return { ...c, byBox, quantity: qty }
+    }))
 
   const removeFromCart = (id) => setCart(prev => prev.filter(c => c.product.id !== id))
 
@@ -122,17 +144,14 @@ function ReceiveGoods() {
     }
   }
 
-  /* ── Shared panels ── */
+  /* ── Panels ── */
   const ProductsPanel = (
-    <div className="card pos-products-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
-      {/* Header */}
+    <div className="card sup-products-panel">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexShrink: 0 }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 700 }}>المنتجات</h3>
         <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
       </div>
-
-      {/* Grid */}
-      <div className="product-grid" style={{ overflowY: 'auto', flex: 1, alignContent: 'start' }}>
+      <div className="product-grid">
         {loading ? (
           <div style={{ gridColumn: '1/-1', padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
         ) : products.map(p => (
@@ -143,13 +162,25 @@ function ReceiveGoods() {
   )
 
   const CartPanel = (
-    <div style={{
-      display: 'flex', flexDirection: 'column', flex: 1,
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', overflow: 'hidden',
-    }}>
+    <div className="card sup-cart-panel">
       {/* Supplier select */}
-      <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
+            <ShoppingCart size={18} />
+            السلة
+            {cartCount > 0 && <span className="badge badge-green">{formatNumber(cartCount)}</span>}
+          </div>
+          {cart.length > 0 && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setCart([]); toast('تم مسح السلة') }}
+              style={{ color: 'var(--danger)' }}
+            >
+              <Trash2 size={14} /> مسح الكل
+            </button>
+          )}
+        </div>
         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>المورد</label>
         <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
           <option value="">اختر مورد…</option>
@@ -157,61 +188,94 @@ function ReceiveGoods() {
         </select>
       </div>
 
-      {/* Items */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      {/* Items — scrollable, bounded by parent height */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         {cart.length === 0 ? (
           <div className="empty-state" style={{ padding: '2rem' }}>
             <ShoppingCart size={28} style={{ opacity: 0.3 }} />
             <span style={{ fontSize: '0.85rem' }}>اضغط على منتج لإضافته</span>
           </div>
         ) : (
-          cart.map(c => (
-            <div key={c.product.id} style={{
-              border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-              padding: '0.5rem', background: 'var(--bg)', fontSize: '0.82rem',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
-                  {c.product.name}
-                </span>
-                <button onClick={() => removeFromCart(c.product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}>
-                  <X size={13}/>
-                </button>
-              </div>
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكمية</label>
-                  <input type="number" min="1" className="input"
-                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                    value={c.quantity} onChange={e => updateCartItem(c.product.id, 'quantity', e.target.value)}
-                  />
+          cart.map(c => {
+            const upb = c.product.units_per_box || 1
+            const hasBox = upb > 1
+            return (
+              <div key={c.product.id} style={{
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                padding: '0.5rem', background: 'var(--bg)', fontSize: '0.82rem',
+              }}>
+                {/* Product name + remove */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
+                    {c.product.name}
+                  </span>
+                  <button onClick={() => removeFromCart(c.product.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}>
+                    <X size={13} />
+                  </button>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>التكلفة</label>
-                  <input type="number" min="0" step="0.5" className="input"
-                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
-                    value={c.cost} onChange={e => updateCartItem(c.product.id, 'cost', e.target.value)}
-                  />
+
+                {/* Qty + Cost */}
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>الكمية</label>
+                    <input type="number" min="1" className="input"
+                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
+                      value={c.quantity} onChange={e => updateCartItem(c.product.id, 'quantity', e.target.value)}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>التكلفة / وحدة</label>
+                    <input type="number" min="0" step="0.5" className="input"
+                      style={{ padding: '0.3rem 0.5rem', fontSize: '0.82rem', marginTop: '0.15rem' }}
+                      value={c.cost} onChange={e => updateCartItem(c.product.id, 'cost', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Box toggle — only if product has units_per_box > 1 */}
+                {hasBox && (
+                  <button
+                    onClick={() => toggleByBox(c.product.id)}
+                    style={{
+                      marginTop: '0.35rem',
+                      display: 'flex', alignItems: 'center', gap: '0.3rem',
+                      fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                      padding: '0.25rem 0.5rem', borderRadius: 'var(--radius)',
+                      border: `1px solid ${c.byBox ? 'var(--secondary)' : 'var(--border)'}`,
+                      background: c.byBox ? 'rgba(59,130,246,.1)' : 'var(--surface)',
+                      color: c.byBox ? 'var(--secondary)' : 'var(--text-muted)',
+                      width: '100%',
+                    }}
+                  >
+                    <Box size={12} />
+                    {c.byBox
+                      ? `بالكرتون — ${formatNumber(upb)} قطعة/كرتون`
+                      : `تحويل للكرتون (${formatNumber(upb)} قطعة)`}
+                  </button>
+                )}
+
+                {/* Line total */}
+                <div style={{ textAlign: 'left', color: 'var(--secondary)', fontWeight: 600, marginTop: '0.3rem', fontSize: '0.82rem' }}>
+                  = {formatCurrency(c.cost * c.quantity)}
                 </div>
               </div>
-              <div style={{ textAlign: 'left', color: 'var(--secondary)', fontWeight: 600, marginTop: '0.3rem', fontSize: '0.82rem' }}>
-                = {formatCurrency(c.cost * c.quantity)}
-              </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
       {/* Total + confirm */}
-      <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '1rem' }}>
-          <span>الإجمالي</span>
-          <span style={{ color: 'var(--secondary)' }}>{formatCurrency(cartTotal)}</span>
-        </div>
+      <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {cart.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '1rem', paddingBottom: '0.25rem' }}>
+            <span>الإجمالي</span>
+            <span style={{ color: 'var(--secondary)' }}>{formatCurrency(cartTotal)}</span>
+          </div>
+        )}
         <button onClick={handleConfirm} disabled={confirming || cart.length === 0 || !supplierId}
-          className="btn btn-primary" style={{ justifyContent: 'center', width: '100%' }}>
-          {confirming ? <span className="spinner" /> : <Check size={16}/>}
-          تأكيد الاستلام
+          className="btn btn-primary btn-lg" style={{ justifyContent: 'center', width: '100%' }}>
+          {confirming ? <span className="spinner" /> : <Check size={18} />}
+          تأكيد الاستلام{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
         </button>
       </div>
     </div>
@@ -219,34 +283,26 @@ function ReceiveGoods() {
 
   return (
     <>
-      {/* ── Search + barcode (نفس سلوك نقطة البيع: تركيز دائم ومسح متكرر) ── */}
-      <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', flexShrink: 0 }}>
+      {/* Barcode input — flexShrink:0 so it never grows */}
+      <div className="card" style={{ padding: '0.75rem', flexShrink: 0 }}>
         <BarcodeInput
           onFilterChange={setSearch}
           allowOutOfStock
-          onAddProduct={(p) => {
-            addToCart(p)
-            setMobileTab('cart')
-          }}
+          onAddProduct={(p) => { addToCart(p); setMobileTab('cart') }}
         />
       </div>
 
-      {/* ── Desktop layout ── */}
+      {/* Desktop layout — flex:1 + minHeight:0 so it fills exactly what's left */}
       <div className="sup-desktop">
         {ProductsPanel}
-        <div style={{ width: '300px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-          {CartPanel}
-        </div>
+        {CartPanel}
       </div>
 
-      {/* ── Mobile layout ── */}
+      {/* Mobile layout */}
       <div className="sup-mobile">
-        {/* Tab content */}
         <div className="sup-mobile-content">
           {mobileTab === 'products' ? ProductsPanel : CartPanel}
         </div>
-
-        {/* Bottom tab bar */}
         <div className="pos-tab-bar">
           <button className={`pos-tab${mobileTab === 'products' ? ' active' : ''}`} onClick={() => setMobileTab('products')}>
             <Package size={20} />
@@ -254,22 +310,47 @@ function ReceiveGoods() {
           </button>
           <button className={`pos-tab${mobileTab === 'cart' ? ' active' : ''}`} onClick={() => setMobileTab('cart')}>
             <ShoppingCart size={20} />
-            <span>الفاتورة</span>
+            <span>السلة</span>
             {cartCount > 0 && <span className="tab-badge">{formatNumber(cartCount)}</span>}
           </button>
         </div>
       </div>
 
       <style>{`
+        /* ── Desktop ── */
         .sup-desktop {
           display: flex;
-          gap: 1rem;
+          gap: 0.75rem;
           flex: 1;
-          min-height: 0;
+          min-height: 0;      /* KEY: allows children to shrink below content size */
           overflow: hidden;
         }
         .sup-mobile { display: none; }
 
+        /* Products panel */
+        .sup-products-panel {
+          flex: 1;
+          padding: 0.75rem;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          min-height: 0;
+        }
+
+        /* Cart panel — fixed width, flex column, NO overflow on panel itself */
+        .sup-cart-panel {
+          width: 320px;
+          flex-shrink: 0;
+          padding: 0.75rem;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;      /* KEY */
+          overflow: hidden;   /* clip to bounds */
+          gap: 0;
+        }
+
+        /* ── Mobile ── */
         @media (max-width: 767px) {
           .sup-desktop { display: none !important; }
           .sup-mobile {
@@ -285,7 +366,6 @@ function ReceiveGoods() {
             flex-direction: column;
             overflow: hidden;
           }
-          /* Reuse POS tab-bar styles */
           .pos-tab-bar {
             display: flex;
             background: var(--surface);
@@ -335,9 +415,11 @@ function ReceiveGoods() {
   )
 }
 
+/* ── Product card — same as POS but shows cost instead of price ── */
 function ProductCard({ product, onAdd }) {
   const isOutOfStock = product.quantity <= 0
   const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
+  const upb          = parseInt(product.units_per_box) || 1
 
   return (
     <button
@@ -355,7 +437,7 @@ function ProductCard({ product, onAdd }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        height: '72px',
+        height: '78px',
         overflow: 'hidden',
         touchAction: 'manipulation',
         fontFamily: 'inherit',
@@ -370,12 +452,19 @@ function ProductCard({ product, onAdd }) {
       }}>
         {product.name}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem' }}>
-        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)' }}>
-          {formatCurrency(product.cost > 0 ? product.cost : product.price)}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem', gap: '0.25rem', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--secondary)' }}>
+          {formatCurrency(parseFloat(product.cost) > 0 ? product.cost : product.price)}
         </span>
-        {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
-        {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
+        <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center' }}>
+          {upb > 1 && (
+            <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
+              📦 {formatNumber(upb)}
+            </span>
+          )}
+          {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
+          {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
+        </div>
       </div>
     </button>
   )
@@ -398,7 +487,7 @@ function ManageSuppliers() {
 
   useEffect(() => { load() }, [])
 
-  const openNew = () => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '' }); setShowForm(true) }
+  const openNew  = () => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '' }); setShowForm(true) }
   const openEdit = (s) => { setEditing(s); setForm({ name: s.name, phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '' }); setShowForm(true) }
 
   const handleSubmit = async (e) => {
@@ -421,7 +510,7 @@ function ManageSuppliers() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div>
-        <button onClick={openNew} className="btn btn-primary"><Plus size={16}/> إضافة مورد</button>
+        <button onClick={openNew} className="btn btn-primary"><Plus size={16} /> إضافة مورد</button>
       </div>
 
       <div className="card">
@@ -446,7 +535,6 @@ function ManageSuppliers() {
                   <tr key={s.id}>
                     <td style={{ fontWeight: 600 }}>
                       {s.name}
-                      {/* Show phone under name on mobile */}
                       {s.phone && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }} className="show-mobile">{s.phone}</div>}
                     </td>
                     <td style={{ color: 'var(--text-muted)' }} className="hide-mobile">{s.phone ?? '—'}</td>
@@ -466,19 +554,18 @@ function ManageSuppliers() {
         )}
       </div>
 
-      {/* Form Modal */}
       {showForm && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowForm(false)}>
           <div className="modal" style={{ maxWidth: '480px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h2 style={{ fontWeight: 700 }}>{editing ? 'تعديل مورد' : 'إضافة مورد'}</h2>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowForm(false)}><X size={18}/></button>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowForm(false)}><X size={18} /></button>
             </div>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {[
                 { key: 'name',    label: 'الاسم *',            type: 'text',  required: true },
                 { key: 'phone',   label: 'الهاتف',             type: 'text' },
-                { key: 'email',   label: 'البريد الإلكتروني', type: 'email' },
+                { key: 'email',   label: 'البريد الإلكتروني',  type: 'email' },
                 { key: 'address', label: 'العنوان',            type: 'text' },
               ].map(fi => (
                 <div key={fi.key}>
