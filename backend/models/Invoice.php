@@ -137,7 +137,31 @@ class Invoice {
         $stmt->execute([$date]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $row['total_profit'] = $this->getTotalProfitForDate($date);
+        $row['total_cost']   = $this->getTotalCostForDate($date);
         return $row;
+    }
+
+    /** إجمالي تكلفة البضاعة المباعة: unit_cost × الكمية — فواتير مكتملة */
+    public function getTotalCostForDate(string $date): float {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM(ii.unit_cost * ii.quantity), 0)
+             FROM invoice_items ii
+             INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             WHERE DATE(inv.created_at) = ?'
+        );
+        $stmt->execute([$date]);
+        return (float)$stmt->fetchColumn();
+    }
+
+    public function getTotalCostForMonth(int $month, int $year): float {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM(ii.unit_cost * ii.quantity), 0)
+             FROM invoice_items ii
+             INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
+        );
+        $stmt->execute([$month, $year]);
+        return (float)$stmt->fetchColumn();
     }
 
     /** صافي الربح: (سعر البيع − تكلفة لحظة البيع المخزنة في البند) × الكمية */

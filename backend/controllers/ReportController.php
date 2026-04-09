@@ -27,11 +27,13 @@ class ReportController extends Controller {
         $totalRevenue  = array_sum(array_column($data, 'total_revenue'));
         $totalInvoices = array_sum(array_column($data, 'total_invoices'));
         $totalProfit   = $this->invoiceModel->getTotalProfitForMonth($month, $year);
+        $totalCost     = $this->invoiceModel->getTotalCostForMonth($month, $year);
 
         Response::success([
             'month'           => $month,
             'year'            => $year,
             'total_revenue'   => $totalRevenue,
+            'total_cost'      => $totalCost,
             'total_invoices'  => $totalInvoices,
             'total_profit'    => $totalProfit,
             'daily_breakdown' => $data,
@@ -143,10 +145,14 @@ class ReportController extends Controller {
 
         $monthProfit = $this->invoiceModel->getTotalProfitForMonth((int)date('n'), (int)date('Y'));
         $todayProfit = $this->invoiceModel->getTotalProfitForDate(date('Y-m-d'));
+        $todayCost   = $this->invoiceModel->getTotalCostForDate(date('Y-m-d'));
+        $monthCost   = $this->invoiceModel->getTotalCostForMonth((int)date('n'), (int)date('Y'));
 
         Response::success([
             'today_revenue'  => (float)$todayRevenue,
             'month_revenue'  => (float)$monthRevenue,
+            'today_cost'     => $todayCost,
+            'month_cost'     => $monthCost,
             'today_profit'   => $todayProfit,
             'month_profit'   => $monthProfit,
             'today_invoices' => (int)$todayInvoices,

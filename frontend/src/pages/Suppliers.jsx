@@ -513,6 +513,31 @@ function ReceiveGoods() {
             flex-direction: column;
             overflow: hidden;
           }
+
+          /* ── Cart panel: full width on mobile ── */
+          .sup-cart-panel {
+            width: 100% !important;
+            flex: 1;
+            min-height: 0;
+            padding: 0.6rem;
+            overflow: hidden;
+          }
+
+          /* ── Products panel: full width on mobile ── */
+          .sup-products-panel {
+            width: 100% !important;
+            flex: 1;
+            min-height: 0;
+            padding: 0.6rem;
+          }
+          .sup-products-panel .product-grid {
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 0.35rem;
+            overflow-y: auto;
+            flex: 1;
+            align-content: start;
+          }
+
           .pos-tab-bar {
             display: flex;
             background: var(--surface);

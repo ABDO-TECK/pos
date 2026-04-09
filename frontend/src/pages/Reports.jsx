@@ -77,8 +77,10 @@ export default function Reports() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
             <SCard label="إيرادات اليوم" value={formatCurrency(summary.today_revenue)} color="var(--primary)" icon="💰" />
+            <SCard label="إجمالي التكاليف (اليوم)" value={formatCurrency(summary.today_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة: تكلفة الوحدة × الكمية — فواتير مكتملة" />
             <SCard label="صافي ربح اليوم" value={formatCurrency(summary.today_profit ?? 0)} color={profitColor(summary.today_profit)} icon="📈" title="صافي الربح = (سعر البيع − تكلفة المنتج) × الكمية — فواتير مكتملة فقط" />
             <SCard label="إيرادات الشهر" value={formatCurrency(summary.month_revenue)} color="var(--secondary)" icon="📅" />
+            <SCard label="إجمالي التكاليف (الشهر)" value={formatCurrency(summary.month_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة خلال الشهر الحالي — فواتير مكتملة" />
             <SCard label="صافي ربح الشهر" value={formatCurrency(summary.month_profit ?? 0)} color={profitColor(summary.month_profit)} icon="📊" title="صافي الربح = (سعر البيع − تكلفة المنتج) × الكمية — فواتير مكتملة فقط" />
             <SCard label="فواتير اليوم" value={formatNumber(summary.today_invoices)} icon="🧾" />
             <SCard label="إجمالي المنتجات" value={formatNumber(summary.total_products)} icon="📦" />
@@ -120,6 +122,7 @@ export default function Reports() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
                 <SCard label="الفواتير" value={formatNumber(daily.summary?.total_invoices ?? 0)} icon="🧾" />
                 <SCard label="الإيرادات" value={formatCurrency(daily.summary?.total_revenue)} color="var(--primary)" icon="💰" />
+                <SCard label="إجمالي التكاليف" value={formatCurrency(daily.summary?.total_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة — للتاريخ المختار" />
                 <SCard label="صافي الربح" value={formatCurrency(daily.summary?.total_profit ?? 0)} color={profitColor(daily.summary?.total_profit)} icon="📈" title="(سعر البيع − التكلفة) × الكمية — للتاريخ المختار" />
                 <SCard label="الخصومات" value={formatCurrency(daily.summary?.total_discount)} icon="🏷️" />
                 <SCard label="الضرائب" value={formatCurrency(daily.summary?.total_tax)} icon="📊" />
@@ -169,6 +172,7 @@ export default function Reports() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
                 <SCard label="الإيرادات الشهرية" value={formatCurrency(monthly.total_revenue)} color="var(--primary)" icon="💰" />
+                <SCard label="إجمالي التكاليف" value={formatCurrency(monthly.total_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة — للشهر المختار" />
                 <SCard label="صافي الربح" value={formatCurrency(monthly.total_profit ?? 0)} color={profitColor(monthly.total_profit)} icon="📈" title="(سعر البيع − التكلفة) × الكمية — للشهر المختار" />
                 <SCard label="الفواتير" value={formatNumber(monthly.total_invoices)} icon="🧾" />
               </div>
