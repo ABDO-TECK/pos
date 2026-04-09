@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     product_id INT UNSIGNED NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
     price DECIMAL(10,2) NOT NULL,
+    unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'تكلفة الوحدة لحظة البيع (للتقارير)',
     subtotal DECIMAL(10,2) NOT NULL,
     CONSTRAINT fk_item_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
     CONSTRAINT fk_item_product FOREIGN KEY (product_id) REFERENCES products(id),

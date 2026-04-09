@@ -82,5 +82,31 @@ class Migrations {
             }
             $this->mark('003_payment_method_credit');
         }
+
+        // ── 004: invoice_items.unit_cost — تكلفة لحظة البيع (تقارير أرباح صحيحة) ─
+        if (!$this->applied('004_invoice_items_unit_cost')) {
+            try {
+                $this->db->exec(
+                    'ALTER TABLE invoice_items
+                     ADD COLUMN unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00
+                     COMMENT "تكلفة الوحدة لحظة البيع"
+                     AFTER price'
+                );
+            } catch (Throwable $e) {
+                if (!str_contains($e->getMessage(), 'Duplicate column')) {
+                    error_log('Migration 004 add column: ' . $e->getMessage());
+                }
+            }
+            try {
+                $this->db->exec(
+                    'UPDATE invoice_items ii
+                     INNER JOIN products p ON p.id = ii.product_id
+                     SET ii.unit_cost = p.cost'
+                );
+            } catch (Throwable $e) {
+                error_log('Migration 004 backfill: ' . $e->getMessage());
+            }
+            $this->mark('004_invoice_items_unit_cost');
+        }
     }
 }

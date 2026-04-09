@@ -22,6 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // ── Autoload ───────────────────────────────────────────────────
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/Database.php';
+require_once __DIR__ . '/helpers/Migrations.php';
+try {
+    (new Migrations())->run();
+} catch (Throwable $e) {
+    error_log('Migrations: ' . $e->getMessage());
+}
 require_once __DIR__ . '/core/Router.php';
 require_once __DIR__ . '/core/Controller.php';
 require_once __DIR__ . '/helpers/Response.php';

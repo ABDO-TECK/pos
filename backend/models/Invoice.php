@@ -80,15 +80,17 @@ class Invoice {
     }
 
     public function addItem(int $invoiceId, array $item): void {
-        $stmt = $this->db->prepare(
-            'INSERT INTO invoice_items (invoice_id, product_id, quantity, price, subtotal)
-             VALUES (:invoice_id, :product_id, :quantity, :price, :subtotal)'
+        $unitCost = isset($item['unit_cost']) ? (float)$item['unit_cost'] : 0.0;
+        $stmt     = $this->db->prepare(
+            'INSERT INTO invoice_items (invoice_id, product_id, quantity, price, unit_cost, subtotal)
+             VALUES (:invoice_id, :product_id, :quantity, :price, :unit_cost, :subtotal)'
         );
         $stmt->execute([
             'invoice_id' => $invoiceId,
             'product_id' => $item['product_id'],
             'quantity'   => $item['quantity'],
             'price'      => $item['price'],
+            'unit_cost'  => $unitCost,
             'subtotal'   => $item['quantity'] * $item['price'],
         ]);
     }
@@ -138,13 +140,12 @@ class Invoice {
         return $row;
     }
 
-    /** صافي الربح من البنود (سعر البيع − التكلفة) × الكمية — فواتير مكتملة فقط */
+    /** صافي الربح: (سعر البيع − تكلفة لحظة البيع المخزنة في البند) × الكمية */
     public function getTotalProfitForDate(string $date): float {
         $stmt = $this->db->prepare(
-            'SELECT COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0)
+            'SELECT COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             INNER JOIN products p ON p.id = ii.product_id
              WHERE DATE(inv.created_at) = ?'
         );
         $stmt->execute([$date]);
@@ -153,10 +154,9 @@ class Invoice {
 
     public function getTotalProfitForMonth(int $month, int $year): float {
         $stmt = $this->db->prepare(
-            'SELECT COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0)
+            'SELECT COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             INNER JOIN products p ON p.id = ii.product_id
              WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
         );
         $stmt->execute([$month, $year]);
@@ -194,12 +194,12 @@ class Invoice {
             'SELECT p.id, p.name, p.barcode,
                     SUM(ii.quantity) AS total_sold,
                     SUM(ii.subtotal) AS total_revenue,
-                    SUM((ii.price - p.cost) * ii.quantity) AS total_profit
+                    SUM((ii.price - ii.unit_cost) * ii.quantity) AS total_profit
              FROM invoice_items ii
              JOIN invoices i ON i.id = ii.invoice_id AND i.status = "completed"
              JOIN products p ON p.id = ii.product_id
              WHERE ' . implode(' AND ', $where) . '
-             GROUP BY p.id
+             GROUP BY p.id, p.name, p.barcode
              ORDER BY total_sold DESC
              LIMIT ' . (int)$limit
         );

@@ -51,49 +51,54 @@ class ReportController extends Controller {
         $month = (int)$this->getParam('month', date('n'));
         $year  = (int)$this->getParam('year', date('Y'));
 
-        // Monthly total cost and profit
+        // تكلفة وربح من unit_cost المخزن لكل بند (لحظة البيع) — وليس products.cost الحالي
         $profitRow = $db->prepare(
             'SELECT
-                COALESCE(SUM(ii.price * ii.quantity), 0)            AS total_revenue,
-                COALESCE(SUM(p.cost  * ii.quantity), 0)             AS total_cost,
-                COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0) AS total_profit
+                COALESCE(SUM(ii.price * ii.quantity), 0)                      AS total_revenue,
+                COALESCE(SUM(ii.unit_cost * ii.quantity), 0)                  AS total_cost,
+                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)      AS total_profit
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             JOIN products p   ON p.id  = ii.product_id
              WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
         );
         $profitRow->execute([$month, $year]);
         $totals = $profitRow->fetch();
 
-        // Top products by profit
+        // أفضل المنتجات ربحاً (مجمّع حسب المنتج)
         $topProfit = $db->prepare(
             'SELECT
-                p.id, p.name, p.price, p.cost,
-                SUM(ii.quantity)                             AS total_sold,
-                SUM(ii.price * ii.quantity)                  AS revenue,
-                SUM(p.cost * ii.quantity)                    AS cost,
-                SUM((ii.price - p.cost) * ii.quantity)       AS profit,
-                ROUND((ii.price - p.cost) / ii.price * 100, 2) AS margin_pct
+                p.id,
+                p.name,
+                MAX(p.price) AS price,
+                SUM(ii.quantity) AS total_sold,
+                SUM(ii.price * ii.quantity) AS revenue,
+                SUM(ii.unit_cost * ii.quantity) AS cost,
+                SUM((ii.price - ii.unit_cost) * ii.quantity) AS profit,
+                ROUND(
+                    CASE WHEN SUM(ii.price * ii.quantity) > 0
+                    THEN 100 * SUM((ii.price - ii.unit_cost) * ii.quantity) / SUM(ii.price * ii.quantity)
+                    ELSE 0 END,
+                    2
+                ) AS margin_pct
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
              JOIN products p   ON p.id  = ii.product_id
              WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?
-             GROUP BY p.id, p.name, p.price, p.cost, ii.price
+             GROUP BY p.id, p.name
              ORDER BY profit DESC
              LIMIT 20'
         );
         $topProfit->execute([$month, $year]);
 
-        // Monthly breakdown (revenue vs cost)
+        // تفصيل يومي
         $dailyBreakdown = $db->prepare(
             'SELECT
-                DATE(inv.created_at)                             AS date,
-                COALESCE(SUM(ii.price * ii.quantity), 0)         AS revenue,
-                COALESCE(SUM(p.cost  * ii.quantity), 0)          AS cost,
-                COALESCE(SUM((ii.price - p.cost) * ii.quantity), 0) AS profit
+                DATE(inv.created_at) AS date,
+                COALESCE(SUM(ii.price * ii.quantity), 0) AS revenue,
+                COALESCE(SUM(ii.unit_cost * ii.quantity), 0) AS cost,
+                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0) AS profit
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             JOIN products p   ON p.id  = ii.product_id
              WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?
              GROUP BY DATE(inv.created_at)
              ORDER BY date ASC'

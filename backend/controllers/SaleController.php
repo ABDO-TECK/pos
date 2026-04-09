@@ -79,6 +79,7 @@ class SaleController extends Controller {
                 'product_id' => $product['id'],
                 'quantity'   => (int)$item['quantity'],
                 'price'      => (float)$product['price'],
+                'unit_cost'  => (float)($product['cost'] ?? 0),
                 'product'    => $product,
             ];
         }
