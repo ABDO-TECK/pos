@@ -587,18 +587,20 @@ html[data-theme="dark"] .login-theme-toggle:hover {
 .barcode-scanner-video-wrap {
   position: relative;
   flex: 1;
-  min-height: 220px;
-  max-height: min(48vh, 380px);
+  min-height: 240px;
+  max-height: min(55vh, 440px);
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;
 }
 
+/* contain: لا يقصّ إطار الكاميرا (cover يخفي أجزاء قد يكون فيها الباركود) */
 .barcode-scanner-video {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
 }
 
 /* إطار أخضر في المنتصف + تعتيم حوله */
@@ -607,10 +609,11 @@ html[data-theme="dark"] .login-theme-toggle:hover {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(72vw, 260px);
-  height: min(72vw, 260px);
-  max-width: 260px;
-  max-height: 260px;
+  /* مستطيل أوسع يناسب الباركود الخطي (EAN/Code128) */
+  width: min(88vw, 300px);
+  height: min(28vw, 120px);
+  max-width: 300px;
+  max-height: 120px;
   border: 3px solid rgba(34, 197, 94, 0.92);
   border-radius: 12px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.52);

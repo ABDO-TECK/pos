@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserMultiFormatReader, BrowserCodeReader } from '@zxing/browser'
-import { NotFoundException } from '@zxing/library'
+import { DecodeHintType } from '@zxing/library'
 import { X } from 'lucide-react'
 
 /**
@@ -59,9 +59,57 @@ function cameraUnavailableMessage() {
   return 'المتصفح لا يوفّر واجهة الكاميرا هنا. جرّب Chrome أو Safari المحدّث، وتأكد من أذونات الكاميرا للموقع.'
 }
 
+/** تلميحات ZXing: أهمها TRY_HARDER لقراءة EAN/Code128 من كاميرا الهاتف */
+function buildReaderHints() {
+  const hints = new Map()
+  hints.set(DecodeHintType.TRY_HARDER, true)
+  return hints
+}
+
+/**
+ * فحص الخطأ بالاسم بدل instanceof — لأن @zxing/library مبنية بـ ES5
+ * ما يكسر سلسلة prototype لفئات Error الفرعية ويجعل instanceof يفشل دائمًا.
+ * هذا هو السبب الجذري لعدم قراءة الباركود: حلقة scan() الداخلية في المكتبة
+ * تستخدم instanceof NotFoundException وعندما تفشل تتوقف الحلقة تمامًا بعد أول إطار.
+ */
+function isBenignScanError(err) {
+  if (!err) return false
+  const name = err.name || err.constructor?.name || ''
+  return (
+    name === 'NotFoundException' ||
+    name === 'ChecksumException' ||
+    name === 'FormatException'
+  )
+}
+
+/**
+ * قيود فيديو أقوى لزيادة دقة الإطار (تحسين قراءة الباركود الخطي).
+ * إن رفضها الجهاز نرجع لقيود أبسط.
+ */
+const RICH_VIDEO_CONSTRAINTS = {
+  video: {
+    facingMode: { ideal: 'environment' },
+    width: { min: 480, ideal: 1280 },
+    height: { min: 360, ideal: 720 },
+  },
+}
+
+const SIMPLE_VIDEO_CONSTRAINTS = {
+  video: { facingMode: 'environment' },
+}
+
+/** تأخير بين محاولات المسح (بالمللي ثانية) */
+const SCAN_INTERVAL = 80
+/** تأخير بعد مسح ناجح */
+const SCAN_SUCCESS_DELAY = 300
+
 /**
  * ملء الشاشة فوق المودال: قراءة باركود/QR من كاميرا الجهاز (مفيد على الهاتف دون قارئ).
  * يُعرض عبر portal على document.body حتى لا يُقصّه overflow المودال.
+ *
+ * ملاحظة مهمة: لا نستخدم decodeFromConstraints/scan الداخلية للمكتبة لأنها تعتمد
+ * على instanceof لفحص NotFoundException — وهذا يفشل في بنية ES5 ويوقف حلقة المسح.
+ * بدلاً من ذلك ننشئ حلقة مسح يدوية تتحكم بكل شيء بنفسها.
  */
 export default function BarcodeCameraScanner({ onResult, onClose }) {
   const videoRef = useRef(null)
@@ -81,84 +129,187 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
       return undefined
     }
 
-    const reader = new BrowserMultiFormatReader()
+    const reader = new BrowserMultiFormatReader(buildReaderHints())
     let finished = false
+    let scanTimer = null
+    /** @type {MediaStream|null} */
+    let activeStream = null
 
     const stopAll = () => {
       finished = true
-      try {
-        BrowserCodeReader.releaseAllStreams()
-      } catch {
-        /* ignore */
+      clearTimeout(scanTimer)
+      if (activeStream) {
+        activeStream.getTracks().forEach((t) => {
+          try { t.stop() } catch { /* ignore */ }
+        })
+        activeStream = null
       }
+      try { BrowserCodeReader.releaseAllStreams() } catch { /* ignore */ }
       const v = videoRef.current
       if (v?.srcObject) {
-        const stream = v.srcObject
-        stream.getTracks().forEach((t) => {
-          try {
-            t.stop()
-          } catch {
-            /* ignore */
-          }
+        v.srcObject.getTracks().forEach((t) => {
+          try { t.stop() } catch { /* ignore */ }
         })
         v.srcObject = null
       }
     }
 
-    reader
-      .decodeFromVideoDevice(undefined, video, (result, err, controls) => {
-        if (finished) return
-        if (result) {
-          const text = result.getText()?.trim()
-          if (text) {
-            finished = true
-            try {
-              controls?.stop()
-            } catch {
-              /* ignore */
-            }
-            stopAll()
-            onResultRef.current(text)
+    /**
+     * حلقة المسح اليدوية — تأخذ لقطة من الفيديو وتحاول فك تشفيرها.
+     * تستخدم فحص الاسم بدل instanceof لتحديد الأخطاء «العادية».
+     */
+    const startManualScanLoop = () => {
+      // إنشاء canvas لالتقاط الإطارات
+      let canvas = null
+      let ctx = null
+
+      const ensureCanvas = () => {
+        const vw = video.videoWidth
+        const vh = video.videoHeight
+        if (!vw || !vh) return false // الفيديو لم يتحمل بعد
+        if (!canvas || canvas.width !== vw || canvas.height !== vh) {
+          canvas = document.createElement('canvas')
+          canvas.width = vw
+          canvas.height = vh
+          try {
+            ctx = canvas.getContext('2d', { willReadFrequently: true })
+          } catch {
+            ctx = canvas.getContext('2d')
           }
         }
-        const benign =
-          err instanceof NotFoundException ||
-          (err && err.constructor?.name === 'NotFoundException')
-        if (err && !benign) {
-          /* أخطاء أخرى نادرة أثناء اللقطات */
-        }
-      })
-      .then(() => {
-        if (!finished) setStarting(false)
-      })
-      .catch((e) => {
-        setStarting(false)
-        try {
-          BrowserCodeReader.releaseAllStreams()
-        } catch {
-          /* ignore */
-        }
-        const raw = String(e?.message || '')
-        const name = e?.name || ''
-        let msg = 'تعذر تشغيل الكاميرا.'
+        return !!ctx
+      }
 
-        if (
-          raw.includes('getUserMedia') ||
-          raw.includes('mediaDevices') ||
-          raw.includes('undefined')
-        ) {
-          msg = cameraUnavailableMessage()
-        } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-          msg = 'تم رفض إذن الكاميرا. اسمح بالوصول من إعدادات المتصفح أو أيقونة القفل في شريط العنوان.'
-        } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-          msg = 'لم يُعثر على كاميرا في هذا الجهاز.'
-        } else if (raw.toLowerCase().includes('secure')) {
-          msg = 'الكاميرا تتطلب اتصالاً آمناً (HTTPS) في معظم المتصفحات.'
-        } else if (e?.message) {
-          msg = String(e.message)
+      const loop = () => {
+        if (finished) return
+        try {
+          if (!ensureCanvas()) {
+            // الفيديو لم يبدأ بعد — نحاول مرة أخرى
+            scanTimer = setTimeout(loop, SCAN_INTERVAL)
+            return
+          }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const result = reader.decodeFromCanvas(canvas)
+          // نجحت القراءة!
+          if (result) {
+            const text = result.getText()?.trim()
+            if (text && !finished) {
+              finished = true
+              stopAll()
+              onResultRef.current(text)
+              return
+            }
+          }
+          // نجاح لكن بدون نص — نحاول مرة أخرى
+          scanTimer = setTimeout(loop, SCAN_SUCCESS_DELAY)
+        } catch (err) {
+          if (isBenignScanError(err)) {
+            // لم يُعثر على باركود في هذا الإطار — عادي، نحاول مرة أخرى
+            scanTimer = setTimeout(loop, SCAN_INTERVAL)
+          } else {
+            // خطأ غير متوقع — نسجله ونستمر بالمحاولة
+            console.warn('[BarcodeCameraScanner] خطأ أثناء المسح:', err)
+            scanTimer = setTimeout(loop, SCAN_INTERVAL)
+          }
         }
-        setError(msg)
+      }
+
+      loop()
+    }
+
+    const startCamera = async () => {
+      let stream = null
+
+      // نحاول أولاً بقيود متقدمة (دقة عالية)
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(RICH_VIDEO_CONSTRAINTS)
+      } catch (richErr) {
+        const name = richErr?.name || ''
+        if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+          // القيود المتقدمة فشلت — نجرب قيود بسيطة
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(SIMPLE_VIDEO_CONSTRAINTS)
+          } catch (simpleErr) {
+            throw simpleErr
+          }
+        } else {
+          throw richErr
+        }
+      }
+
+      if (finished) {
+        // المكون أُغلق أثناء انتظار الكاميرا
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
+      activeStream = stream
+
+      // تفعيل التركيز المستمر إن أمكن (يحسّن قراءة الباركود على الهواتف)
+      try {
+        const track = stream.getVideoTracks()[0]
+        if (track) {
+          const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}
+          if (caps.focusMode && caps.focusMode.includes('continuous')) {
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] })
+          }
+        }
+      } catch {
+        /* ignore — ليس كل الأجهزة تدعم التركيز */
+      }
+
+      video.srcObject = stream
+      video.setAttribute('autoplay', 'true')
+      video.setAttribute('muted', 'true')
+      video.setAttribute('playsinline', 'true')
+
+      await video.play()
+
+      // ننتظر حتى يتحمل الفيديو (videoWidth > 0)
+      await new Promise((resolve) => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          resolve()
+          return
+        }
+        const onLoadedData = () => {
+          video.removeEventListener('loadeddata', onLoadedData)
+          resolve()
+        }
+        video.addEventListener('loadeddata', onLoadedData)
+        // timeout احتياطي
+        setTimeout(resolve, 3000)
       })
+
+      if (!finished) {
+        setStarting(false)
+        startManualScanLoop()
+      }
+    }
+
+    startCamera().catch((e) => {
+      if (finished) return
+      setStarting(false)
+      const raw = String(e?.message || '')
+      const name = e?.name || ''
+      let msg = 'تعذر تشغيل الكاميرا.'
+
+      if (
+        raw.includes('getUserMedia') ||
+        raw.includes('mediaDevices') ||
+        raw.includes('undefined')
+      ) {
+        msg = cameraUnavailableMessage()
+      } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        msg = 'تم رفض إذن الكاميرا. اسمح بالوصول من إعدادات المتصفح أو أيقونة القفل في شريط العنوان.'
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        msg = 'لم يُعثر على كاميرا في هذا الجهاز.'
+      } else if (raw.toLowerCase().includes('secure')) {
+        msg = 'الكاميرا تتطلب اتصالاً آمناً (HTTPS) في معظم المتصفحات.'
+      } else if (e?.message) {
+        msg = String(e.message)
+      }
+      setError(msg)
+    })
 
     return () => {
       stopAll()
@@ -195,7 +346,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
         </div>
 
         <p className="barcode-scanner-hint">
-          وجّه الباركود داخل الإطار الأخضر في منتصف الشاشة حتى يتم القراءة تلقائياً.
+          استخدم الكاميرا الخلفية، أبعد الباركود نحو 15–25 سم، وتأكد أن الخطوط واضحة ومضاءة بشكل جيد. للباركود الخطي اجعل الخطوط أفقية قدر الإمكان.
         </p>
 
         <div className="barcode-scanner-video-wrap">
