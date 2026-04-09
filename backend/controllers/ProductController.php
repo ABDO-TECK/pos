@@ -39,7 +39,7 @@ class ProductController extends Controller {
             'price' => 'required|numeric',
         ]);
         if ($errors) {
-            Response::error('Validation failed', 422, $errors);
+            Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
         // توليد باركود تلقائي إذا كان فارغاً
@@ -69,6 +69,9 @@ class ProductController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             error_log($e->getMessage());
+            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
+                Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
+            }
             Response::serverError('Failed to create product');
         }
 
@@ -82,7 +85,7 @@ class ProductController extends Controller {
             'price' => 'required|numeric',
         ]);
         if ($errors) {
-            Response::error('Validation failed', 422, $errors);
+            Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
         $pid = (int) $id;
@@ -110,10 +113,32 @@ class ProductController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             error_log($e->getMessage());
+            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
+                Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
+            }
             Response::serverError('Failed to update product');
         }
 
         Response::success($this->productModel->findById($pid), 'Product updated');
+    }
+
+    /** رسالة عربية بدل "Validation failed" + أسماء حقول إنجليزية */
+    private function productValidationMessage(array $errors): string {
+        $parts = [];
+        foreach ($errors as $field => $msgs) {
+            $list = is_array($msgs) ? $msgs : [$msgs];
+            foreach ($list as $m) {
+                $msg = (string)$m;
+                $parts[] = match ($field) {
+                    'name'  => str_contains($msg, 'required') ? 'اسم المنتج مطلوب.' : ('اسم المنتج: ' . $msg),
+                    'price' => str_contains($msg, 'required')
+                        ? 'سعر البيع مطلوب.'
+                        : (str_contains($msg, 'numeric') ? 'سعر البيع يجب أن يكون رقماً.' : ('سعر البيع: ' . $msg)),
+                    default => $field . ': ' . $msg,
+                };
+            }
+        }
+        return $parts !== [] ? implode(' ', $parts) : 'تحقق من الحقول المطلوبة.';
     }
 
     public function destroy(string $id): void {

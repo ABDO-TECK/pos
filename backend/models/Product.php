@@ -107,7 +107,16 @@ class Product {
             }
             $owner = $this->findOwnerProductIdByBarcode($code);
             if ($owner !== null && ($excludeProductId === null || (int) $owner !== (int) $excludeProductId)) {
-                Response::error('الباركود "' . $code . '" مستخدم لمنتج آخر', 422);
+                $nameStmt = $this->db->prepare('SELECT name FROM products WHERE id = ? LIMIT 1');
+                $nameStmt->execute([$owner]);
+                $ownerName = $nameStmt->fetchColumn();
+                $ownerName = $ownerName !== false && $ownerName !== null && $ownerName !== ''
+                    ? (string)$ownerName
+                    : ('#' . $owner);
+                Response::error(
+                    'الباركود «' . $code . '» مسجّل مسبقاً للمنتج: «' . $ownerName . '». استخدم باركوداً مختلفاً أو عدّل المنتج الحالي.',
+                    422
+                );
             }
         }
     }

@@ -28,6 +28,65 @@ const STOCK_FILTERS = [
   { id: 'out', label: 'نفد المخزون' },
 ]
 
+/** منتج يملك هذا الباركود (أساسي أو إضافي)، مع استثناء منتج أثناء التعديل */
+function findProductOwningBarcode(allProducts, barcode, excludeProductId) {
+  const t = String(barcode).trim()
+  if (!t) return null
+  for (const p of allProducts) {
+    if (excludeProductId != null && Number(p.id) === Number(excludeProductId)) continue
+    if (String(p.barcode ?? '') === t) return p
+    if ((p.additional_barcodes || []).some((b) => String(b) === t)) return p
+  }
+  return null
+}
+
+function getBarcodeRowConflict(barcodes, rowIndex, excludeProductId, allProducts) {
+  const bc = String(barcodes[rowIndex] ?? '').trim()
+  if (!bc) return null
+  const dupElsewhere = barcodes.some(
+    (b, j) => j !== rowIndex && String(b).trim() === bc
+  )
+  if (dupElsewhere) {
+    return {
+      kind: 'duplicate',
+      title: 'باركود مكرر في النموذج',
+      line: 'هذا الباركود مُدخل في أكثر من حقل؛ احذف التكرار أو غيّر أحد القيمتين.',
+    }
+  }
+  const owner = findProductOwningBarcode(allProducts, bc, excludeProductId)
+  if (owner) {
+    return {
+      kind: 'taken',
+      title: `مسجّل للمنتج: «${owner.name}»`,
+      line: `هذا الباركود يخص المنتج «${owner.name}» بالفعل.`,
+      productName: owner.name,
+    }
+  }
+  return null
+}
+
+function formatProductApiError(err) {
+  const d = err?.response?.data
+  if (!d) return 'حدث خطأ'
+  if (typeof d.message === 'string' && d.message.trim()) return d.message
+  const errors = d.errors
+  if (errors && typeof errors === 'object') {
+    const lines = []
+    for (const [field, msgs] of Object.entries(errors)) {
+      const arr = Array.isArray(msgs) ? msgs : [msgs]
+      const label = field === 'name' ? 'اسم المنتج' : field === 'price' ? 'سعر البيع' : field
+      arr.forEach((raw) => {
+        const m = String(raw)
+        if (m.includes('required')) lines.push(`${label} مطلوب`)
+        else if (m.includes('numeric')) lines.push(`${label} يجب أن يكون رقماً`)
+        else lines.push(`${label}: ${m}`)
+      })
+    }
+    if (lines.length) return lines.join(' — ')
+  }
+  return 'حدث خطأ'
+}
+
 const SORT_OPTIONS = [
   { id: 'name_asc', label: 'الاسم (أ ← ي)' },
   { id: 'name_desc', label: 'الاسم (ي ← أ)' },
@@ -211,7 +270,7 @@ export default function Products() {
       }
       setProductModal(null)
       loadProducts()
-    } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
+    } catch (err) { toast.error(formatProductApiError(err)) }
     finally { setSavingProduct(false) }
   }
 
@@ -546,6 +605,8 @@ export default function Products() {
               setForm={setProductForm}
               categories={categories}
               modalKey={productModal + (editProductId ?? 'new')}
+              allProducts={allProducts}
+              editingProductId={productModal === 'edit' ? editProductId : null}
             />
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
               <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={handleSaveProduct} disabled={savingProduct}>
@@ -601,7 +662,7 @@ function StatCard({ icon, label, value, color }) {
   )
 }
 
-function ProductForm({ form, setForm, categories, modalKey }) {
+function ProductForm({ form, setForm, categories, modalKey, allProducts = [], editingProductId = null }) {
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
@@ -637,32 +698,61 @@ function ProductForm({ form, setForm, categories, modalKey }) {
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
           اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية.
         </p>
-        {barcodes.map((bc, idx) => (
-          <div
-            key={idx}
-            style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', marginBottom: '0.45rem' }}
-          >
-            <input
-              className="input"
-              style={{ flex: 1 }}
-              value={bc}
-              onChange={(e) => setBarcodeAt(idx, e.target.value)}
-              placeholder={idx === 0 ? 'باركود المنتج (أو اتركه فارغًا لتوليد تلقائي)' : 'باركود إضافي'}
-            />
-            {idx > 0 ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                title="حذف هذا الباركود"
-                onClick={() => removeBarcodeRow(idx)}
-              >
-                <X size={16} />
-              </button>
-            ) : (
-              <span style={{ width: '40px', flexShrink: 0 }} />
-            )}
-          </div>
-        ))}
+        {barcodes.map((bc, idx) => {
+          const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts)
+          return (
+            <div key={idx} style={{ marginBottom: '0.45rem' }}>
+              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    className="input"
+                    style={{
+                      width: '100%',
+                      borderColor: conflict ? '#dc2626' : undefined,
+                      boxShadow: conflict ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
+                    }}
+                    value={bc}
+                    onChange={(e) => setBarcodeAt(idx, e.target.value)}
+                    placeholder={idx === 0 ? 'باركود المنتج (أو اتركه فارغًا لتوليد تلقائي)' : 'باركود إضافي'}
+                    title={conflict ? conflict.title : undefined}
+                    aria-invalid={conflict ? true : undefined}
+                  />
+                  {conflict && (
+                    <div
+                      className="barcode-conflict-hint"
+                      style={{
+                        fontSize: '0.72rem',
+                        color: '#991b1b',
+                        marginTop: '0.3rem',
+                        lineHeight: 1.45,
+                        padding: '0.35rem 0.5rem',
+                        background: '#fee2e2',
+                        border: '1px solid #fecaca',
+                        borderRadius: '6px',
+                      }}
+                      title={conflict.line}
+                    >
+                      {conflict.line}
+                    </div>
+                  )}
+                </div>
+                {idx > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    style={{ flexShrink: 0, marginTop: '0.15rem' }}
+                    title="حذف هذا الباركود"
+                    onClick={() => removeBarcodeRow(idx)}
+                  >
+                    <X size={16} />
+                  </button>
+                ) : (
+                  <span style={{ width: '40px', flexShrink: 0 }} />
+                )}
+              </div>
+            </div>
+          )
+        })}
         <button type="button" className="btn btn-ghost btn-sm" onClick={addBarcodeRow} style={{ marginTop: '0.15rem' }}>
           <Plus size={14} style={{ marginLeft: '0.25rem' }} />
           إضافة باركود
