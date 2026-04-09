@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, X, Tag, AlertTriangle, Warehouse, SlidersHorizontal, ChevronDown, Camera } from 'lucide-react'
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
@@ -663,6 +663,20 @@ function StatCard({ icon, label, value, color }) {
 }
 
 function ProductForm({ form, setForm, categories, modalKey, allProducts = [], editingProductId = null }) {
+  const [barcodeCameraRow, setBarcodeCameraRow] = useState(null)
+  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState(null)
+
+  const openBarcodeCamera = async (rowIndex) => {
+    try {
+      if (!BarcodeScannerLazy) {
+        const m = await import('../components/BarcodeCameraScanner')
+        setBarcodeScannerLazy(() => m.default)
+      }
+      setBarcodeCameraRow(rowIndex)
+    } catch {
+      toast.error('تعذر تحميل ماسح الباركود')
+    }
+  }
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
@@ -718,6 +732,7 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
   }, [form.quantity, form.units_per_box])
 
   return (
+    <>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
       <div style={{ gridColumn: 'span 2' }}>
         <Label>اسم المنتج *</Label>
@@ -726,7 +741,7 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
       <div style={{ gridColumn: 'span 2' }}>
       <Label>الباركود</Label>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
-          اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية.
+          اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية. على الهاتف يمكنك الضغط على أيقونة الكاميرا لمسح الباركود.
         </p>
         {barcodes.map((bc, idx) => {
           const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts)
@@ -766,6 +781,16 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
                     </div>
                   )}
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  style={{ flexShrink: 0, marginTop: '0.15rem' }}
+                  title="مسح الباركود بالكاميرا"
+                  aria-label="مسح الباركود بالكاميرا"
+                  onClick={() => openBarcodeCamera(idx)}
+                >
+                  <Camera size={18} />
+                </button>
                 {idx > 0 ? (
                   <button
                     type="button"
@@ -776,9 +801,7 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
                   >
                     <X size={16} />
                   </button>
-                ) : (
-                  <span style={{ width: '40px', flexShrink: 0 }} />
-                )}
+                ) : null}
               </div>
             </div>
           )
@@ -848,6 +871,18 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
         />
       </div>
     </div>
+
+    {BarcodeScannerLazy && barcodeCameraRow !== null && (
+      <BarcodeScannerLazy
+        onResult={(text) => {
+          setBarcodeAt(barcodeCameraRow, text)
+          setBarcodeCameraRow(null)
+          toast.success('تمت قراءة الباركود')
+        }}
+        onClose={() => setBarcodeCameraRow(null)}
+      />
+    )}
+    </>
   )
 }
 
