@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import Layout from './components/layout/Layout'
 import useAuthStore from './store/authStore'
 import useSettingsStore from './store/settingsStore'
+import useThemeStore from './store/themeStore'
 
 // Code splitting via lazy imports
 const Login     = lazy(() => import('./pages/Login'))
@@ -43,13 +44,20 @@ function SettingsLoader() {
   return null
 }
 
-export default function App() {
+function AppShell() {
+  const themeMode = useThemeStore((s) => s.mode)
+  const toastStyle = {
+    fontFamily: 'Tajawal, sans-serif',
+    fontSize: '0.9rem',
+    direction: 'rtl',
+    ...(themeMode === 'dark'
+      ? { background: '#1f2937', color: '#f3f4f6', border: '1px solid #374151' }
+      : {}),
+  }
+
   return (
     <BrowserRouter>
-      <Toaster
-        position="top-center"
-        toastOptions={{ style: { fontFamily: 'Tajawal, sans-serif', fontSize: '0.9rem', direction: 'rtl' } }}
-      />
+      <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
       <SettingsLoader />
       <Suspense fallback={<PageLoader />}>
         <Routes>
@@ -122,4 +130,8 @@ export default function App() {
       </Suspense>
     </BrowserRouter>
   )
+}
+
+export default function App() {
+  return <AppShell />
 }

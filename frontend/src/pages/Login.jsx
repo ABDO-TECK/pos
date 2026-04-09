@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Store, Eye, EyeOff } from 'lucide-react'
+import { Store, Eye, EyeOff, Moon, Sun } from 'lucide-react'
 import useAuthStore from '../store/authStore'
+import useThemeStore from '../store/themeStore'
 import toast from 'react-hot-toast'
 
 export default function Login() {
@@ -10,6 +11,8 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const { login, isAuthenticated, _hasHydrated } = useAuthStore()
+  const themeMode = useThemeStore((s) => s.mode)
+  const toggleTheme = useThemeStore((s) => s.toggle)
   const navigate = useNavigate()
 
   // Redirect if already logged in
@@ -34,11 +37,17 @@ export default function Login() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: 'linear-gradient(135deg, #1a1d2e 0%, #22c55e22 100%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <div className="card" style={{ width: '380px', padding: '2rem' }}>
+    <div className="login-page">
+      <button
+        type="button"
+        className="login-theme-toggle"
+        onClick={toggleTheme}
+        aria-label={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+        title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+      >
+        {themeMode === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
+      <div className="card" style={{ width: '380px', padding: '2rem', maxWidth: 'calc(100vw - 2rem)' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <Store size={40} color="var(--primary)" style={{ margin: '0 auto 0.75rem' }} />
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>نظام الكاشير</h1>

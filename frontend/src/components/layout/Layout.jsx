@@ -1,11 +1,14 @@
 import { useState, useCallback } from 'react'
-import { Menu, Store } from 'lucide-react'
+import { Menu, Store, Moon, Sun } from 'lucide-react'
 import Sidebar from './Sidebar'
 import useSettingsStore from '../../store/settingsStore'
+import useThemeStore from '../../store/themeStore'
 
 export default function Layout({ children }) {
   const [open, setOpen] = useState(false)
   const { storeName } = useSettingsStore()
+  const themeMode = useThemeStore((s) => s.mode)
+  const toggleTheme = useThemeStore((s) => s.toggle)
 
   const close = useCallback(() => setOpen(false), [])
 
@@ -19,6 +22,15 @@ export default function Layout({ children }) {
         </button>
         <Store size={20} color="#22c55e" />
         <span className="mh-title">{storeName || 'نظام الكاشير'}</span>
+        <button
+          type="button"
+          className="mh-btn"
+          onClick={toggleTheme}
+          aria-label={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+          title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+        >
+          {themeMode === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
       </header>
 
       {/* ── Sidebar overlay (mobile) ── */}

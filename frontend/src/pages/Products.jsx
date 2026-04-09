@@ -687,6 +687,36 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
     })
   }
 
+  /** عدد الصناديق المكافئة للمخزون (الكمية ÷ قطع/صندوق) */
+  const stockBoxesHint = useMemo(() => {
+    const rawQ = form.quantity
+    const rawU = form.units_per_box
+    const qty =
+      rawQ === '' || rawQ === null || rawQ === undefined
+        ? null
+        : parseInt(String(rawQ).trim(), 10)
+    const upb = Math.max(1, parseInt(String(rawU ?? '1').trim(), 10) || 1)
+
+    if (qty === null || Number.isNaN(qty)) {
+      return 'بعد إدخال «الكمية» أعلاه، يُعرض هنا كم صندوقًا يمثّلها المخزون.'
+    }
+    if (qty < 0) {
+      return 'أدخل كمية صحيحة في حقل «الكمية».'
+    }
+    if (qty === 0) {
+      return 'الكمية الحالية 0 — لا يوجد مخزون يعادل صناديق بعد.'
+    }
+    if (upb <= 1) {
+      return `المخزون ${formatNumber(qty)} قطعة؛ صندوق البيع = قطعة واحدة (لا تجميع)، أي ${formatNumber(qty)} وحدة بيع بالصندوق.`
+    }
+    const full = Math.floor(qty / upb)
+    const rem = qty % upb
+    if (rem === 0) {
+      return `مخزونك ${formatNumber(qty)} قطعة يعادل ${formatNumber(full)} صندوقًا كاملاً (${formatNumber(upb)} قطعة في كل صندوق).`
+    }
+    return `مخزونك ${formatNumber(qty)} قطعة يعادل ${formatNumber(full)} صندوقًا كاملاً + ${formatNumber(rem)} قطعة لا تكمل صندوقًا (${formatNumber(upb)} قطعة/صندوق).`
+  }, [form.quantity, form.units_per_box])
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
       <div style={{ gridColumn: 'span 2' }}>
@@ -779,7 +809,34 @@ function ProductForm({ form, setForm, categories, modalKey, allProducts = [], ed
         <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
           عند البيع بالصندوق في نقطة البيع، سيتم إضافة هذا العدد من القطع دفعةً واحدة إلى السلة.
         </p>
-        <input className="input" type="number" min="1" step="1" {...f('units_per_box')} placeholder="1" />
+        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <input
+            className="input"
+            type="number"
+            min="1"
+            step="1"
+            {...f('units_per_box')}
+            placeholder="1"
+            style={{ width: '7rem', flexShrink: 0 }}
+          />
+          <div
+            style={{
+              flex: 1,
+              minWidth: '200px',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              color: 'var(--secondary)',
+              lineHeight: 1.5,
+              padding: '0.45rem 0.55rem',
+              background: 'rgba(59,130,246,0.1)',
+              borderRadius: '6px',
+              border: '1px solid rgba(59,130,246,0.22)',
+              alignSelf: 'center',
+            }}
+          >
+            {stockBoxesHint}
+          </div>
+        </div>
       </div>
       <div style={{ gridColumn: 'span 2' }}>
         <Label>الفئة</Label>

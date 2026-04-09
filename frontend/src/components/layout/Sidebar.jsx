@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Package, Truck, BarChart2,
-  Users, LogOut, Store, Receipt, Settings, X, UserCheck,
+  Users, LogOut, Store, Receipt, Settings, X, UserCheck, Moon, Sun,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import useSettingsStore from '../../store/settingsStore'
+import useThemeStore from '../../store/themeStore'
 import toast from 'react-hot-toast'
 
 const navItems = [
@@ -21,6 +22,8 @@ const navItems = [
 export default function Sidebar({ onClose }) {
   const { user, logout } = useAuthStore()
   const { storeName }    = useSettingsStore()
+  const themeMode        = useThemeStore((s) => s.mode)
+  const toggleTheme      = useThemeStore((s) => s.toggle)
   const navigate         = useNavigate()
 
   const handleLogout = async () => {
@@ -33,32 +36,29 @@ export default function Sidebar({ onClose }) {
   const visibleItems = navItems.filter(item => item.roles.includes(user?.role))
 
   return (
-    <aside style={{
-      width: '100%', height: '100vh', background: '#1a1d2e',
-      display: 'flex', flexDirection: 'column', overflowY: 'auto',
-    }}>
+    <aside className="sidebar-panel">
 
       {/* Logo row */}
-      <div style={{
-        padding: '1.25rem 1rem',
-        display: 'flex', alignItems: 'center', gap: '0.6rem',
-        borderBottom: '1px solid #2d3147',
-        minHeight: '60px',
-      }}>
+      <div className="sidebar-header">
         <Store size={24} color="#22c55e" style={{ flexShrink: 0 }} />
         <span className="sidebar-logo-text" style={{ color: '#fff', fontWeight: 700, fontSize: '1rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {storeName || 'نظام الكاشير'}
         </span>
+        <button
+          type="button"
+          className="sidebar-icon-btn"
+          onClick={toggleTheme}
+          aria-label={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+          title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+        >
+          {themeMode === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
         {/* Close button — mobile only */}
         <button
+          type="button"
           onClick={onClose}
-          style={{
-            display: 'none',
-            background: 'transparent', border: 'none',
-            color: '#9ca3af', cursor: 'pointer', padding: '0.3rem',
-            borderRadius: '0.3rem', flexShrink: 0,
-          }}
-          className="sidebar-close-btn"
+          style={{ display: 'none' }}
+          className="sidebar-close-btn sidebar-icon-btn"
           aria-label="إغلاق القائمة"
         >
           <X size={18} />
@@ -66,22 +66,16 @@ export default function Sidebar({ onClose }) {
       </div>
 
       {/* Nav links */}
-      <nav style={{ flex: 1, padding: '0.75rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+      <nav className="sidebar-nav">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
             onClick={onClose}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: '0.7rem',
-              padding: '0.65rem 0.75rem', borderRadius: '0.4rem',
-              color: isActive ? '#22c55e' : '#9ca3af',
-              background: isActive ? 'rgba(34,197,94,.12)' : 'transparent',
-              fontWeight: isActive ? 600 : 400,
-              fontSize: '0.9rem', transition: 'all .15s',
-              textDecoration: 'none',
-            })}
+            className={({ isActive }) =>
+              `sidebar-link${isActive ? ' sidebar-link--active' : ''}`
+            }
           >
             <item.icon size={18} style={{ flexShrink: 0 }} />
             <span className="nav-label">{item.label}</span>
@@ -90,7 +84,7 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       {/* User info + logout */}
-      <div style={{ padding: '0.85rem 1rem', borderTop: '1px solid #2d3147' }}>
+      <div className="sidebar-footer">
         <div className="user-info" style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
           <div style={{ color: '#fff', fontWeight: 600 }}>{user?.name}</div>
           <div>{user?.role === 'admin' ? 'مدير النظام' : 'كاشير'}</div>
