@@ -45,6 +45,7 @@ $router->delete('/api/purchase-invoices/{id}', [SupplierController::class, 'purc
 
 // ── Bulk Purchases ─────────────────────────────────────────────
 $router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);
+$router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class]]);
 
 // ── Reports ────────────────────────────────────────────────────
 $router->get('/api/reports/daily',    [ReportController::class, 'daily',        [AuthMiddleware::class]]);

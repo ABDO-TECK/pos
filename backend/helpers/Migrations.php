@@ -108,5 +108,43 @@ class Migrations {
             }
             $this->mark('004_invoice_items_unit_cost');
         }
+
+        // ── 005: suppliers.initial_balance — رصيد مبدئي للمورد ──────────
+        if (!$this->applied('005_suppliers_initial_balance')) {
+            try {
+                $this->db->exec(
+                    'ALTER TABLE suppliers
+                     ADD COLUMN initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00
+                     COMMENT "رصيد مبدئي — لمورد قديم له دين مسبق"
+                     AFTER address'
+                );
+            } catch (Throwable $e) {
+                if (!str_contains($e->getMessage(), 'Duplicate column')) {
+                    error_log('Migration 005: ' . $e->getMessage());
+                }
+            }
+            $this->mark('005_suppliers_initial_balance');
+        }
+
+        // ── 006: supplier_ledger — كشف حساب المورد (مثل customer_ledger) ─
+        if (!$this->applied('006_supplier_ledger')) {
+            $this->db->exec(
+                'CREATE TABLE IF NOT EXISTS supplier_ledger (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    supplier_id INT UNSIGNED NOT NULL,
+                    type ENUM("debit","credit") NOT NULL COMMENT "debit=مدين (مشتريات آجلة), credit=دائن (دفعات للمورد)",
+                    amount DECIMAL(10,2) NOT NULL,
+                    description VARCHAR(500) NULL COMMENT "البيان: فاتورة شراء / دفعة نقدية / رصيد مبدئي...",
+                    purchase_invoice_id INT UNSIGNED NULL COMMENT "رابط لفاتورة المشتريات إن وجدت",
+                    created_by INT UNSIGNED NULL COMMENT "معرف المستخدم الذي سجّل القيد",
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_sledger_pinvoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
+                    INDEX idx_supplier_ledger (supplier_id),
+                    INDEX idx_sledger_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->mark('006_supplier_ledger');
+        }
     }
 }

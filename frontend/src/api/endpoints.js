@@ -74,6 +74,7 @@ export const createBulkPurchase = (data) => api.post('/purchases/bulk', data)
 export const getPurchaseInvoices = (params) => api.get('/purchase-invoices', { params })
 export const getPurchaseInvoice  = (id)     => api.get(`/purchase-invoices/${id}`)
 export const deletePurchaseInvoice = (id)   => api.delete(`/purchase-invoices/${id}`)
+export const addSupplierPayment = (id, data) => api.post(`/suppliers/${id}/payment`, data)
 
 // Reports (profit)
 export const getProfitReport = (params) => api.get('/reports/profit', { params })

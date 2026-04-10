@@ -15,9 +15,11 @@ class SupplierController extends Controller {
     }
 
     public function show(string $id): void {
-        $supplier = $this->supplierModel->findById((int)$id);
-        if (!$supplier) Response::notFound('Supplier not found');
-        Response::success($supplier);
+        $data = $this->supplierModel->getLedger((int)$id);
+        if (!$data['supplier']) {
+            Response::notFound('Supplier not found');
+        }
+        Response::success($data);
     }
 
     public function store(): void {
@@ -25,6 +27,7 @@ class SupplierController extends Controller {
         $errors = $this->validate($data, ['name' => 'required']);
         if ($errors) Response::error('Validation failed', 422, $errors);
 
+        $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
         $id       = $this->supplierModel->create($data);
         $supplier = $this->supplierModel->findById($id);
         Response::success($supplier, 'Supplier created', 201);
@@ -38,6 +41,7 @@ class SupplierController extends Controller {
         $supplier = $this->supplierModel->findById((int)$id);
         if (!$supplier) Response::notFound('Supplier not found');
 
+        $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
         $this->supplierModel->update((int)$id, $data);
         Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
     }
@@ -213,6 +217,35 @@ class SupplierController extends Controller {
                        ->execute([(float)$item['cost'], (int)$item['product_id']]);
                 }
             }
+            // تسجيل قيد مدين في كشف حساب المورد (شراء آجل)
+            $isCreditPurchase = ($data['payment_type'] ?? '') === 'credit';
+            if ($isCreditPurchase && $replaceInvoiceId === 0) {
+                $auth = $_SERVER['AUTH_USER'];
+                $deposit = (float)($data['deposit'] ?? 0);
+
+                // قيد مدين بقيمة الفاتورة الكاملة
+                $this->supplierModel->addLedgerEntry([
+                    'supplier_id'         => (int)$data['supplier_id'],
+                    'type'                => 'debit',
+                    'amount'              => $grandTotal,
+                    'description'         => "فاتورة شراء #{$invoiceId}" . ($deposit > 0 ? " (عربون {$deposit})" : ''),
+                    'purchase_invoice_id' => $invoiceId,
+                    'created_by'          => $auth['id'],
+                ]);
+
+                // قيد دائن للعربون إذا كان موجوداً
+                if ($deposit > 0) {
+                    $this->supplierModel->addLedgerEntry([
+                        'supplier_id'         => (int)$data['supplier_id'],
+                        'type'                => 'credit',
+                        'amount'              => $deposit,
+                        'description'         => "عربون فاتورة شراء #{$invoiceId}",
+                        'purchase_invoice_id' => $invoiceId,
+                        'created_by'          => $auth['id'],
+                    ]);
+                }
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -224,5 +257,38 @@ class SupplierController extends Controller {
             'invoice_id'      => $invoiceId,
             'items_processed' => count($data['items']),
         ], $replaceInvoiceId > 0 ? 'Purchase invoice updated' : 'Bulk purchase recorded', $replaceInvoiceId > 0 ? 200 : 201);
+    }
+
+    /**
+     * POST /api/suppliers/{id}/payment
+     * body: { amount: float, description?: string }
+     * تسجيل دفعة (قيد دائن) في كشف حساب المورد
+     */
+    public function addPayment(string $id): void {
+        $sid  = (int)$id;
+        $data = $this->getBody();
+
+        $supplier = $this->supplierModel->findById($sid);
+        if (!$supplier) {
+            Response::notFound('المورد غير موجود');
+        }
+
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+        }
+
+        $auth = $_SERVER['AUTH_USER'];
+        $this->supplierModel->addLedgerEntry([
+            'supplier_id'         => $sid,
+            'type'                => 'credit',
+            'amount'              => $amount,
+            'description'         => $data['description'] ?? 'دفعة نقدية للمورد',
+            'purchase_invoice_id' => null,
+            'created_by'          => $auth['id'],
+        ]);
+
+        // إعادة كشف الحساب المحدَّث
+        Response::success($this->supplierModel->getLedger($sid), 'تم تسجيل الدفعة');
     }
 }

@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     phone VARCHAR(30) NULL,
     email VARCHAR(150) NULL,
     address TEXT NULL,
+    initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لمورد قديم له دين مسبق',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -191,6 +192,24 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
     CONSTRAINT fk_ledger_invoice  FOREIGN KEY (invoice_id)  REFERENCES invoices(id)  ON DELETE SET NULL,
     INDEX idx_customer_ledger (customer_id),
     INDEX idx_ledger_created  (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Supplier Ledger (كشف حساب المورد — دفتر الأستاذ)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS supplier_ledger (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    supplier_id INT UNSIGNED NOT NULL,
+    type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مشتريات آجلة), credit=دائن (دفعات للمورد)',
+    amount DECIMAL(10,2) NOT NULL,
+    description VARCHAR(500) NULL COMMENT 'البيان: فاتورة شراء / دفعة نقدية / رصيد مبدئي...',
+    purchase_invoice_id INT UNSIGNED NULL COMMENT 'رابط لفاتورة المشتريات إن وجدت',
+    created_by INT UNSIGNED NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_sledger_pinvoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
+    INDEX idx_supplier_ledger (supplier_id),
+    INDEX idx_sledger_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
