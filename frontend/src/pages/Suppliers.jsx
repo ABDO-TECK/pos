@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Plus, Minus, Trash2, ShoppingCart, Check, X, Printer, Package, Search, FileText, Calendar, ChevronDown, ChevronUp, Eye, Filter, TrendingUp, Hash, DollarSign, Clock } from 'lucide-react'
+import { Plus, Minus, Trash2, ShoppingCart, Check, X, Printer, Package, Search, FileText, Calendar, ChevronDown, ChevronUp, Eye, Filter, TrendingUp, Hash, DollarSign, Clock, Download } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
 import useAuthStore from '../store/authStore'
 import useSettingsStore from '../store/settingsStore'
 import { browserPrintPurchase } from '../utils/receiptBuilder'
+import { exportSupplierLedgerPDF } from '../utils/pdfExport'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
@@ -1335,6 +1336,14 @@ function SupplierAccounts() {
 
             <button className="btn btn-primary btn-sm" onClick={() => setPayModal(true)} disabled={ledgerData.balance <= 0}>
               <Plus size={15} /> تسجيل دفعة
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => exportSupplierLedgerPDF(ledgerData)}
+              title="تصدير كشف الحساب PDF"
+              style={{ gap: '0.3rem' }}
+            >
+              <Download size={15} /> تصدير PDF
             </button>
           </div>
 

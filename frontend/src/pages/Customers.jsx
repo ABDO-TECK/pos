@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   UserPlus, Search, ChevronRight, X, Trash2, Edit2,
-  PlusCircle, Phone, MapPin, BookOpen, ArrowRight,
+  PlusCircle, Phone, MapPin, BookOpen, ArrowRight, Download,
 } from 'lucide-react'
+import { exportCustomerLedgerPDF } from '../utils/pdfExport'
 import {
   getCustomers, getCustomer, createCustomer,
   updateCustomer, deleteCustomer, addCustomerPayment,
@@ -216,6 +217,14 @@ export default function Customers() {
 
             <button className="btn btn-primary btn-sm" onClick={() => setPayModal(true)} disabled={ledgerData.balance <= 0}>
               <PlusCircle size={15} /> تسجيل دفعة
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => exportCustomerLedgerPDF(ledgerData)}
+              title="تصدير كشف الحساب PDF"
+              style={{ gap: '0.3rem' }}
+            >
+              <Download size={15} /> تصدير PDF
             </button>
           </div>
 
