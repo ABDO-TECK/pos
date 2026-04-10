@@ -86,7 +86,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
     setAmountPaid(isCreditSale ? deposit : localAmountPaid)
 
     const salePayload = {
-      items:          items.map(i => ({ product_id: i.id, quantity: i.quantity })),
+      items:          items.map(i => ({ product_id: i.id, quantity: i.quantity, price: i.price })),
       discount:       clampedDiscount,
       payment_method: paymentMethod,
       amount_paid:    isCreditSale ? deposit : (currentMethod.cashInput ? localAmountPaid : computedTotal),

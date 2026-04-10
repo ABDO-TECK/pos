@@ -92,24 +92,24 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
       toast.error('المنتج غير موجود', { icon: '❌' })
     }
 
-    // لا تمسح محتوى الحقل إذا وصلت مسحة جديدة أثناء انتظار الشبكة
-    setValue((v) => (v.trim() === snapshot ? '' : v))
-    typeCount.current = 0
+    // تحديد القيمة التالية للحقل
+    const currentValue = inputRef.current?.value ?? ''
+    const nextValue = currentValue.trim() === snapshot ? '' : currentValue
 
+    setValue(nextValue)
+    onFilterChange?.(nextValue)
+
+    typeCount.current = 0
     busyRef.current = false
 
-    queueMicrotask(() => {
+    requestAnimationFrame(() => {
       const el = inputRef.current
-      const v = el?.value ?? ''
-      onFilterChange?.(v)
-      requestAnimationFrame(() => {
-        el?.focus()
-        const rest = (el?.value ?? '').trim()
-        if (rest && rest !== snapshot) {
-          clearTimeout(debounceTimer.current)
-          debounceTimer.current = setTimeout(() => handleSearch(rest), SCANNER_DEBOUNCE)
-        }
-      })
+      el?.focus()
+      const rest = (el?.value ?? '').trim()
+      if (rest && rest !== snapshot) {
+        clearTimeout(debounceTimer.current)
+        debounceTimer.current = setTimeout(() => handleSearch(rest), SCANNER_DEBOUNCE)
+      }
     })
   }, [addFn, allowOutOfStock, findByBarcode, onFilterChange])
 

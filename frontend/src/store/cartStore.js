@@ -49,6 +49,16 @@ const useCartStore = create((set, get) => ({
     })
   },
 
+  updatePrice: (id, newPrice) => {
+    set((state) => {
+      const price = parseFloat(newPrice) || 0;
+      const items = state.items.map((i) =>
+        i.id === id ? { ...i, price, subtotal: i.quantity * price } : i
+      )
+      return { items }
+    })
+  },
+
   setDiscount: (discount) => set({ discount: parseFloat(discount) || 0 }),
   setPaymentMethod: (method) => set({ paymentMethod: method }),
   setAmountPaid: (amount) => set({ amountPaid: parseFloat(amount) || 0 }),

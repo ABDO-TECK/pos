@@ -4,7 +4,7 @@ import useCartStore from '../../store/cartStore'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 
 export default function Cart() {
-  const { items, removeItem, updateQuantity, rebillingInvoiceId } = useCartStore()
+  const { items, removeItem, updateQuantity, updatePrice, rebillingInvoiceId } = useCartStore()
 
   if (items.length === 0) {
     return (
@@ -40,6 +40,7 @@ export default function Cart() {
           item={item}
           onRemove={() => removeItem(item.id)}
           onUpdateQty={(qty) => updateQuantity(item.id, qty)}
+          onUpdatePrice={(price) => updatePrice(item.id, price)}
         />
       ))}
     </div>
@@ -48,7 +49,7 @@ export default function Cart() {
 
 // ── CartItem ────────────────────────────────────────────────────────────────
 
-function CartItem({ item, onRemove, onUpdateQty }) {
+function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
   const unitsPerBox = Math.max(1, parseInt(item.units_per_box) || 1)
   const hasBox      = unitsPerBox > 1
 
@@ -126,9 +127,26 @@ function CartItem({ item, onRemove, onUpdateQty }) {
           </div>
         </div>
 
-        {/* Unit price */}
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', minWidth: '50px', textAlign: 'left', flexShrink: 0, marginTop: '0.1rem' }}>
-          {formatCurrency(item.price)}
+        {/* Unit price (Editable) */}
+        <div style={{ minWidth: '60px', textAlign: 'left', flexShrink: 0, marginTop: '0.1rem' }}>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={item.price}
+            onChange={(e) => onUpdatePrice(e.target.value)}
+            style={{
+              width: '4.5rem',
+              fontSize: '0.8rem',
+              padding: '0.2rem 0.1rem',
+              border: '1px solid var(--border)',
+              borderRadius: '0.3rem',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              background: 'var(--surface)'
+            }}
+            title="تعديل السعر لهذه الفاتورة فقط"
+          />
         </div>
 
         {/* Delete */}

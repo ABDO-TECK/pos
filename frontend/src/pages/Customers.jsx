@@ -254,7 +254,7 @@ export default function Customers() {
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
-                <button className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setPayModal(true)} disabled={ledgerData.balance <= 0}>
+                <button className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setPayModal(true)}>
                   <PlusCircle size={15} /> تسجيل دفعة
                 </button>
                 <button
