@@ -88,10 +88,12 @@ class CustomerController extends Controller {
             Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
 
+        $type = $data['type'] === 'debit' ? 'debit' : 'credit';
+
         $auth = $_SERVER['AUTH_USER'];
         $this->model->addLedgerEntry([
             'customer_id' => $cid,
-            'type'        => 'credit',
+            'type'        => $type,
             'amount'      => $amount,
             'description' => $data['description'] ?? 'دفعة نقدية',
             'invoice_id'  => null,

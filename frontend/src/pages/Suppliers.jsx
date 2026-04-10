@@ -1222,6 +1222,7 @@ function SupplierAccounts() {
   const [payModal, setPayModal]         = useState(false)
   const [payAmount, setPayAmount]       = useState('')
   const [payDesc, setPayDesc]           = useState('دفعة نقدية للمورد')
+  const [payType, setPayType]           = useState('credit')
   const [payLoading, setPayLoading]     = useState(false)
 
   // modal التعديل للقيد
@@ -1261,11 +1262,12 @@ function SupplierAccounts() {
     if (!amount || amount <= 0) { toast.error('أدخل مبلغاً صحيحاً'); return }
     setPayLoading(true)
     try {
-      const res = await addSupplierPayment(ledgerData.supplier.id, { amount, description: payDesc })
+      const res = await addSupplierPayment(ledgerData.supplier.id, { amount, description: payDesc, type: payType })
       setLedgerData(res.data.data)
       setPayModal(false)
       setPayAmount('')
       setPayDesc('دفعة نقدية للمورد')
+      setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
       load()
     } catch (err) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
@@ -1504,6 +1506,26 @@ function SupplierAccounts() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div>
+                <label className="label">نوع الدفعة</label>
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  {[
+                    { id: 'credit', label: 'دفع مبلغ للمورد',  color: 'var(--danger)',   bg: 'rgba(239,68,68,.1)' },
+                    { id: 'debit',  label: 'استرداد من المورد', color: 'var(--primary)', bg: 'rgba(34,197,94,.1)' },
+                  ].map(d => (
+                    <button key={d.id} type="button" onClick={() => setPayType(d.id)}
+                      style={{
+                        flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,
+                        borderRadius: 'var(--radius)',
+                        border: `2px solid ${payType === d.id ? d.color : 'var(--border)'}`,
+                        background: payType === d.id ? d.bg : 'var(--surface)',
+                        color: payType === d.id ? d.color : 'var(--text-muted)',
+                        cursor: 'pointer', transition: 'all .15s',
+                      }}
+                    >{d.label}</button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="label">المبلغ (ج.م) *</label>
                 <input className="input input-lg" type="number" min="0.01" step="0.01"

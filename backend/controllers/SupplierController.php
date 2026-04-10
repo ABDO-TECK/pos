@@ -278,10 +278,12 @@ class SupplierController extends Controller {
             Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
 
+        $type = $data['type'] === 'debit' ? 'debit' : 'credit';
+
         $auth = $_SERVER['AUTH_USER'];
         $this->supplierModel->addLedgerEntry([
             'supplier_id'         => $sid,
-            'type'                => 'credit',
+            'type'                => $type,
             'amount'              => $amount,
             'description'         => $data['description'] ?? 'دفعة نقدية للمورد',
             'purchase_invoice_id' => null,
