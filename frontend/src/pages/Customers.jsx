@@ -253,13 +253,13 @@ export default function Customers() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
-                <button className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setPayModal(true)}>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button className="btn btn-primary btn-sm" style={{ padding: '0.4rem 0.8rem', justifyContent: 'center' }} onClick={() => setPayModal(true)}>
                   <PlusCircle size={15} /> تسجيل دفعة
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
-                  style={{ flex: 1, justifyContent: 'center', gap: '0.3rem' }}
+                  style={{ padding: '0.4rem 0.8rem', justifyContent: 'center', gap: '0.3rem' }}
                   onClick={() => exportCustomerLedgerPDF(ledgerData)}
                   title="تصدير كشف الحساب PDF"
                 >

@@ -339,8 +339,7 @@ function ProductCard({ product, onAdd }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        height: '78px',
-        overflow: 'hidden',
+        minHeight: '92px',
         touchAction: 'manipulation',
       }}
     >

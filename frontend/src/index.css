@@ -719,8 +719,23 @@ html[data-theme="dark"] .barcode-scanner-error {
 .ledger-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.ledger-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ledger-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 @media (max-width: 767px) {
   .ledger-header {
