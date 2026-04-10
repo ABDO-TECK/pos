@@ -188,6 +188,7 @@ export default function POS() {
           display: flex;
           flex-direction: column;
           height: calc(100vh - 3rem);
+          height: calc(100dvh - 3rem);
         }
         .pos-mobile { display: none; }
 
@@ -215,6 +216,7 @@ export default function POS() {
             display: flex;
             flex-direction: column;
             height: calc(100vh - 56px - 2rem);
+            height: calc(100dvh - 56px - 2rem);
           }
           .pos-mobile-content {
             flex: 1;

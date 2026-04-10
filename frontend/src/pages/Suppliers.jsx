@@ -21,7 +21,7 @@ export default function Suppliers() {
   const [receiveInvoiceId, setReceiveInvoiceId] = useState(null)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: 'calc(100vh - 3rem)' }}>
+    <div className="sup-root">
       {/* Header + tab selector */}
       <div className="page-header col-mobile" style={{ marginBottom: 0 }}>
         <h2>الموردون</h2>
@@ -504,6 +504,14 @@ function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, set
       </div>
 
       <style>{`
+        /* ── Root ── */
+        .sup-root {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          height: calc(100dvh - 3rem);
+        }
+
         /* ── Desktop ── */
         .sup-desktop {
           display: flex;
@@ -539,6 +547,9 @@ function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, set
 
         /* ── Mobile ── */
         @media (max-width: 767px) {
+          .sup-root {
+            height: calc(100dvh - 56px - 2rem);
+          }
           .sup-desktop { display: none !important; }
           .sup-mobile {
             display: flex;

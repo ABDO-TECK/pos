@@ -370,8 +370,8 @@ export default function Products() {
 
           {/* Low stock alert banner */}
           {lowStock.length > 0 && (
-            <div style={{ background: '#fef9c3', border: '1px solid #fbbf24', borderRadius: 'var(--radius)', padding: '0.65rem 1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: '#92400e', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+            <div className="alert-warning">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, marginBottom: '0.4rem', fontSize: '0.9rem' }}>
                 <AlertTriangle size={16} /> {formatNumber(lowStock.length)} منتج بمخزون منخفض
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
