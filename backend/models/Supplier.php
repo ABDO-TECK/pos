@@ -268,14 +268,15 @@ class Supplier {
         $runningBal = 0;
 
         // سطر الرصيد المبدئي إذا كان موجوداً
-        if ((float)($supplier['initial_balance'] ?? 0) > 0) {
-            $runningBal += (float)$supplier['initial_balance'];
+        $initBal = (float)($supplier['initial_balance'] ?? 0);
+        if ($initBal != 0) {
+            $runningBal += $initBal;
             $entries[] = [
                 'id'          => null,
                 'date'        => $supplier['created_at'],
                 'description' => 'رصيد مبدئي',
-                'debit'       => (float)$supplier['initial_balance'],
-                'credit'      => 0,
+                'debit'       => $initBal > 0 ? $initBal : 0,
+                'credit'      => $initBal < 0 ? abs($initBal) : 0,
                 'balance'     => round($runningBal, 2),
                 'type'        => 'initial',
             ];
@@ -320,5 +321,29 @@ class Supplier {
             'created_by'          => $data['created_by'] ?? null,
         ]);
         return (int) $this->db->lastInsertId();
+    }
+
+    /** تعديل قيد في كشف الحساب */
+    public function updateLedgerEntry(int $entryId, array $data): void {
+        $stmt = $this->db->prepare(
+            'UPDATE supplier_ledger SET
+                type = :type,
+                amount = :amount,
+                description = :description
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'type'        => $data['type'],
+            'amount'      => (float)$data['amount'],
+            'description' => $data['description'] ?? null,
+            'id'          => $entryId,
+        ]);
+    }
+
+    /** الحصول على قيد واحد */
+    public function getLedgerEntry(int $entryId): ?array {
+        $stmt = $this->db->prepare('SELECT * FROM supplier_ledger WHERE id = ?');
+        $stmt->execute([$entryId]);
+        return $stmt->fetch() ?: null;
     }
 }

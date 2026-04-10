@@ -46,6 +46,7 @@ $router->delete('/api/purchase-invoices/{id}', [SupplierController::class, 'purc
 // ── Bulk Purchases ─────────────────────────────────────────────
 $router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);
 $router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class]]);
+$router->put('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
 
 // ── Reports ────────────────────────────────────────────────────
 $router->get('/api/reports/daily',    [ReportController::class, 'daily',        [AuthMiddleware::class]]);
@@ -74,4 +75,5 @@ $router->post('/api/customers',                [CustomerController::class, 'stor
 $router->get('/api/customers/{id}',            [CustomerController::class, 'show',       [AuthMiddleware::class]]);
 $router->put('/api/customers/{id}',            [CustomerController::class, 'update',     [AuthMiddleware::class]]);
 $router->delete('/api/customers/{id}',         [CustomerController::class, 'destroy',    [AuthMiddleware::class, AdminMiddleware::class]]);
-$router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment', [AuthMiddleware::class]]);
+$router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment',       [AuthMiddleware::class]]);
+$router->put('/api/customers/ledger/{entryId}', [CustomerController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);

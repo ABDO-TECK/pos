@@ -6,7 +6,7 @@ import {
 import { exportCustomerLedgerPDF } from '../utils/pdfExport'
 import {
   getCustomers, getCustomer, createCustomer,
-  updateCustomer, deleteCustomer, addCustomerPayment,
+  updateCustomer, deleteCustomer, addCustomerPayment, updateCustomerLedgerEntry,
 } from '../api/endpoints'
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
@@ -27,7 +27,7 @@ const fmtDate = (s) => {
   }).format(d)
 }
 
-const emptyForm = { name: '', phone: '', address: '', initial_balance: '' }
+const emptyForm = { name: '', phone: '', address: '', initial_balance: '', balance_direction: 'debit' }
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Customers() {
@@ -50,6 +50,11 @@ export default function Customers() {
   const [payAmount, setPayAmount]       = useState('')
   const [payDesc, setPayDesc]           = useState('دفعة نقدية')
   const [payLoading, setPayLoading]     = useState(false)
+
+  // modal التعديل للقيد
+  const [editEntryModal, setEditEntryModal] = useState(null)
+  const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
+  const [editEntryLoading, setEditEntryLoading] = useState(false)
 
   // ── data ──
   const load = async () => {
@@ -82,7 +87,11 @@ export default function Customers() {
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal('create') }
   const openEdit   = (c, e) => {
     e.stopPropagation()
-    setForm({ name: c.name, phone: c.phone || '', address: c.address || '', initial_balance: c.initial_balance })
+    setForm({
+      name: c.name, phone: c.phone || '', address: c.address || '',
+      initial_balance: Math.abs(c.initial_balance || 0) || '',
+      balance_direction: (c.initial_balance || 0) < 0 ? 'credit' : 'debit',
+    })
     setEditId(c.id)
     setModal('edit')
   }
@@ -91,7 +100,12 @@ export default function Customers() {
     if (!form.name.trim()) { toast.error('الاسم مطلوب'); return }
     setSaving(true)
     try {
-      const payload = { ...form, initial_balance: parseFloat(form.initial_balance) || 0 }
+      const rawBal = parseFloat(form.initial_balance) || 0
+      const payload = {
+        ...form,
+        initial_balance: form.balance_direction === 'credit' ? -Math.abs(rawBal) : Math.abs(rawBal),
+      }
+      delete payload.balance_direction
       if (modal === 'create') {
         await createCustomer(payload)
         toast.success('تم إضافة العميل')
@@ -136,6 +150,29 @@ export default function Customers() {
       load() // تحديث رصيد البطاقة
     } catch (err) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
     finally { setPayLoading(false) }
+  }
+
+  const handleEditEntry = async () => {
+    if (!editEntryForm.amount || isNaN(editEntryForm.amount)) {
+      toast.error('الرجاء إدخال مبلغ صحيح')
+      return
+    }
+    setEditEntryLoading(true)
+    try {
+      const res = await updateCustomerLedgerEntry(editEntryModal.id, {
+        type: editEntryForm.type,
+        amount: parseFloat(editEntryForm.amount),
+        description: editEntryForm.description,
+      })
+      toast.success('تم تعديل القيد')
+      setLedgerData(res.data.data) // Update UI
+      setEditEntryModal(null)
+      load() // Refresh list balances
+    } catch {
+      toast.error('فشل تعديل القيد')
+    } finally {
+      setEditEntryLoading(false)
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -238,19 +275,26 @@ export default function Customers() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 1 }}>
-                    {['التاريخ', 'البيان', 'مدين', 'دائن', 'الرصيد'].map(h => (
+                    {['التاريخ', 'البيان', 'مدين', 'دائن', 'الرصيد', ''].map(h => (
                       <th key={h} style={{
                         padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: h === 'مدين' || h === 'دائن' || h === 'الرصيد' ? 'left' : 'right',
-                        borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap',
+                        borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap', width: h === '' ? '40px' : 'auto'
                       }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {ledgerData.entries.length === 0 ? (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد حركات بعد</td></tr>
+                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد حركات بعد</td></tr>
                   ) : ledgerData.entries.map((row, i) => (
-                    <LedgerRow key={row.id ?? `init-${i}`} row={row} />
+                    <LedgerRow key={row.id ?? `init-${i}`} row={row} onEdit={() => {
+                      setEditEntryModal(row)
+                      setEditEntryForm({
+                        type: row.type,
+                        amount: row.type === 'debit' ? (row.debit || 0) : (row.credit || 0),
+                        description: row.description || ''
+                      })
+                    }} />
                   ))}
                 </tbody>
                 {ledgerData.entries.length > 0 && (
@@ -302,8 +346,25 @@ export default function Customers() {
               <div style={{ background: 'rgba(59,130,246,.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
                 <label className="label">📒 رصيد مبدئي (ج.م)</label>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
-                  إذا كان العميل مديناً من قبل — أدخل المبلغ المستحق، وإلا اتركه 0
+                  حدد اتجاه الرصيد المبدئي ثم أدخل المبلغ، وإلا اتركه 0
                 </p>
+                <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                  {[
+                    { id: 'debit',  label: '⬅ هو مدين لي',  color: 'var(--danger)',  bg: 'rgba(239,68,68,.1)' },
+                    { id: 'credit', label: '➡ أنا مدين له', color: 'var(--secondary)', bg: 'rgba(59,130,246,.1)' },
+                  ].map(d => (
+                    <button key={d.id} type="button" onClick={() => setForm(f => ({ ...f, balance_direction: d.id }))}
+                      style={{
+                        flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,
+                        borderRadius: 'var(--radius)',
+                        border: `2px solid ${form.balance_direction === d.id ? d.color : 'var(--border)'}`,
+                        background: form.balance_direction === d.id ? d.bg : 'var(--surface)',
+                        color: form.balance_direction === d.id ? d.color : 'var(--text-muted)',
+                        cursor: 'pointer', transition: 'all .15s',
+                      }}
+                    >{d.label}</button>
+                  ))}
+                </div>
                 <input className="input" type="number" min="0" step="0.01" placeholder="0.00"
                   value={form.initial_balance}
                   onChange={e => setForm(f => ({ ...f, initial_balance: e.target.value }))} />
@@ -355,6 +416,57 @@ export default function Customers() {
               <button className="btn btn-primary" onClick={handlePayment} disabled={payLoading}>
                 {payLoading ? <span className="spinner" /> : <PlusCircle size={16} />}
                 تسجيل الدفعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── modal تعديل القيد ────────────────────────────────────────────── */}
+      {editEntryModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditEntryModal(null)}>
+          <div className="modal" style={{ maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>تعديل القيد</h2>
+              <button className="btn btn-ghost btn-icon" onClick={() => setEditEntryModal(null)}><X size={18} /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div>
+                <label className="label">نوع القيد</label>
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  {[
+                    { id: 'debit',  label: 'مدين (مستحق لي)',  color: 'var(--danger)',  bg: 'rgba(239,68,68,.1)' },
+                    { id: 'credit', label: 'دائن (دفعة/مستحق له)', color: 'var(--secondary)', bg: 'rgba(59,130,246,.1)' },
+                  ].map(d => (
+                    <button key={d.id} type="button" onClick={() => setEditEntryForm(f => ({ ...f, type: d.id }))}
+                      style={{
+                        flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,
+                        borderRadius: 'var(--radius)',
+                        border: `2px solid ${editEntryForm.type === d.id ? d.color : 'var(--border)'}`,
+                        background: editEntryForm.type === d.id ? d.bg : 'var(--surface)',
+                        color: editEntryForm.type === d.id ? d.color : 'var(--text-muted)',
+                        cursor: 'pointer', transition: 'all .15s',
+                      }}
+                    >{d.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="label">المبلغ</label>
+                <input className="input" type="number" min="0" step="0.01" value={editEntryForm.amount} onChange={e => setEditEntryForm({ ...editEntryForm, amount: e.target.value })} autoFocus />
+              </div>
+              <div>
+                <label className="label">البيان (اختياري)</label>
+                <input className="input" value={editEntryForm.description} onChange={e => setEditEntryForm({ ...editEntryForm, description: e.target.value })} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
+              <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setEditEntryModal(null)}>إلغاء</button>
+              <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={handleEditEntry} disabled={editEntryLoading}>
+                {editEntryLoading ? <span className="spinner" /> : <Edit2 size={16} />}
+                تأكيد التعديل
               </button>
             </div>
           </div>
@@ -417,7 +529,7 @@ function CustomerCard({ customer, active, onClick, onEdit, onDelete }) {
 }
 
 // ── LedgerRow ─────────────────────────────────────────────────────────────────
-function LedgerRow({ row }) {
+function LedgerRow({ row, onEdit }) {
   const isDebit  = row.debit  > 0
   const isCredit = row.credit > 0
   return (
@@ -443,6 +555,13 @@ function LedgerRow({ row }) {
         {formatCurrency(Math.abs(row.balance))}
         {row.balance > 0 && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', marginRight: '0.3rem' }}>د</span>}
         {row.balance < 0 && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>ر</span>}
+      </td>
+      <td style={{ padding: '0.2rem 0.5rem', textAlign: 'center' }}>
+        {row.id && row.type !== 'initial' && (
+          <button className="btn btn-ghost btn-icon" style={{ padding: '0.25rem', color: 'var(--text-muted)' }} onClick={onEdit} title="تعديل القيد">
+            <Edit2 size={13} />
+          </button>
+        )}
       </td>
     </tr>
   )

@@ -75,6 +75,7 @@ export const getPurchaseInvoices = (params) => api.get('/purchase-invoices', { p
 export const getPurchaseInvoice  = (id)     => api.get(`/purchase-invoices/${id}`)
 export const deletePurchaseInvoice = (id)   => api.delete(`/purchase-invoices/${id}`)
 export const addSupplierPayment = (id, data) => api.post(`/suppliers/${id}/payment`, data)
+export const updateSupplierLedgerEntry = (entryId, data) => api.put(`/suppliers/ledger/${entryId}`, data)
 
 // Reports (profit)
 export const getProfitReport = (params) => api.get('/reports/profit', { params })
@@ -86,3 +87,4 @@ export const createCustomer  = (data)       => api.post('/customers', data)
 export const updateCustomer  = (id, data)   => api.put(`/customers/${id}`, data)
 export const deleteCustomer  = (id)         => api.delete(`/customers/${id}`)
 export const addCustomerPayment = (id, data) => api.post(`/customers/${id}/payment`, data)
+export const updateCustomerLedgerEntry = (entryId, data) => api.put(`/customers/ledger/${entryId}`, data)

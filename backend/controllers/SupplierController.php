@@ -291,4 +291,36 @@ class SupplierController extends Controller {
         // إعادة كشف الحساب المحدَّث
         Response::success($this->supplierModel->getLedger($sid), 'تم تسجيل الدفعة');
     }
+
+    /**
+     * PUT /api/suppliers/ledger/{entryId}
+     * body: { type: 'debit'|'credit', amount: float, description?: string }
+     */
+    public function updateLedgerEntry(string $entryId): void {
+        $eid  = (int)$entryId;
+        $data = $this->getBody();
+
+        $entry = $this->supplierModel->getLedgerEntry($eid);
+        if (!$entry) {
+            Response::notFound('القيد غير موجود');
+        }
+
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+        }
+        $type = $data['type'] ?? $entry['type'];
+        if (!in_array($type, ['debit', 'credit'])) {
+            Response::error('نوع القيد غير صحيح', 422);
+        }
+
+        $this->supplierModel->updateLedgerEntry($eid, [
+            'type'        => $type,
+            'amount'      => $amount,
+            'description' => $data['description'] ?? $entry['description'],
+        ]);
+
+        // إعادة كشف الحساب المحدَّث
+        Response::success($this->supplierModel->getLedger((int)$entry['supplier_id']), 'تم تحديث القيد');
+    }
 }

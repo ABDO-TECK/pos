@@ -101,4 +101,36 @@ class CustomerController extends Controller {
         // إعادة كشف الحساب المحدَّث
         Response::success($this->model->getLedger($cid), 'تم تسجيل الدفعة');
     }
+
+    /**
+     * PUT /api/customers/ledger/{entryId}
+     * body: { type: 'debit'|'credit', amount: float, description?: string }
+     */
+    public function updateLedgerEntry(string $entryId): void {
+        $eid  = (int)$entryId;
+        $data = $this->getBody();
+
+        $entry = $this->model->getLedgerEntry($eid);
+        if (!$entry) {
+            Response::notFound('القيد غير موجود');
+        }
+
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+        }
+        $type = $data['type'] ?? $entry['type'];
+        if (!in_array($type, ['debit', 'credit'])) {
+            Response::error('نوع القيد غير صحيح', 422);
+        }
+
+        $this->model->updateLedgerEntry($eid, [
+            'type'        => $type,
+            'amount'      => $amount,
+            'description' => $data['description'] ?? $entry['description'],
+        ]);
+
+        // إعادة كشف الحساب المحدَّث
+        Response::success($this->model->getLedger((int)$entry['customer_id']), 'تم تحديث القيد');
+    }
 }
