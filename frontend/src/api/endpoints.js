@@ -70,6 +70,11 @@ export const restoreBackup = (formData) =>
 // Purchases (bulk)
 export const createBulkPurchase = (data) => api.post('/purchases/bulk', data)
 
+// Purchase Invoices
+export const getPurchaseInvoices = (params) => api.get('/purchase-invoices', { params })
+export const getPurchaseInvoice  = (id)     => api.get(`/purchase-invoices/${id}`)
+export const deletePurchaseInvoice = (id)   => api.delete(`/purchase-invoices/${id}`)
+
 // Reports (profit)
 export const getProfitReport = (params) => api.get('/reports/profit', { params })
 

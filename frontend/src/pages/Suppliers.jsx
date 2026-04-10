@@ -1,16 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Plus, Minus, Trash2, ShoppingCart, Check, X, Package, Search, FileText, Calendar, ChevronDown, ChevronUp, Eye, Filter, TrendingUp, Hash, DollarSign, Clock } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Plus, Minus, Trash2, ShoppingCart, Check, X, Printer, Package, Search, FileText, Calendar, ChevronDown, ChevronUp, Eye, Filter, TrendingUp, Hash, DollarSign, Clock } from 'lucide-react'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
+import useAuthStore from '../store/authStore'
+import useSettingsStore from '../store/settingsStore'
+import { browserPrintPurchase } from '../utils/receiptBuilder'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
-  getProducts, createBulkPurchase, getPurchases,
+  getProducts, createBulkPurchase, getPurchaseInvoices, getPurchaseInvoice, deletePurchaseInvoice
 } from '../api/endpoints'
 import { formatCurrency, formatNumber, formatDate, formatShortDate, formatTime } from '../utils/formatters'
 
 export default function Suppliers() {
   const [tab, setTab] = useState(0)
+  const [receiveCart, setReceiveCart] = useState([])
+  const [receiveSupplierId, setReceiveSupplierId] = useState('')
+  const [receiveInvoiceId, setReceiveInvoiceId] = useState(null)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', height: 'calc(100vh - 3rem)' }}>
@@ -47,8 +53,17 @@ export default function Suppliers() {
         </div>
       </div>
 
-      {tab === 0 && <ReceiveGoods />}
-      {tab === 1 && <PurchaseHistory />}
+      {tab === 0 && <ReceiveGoods cart={receiveCart} setCart={setReceiveCart} supplierId={receiveSupplierId} setSupplierId={setReceiveSupplierId} invoiceId={receiveInvoiceId} setInvoiceId={setReceiveInvoiceId} />}
+      {tab === 1 && <PurchaseHistory onReturnToCart={(items, sId, originalInvoiceId) => {
+        setReceiveSupplierId(String(sId))
+        setReceiveInvoiceId(originalInvoiceId)
+        setReceiveCart(items.map(i => ({
+          product: { id: i.product_id, name: i.product_name, barcode: i.product_barcode, price: i.price, cost: i.cost, units_per_box: 1 },
+          quantity: parseInt(i.quantity, 10),
+          cost: parseFloat(i.cost)
+        })))
+        setTab(0)
+      }} />}
       {tab === 2 && <ManageSuppliers />}
     </div>
   )
@@ -251,12 +266,10 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
 }
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
-function ReceiveGoods() {
+function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }) {
   const [suppliers, setSuppliers]     = useState([])
-  const [supplierId, setSupplierId]   = useState('')
   const [allProducts, setAllProducts] = useState([])
   const [search, setSearch]           = useState('')
-  const [cart, setCart]               = useState([])
   const [loading, setLoading]         = useState(false)
   const [confirming, setConfirming]   = useState(false)
   const [mobileTab, setMobileTab]     = useState('products')
@@ -334,11 +347,13 @@ function ReceiveGoods() {
     setConfirming(true)
     try {
       await createBulkPurchase({
+        replace_invoice_id: invoiceId,
         supplier_id: parseInt(supplierId),
         items: cart.map(c => ({ product_id: c.product.id, quantity: c.quantity, cost: c.cost, update_cost: true })),
       })
-      toast.success('تم تسجيل الشراء وتحديث المخزون')
+      toast.success(invoiceId ? 'تم تحديث الفاتورة والمخزون' : 'تم تسجيل الشراء وتحديث المخزون')
       setCart([])
+      if(setInvoiceId) setInvoiceId(null)
       setMobileTab('products')
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
@@ -377,7 +392,7 @@ function ReceiveGoods() {
           {cart.length > 0 && (
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => { setCart([]); toast('تم مسح السلة') }}
+              onClick={() => { setCart([]); if(setInvoiceId) setInvoiceId(null); toast('تم مسح السلة') }}
               style={{ color: 'var(--danger)' }}
             >
               <Trash2 size={14} /> مسح الكل
@@ -422,7 +437,7 @@ function ReceiveGoods() {
         <button onClick={handleConfirm} disabled={confirming || cart.length === 0 || !supplierId}
           className="btn btn-primary btn-lg" style={{ justifyContent: 'center', width: '100%' }}>
           {confirming ? <span className="spinner" /> : <Check size={18} />}
-          تأكيد الاستلام{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
+          {invoiceId ? 'تحديث الفاتورة' : 'تأكيد الاستلام'}{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
         </button>
       </div>
     </div>
@@ -643,572 +658,299 @@ function ProductCard({ product, onAdd }) {
 }
 
 /* ──────────────────────────── Purchase History ── */
-function PurchaseHistory() {
-  const [purchases, setPurchases]     = useState([])
-  const [suppliers, setSuppliers]     = useState([])
+function PurchaseHistory({ onReturnToCart }) {
+  const [invoices, setInvoices]       = useState([])
   const [loading, setLoading]         = useState(false)
-  const [supplierId, setSupplierId]   = useState('')
-  const [dateFrom, setDateFrom]       = useState('')
-  const [dateTo, setDateTo]           = useState('')
-  const [expandedDays, setExpandedDays] = useState({})
-  const [detailPurchase, setDetailPurchase] = useState(null)
-  const [showFilters, setShowFilters] = useState(true)
+  const [selected, setSelected]       = useState(null)
+  const [detailLoading, setDL]        = useState(false)
+  const [deleting, setDeleting]       = useState(false)
+  const [filterSupplier, setSupplier] = useState('')
+  const [filters, setFilters]         = useState({ date: '', month: '', year: '' })
+  const [suppliers, setSuppliers]     = useState([])
+  const searchTimer                   = useRef(null)
+  const user                          = useAuthStore((s) => s.user)
+  const isAdmin                       = user?.role === 'admin'
+  const settings                      = useSettingsStore()
 
-  const load = async () => {
+  useEffect(() => {
+    getSuppliers().then(r => setSuppliers(r.data.data)).catch(console.error)
+  }, [])
+
+  const load = async (f = filters, supId = filterSupplier) => {
     setLoading(true)
     try {
       const params = {}
-      if (supplierId) params.supplier_id = supplierId
-      if (dateFrom) params.date_from = dateFrom
-      if (dateTo) params.date_to = dateTo
-      const res = await getPurchases(params)
-      setPurchases(res.data.data ?? [])
+      if (f.date)  params.date  = f.date
+      if (f.month) params.month = f.month
+      if (f.year)  params.year  = f.year
+      if (supId)   params.supplier_id = supId
+      const res = await getPurchaseInvoices(params)
+      setInvoices(res.data.data ?? [])
     } catch {
-      toast.error('فشل تحميل سجل المشتريات')
+      toast.error('فشل تحميل فواتير المشتريات')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    getSuppliers().then(r => setSuppliers(r.data.data ?? []))
-  }, [])
+  useEffect(() => { load() }, [])
 
-  useEffect(() => { load() }, [supplierId, dateFrom, dateTo])
+  const handleFilter = (key, val) => {
+    const next = { ...filters, [key]: val }
+    setFilters(next)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => load(next, filterSupplier), 400)
+  }
 
-  /* ── Group purchases by date ── */
-  const grouped = useMemo(() => {
-    const map = {}
-    purchases.forEach(p => {
-      const day = p.created_at ? p.created_at.split(' ')[0] : 'unknown'
-      if (!map[day]) map[day] = []
-      map[day].push(p)
-    })
-    // Sort days descending
-    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a))
-  }, [purchases])
-
-  /* ── Summary stats ── */
-  const stats = useMemo(() => {
-    const totalCost = purchases.reduce((s, p) => s + parseFloat(p.total || 0), 0)
-    const totalItems = purchases.reduce((s, p) => s + parseInt(p.quantity || 0, 10), 0)
-    const uniqueSuppliers = new Set(purchases.map(p => p.supplier_id)).size
-    const uniqueProducts = new Set(purchases.map(p => p.product_id)).size
-    return { totalCost, totalItems, uniqueSuppliers, uniqueProducts }
-  }, [purchases])
-
-  const toggleDay = (day) => {
-    setExpandedDays(prev => ({ ...prev, [day]: !prev[day] }))
+  const handleSupplierFilter = (val) => {
+    setSupplier(val)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => load(filters, val), 400)
   }
 
   const clearFilters = () => {
-    setSupplierId('')
-    setDateFrom('')
-    setDateTo('')
+    const cleared = { date: '', month: '', year: '' }
+    setFilters(cleared)
+    setSupplier('')
+    load(cleared, '')
   }
 
-  const hasFilters = supplierId || dateFrom || dateTo
+  const openDetail = async (id) => {
+    setDL(true)
+    try {
+      const res = await getPurchaseInvoice(id)
+      setSelected(res.data.data)
+    } catch {
+      toast.error('فشل تحميل تفاصيل فاتورة المشتريات')
+    } finally {
+      setDL(false)
+    }
+  }
+
+  const handleDeleteInvoice = async () => {
+    if (!selected?.id) return
+    if (!confirm('سيتم حذف فاتورة المشتريات نهائياً ورجوع مخزون المنتجات إلى ما قبل الشراء. هل أنت متأكد؟')) return
+    setDeleting(true)
+    try {
+      await deletePurchaseInvoice(selected.id)
+      toast.success('تم حذف الفاتورة واسترجاع المخزون')
+      setSelected(null)
+      load()
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      {/* ── Filters ── */}
-      <div className="card" style={{ padding: '0.75rem', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showFilters ? '0.75rem' : 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Filter size={16} style={{ color: 'var(--primary)' }} />
-            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>فلاتر البحث</span>
-            {hasFilters && (
-              <span className="badge badge-green" style={{ fontSize: '0.7rem' }}>نشط</span>
-            )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Filters */}
+      <div className="card" style={{ padding: '1rem' }}>
+        <div className="filter-bar">
+          <div className="form-group">
+            <label style={labelSt}>المورد</label>
+            <select className="input" value={filterSupplier} onChange={e => handleSupplierFilter(e.target.value)}>
+              <option value="">الكل</option>
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
           </div>
-          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-            {hasFilters && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={clearFilters}
-                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
-              >
-                <X size={14} /> مسح
-              </button>
-            )}
-            <button
-              className="btn btn-ghost btn-icon btn-sm"
-              onClick={() => setShowFilters(!showFilters)}
-              style={{ padding: '0.25rem' }}
-            >
-              {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+          <div className="form-group">
+            <label style={labelSt}>تاريخ محدد</label>
+            <input type="date" className="input" value={filters.date} onChange={e => handleFilter('date', e.target.value)} />
           </div>
+          <div className="form-group">
+            <label style={labelSt}>الشهر</label>
+            <select className="input" value={filters.month} onChange={e => handleFilter('month', e.target.value)}>
+              <option value="">كل الأشهر</option>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label style={labelSt}>السنة</label>
+            <select className="input" value={filters.year} onChange={e => handleFilter('year', e.target.value)}>
+              <option value="">كل السنوات</option>
+              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{formatNumber(y)}</option>)}
+            </select>
+          </div>
+          <button onClick={clearFilters} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>مسح الفلاتر</button>
         </div>
+      </div>
 
-        {showFilters && (
-          <div className="ph-filters-grid">
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                المورد
-              </label>
-              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-                <option value="">جميع الموردين</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                <Calendar size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
-                من تاريخ
-              </label>
-              <input
-                type="date"
-                className="input"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                <Calendar size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
-                إلى تاريخ
-              </label>
-              <input
-                type="date"
-                className="input"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-              />
-            </div>
+      {/* Table */}
+      <div className="card">
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
+        ) : invoices.length === 0 ? (
+          <div className="empty-state">لا توجد مشتريات</div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th># الفاتورة</th>
+                  <th>المورد</th>
+                  <th>إجمالي التكلفة</th>
+                  <th>عدد الأصناف</th>
+                  <th>التاريخ</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map(inv => (
+                  <tr key={inv.id}>
+                    <td style={{ color: 'var(--text-muted)' }}>#{formatNumber(inv.id)}</td>
+                    <td>{inv.supplier_name}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>{formatCurrency(inv.total)}</td>
+                    <td>{formatNumber(inv.items_count)}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDate(inv.created_at)}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openDetail(inv.id)} style={{ gap: '0.3rem' }}>
+                        <Eye size={14}/> عرض
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* ── Stats Cards ── */}
-      {purchases.length > 0 && (
-        <div className="ph-stats-grid" style={{ flexShrink: 0 }}>
-          <div className="ph-stat-card">
-            <div className="ph-stat-icon" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--primary)' }}>
-              <DollarSign size={18} />
+      {/* Detail Modal */}
+      {(selected || detailLoading) && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setSelected(null)}>
+          <div className="modal" style={{ maxWidth: '600px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                {selected ? `فاتورة مشتريات #${formatNumber(selected.id)}` : 'جاري التحميل…'}
+              </h2>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                {selected && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => browserPrintPurchase(selected, settings)}
+                    title="طباعة الفاتورة"
+                  >
+                    <Printer size={15} /> طباعة
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
+              </div>
             </div>
-            <div>
-              <div className="ph-stat-value">{formatCurrency(stats.totalCost)}</div>
-              <div className="ph-stat-label">إجمالي المشتريات</div>
-            </div>
-          </div>
-          <div className="ph-stat-card">
-            <div className="ph-stat-icon" style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--secondary)' }}>
-              <Hash size={18} />
-            </div>
-            <div>
-              <div className="ph-stat-value">{formatNumber(stats.totalItems)}</div>
-              <div className="ph-stat-label">إجمالي القطع</div>
-            </div>
-          </div>
-          <div className="ph-stat-card">
-            <div className="ph-stat-icon" style={{ background: 'rgba(168,85,247,0.1)', color: '#a855f7' }}>
-              <TrendingUp size={18} />
-            </div>
-            <div>
-              <div className="ph-stat-value">{formatNumber(stats.uniqueProducts)}</div>
-              <div className="ph-stat-label">منتجات مختلفة</div>
-            </div>
-          </div>
-          <div className="ph-stat-card">
-            <div className="ph-stat-icon" style={{ background: 'rgba(249,115,22,0.1)', color: '#f97316' }}>
-              <Package size={18} />
-            </div>
-            <div>
-              <div className="ph-stat-value">{formatNumber(stats.uniqueSuppliers)}</div>
-              <div className="ph-stat-label">موردون</div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── Purchase List Grouped by Date ── */}
-      <div className="card" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.75rem', borderBottom: '1px solid var(--border)', flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <FileText size={16} style={{ color: 'var(--primary)' }} />
-            <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>سجل المشتريات</span>
-          </div>
-          <span className="badge badge-gray">{formatNumber(purchases.length)} سجل</span>
-        </div>
+            {detailLoading && (
+              <div style={{ padding: '2rem', textAlign: 'center' }}><span className="spinner" /></div>
+            )}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.5rem 0.75rem' }}>
-          {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
-          ) : purchases.length === 0 ? (
-            <div className="empty-state" style={{ padding: '3rem' }}>
-              <FileText size={36} style={{ opacity: 0.25 }} />
-              <span style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
-                {hasFilters ? 'لا توجد نتائج للفلاتر المحددة' : 'لا توجد مشتريات مسجلة بعد'}
-              </span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {grouped.map(([day, items]) => {
-                const expanded = expandedDays[day] !== false // default expanded
-                const dayTotal = items.reduce((s, p) => s + parseFloat(p.total || 0), 0)
-                const dayItems = items.reduce((s, p) => s + parseInt(p.quantity || 0, 10), 0)
+            {selected && (
+              <>
+                <div className="resp-2col" style={{ marginBottom: '1rem' }}>
+                  <InfoCard label="المورد" value={selected.supplier_name} />
+                  <InfoCard label="التاريخ" value={formatDate(selected.created_at)} />
+                  <InfoCard label="إجمالي الفاتورة" value={formatCurrency(selected.total)} />
+                  <InfoCard label="إجمالي عدد الجرعات / الأصناف" value={formatNumber(selected.items_count)} />
+                </div>
 
-                return (
-                  <div key={day} className="ph-day-group">
+                <div className="table-wrapper" style={{ marginBottom: '1rem' }}>
+                  <table style={{ fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr>
+                        <th>المنتج</th>
+                        <th>الباركود</th>
+                        <th>الكمية</th>
+                        <th>التكلفة</th>
+                        <th>الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selected.items ?? []).map((item, idx) => (
+                        <tr key={idx}>
+                          <td>{item.product_name}</td>
+                          <td style={{ color: 'var(--text-muted)' }}>{item.product_barcode || '—'}</td>
+                          <td>{formatNumber(item.quantity)}</td>
+                          <td>{formatCurrency(item.cost)}</td>
+                          <td style={{ fontWeight: 600 }}>{formatCurrency(item.cost * item.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '1rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <TotalRow label="إجمالي تكلفة المشتريات" value={formatCurrency(selected.total)} bold green />
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                      onClick={() => {
+                        if (!selected?.items?.length) {
+                          toast.error('لا توجد أصناف في الفاتورة')
+                          return
+                        }
+                        onReturnToCart(selected.items, selected.supplier_id, selected.id)
+                        setSelected(null)
+                        toast.success('تم إرجاع المنتجات لسلة الاستلام')
+                      }}
+                    >
+                      <ShoppingCart size={16} />
+                      إرجاع المنتجات للسلة
+                    </button>
+                  {isAdmin && (
                     <button
                       type="button"
-                      onClick={() => toggleDay(day)}
-                      className="ph-day-header"
+                      className="btn btn-danger"
+                      style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                      onClick={handleDeleteInvoice}
+                      disabled={deleting}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div className="ph-day-dot" />
-                        <div>
-                          <span className="ph-day-date">{formatShortDate(day)}</span>
-                          <span className="ph-day-meta">
-                            {formatNumber(items.length)} عملية  •  {formatNumber(dayItems)} قطعة
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <span className="ph-day-total">{formatCurrency(dayTotal)}</span>
-                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </div>
+                      {deleting ? <span className="spinner" /> : <Trash2 size={16} />}
+                      حذف الفاتورة والتراجع عن الشراء
                     </button>
-
-                    {expanded && (
-                      <div className="ph-day-items">
-                        {/* Desktop table */}
-                        <div className="ph-table-wrap hide-mobile">
-                          <table className="ph-table">
-                            <thead>
-                              <tr>
-                                <th>الوقت</th>
-                                <th>المنتج</th>
-                                <th>الباركود</th>
-                                <th>المورد</th>
-                                <th>الكمية</th>
-                                <th>التكلفة</th>
-                                <th>الإجمالي</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {items.map(p => (
-                                <tr key={p.id} onClick={() => setDetailPurchase(p)} style={{ cursor: 'pointer' }}>
-                                  <td>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                      <Clock size={12} style={{ marginLeft: '0.2rem', verticalAlign: 'middle' }} />
-                                      {formatTime(p.created_at)}
-                                    </span>
-                                  </td>
-                                  <td style={{ fontWeight: 600 }}>{p.product_name}</td>
-                                  <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                    {p.product_barcode || '—'}
-                                  </td>
-                                  <td>
-                                    <span className="badge badge-blue" style={{ fontSize: '0.72rem' }}>
-                                      {p.supplier_name}
-                                    </span>
-                                  </td>
-                                  <td style={{ fontWeight: 600 }}>{formatNumber(p.quantity)}</td>
-                                  <td style={{ color: 'var(--text-muted)' }}>{formatCurrency(p.cost)}</td>
-                                  <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>{formatCurrency(p.total)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* Mobile cards */}
-                        <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '0.4rem' }}>
-                          {items.map(p => (
-                            <div
-                              key={p.id}
-                              className="ph-mobile-card"
-                              onClick={() => setDetailPurchase(p)}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontWeight: 600, fontSize: '0.85rem', lineHeight: 1.3, wordBreak: 'break-word' }}>
-                                    {p.product_name}
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                                    {p.supplier_name}  •  {formatTime(p.created_at)}
-                                  </div>
-                                </div>
-                                <div style={{ textAlign: 'left', flexShrink: 0, marginRight: '0.5rem' }}>
-                                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--primary-d)' }}>
-                                    {formatCurrency(p.total)}
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                    {formatNumber(p.quantity)} × {formatCurrency(p.cost)}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Detail Modal ── */}
-      {detailPurchase && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDetailPurchase(null)}>
-          <div className="modal" style={{ maxWidth: '420px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontWeight: 700, fontSize: '1rem' }}>تفاصيل عملية الشراء</h2>
-              <button className="btn btn-ghost btn-icon" onClick={() => setDetailPurchase(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">رقم العملية</span>
-                <span className="ph-detail-value" style={{ fontFamily: 'monospace' }}>#{detailPurchase.id}</span>
-              </div>
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">المنتج</span>
-                <span className="ph-detail-value" style={{ fontWeight: 600 }}>{detailPurchase.product_name}</span>
-              </div>
-              {detailPurchase.product_barcode && (
-                <div className="ph-detail-row">
-                  <span className="ph-detail-label">الباركود</span>
-                  <span className="ph-detail-value" style={{ fontFamily: 'monospace' }}>{detailPurchase.product_barcode}</span>
+                  )}
                 </div>
-              )}
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">المورد</span>
-                <span className="ph-detail-value">
-                  <span className="badge badge-blue">{detailPurchase.supplier_name}</span>
-                </span>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border)', margin: '0.25rem 0' }} />
-
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">الكمية</span>
-                <span className="ph-detail-value" style={{ fontWeight: 700 }}>{formatNumber(detailPurchase.quantity)} قطعة</span>
-              </div>
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">تكلفة الوحدة</span>
-                <span className="ph-detail-value">{formatCurrency(detailPurchase.cost)}</span>
-              </div>
-              <div className="ph-detail-row" style={{ background: 'rgba(34,197,94,0.06)', padding: '0.5rem 0.6rem', borderRadius: '0.4rem' }}>
-                <span className="ph-detail-label" style={{ fontWeight: 700, color: 'var(--text)' }}>الإجمالي</span>
-                <span className="ph-detail-value" style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--primary-d)' }}>
-                  {formatCurrency(detailPurchase.total)}
-                </span>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border)', margin: '0.25rem 0' }} />
-
-              <div className="ph-detail-row">
-                <span className="ph-detail-label">التاريخ والوقت</span>
-                <span className="ph-detail-value">{formatDate(detailPurchase.created_at)}</span>
-              </div>
-              {detailPurchase.notes && (
-                <div className="ph-detail-row" style={{ flexDirection: 'column', gap: '0.25rem' }}>
-                  <span className="ph-detail-label">ملاحظات</span>
-                  <span className="ph-detail-value" style={{ fontSize: '0.85rem' }}>{detailPurchase.notes}</span>
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
+    </div>
+  )
+}
 
-      <style>{`
-        /* ── Filters Grid ── */
-        .ph-filters-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 0.6rem;
-        }
+const labelSt = {
+  display: 'block',
+  fontSize: '0.8rem',
+  fontWeight: 600,
+  color: 'var(--text-muted)',
+  marginBottom: '0.3rem',
+}
 
-        /* ── Stats Grid ── */
-        .ph-stats-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 0.5rem;
-        }
-        .ph-stat-card {
-          display: flex;
-          align-items: center;
-          gap: 0.6rem;
-          padding: 0.65rem 0.75rem;
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-        }
-        .ph-stat-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: 0.5rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-        .ph-stat-value {
-          font-weight: 700;
-          font-size: 0.92rem;
-          line-height: 1.2;
-        }
-        .ph-stat-label {
-          font-size: 0.72rem;
-          color: var(--text-muted);
-          margin-top: 0.1rem;
-        }
+function InfoCard({ label, value }) {
+  return (
+    <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem' }}>
+      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.15rem' }}>{label}</p>
+      <p style={{ fontWeight: 600 }}>{value}</p>
+    </div>
+  )
+}
 
-        /* ── Day Group ── */
-        .ph-day-group {
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          overflow: hidden;
-          background: var(--surface);
-        }
-        .ph-day-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          width: 100%;
-          padding: 0.6rem 0.75rem;
-          border: none;
-          background: var(--bg);
-          cursor: pointer;
-          font-family: inherit;
-          font-size: 0.85rem;
-          color: var(--text);
-          transition: background .15s;
-        }
-        .ph-day-header:hover {
-          background: rgba(34,197,94,0.04);
-        }
-        .ph-day-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: var(--primary);
-          flex-shrink: 0;
-        }
-        .ph-day-date {
-          font-weight: 700;
-          font-size: 0.88rem;
-        }
-        .ph-day-meta {
-          margin-right: 0.5rem;
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-        .ph-day-total {
-          font-weight: 700;
-          font-size: 0.88rem;
-          color: var(--primary-d);
-        }
-        .ph-day-items {
-          padding: 0.5rem 0.75rem 0.75rem;
-          border-top: 1px solid var(--border);
-        }
-
-        /* ── Table ── */
-        .ph-table-wrap {
-          overflow-x: auto;
-        }
-        .ph-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 0.82rem;
-        }
-        .ph-table th {
-          text-align: right;
-          padding: 0.45rem 0.5rem;
-          font-weight: 600;
-          font-size: 0.75rem;
-          color: var(--text-muted);
-          background: var(--bg);
-          border-bottom: 1px solid var(--border);
-          white-space: nowrap;
-        }
-        .ph-table td {
-          padding: 0.45rem 0.5rem;
-          border-bottom: 1px solid var(--border);
-          white-space: nowrap;
-        }
-        .ph-table tbody tr:last-child td {
-          border-bottom: none;
-        }
-        .ph-table tbody tr:hover {
-          background: rgba(34,197,94,0.03);
-        }
-
-        /* ── Mobile Card ── */
-        .ph-mobile-card {
-          padding: 0.6rem 0.7rem;
-          border: 1px solid var(--border);
-          border-radius: 0.4rem;
-          background: var(--bg);
-          cursor: pointer;
-          transition: background .15s;
-        }
-        .ph-mobile-card:active {
-          background: rgba(34,197,94,0.05);
-        }
-
-        /* ── Detail Modal ── */
-        .ph-detail-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.5rem;
-        }
-        .ph-detail-label {
-          font-size: 0.82rem;
-          color: var(--text-muted);
-          flex-shrink: 0;
-        }
-        .ph-detail-value {
-          font-size: 0.88rem;
-          text-align: left;
-        }
-
-        /* ── Responsive ── */
-        @media (max-width: 767px) {
-          .ph-filters-grid {
-            grid-template-columns: 1fr;
-          }
-          .ph-stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-          .ph-day-meta {
-            display: none;
-          }
-          .show-mobile {
-            display: flex !important;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .ph-stats-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-          .ph-stat-card {
-            padding: 0.5rem 0.6rem;
-          }
-          .ph-stat-icon {
-            width: 30px;
-            height: 30px;
-          }
-          .ph-stat-value {
-            font-size: 0.82rem;
-          }
-        }
-      `}</style>
+function TotalRow({ label, value, bold, green, danger }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{
+        fontWeight: bold ? 700 : 500,
+        color: green ? 'var(--primary-d)' : danger ? 'var(--danger)' : 'var(--text)',
+        fontSize: bold ? '1rem' : undefined,
+      }}>{value}</span>
     </div>
   )
 }

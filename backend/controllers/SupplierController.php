@@ -49,6 +49,7 @@ class SupplierController extends Controller {
         Response::success(null, 'Supplier deleted');
     }
 
+    /** Single-item purchase (legacy) */
     public function purchase(): void {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
@@ -81,6 +82,48 @@ class SupplierController extends Controller {
         ], 'Purchase recorded and stock updated', 201);
     }
 
+    /** List purchase invoices (like sales list) */
+    public function purchaseInvoices(): void {
+        $filters = [
+            'supplier_id' => $this->getParam('supplier_id'),
+            'date'        => $this->getParam('date'),
+            'month'       => $this->getParam('month'),
+            'year'        => $this->getParam('year'),
+        ];
+        Response::success($this->supplierModel->getPurchaseInvoices($filters));
+    }
+
+    /** Get single purchase invoice detail (like sales detail) */
+    public function purchaseInvoiceDetail(string $id): void {
+        $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
+        if (!$invoice) Response::notFound('Purchase invoice not found');
+        Response::success($invoice);
+    }
+
+    /** Delete a purchase invoice and restore stock */
+    public function purchaseInvoiceDelete(string $id): void {
+        $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
+        if (!$invoice) Response::notFound('Purchase invoice not found');
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            // Restore stock quantities
+            foreach ($invoice['items'] as $item) {
+                $this->productModel->decrementQuantity((int)$item['product_id'], (int)$item['quantity']);
+            }
+            $this->supplierModel->deletePurchaseInvoice((int)$id);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            error_log($e->getMessage());
+            Response::serverError('Failed to delete purchase invoice');
+        }
+
+        Response::success(null, 'Purchase invoice deleted and stock restored');
+    }
+
+    /** Legacy flat purchases list */
     public function purchases(): void {
         $filters = [
             'supplier_id' => $this->getParam('supplier_id'),
@@ -90,6 +133,7 @@ class SupplierController extends Controller {
         Response::success($this->supplierModel->getPurchases($filters));
     }
 
+    /** Bulk purchase — creates a purchase invoice + items */
     public function purchaseBulk(): void {
         $data = $this->getBody();
 
@@ -103,9 +147,45 @@ class SupplierController extends Controller {
         $supplier = $this->supplierModel->findById((int)$data['supplier_id']);
         if (!$supplier) Response::notFound('Supplier not found');
 
+        $replaceInvoiceId = isset($data['replace_invoice_id']) ? (int) $data['replace_invoice_id'] : 0;
+        $existingInvoice = null;
+        if ($replaceInvoiceId > 0) {
+            $existingInvoice = $this->supplierModel->getPurchaseInvoice($replaceInvoiceId);
+            if (!$existingInvoice) Response::notFound('Original invoice not found for replacement');
+        }
+
         $db = Database::getInstance();
         $db->beginTransaction();
         try {
+            // Calculate total
+            $grandTotal = 0;
+            foreach ($data['items'] as $item) {
+                $grandTotal += (float)$item['cost'] * (int)$item['quantity'];
+            }
+
+            if ($replaceInvoiceId > 0) {
+                // Revert old stock
+                foreach ($existingInvoice['items'] as $oldItem) {
+                    $this->productModel->decrementQuantity((int)$oldItem['product_id'], (int)$oldItem['quantity']);
+                }
+                // Delete old items
+                $this->supplierModel->deletePurchaseInvoiceItems($replaceInvoiceId);
+                // Update header
+                $this->supplierModel->updatePurchaseInvoiceTotals($replaceInvoiceId, [
+                    'total' => $grandTotal,
+                    'items_count' => count($data['items']),
+                    'notes' => $data['notes'] ?? null
+                ]);
+                $invoiceId = $replaceInvoiceId;
+            } else {
+                $invoiceId = $this->supplierModel->createPurchaseInvoice([
+                    'supplier_id' => (int)$data['supplier_id'],
+                    'total'       => $grandTotal,
+                    'items_count' => count($data['items']),
+                    'notes'       => $data['notes'] ?? null,
+                ]);
+            }
+
             foreach ($data['items'] as $item) {
                 if (empty($item['product_id']) || empty($item['quantity']) || !isset($item['cost'])) {
                     $db->rollBack();
@@ -119,10 +199,11 @@ class SupplierController extends Controller {
                 }
 
                 $this->supplierModel->createPurchase([
-                    'supplier_id' => (int)$data['supplier_id'],
-                    'product_id'  => (int)$item['product_id'],
-                    'quantity'    => (int)$item['quantity'],
-                    'cost'        => (float)$item['cost'],
+                    'purchase_invoice_id' => $invoiceId,
+                    'supplier_id'         => (int)$data['supplier_id'],
+                    'product_id'          => (int)$item['product_id'],
+                    'quantity'            => (int)$item['quantity'],
+                    'cost'                => (float)$item['cost'],
                 ]);
                 $this->productModel->incrementQuantity((int)$item['product_id'], (int)$item['quantity']);
 
@@ -139,6 +220,9 @@ class SupplierController extends Controller {
             Response::serverError('Failed to record bulk purchase');
         }
 
-        Response::success(['items_processed' => count($data['items'])], 'Bulk purchase recorded', 201);
+        Response::success([
+            'invoice_id'      => $invoiceId,
+            'items_processed' => count($data['items']),
+        ], $replaceInvoiceId > 0 ? 'Purchase invoice updated' : 'Bulk purchase recorded', $replaceInvoiceId > 0 ? 200 : 201);
     }
 }

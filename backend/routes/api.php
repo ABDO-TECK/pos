@@ -38,6 +38,14 @@ $router->delete('/api/suppliers/{id}', [SupplierController::class, 'destroy', [A
 $router->post('/api/purchases',        [SupplierController::class, 'purchase',[AuthMiddleware::class, AdminMiddleware::class]]);
 $router->get('/api/purchases',         [SupplierController::class, 'purchases',[AuthMiddleware::class]]);
 
+// ── Purchase Invoices (فواتير المشتريات) ───────────────────────
+$router->get('/api/purchase-invoices',         [SupplierController::class, 'purchaseInvoices',       [AuthMiddleware::class]]);
+$router->get('/api/purchase-invoices/{id}',    [SupplierController::class, 'purchaseInvoiceDetail',  [AuthMiddleware::class]]);
+$router->delete('/api/purchase-invoices/{id}', [SupplierController::class, 'purchaseInvoiceDelete',  [AuthMiddleware::class, AdminMiddleware::class]]);
+
+// ── Bulk Purchases ─────────────────────────────────────────────
+$router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);
+
 // ── Reports ────────────────────────────────────────────────────
 $router->get('/api/reports/daily',    [ReportController::class, 'daily',        [AuthMiddleware::class]]);
 $router->get('/api/reports/monthly',  [ReportController::class, 'monthly',      [AuthMiddleware::class]]);
@@ -59,10 +67,7 @@ $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddle
 $router->get('/api/backup', [BackupController::class, 'download', [AuthMiddleware::class, AdminMiddleware::class]]);
 $router->post('/api/backup/restore', [BackupController::class, 'restore', [AuthMiddleware::class, AdminMiddleware::class]]);
 
-// ── Bulk Purchases ─────────────────────────────────────────────────────────────────────────────────────────
-$router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk', [AuthMiddleware::class, AdminMiddleware::class]]);
-
-// ── Customers ──────────────────────────────────────────────────────────────────────────────────────────
+// ── Customers ──────────────────────────────────────────────────
 $router->get('/api/customers',                 [CustomerController::class, 'index',      [AuthMiddleware::class]]);
 $router->post('/api/customers',                [CustomerController::class, 'store',      [AuthMiddleware::class]]);
 $router->get('/api/customers/{id}',            [CustomerController::class, 'show',       [AuthMiddleware::class]]);

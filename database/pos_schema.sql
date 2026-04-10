@@ -140,10 +140,26 @@ CREATE TABLE IF NOT EXISTS suppliers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- Purchases (Stock In from Suppliers)
+-- Purchase Invoices (فواتير المشتريات — رأس الفاتورة)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS purchase_invoices (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    supplier_id INT UNSIGNED NOT NULL,
+    total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    items_count INT NOT NULL DEFAULT 0,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pinv_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    INDEX idx_pinv_supplier (supplier_id),
+    INDEX idx_pinv_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Purchases (Stock In from Suppliers — بنود الفاتورة)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS purchases (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    purchase_invoice_id INT UNSIGNED NULL,
     supplier_id INT UNSIGNED NOT NULL,
     product_id INT UNSIGNED NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
@@ -151,8 +167,10 @@ CREATE TABLE IF NOT EXISTS purchases (
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     notes TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_purchase_pinv FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
     CONSTRAINT fk_purchase_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
     CONSTRAINT fk_purchase_product FOREIGN KEY (product_id) REFERENCES products(id),
+    INDEX idx_purchase_invoice (purchase_invoice_id),
     INDEX idx_supplier (supplier_id),
     INDEX idx_created_at_purchase (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

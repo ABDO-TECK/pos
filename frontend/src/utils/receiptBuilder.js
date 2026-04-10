@@ -258,6 +258,76 @@ export function browserPrint(invoice, change, settings) {
     win.document.open()
     win.document.write(html)
     win.document.close()
-    // Use only one print trigger to avoid double dialog
+    win.addEventListener('load', () => { win.focus(); win.print() })
+}
+
+
+// ── Purchase Invoice printing ─────────────────────────────────────────────
+export function buildPurchaseReceiptHTML(invoice, settings = {}) {
+    const storeName  = settings.storeName  ?? 'سوبر ماركت'
+
+    const itemRows = (invoice.items ?? []).map((item, i) => `
+        <tr>
+            <td>${fn(i + 1)}</td>
+            <td class="name">${item.product_name ?? item.name ?? ''}</td>
+            <td>${fn(item.quantity)}</td>
+            <td>${fd2(item.cost)}</td>
+            <td>${fd2(parseFloat(item.cost) * parseFloat(item.quantity))}</td>
+        </tr>`).join('')
+
+    return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فاتورة مشتريات #${fn(invoice.id)}</title>
+    <style>${PRINT_CSS}</style>
+</head>
+<body>
+<div class="invoice-container">
+    <div class="invoice-header">
+        <h2>${storeName}</h2>
+        <div class="invoice-title">فاتورة مشتريات: #${fn(invoice.id)}</div>
+    </div>
+
+    <div class="invoice-details">
+        <div class="info-row">
+            <span><span class="lbl">التاريخ:</span> ${fd(invoice.created_at)}</span>
+            <span><span class="lbl">الوقت:</span> ${ft(invoice.created_at)}</span>
+        </div>
+        <div class="info-row" style="justify-content: center; margin-top: 2mm">
+            <span><span class="lbl">المورد:</span> ${invoice.supplier_name ?? ''}</span>
+        </div>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>المنتج</th>
+                <th>الكمية</th>
+                <th>التكلفة</th>
+                <th>الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+    </table>
+
+    <div class="total-section">
+        <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
+        <div class="total-row"><span>عدد الأصناف</span><span>${fn(invoice.items_count)}</span></div>
+    </div>
+</div>
+</body>
+</html>`
+}
+
+export function browserPrintPurchase(invoice, settings) {
+    const html    = buildPurchaseReceiptHTML(invoice, settings)
+    const win     = window.open('', '_blank', 'width=420,height=700,scrollbars=yes')
+    if (!win) { alert('يرجى السماح بالنوافذ المنبثقة لهذا الموقع'); return }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
     win.addEventListener('load', () => { win.focus(); win.print() })
 }
