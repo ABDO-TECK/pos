@@ -655,3 +655,103 @@ html[data-theme="dark"] .barcode-scanner-error {
   gap: 0.5rem;
   margin-top: 0.25rem;
 }
+
+/* ── Responsive Split Layout (List + Ledger Detail) ───────── */
+.split-layout {
+  display: flex;
+  height: 100%;
+  gap: 1rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.split-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: width 0.25s, opacity 0.2s;
+  flex-shrink: 0;
+}
+.split-list.is-split { width: 320px; }
+.split-list.full-width { width: 100%; }
+
+.split-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+  min-width: 0;
+  animation: fadeIn 0.2s;
+}
+
+@media (max-width: 1023px) {
+  /* On <= tablet, hide the list entirely when detail is open */
+  .split-layout.has-detail .split-list {
+    display: none;
+  }
+}
+
+/* ── Specific Responsive Layouts ────────────────────────────── */
+.ledger-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+@media (max-width: 767px) {
+  .ledger-header {
+    flex-direction: column;
+    align-items: stretch;
+    background: var(--surface);
+    padding: 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+  }
+  .ledger-header-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+  }
+  .ledger-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+  }
+  .ledger-header-actions > *:first-child,
+  .ledger-header-actions .ledger-balance {
+    flex: 1; /* Make balance box or primary button stretch */
+  }
+}
+
+.page-tabs-bar {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.page-tabs-bar::-webkit-scrollbar { display: none; }
+
+@media (max-width: 767px) {
+  .page-header.col-mobile {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .page-header.col-mobile h2 {
+    text-align: center;
+    margin-bottom: 0.25rem;
+  }
+  .page-tabs-bar {
+    width: 100%;
+    margin: 0 auto;
+  }
+}

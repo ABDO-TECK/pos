@@ -140,14 +140,10 @@ export default function Customers() {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', height: '100%', gap: '1rem', overflow: 'hidden' }}>
+    <div className={`split-layout ${ledgerData ? 'has-detail' : ''}`}>
 
       {/* ── القائمة ───────────────────────────────────────────────────────── */}
-      <div style={{
-        width: ledgerData ? '320px' : '100%', flexShrink: 0,
-        display: 'flex', flexDirection: 'column', gap: '0.75rem',
-        transition: 'width .25s',
-      }}>
+      <div className={`split-list ${ledgerData ? 'is-split' : 'full-width'}`}>
         {/* رأس */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <h1 style={{ fontSize: '1.2rem', fontWeight: 700, flex: 1 }}>العملاء</h1>
@@ -185,47 +181,53 @@ export default function Customers() {
 
       {/* ── كشف الحساب ───────────────────────────────────────────────────── */}
       {ledgerData && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflow: 'hidden', minWidth: 0 }}>
+        <div className="split-detail">
 
           {/* رأس كشف الحساب */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost btn-icon" onClick={() => setLedgerData(null)}>
-              <ArrowRight size={18} />
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
-                كشف حساب — {ledgerData.customer.name}
-              </h2>
-              {ledgerData.customer.phone && (
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <Phone size={11} style={{ verticalAlign: 'middle' }} /> {ledgerData.customer.phone}
-                </span>
-              )}
-            </div>
-
-            {/* الرصيد الإجمالي */}
-            <div style={{
-              background: ledgerData.balance > 0 ? 'rgba(239,68,68,.08)' : 'rgba(34,197,94,.08)',
-              border: `1px solid ${ledgerData.balance > 0 ? '#fca5a5' : '#86efac'}`,
-              borderRadius: 'var(--radius)', padding: '0.4rem 0.9rem', textAlign: 'center',
-            }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.1rem' }}>الرصيد المستحق</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: ledgerData.balance > 0 ? 'var(--danger)' : 'var(--primary)' }}>
-                {formatCurrency(Math.abs(ledgerData.balance))}
+          <div className="ledger-header">
+            <div className="ledger-header-title">
+              <button className="btn btn-ghost btn-icon" onClick={() => setLedgerData(null)}>
+                <ArrowRight size={18} />
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, wordBreak: 'break-word' }}>
+                  كشف حساب — {ledgerData.customer.name}
+                </h2>
+                {ledgerData.customer.phone && (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <Phone size={11} style={{ verticalAlign: 'middle' }} /> {ledgerData.customer.phone}
+                  </span>
+                )}
               </div>
             </div>
 
-            <button className="btn btn-primary btn-sm" onClick={() => setPayModal(true)} disabled={ledgerData.balance <= 0}>
-              <PlusCircle size={15} /> تسجيل دفعة
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => exportCustomerLedgerPDF(ledgerData)}
-              title="تصدير كشف الحساب PDF"
-              style={{ gap: '0.3rem' }}
-            >
-              <Download size={15} /> تصدير PDF
-            </button>
+            <div className="ledger-header-actions">
+              {/* الرصيد الإجمالي */}
+              <div className="ledger-balance" style={{
+                background: ledgerData.balance > 0 ? 'rgba(239,68,68,.08)' : 'rgba(34,197,94,.08)',
+                border: `1px solid ${ledgerData.balance > 0 ? '#fca5a5' : '#86efac'}`,
+                borderRadius: 'var(--radius)', padding: '0.4rem 0.9rem', textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.1rem' }}>الرصيد المستحق</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: ledgerData.balance > 0 ? 'var(--danger)' : 'var(--primary)' }}>
+                  {formatCurrency(Math.abs(ledgerData.balance))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
+                <button className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setPayModal(true)} disabled={ledgerData.balance <= 0}>
+                  <PlusCircle size={15} /> تسجيل دفعة
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ flex: 1, justifyContent: 'center', gap: '0.3rem' }}
+                  onClick={() => exportCustomerLedgerPDF(ledgerData)}
+                  title="تصدير كشف الحساب PDF"
+                >
+                  <Download size={15} /> تصدير
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* جدول كشف الحساب */}
