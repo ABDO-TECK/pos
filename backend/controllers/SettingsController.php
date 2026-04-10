@@ -21,7 +21,7 @@ class SettingsController extends Controller {
 
         $defaults = [
             'store_name'  => 'سوبر ماركت',
-            'tax_enabled' => '1',
+            'tax_enabled' => '0',
             'tax_rate'    => '15',
         ];
 

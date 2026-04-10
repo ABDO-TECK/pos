@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { getDailyReport, getMonthlyReport, getTopProducts, getReportSummary, getProfitReport } from '../api/endpoints'
 import { formatCurrency, formatShortDate, formatNumber, formatPercent, formatTime } from '../utils/formatters'
+import useSettingsStore from '../store/settingsStore'
 
 export default function Reports() {
+  const taxEnabled = useSettingsStore((s) => s.taxEnabled)
   const [tab, setTab] = useState('summary')
   const [summary, setSummary] = useState(null)
   const [daily, setDaily] = useState(null)
@@ -125,7 +127,9 @@ export default function Reports() {
                 <SCard label="إجمالي التكاليف" value={formatCurrency(daily.summary?.total_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة — للتاريخ المختار" />
                 <SCard label="صافي الربح" value={formatCurrency(daily.summary?.total_profit ?? 0)} color={profitColor(daily.summary?.total_profit)} icon="📈" title="(سعر البيع − التكلفة) × الكمية — للتاريخ المختار" />
                 <SCard label="الخصومات" value={formatCurrency(daily.summary?.total_discount)} icon="🏷️" />
-                <SCard label="الضرائب" value={formatCurrency(daily.summary?.total_tax)} icon="📊" />
+                {taxEnabled && (
+                  <SCard label="الضرائب" value={formatCurrency(daily.summary?.total_tax)} icon="📊" />
+                )}
               </div>
 
               <div className="card">

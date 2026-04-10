@@ -7,7 +7,7 @@ import useSettingsStore from '../store/settingsStore'
 export default function Settings() {
   const { storeName, taxEnabled, taxRate, fetchSettings, setSettings } = useSettingsStore()
 
-  const [form, setForm]       = useState({ store_name: '', tax_enabled: '1', tax_rate: '15' })
+  const [form, setForm]       = useState({ store_name: '', tax_enabled: '0', tax_rate: '15' })
   const [saving, setSaving]   = useState(false)
   const [backing, setBacking] = useState(false)
   const [restoring, setRestoring] = useState(false)

@@ -22,7 +22,7 @@ class SaleController extends Controller {
             return $s;
         } catch (Throwable $e) {
             // settings table may not exist yet; return safe defaults
-            return ['tax_enabled' => '1', 'tax_rate' => '15'];
+            return ['tax_enabled' => '0', 'tax_rate' => '15'];
         }
     }
 
@@ -86,7 +86,7 @@ class SaleController extends Controller {
 
         // Calculate totals (read tax from settings)
         $settings = $this->getSettings();
-        $taxEnabled = (bool)(int)($settings['tax_enabled'] ?? 1);
+        $taxEnabled = (bool)(int)($settings['tax_enabled'] ?? 0);
         $taxRate    = (float)($settings['tax_rate'] ?? 15) / 100;
 
         $subtotal = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $enrichedItems));

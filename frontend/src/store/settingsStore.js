@@ -3,7 +3,7 @@ import { getSettings } from '../api/endpoints'
 
 const useSettingsStore = create((set, get) => ({
   storeName: 'سوبر ماركت',
-  taxEnabled: true,
+  taxEnabled: false,
   taxRate: 15,
   loaded: false,
 
