@@ -807,9 +807,10 @@ html[data-theme="dark"] .barcode-scanner-error {
   font-size: 0.9rem;
   font-weight: 400;
   transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+}
+.qz-printer-item > svg {
+  vertical-align: middle;
+  margin-left: 0.5rem;
 }
 .qz-printer-item:hover {
   background: var(--bg);

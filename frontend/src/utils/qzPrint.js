@@ -100,7 +100,7 @@ export async function connectQZ() {
     ensureSecurity()
 
     _connecting = qz.websocket
-        .connect({ host: cfg.host, retries: cfg.retries ?? 2, delay: cfg.delay ?? 0 })
+        .connect(cfg)
         .then(() => { _connecting = null; return true })
         .catch(err => { _connecting = null; throw err })
 
