@@ -12,7 +12,7 @@ const navItems = [
   { to: '/',           label: 'نقطة البيع',   icon: ShoppingCart, roles: ['admin', 'cashier'] },
   { to: '/sales',      label: 'سجل المبيعات', icon: Receipt,      roles: ['admin', 'cashier'] },
   { to: '/products',   label: 'المنتجات',     icon: Package,      roles: ['admin'] },
-  { to: '/customers',  label: 'العملاء',       icon: UserCheck,    roles: ['admin'] },
+  { to: '/customers',  label: 'العملاء',       icon: UserCheck,    roles: ['admin', 'cashier'] },
   { to: '/suppliers',  label: 'الموردون',      icon: Truck,        roles: ['admin'] },
   { to: '/reports',    label: 'التقارير',      icon: BarChart2,    roles: ['admin'] },
   { to: '/users',      label: 'المستخدمون',   icon: Users,        roles: ['admin'] },

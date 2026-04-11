@@ -56,13 +56,16 @@ body {
     color: #000;
     background: #fff;
     width: 100%;
+    margin: 0 auto;
+    text-align: center;
 }
 .invoice-container {
-    width: 100%;
     max-width: 80mm;
+    width: 100%;
     margin: 0 auto;
-    background: #fff;
     padding: 2mm;
+    text-align: right;
+    display: inline-block;
 }
 .invoice-header {
     text-align: center;
@@ -140,10 +143,12 @@ body {
 @media print {
     @page { size: 80mm auto; margin: 0; }
     body {
+        width: 100%;
+        text-align: center;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
-    .invoice-container { padding: 2mm; }
+    .invoice-container { max-width: 80mm; width: 100%; margin: 0 auto; padding: 2mm; display: inline-block; text-align: right; }
     .no-print { display: none !important; }
 }
 `

@@ -4,8 +4,10 @@ import BarcodeInput from '../components/pos/BarcodeInput'
 import useProductStore from '../store/productStore'
 import useAuthStore from '../store/authStore'
 import useSettingsStore from '../store/settingsStore'
-import { browserPrintPurchase } from '../utils/receiptBuilder'
-import { exportSupplierLedgerPDF } from '../utils/pdfExport'
+import { browserPrintPurchase, buildPurchaseReceiptHTML } from '../utils/receiptBuilder'
+import { exportSupplierLedgerPDF, buildSupplierLedgerHTML } from '../utils/pdfExport'
+import useQZPrinter from '../hooks/useQZPrinter'
+import { QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
@@ -706,6 +708,7 @@ function PurchaseHistory({ onReturnToCart }) {
   const user                          = useAuthStore((s) => s.user)
   const isAdmin                       = user?.role === 'admin'
   const settings                      = useSettingsStore()
+  const qz = useQZPrinter()
 
   useEffect(() => {
     getSuppliers().then(r => setSuppliers(r.data.data)).catch(console.error)
@@ -866,13 +869,18 @@ function PurchaseHistory({ onReturnToCart }) {
               </h2>
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                 {selected && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => browserPrintPurchase(selected, settings)}
-                    title="طباعة الفاتورة"
-                  >
-                    <Printer size={15} /> طباعة
-                  </button>
+                  <QZPrintButton
+                    qzReady={qz.qzReady}
+                    printing={qz.printing}
+                    onQZPrint={async () => {
+                      const html = buildPurchaseReceiptHTML(selected, settings)
+                      const r = await qz.qzPrint(html)
+                      if (r.ok) toast.success('تمت الطباعة بنجاح')
+                      else if (r.error) toast.error('فشل الطباعة: ' + r.error)
+                    }}
+                    onPickPrinter={() => qz.setShowPrinterPicker(true)}
+                    onBrowserPrint={() => browserPrintPurchase(selected, settings)}
+                  />
                 )}
                 <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
               </div>
@@ -955,6 +963,15 @@ function PurchaseHistory({ onReturnToCart }) {
             )}
           </div>
         </div>
+      )}
+
+      {qz.showPrinterPicker && (
+        <QZPrinterPicker
+          printers={qz.printers}
+          selectedPrinter={qz.selectedPrinter}
+          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onClose={() => qz.setShowPrinterPicker(false)}
+        />
       )}
     </div>
   )
@@ -1240,6 +1257,9 @@ function SupplierAccounts() {
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
+  const qz = useQZPrinter()
+  const settings = useSettingsStore()
+
   const load = async () => {
     setLoading(true)
     try { setSuppliers((await getSuppliers()).data.data ?? []) }
@@ -1402,14 +1422,19 @@ function SupplierAccounts() {
                 <button className="btn btn-primary btn-sm" style={{ padding: '0.4rem 0.8rem', justifyContent: 'center' }} onClick={() => setPayModal(true)}>
                   <Plus size={15} /> تسجيل دفعة
                 </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ padding: '0.4rem 0.8rem', justifyContent: 'center', gap: '0.3rem' }}
-                  onClick={() => exportSupplierLedgerPDF(ledgerData)}
-                  title="تصدير كشف الحساب PDF"
-                >
-                  <Download size={15} /> تصدير
-                </button>
+                <QZPrintButton
+                  qzReady={qz.qzReady}
+                  printing={qz.printing}
+                  onQZPrint={async () => {
+                    const html = buildSupplierLedgerHTML(ledgerData, settings.storeName)
+                    const r = await qz.qzPrint(html)
+                    if (r.ok) toast.success('تمت الطباعة بنجاح')
+                    else if (r.error) toast.error('فشل الطباعة: ' + r.error)
+                  }}
+                  onPickPrinter={() => qz.setShowPrinterPicker(true)}
+                  onBrowserPrint={() => exportSupplierLedgerPDF(ledgerData, settings.storeName)}
+                  label="طباعة وتصدير"
+                />
               </div>
             </div>
           </div>
@@ -1610,6 +1635,15 @@ function SupplierAccounts() {
             </div>
           </div>
         </div>
+      )}
+
+      {qz.showPrinterPicker && (
+        <QZPrinterPicker
+          printers={qz.printers}
+          selectedPrinter={qz.selectedPrinter}
+          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onClose={() => qz.setShowPrinterPicker(false)}
+        />
       )}
     </div>
   )

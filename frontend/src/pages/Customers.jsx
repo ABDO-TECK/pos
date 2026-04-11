@@ -3,13 +3,17 @@ import {
   UserPlus, Search, ChevronRight, X, Trash2, Edit2,
   PlusCircle, Phone, MapPin, BookOpen, ArrowRight, Download,
 } from 'lucide-react'
-import { exportCustomerLedgerPDF } from '../utils/pdfExport'
+import { exportCustomerLedgerPDF, buildCustomerLedgerHTML } from '../utils/pdfExport'
+import useQZPrinter from '../hooks/useQZPrinter'
+import { QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
+import useSettingsStore from '../store/settingsStore'
 import {
   getCustomers, getCustomer, createCustomer,
   updateCustomer, deleteCustomer, addCustomerPayment, updateCustomerLedgerEntry,
 } from '../api/endpoints'
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
+import useAuthStore from '../store/authStore'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 /** تاريخ/وقت كشف الحساب بالإنجليزية (أسماء الأشهر والأرقام اللاتينية) */
@@ -34,6 +38,7 @@ export default function Customers() {
   const [customers, setCustomers]       = useState([])
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
+  const { user } = useAuthStore()
 
   // كشف الحساب
   const [ledgerData, setLedgerData]     = useState(null)   // { customer, entries, balance }
@@ -56,6 +61,9 @@ export default function Customers() {
   const [editEntryModal, setEditEntryModal] = useState(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
+
+  const settings = useSettingsStore()
+  const qz = useQZPrinter()
 
   // ── data ──
   const load = async () => {
@@ -211,7 +219,7 @@ export default function Customers() {
                 active={ledgerData?.customer?.id === c.id}
                 onClick={() => openLedger(c)}
                 onEdit={(e) => openEdit(c, e)}
-                onDelete={(e) => handleDelete(c, e)}
+                onDelete={user?.role === 'admin' ? (e) => handleDelete(c, e) : null}
               />
             ))}
           </div>
@@ -257,14 +265,19 @@ export default function Customers() {
                 <button className="btn btn-primary btn-sm" style={{ padding: '0.4rem 0.8rem', justifyContent: 'center' }} onClick={() => setPayModal(true)}>
                   <PlusCircle size={15} /> تسجيل دفعة
                 </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ padding: '0.4rem 0.8rem', justifyContent: 'center', gap: '0.3rem' }}
-                  onClick={() => exportCustomerLedgerPDF(ledgerData)}
-                  title="تصدير كشف الحساب PDF"
-                >
-                  <Download size={15} /> تصدير
-                </button>
+                <QZPrintButton
+                  qzReady={qz.qzReady}
+                  printing={qz.printing}
+                  onQZPrint={async () => {
+                    const html = buildCustomerLedgerHTML(ledgerData, settings.storeName)
+                    const r = await qz.qzPrint(html)
+                    if (r.ok) toast.success('تمت الطباعة بنجاح')
+                    else if (r.error) toast.error('فشل الطباعة: ' + r.error)
+                  }}
+                  onPickPrinter={() => qz.setShowPrinterPicker(true)}
+                  onBrowserPrint={() => exportCustomerLedgerPDF(ledgerData, settings.storeName)}
+                  label="طباعة وتصدير"
+                />
               </div>
             </div>
           </div>
@@ -494,6 +507,15 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {qz.showPrinterPicker && (
+        <QZPrinterPicker
+          printers={qz.printers}
+          selectedPrinter={qz.selectedPrinter}
+          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onClose={() => qz.setShowPrinterPicker(false)}
+        />
+      )}
     </div>
   )
 }
@@ -542,7 +564,7 @@ function CustomerCard({ customer, active, onClick, onEdit, onDelete }) {
       {/* أزرار */}
       <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
         <button className="btn btn-ghost btn-icon" style={{ padding: '0.25rem' }} onClick={onEdit}><Edit2 size={14} /></button>
-        <button className="btn btn-ghost btn-icon" style={{ padding: '0.25rem', color: 'var(--danger)' }} onClick={onDelete}><Trash2 size={14} /></button>
+        {onDelete && <button className="btn btn-ghost btn-icon" style={{ padding: '0.25rem', color: 'var(--danger)' }} onClick={onDelete}><Trash2 size={14} /></button>}
       </div>
 
       <ChevronRight size={16} color="var(--text-muted)" style={{ flexShrink: 0, transform: 'scaleX(-1)' }} />

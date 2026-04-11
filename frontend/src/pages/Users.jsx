@@ -13,7 +13,7 @@ export default function Users() {
   const [form, setForm] = useState(emptyForm)
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
-  const { user: me } = useAuthStore()
+  const { user: me, setUser } = useAuthStore()
 
   const load = async () => {
     const res = await getUsers()
@@ -28,7 +28,11 @@ export default function Users() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      if (editId) { await updateUser(editId, form); toast.success('تم التحديث') }
+      if (editId) { 
+        await updateUser(editId, form); 
+        toast.success('تم التحديث');
+        if (editId === me?.id) setUser({ ...me, ...form })
+      }
       else { await createUser(form); toast.success('تم إنشاء الحساب') }
       setModal(null)
       load()

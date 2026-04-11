@@ -4,10 +4,12 @@ import { Eye, X, Printer, Trash2, ShoppingCart } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getSales, getSale, deleteSale } from '../api/endpoints'
 import { formatCurrency, formatDate, formatNumber } from '../utils/formatters'
-import { browserPrint } from '../utils/receiptBuilder'
+import { browserPrint, buildReceiptHTML } from '../utils/receiptBuilder'
 import useSettingsStore from '../store/settingsStore'
 import useAuthStore from '../store/authStore'
 import useCartStore from '../store/cartStore'
+import useQZPrinter from '../hooks/useQZPrinter'
+import { QZStatusBar, QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -31,6 +33,7 @@ export default function Sales() {
   const user                    = useAuthStore((s) => s.user)
   const mergeInvoiceLines       = useCartStore((s) => s.mergeInvoiceLines)
   const isAdmin                 = user?.role === 'admin'
+  const qz = useQZPrinter()
 
   const load = async (f = filters) => {
     setLoading(true)
@@ -194,17 +197,23 @@ export default function Sales() {
               </h2>
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                 {selected && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => browserPrint(
+                  <QZPrintButton
+                    qzReady={qz.qzReady}
+                    printing={qz.printing}
+                    onQZPrint={async () => {
+                      const inv = { ...selected, items: (selected.items ?? []).map(i => ({ ...i, product_name: i.product_name ?? i.name })) }
+                      const html = buildReceiptHTML(inv, parseFloat(selected.change_due) || 0, settings)
+                      const r = await qz.qzPrint(html)
+                      if (r.ok) toast.success('تمت الطباعة بنجاح')
+                      else if (r.error) toast.error('فشل الطباعة: ' + r.error)
+                    }}
+                    onPickPrinter={() => qz.setShowPrinterPicker(true)}
+                    onBrowserPrint={() => browserPrint(
                       { ...selected, items: (selected.items ?? []).map(i => ({ ...i, product_name: i.product_name ?? i.name })) },
                       parseFloat(selected.change_due) || 0,
                       settings
                     )}
-                    title="طباعة الفاتورة"
-                  >
-                    <Printer size={15} /> طباعة
-                  </button>
+                  />
                 )}
                 <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
               </div>
@@ -297,6 +306,15 @@ export default function Sales() {
             )}
           </div>
         </div>
+      )}
+
+      {qz.showPrinterPicker && (
+        <QZPrinterPicker
+          printers={qz.printers}
+          selectedPrinter={qz.selectedPrinter}
+          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onClose={() => qz.setShowPrinterPicker(false)}
+        />
       )}
     </div>
   )

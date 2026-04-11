@@ -236,15 +236,13 @@ export default function Receipt({ invoice, change, onClose }) {
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                                 {printers.map(p => (
-                                    <button key={p} onClick={() => handlePrinterSelect(p)} style={{
-                                        padding: '0.65rem 1rem', textAlign: 'right',
-                                        border: `2px solid ${p === selectedPrinter ? 'var(--primary)' : 'var(--border)'}`,
-                                        borderRadius: 'var(--radius)',
-                                        background: p === selectedPrinter ? '#f0fdf4' : 'var(--surface)',
-                                        cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.9rem',
-                                        fontWeight: p === selectedPrinter ? 600 : 400,
-                                    }}>
-                                        🖨 {p}
+                                    <button
+                                        key={p}
+                                        onClick={() => handlePrinterSelect(p)}
+                                        className={`qz-printer-item ${p === selectedPrinter ? 'selected' : ''}`}
+                                    >
+                                        <Printer size={16} style={{ color: p === selectedPrinter ? 'var(--primary)' : 'var(--text-muted)' }} />
+                                        {p}
                                     </button>
                                 ))}
                             </div>

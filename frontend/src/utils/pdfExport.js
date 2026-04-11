@@ -41,9 +41,18 @@ body {
   background: #fff;
   direction: rtl;
   padding: 12mm;
+  text-align: center;
+  width: 100%;
+}
+.ledger-container {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  text-align: right;
+  display: inline-block;
 }
 @page {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 10mm;
 }
 @media print {
@@ -192,11 +201,8 @@ tfoot .balance { color: #fbbf24; }
 // ══════════════════════════════════════════════════════════════════════════════
 // Customer Account Statement (كشف حساب العميل)
 // ══════════════════════════════════════════════════════════════════════════════
-export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
-  if (!ledgerData?.entries?.length) {
-    alert('لا توجد حركات لعرضها')
-    return
-  }
+export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر ماركت') {
+  if (!ledgerData?.entries?.length) return null
 
   const { customer, entries, balance } = ledgerData
   const totalDebit  = entries.reduce((s, r) => s + (r.debit  || 0), 0)
@@ -218,7 +224,7 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
       </tr>`
   }).join('')
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -226,12 +232,10 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
   <style>${PDF_CSS}</style>
 </head>
 <body>
-
-<button class="print-btn no-print" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
-
+<div class="ledger-container">
 <div class="report-header">
   <div class="title-block">
-    <h1>📋 كشف حساب العميل</h1>
+    <h1>كشف حساب العميل</h1>
     <div class="subtitle">${storeName}</div>
   </div>
   <div class="meta-block">
@@ -257,7 +261,7 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
   </div>
   <div class="summary-card ${balance > 0 ? 'danger' : 'success'}">
     <div class="label">الرصيد الحالي</div>
-    <div class="value">${fc(Math.abs(balance))} ${balance > 0 ? '(مستحق)' : '(مُسدَّد)'}</div>
+    <div class="value">${fc(Math.abs(balance))} ${balance > 0 ? '(مدين)' : '(دائن)'}</div>
   </div>
 </div>
 
@@ -278,7 +282,7 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
       <td colspan="3">الإجمالي</td>
       <td class="debit num">${fc(totalDebit)}</td>
       <td class="credit num">${fc(totalCredit)}</td>
-      <td class="balance num">${fc(Math.abs(balance))} ${balance > 0 ? 'مستحق' : 'مُسدَّد'}</td>
+      <td class="balance num">${fc(Math.abs(balance))} ${balance > 0 ? 'مدين' : 'دائن'}</td>
     </tr>
   </tfoot>
 </table>
@@ -287,26 +291,31 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-
+</div>
 </body>
 </html>`
+}
+
+export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
+  const html = buildCustomerLedgerHTML(ledgerData, storeName)
+  if (!html) {
+    alert('لا توجد حركات لعرضها')
+    return
+  }
 
   const win = window.open('', '_blank', 'width=1100,height=750,scrollbars=yes')
   if (!win) { alert('يرجى السماح بالنوافذ المنبثقة'); return }
   win.document.open()
   win.document.write(html)
   win.document.close()
+  setTimeout(() => { win.focus(); win.print() }, 500)
 }
-
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Supplier Account Statement (كشف حساب المورد)
 // ══════════════════════════════════════════════════════════════════════════════
-export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
-  if (!ledgerData?.entries?.length) {
-    alert('لا توجد حركات لعرضها')
-    return
-  }
+export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر ماركت') {
+  if (!ledgerData?.entries?.length) return null
 
   const { supplier, entries, balance } = ledgerData
   const totalDebit  = entries.reduce((s, r) => s + (r.debit  || 0), 0)
@@ -328,7 +337,7 @@ export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر مار
       </tr>`
   }).join('')
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -336,12 +345,10 @@ export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر مار
   <style>${PDF_CSS}</style>
 </head>
 <body>
-
-<button class="print-btn no-print" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
-
+<div class="ledger-container">
 <div class="report-header">
   <div class="title-block">
-    <h1>🏭 كشف حساب المورد</h1>
+    <h1>كشف حساب المورد</h1>
     <div class="subtitle">${storeName}</div>
   </div>
   <div class="meta-block">
@@ -398,13 +405,22 @@ export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-
+</div>
 </body>
 </html>`
+}
+
+export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
+  const html = buildSupplierLedgerHTML(ledgerData, storeName)
+  if (!html) {
+    alert('لا توجد حركات لعرضها')
+    return
+  }
 
   const win = window.open('', '_blank', 'width=1100,height=750,scrollbars=yes')
   if (!win) { alert('يرجى السماح بالنوافذ المنبثقة'); return }
   win.document.open()
   win.document.write(html)
   win.document.close()
+  setTimeout(() => { win.focus(); win.print() }, 500)
 }

@@ -119,9 +119,7 @@ function AppShell() {
 
           <Route path="/customers" element={
             <PrivateRoute>
-              <AdminRoute>
-                <Layout><Customers /></Layout>
-              </AdminRoute>
+              <Layout><Customers /></Layout>
             </PrivateRoute>
           } />
 

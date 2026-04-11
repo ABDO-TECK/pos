@@ -153,8 +153,16 @@ export async function printHTML(html, printerName = null) {
     const printer = printerName ?? getSavedPrinter()
     if (!printer) throw new Error('لم يتم اختيار طابعة')
 
-    const config = qz.configs.create(printer)
-    await qz.print(config, [{ type: 'html', format: 'plain', data: html }])
+    const config = qz.configs.create(printer, {
+        orientation: 'portrait',
+        margins: 0
+    })
+    
+    await qz.print(config, [{ 
+        type: 'html', 
+        format: 'plain', 
+        data: html 
+    }])
 }
 
 // ── High-level helper: print an invoice object ─────────────────────────────
@@ -170,5 +178,14 @@ export async function printHTML(html, printerName = null) {
  */
 export async function printInvoice(invoice, change = 0, settings = {}, printerName = null) {
     const html = buildReceiptHTML(invoice, change, settings)
+    await printHTML(html, printerName)
+}
+
+/**
+ * Build and print a purchase invoice via QZ Tray.
+ */
+export async function printPurchaseInvoice(invoice, settings = {}, printerName = null) {
+    const { buildPurchaseReceiptHTML } = await import('./receiptBuilder')
+    const html = buildPurchaseReceiptHTML(invoice, settings)
     await printHTML(html, printerName)
 }

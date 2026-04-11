@@ -793,3 +793,35 @@ html[data-theme="dark"] .barcode-scanner-error {
     margin: 0 auto;
   }
 }
+
+/* ── QZ Printer Picker ── */
+.qz-printer-item {
+  padding: 0.65rem 1rem;
+  text-align: right;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 400;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.qz-printer-item:hover {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+.qz-printer-item.selected {
+  border-color: var(--primary);
+  background: rgba(34, 197, 94, 0.1);
+  font-weight: 700;
+  color: var(--primary-d);
+}
+html[data-theme="dark"] .qz-printer-item.selected {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--primary);
+}
