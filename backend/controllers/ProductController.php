@@ -13,8 +13,18 @@ class ProductController extends Controller {
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
             'low_stock'   => $this->getParam('low_stock'),
+            'page'        => $this->getParam('page'),
+            'limit'       => $this->getParam('limit'),
         ];
-        Response::success($this->productModel->all($filters));
+
+        $result = $this->productModel->all($filters);
+
+        // إذا كانت النتيجة paginated (تحتوي data + pagination)
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result);
+        }
     }
 
     public function show(string $id): void {

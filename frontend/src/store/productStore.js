@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import { getProducts, getCategories, getProductByBarcode } from '../api/endpoints'
-import { saveProductsToIDB, getProductsFromIDB, getProductByBarcodeFromIDB } from '../utils/idb'
+import {
+  saveProductsToIDB,
+  getProductsFromIDB,
+  getProductByBarcodeFromIDB,
+  isCacheStale,
+} from '../utils/idb'
+
+/** مدة صلاحية الكاش: 5 دقائق */
+const CACHE_TTL_MS = 5 * 60 * 1000
 
 const useProductStore = create((set, get) => ({
   products: [],
@@ -8,22 +16,49 @@ const useProductStore = create((set, get) => ({
   loading: false,
   lastFetched: null,
 
-  fetchProducts: async (params = {}) => {
+  /**
+   * تحميل المنتجات:
+   * 1. يحاول من API أولاً ويحفظ في IDB
+   * 2. عند فشل الشبكة → يستخدم IDB كـ fallback
+   * 3. يتخطى التحميل إذا كان الكاش حديثاً (أقل من 5 دقائق)
+   */
+  fetchProducts: async (params = {}, forceRefresh = false) => {
+    const state = get()
+
+    // تخطي إذا كان الكاش حديثاً (إلا أن يكون force أو بحث)
+    if (!forceRefresh && !params.search && !params.category_id) {
+      if (state.lastFetched && (Date.now() - state.lastFetched) < CACHE_TTL_MS) {
+        return state.products
+      }
+    }
+
     set({ loading: true })
     try {
       const res = await getProducts(params)
       const products = res.data.data
       set({ products, loading: false, lastFetched: Date.now() })
-      // Cache to IndexedDB for offline
+
+      // حفظ في IDB عند تحميل كل المنتجات (بدون فلتر)
       if (!params.search && !params.category_id) {
-        await saveProductsToIDB(products)
+        saveProductsToIDB(products).catch(() => {
+          // تجاهل أخطاء IDB — ليست حرجة
+        })
       }
       return products
-    } catch {
-      // Fallback to IndexedDB
-      const cached = await getProductsFromIDB()
-      set({ products: cached, loading: false })
-      return cached
+    } catch (err) {
+      // Fallback إلى IndexedDB عند فقد الشبكة
+      try {
+        const cached = await getProductsFromIDB()
+        if (cached && cached.length > 0) {
+          set({ products: cached, loading: false })
+          console.info('[ProductStore] Loaded from offline cache:', cached.length, 'products')
+          return cached
+        }
+      } catch {
+        // IDB أيضاً فشلت
+      }
+      set({ loading: false })
+      throw err
     }
   },
 
@@ -48,6 +83,9 @@ const useProductStore = create((set, get) => ({
   },
 
   setProducts: (products) => set({ products }),
+
+  /** إجبار تحديث الكاش من API */
+  invalidateCache: () => set({ lastFetched: null }),
 }))
 
 export default useProductStore

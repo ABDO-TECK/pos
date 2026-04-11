@@ -7,6 +7,9 @@ class Invoice {
         $this->db = Database::getInstance();
     }
 
+    /**
+     * جلب الفواتير مع دعم pagination اختياري.
+     */
     public function all(array $filters = []): array {
         $where  = ['1=1'];
         $params = [];
@@ -21,12 +24,47 @@ class Invoice {
             $params['year']  = $filters['year'];
         }
 
-        $sql = 'SELECT i.*, u.name AS cashier_name
+        $whereClause = implode(' AND ', $where);
+
+        // ── Pagination (اختياري) ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
+        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+
+        if ($page !== null && $limit !== null) {
+            $countSql = "SELECT COUNT(*) FROM invoices i WHERE $whereClause";
+            $countStmt = $this->db->prepare($countSql);
+            $countStmt->execute($params);
+            $total = (int) $countStmt->fetchColumn();
+
+            $offset = ($page - 1) * $limit;
+            $sql = "SELECT i.*, u.name AS cashier_name
+                    FROM invoices i
+                    JOIN users u ON u.id = i.user_id
+                    WHERE $whereClause
+                    ORDER BY i.created_at DESC
+                    LIMIT $limit OFFSET $offset";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+
+            return [
+                'data' => $stmt->fetchAll(),
+                'pagination' => [
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'pages' => (int) ceil($total / $limit),
+                ],
+            ];
+        }
+
+        // ── بدون pagination ──
+        $sql = "SELECT i.*, u.name AS cashier_name
                 FROM invoices i
                 JOIN users u ON u.id = i.user_id
-                WHERE ' . implode(' AND ', $where) . '
+                WHERE $whereClause
                 ORDER BY i.created_at DESC
-                LIMIT 200';
+                LIMIT 200";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);

@@ -32,15 +32,30 @@ export default function Receipt({ invoice, change, onClose }) {
     const [selectedPrinter,  setSelectedPrinter]  = useState(getSavedPrinter() ?? '')
     const [showPrinterPicker,setShowPrinterPicker] = useState(false)
     const [printing,         setPrinting]         = useState(false)
+    const [remoteError,      setRemoteError]      = useState(null)
 
     useEffect(() => {
         if (!isQZAvailable()) { setQzStatus('unavailable'); return }
         if (isQZConnected())  { setQzStatus('ready'); loadPrinters(); return }
         setQzStatus('connecting')
         connectQZ()
-            .then(() => { setQzStatus('ready'); loadPrinters() })
-            .catch(() => setQzStatus('error'))
+            .then(() => { setQzStatus('ready'); setRemoteError(null); loadPrinters() })
+            .catch((err) => {
+                setQzStatus('error')
+                if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
+            })
     }, [])
+
+    const retryQZ = () => {
+        setQzStatus('connecting')
+        setRemoteError(null)
+        connectQZ()
+            .then(() => { setQzStatus('ready'); loadPrinters() })
+            .catch((err) => {
+                setQzStatus('error')
+                if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
+            })
+    }
 
     const loadPrinters = async () => {
         try {
@@ -178,6 +193,8 @@ export default function Receipt({ invoice, change, onClose }) {
                     status={qzStatus}
                     printer={selectedPrinter}
                     onPickPrinter={() => setShowPrinterPicker(true)}
+                    remoteError={remoteError}
+                    onRetry={retryQZ}
                 />
 
                 {/* ── Action buttons ── */}
@@ -310,7 +327,7 @@ function TotalLine({ label, value, bold }) {
     )
 }
 
-function QZStatusBar({ status, printer, onPickPrinter }) {
+function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }) {
     const cfg = {
         idle:        { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray: جاري التحميل…' },
         connecting:  { bg: '#fef9c3', text: '#854d0e', label: 'QZ Tray: جاري الاتصال…' },
@@ -322,6 +339,39 @@ function QZStatusBar({ status, printer, onPickPrinter }) {
         unavailable: { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray غير مثبت — سيُستخدم طباعة المتصفح' },
     }
     const { bg, text, label } = cfg[status] ?? cfg.idle
+
+    if (status === 'error' && remoteError) {
+        return (
+            <div style={{
+                marginTop: '0.6rem', padding: '0.5rem 0.75rem',
+                background: '#fef3c7', color: '#92400e', borderRadius: 'var(--radius)',
+                fontSize: '0.72rem', fontWeight: 600,
+                display: 'flex', flexDirection: 'column', gap: '0.4rem',
+            }}>
+                <span>🖨️ لتفعيل الطباعة عبر الشبكة:</span>
+                <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>
+                    1. افتح{' '}
+                    <a href={remoteError.certUrl} target="_blank" rel="noopener noreferrer"
+                        style={{ color: '#1d4ed8', textDecoration: 'underline', fontWeight: 600 }}>
+                        هذا الرابط
+                    </a>
+                    {' '}واقبل الشهادة
+                </span>
+                <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>2. ارجع هنا واضغط «إعادة المحاولة»</span>
+                {onRetry && (
+                    <button onClick={onRetry} style={{
+                        marginTop: '0.25rem', padding: '0.3rem 0.6rem',
+                        background: '#1d4ed8', color: '#fff', border: 'none',
+                        borderRadius: 'var(--radius)', cursor: 'pointer',
+                        fontSize: '0.7rem', fontWeight: 600,
+                    }}>
+                        🔄 إعادة المحاولة
+                    </button>
+                )}
+            </div>
+        )
+    }
+
     return (
         <div onClick={status === 'ready' ? onPickPrinter : undefined}
             title={status === 'ready' ? 'انقر لتغيير الطابعة' : undefined}

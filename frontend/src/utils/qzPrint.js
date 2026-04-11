@@ -28,7 +28,16 @@ function getQZ() {
 }
 
 function getCfg() {
-    return window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }
+    const base = window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }
+    // عند الوصول من جهاز آخر على الشبكة، نستخدم hostname الصفحة كـ QZ host
+    // لأن QZ Tray يعمل على نفس جهاز السيرفر
+    const pageHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+    const isRemote = pageHost !== 'localhost' && pageHost !== '127.0.0.1'
+    return {
+        ...base,
+        host: isRemote ? pageHost : (base.host || 'localhost'),
+        _isRemote: isRemote,
+    }
 }
 
 // ── Security setup (runs once) ─────────────────────────────────────────────
@@ -89,6 +98,18 @@ function ensureSecurity() {
 
 let _connecting = null  // in-flight promise guard
 
+/**
+ * رسالة تعليمات واضحة عند فشل الاتصال من جهاز خارجي.
+ * السبب الأكثر شيوعاً: المتصفح لم يقبل شهادة QZ Tray بعد.
+ */
+function buildRemoteQZError(host) {
+    const certUrl = `https://${host}:8181`
+    return {
+        message: `لا يمكن الاتصال بـ QZ Tray عبر الشبكة.\n\nلتفعيل الطباعة من هذا الجهاز:\n1. افتح الرابط التالي في المتصفح:\n   ${certUrl}\n2. اضغط \"متابعة\" أو \"Advanced → Proceed\" لقبول الشهادة\n3. ارجع لهذه الصفحة وأعد المحاولة`,
+        certUrl,
+    }
+}
+
 export async function connectQZ() {
     const qz  = getQZ()
     const cfg = getCfg()
@@ -99,10 +120,33 @@ export async function connectQZ() {
 
     ensureSecurity()
 
+    const connectOpts = {
+        host: cfg.host,
+        retries: cfg.retries ?? 2,
+        delay: cfg.delay ?? 0,
+    }
+
+    if (cfg._isRemote) {
+        console.info(`[QZ] Remote mode → connecting to ${cfg.host} via secure WebSocket (wss://)`)
+    }
+
     _connecting = qz.websocket
-        .connect(cfg)
+        .connect(connectOpts)
         .then(() => { _connecting = null; return true })
-        .catch(err => { _connecting = null; throw err })
+        .catch(err => {
+            _connecting = null
+
+            // عند فشل الاتصال من جهاز خارجي — إضافة تعليمات واضحة
+            if (cfg._isRemote) {
+                const info = buildRemoteQZError(cfg.host)
+                console.error(`[QZ] ${info.message}`)
+                const remoteErr = new Error(info.message)
+                remoteErr.certUrl = info.certUrl
+                remoteErr.isRemoteQZ = true
+                throw remoteErr
+            }
+            throw err
+        })
 
     return _connecting
 }

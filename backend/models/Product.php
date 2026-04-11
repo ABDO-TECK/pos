@@ -7,6 +7,11 @@ class Product {
         $this->db = Database::getInstance();
     }
 
+    /**
+     * جلب المنتجات مع دعم pagination اختياري.
+     * إذا لم يُرسل page، تُرجع كل النتائج (backward-compatible).
+     * إذا أُرسل page، تُرجع مصفوفة { data, pagination }.
+     */
     public function all(array $filters = []): array {
         $where  = ['1=1'];
         $params = [];
@@ -24,11 +29,52 @@ class Product {
             $where[] = 'p.quantity <= p.low_stock_threshold';
         }
 
-        $sql = 'SELECT p.*, c.name AS category_name
+        $whereClause = implode(' AND ', $where);
+
+        // ── Pagination (اختياري) ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
+        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+
+        if ($page !== null && $limit !== null) {
+            // عدّ النتائج أولاً
+            $countSql = "SELECT COUNT(*) FROM products p WHERE $whereClause";
+            $countStmt = $this->db->prepare($countSql);
+            $countStmt->execute($params);
+            $total = (int) $countStmt->fetchColumn();
+
+            $offset = ($page - 1) * $limit;
+            $sql = "SELECT p.*, c.name AS category_name
+                    FROM products p
+                    LEFT JOIN categories c ON c.id = p.category_id
+                    WHERE $whereClause
+                    ORDER BY p.name ASC
+                    LIMIT $limit OFFSET $offset";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+            foreach ($rows as &$row) {
+                $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
+            }
+            unset($row);
+
+            return [
+                'data' => $rows,
+                'pagination' => [
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'pages' => (int) ceil($total / $limit),
+                ],
+            ];
+        }
+
+        // ── بدون pagination — إرجاع الكل (backward-compatible) ──
+        $sql = "SELECT p.*, c.name AS category_name
                 FROM products p
                 LEFT JOIN categories c ON c.id = p.category_id
-                WHERE ' . implode(' AND ', $where) . '
-                ORDER BY p.name ASC';
+                WHERE $whereClause
+                ORDER BY p.name ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);

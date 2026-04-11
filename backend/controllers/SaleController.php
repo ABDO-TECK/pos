@@ -31,8 +31,17 @@ class SaleController extends Controller {
             'date'  => $this->getParam('date'),
             'month' => $this->getParam('month'),
             'year'  => $this->getParam('year'),
+            'page'  => $this->getParam('page'),
+            'limit' => $this->getParam('limit'),
         ];
-        Response::success($this->invoiceModel->all($filters));
+
+        $result = $this->invoiceModel->all($filters);
+
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result);
+        }
     }
 
     public function show(string $id): void {

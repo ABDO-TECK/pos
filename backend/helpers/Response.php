@@ -8,10 +8,14 @@ class Response {
         exit;
     }
 
-    public static function success(mixed $data = null, string $message = 'success', int $status = 200): void {
-        $body = ['status' => 'success', 'message' => $message];
+    public static function success(mixed $data = null, ?string $message = 'success', int $status = 200, array $extra = []): void {
+        $body = ['status' => 'success', 'message' => $message ?? 'success'];
         if ($data !== null) {
             $body['data'] = $data;
+        }
+        // دمج أي metadata إضافية (مثل pagination)
+        foreach ($extra as $key => $value) {
+            $body[$key] = $value;
         }
         self::json($body, $status);
     }

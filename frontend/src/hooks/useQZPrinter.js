@@ -19,6 +19,7 @@ export default function useQZPrinter() {
     const [selectedPrinter,   setSelectedPrinter]    = useState(getSavedPrinter() ?? '')
     const [showPrinterPicker, setShowPrinterPicker]  = useState(false)
     const [printing,          setPrinting]           = useState(false)
+    const [remoteError,       setRemoteError]        = useState(null) // { message, certUrl }
 
     const loadPrinters = useCallback(async () => {
         try {
@@ -35,8 +36,14 @@ export default function useQZPrinter() {
         if (isQZConnected())  { setQzStatus('ready'); loadPrinters(); return }
         setQzStatus('connecting')
         connectQZ()
-            .then(() => { setQzStatus('ready'); loadPrinters() })
-            .catch(() => setQzStatus('error'))
+            .then(() => { setQzStatus('ready'); setRemoteError(null); loadPrinters() })
+            .catch((err) => {
+                setQzStatus('error')
+                // حفظ رسالة الخطأ إذا كان الاتصال من جهاز خارجي
+                if (err?.isRemoteQZ) {
+                    setRemoteError({ message: err.message, certUrl: err.certUrl })
+                }
+            })
     }, [loadPrinters])
 
     const handlePrinterSelect = useCallback((name) => {
@@ -44,6 +51,20 @@ export default function useQZPrinter() {
         setSelectedPrinter(name)
         setShowPrinterPicker(false)
     }, [])
+
+    /** محاولة إعادة الاتصال (بعد قبول الشهادة) */
+    const retryConnect = useCallback(() => {
+        setQzStatus('connecting')
+        setRemoteError(null)
+        connectQZ()
+            .then(() => { setQzStatus('ready'); loadPrinters() })
+            .catch((err) => {
+                setQzStatus('error')
+                if (err?.isRemoteQZ) {
+                    setRemoteError({ message: err.message, certUrl: err.certUrl })
+                }
+            })
+    }, [loadPrinters])
 
     /** Print raw HTML via QZ Tray. Returns { ok, error }. */
     const qzPrint = useCallback(async (html) => {
@@ -69,5 +90,7 @@ export default function useQZPrinter() {
         handlePrinterSelect,
         printing,
         qzPrint,
+        remoteError,
+        retryConnect,
     }
 }

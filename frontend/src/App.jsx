@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { lazy, Suspense, useEffect } from 'react'
 import Layout from './components/layout/Layout'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 import useAuthStore from './store/authStore'
 import useSettingsStore from './store/settingsStore'
 import useThemeStore from './store/themeStore'
@@ -131,5 +132,9 @@ function AppShell() {
 }
 
 export default function App() {
-  return <AppShell />
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
+  )
 }
