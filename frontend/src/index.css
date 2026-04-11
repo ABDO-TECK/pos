@@ -59,6 +59,16 @@ input, select, textarea {
   font-size: 1rem;
 }
 
+/* إخفاء أسهم الزيادة/النقصان من حقول الأرقام */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

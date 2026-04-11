@@ -172,20 +172,6 @@ export default function ProductsTab({
         />
       </div>
 
-      {/* Low stock alert banner */}
-      {lowStock.length > 0 && (
-        <div className="alert-warning">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, marginBottom: '0.4rem', fontSize: '0.9rem' }}>
-            <AlertTriangle size={16} /> {formatNumber(lowStock.length)} منتج بمخزون منخفض
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-            {lowStock.map(p => (
-              <span key={p.id} className="badge badge-yellow">{p.name} ({formatNumber(p.quantity)})</span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Search + filters */}
       <div className="card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>

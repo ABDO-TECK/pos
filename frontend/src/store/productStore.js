@@ -68,15 +68,27 @@ const useProductStore = create((set, get) => ({
   },
 
   findByBarcode: async (barcode) => {
+    const t = String(barcode).trim()
+    const checkBox = (p) => {
+      if (!p) return null
+      if (String(p.box_barcode) === t) {
+        return { ...p, scanned_as_box: true }
+      }
+      return p
+    }
+
     const match = (p) =>
-      p.barcode === barcode || (p.additional_barcodes || []).includes(barcode)
+      p.barcode === t || String(p.box_barcode) === t || (p.additional_barcodes || []).includes(t)
+    
     const found = get().products.find(match)
-    if (found) return found
-    const idbResult = await getProductByBarcodeFromIDB(barcode)
-    if (idbResult) return idbResult
+    if (found) return checkBox(found)
+    
+    const idbResult = await getProductByBarcodeFromIDB(t)
+    if (idbResult) return checkBox(idbResult)
+    
     try {
-      const res = await getProductByBarcode(barcode)
-      return res.data.data ?? null
+      const res = await getProductByBarcode(t)
+      return checkBox(res.data.data ?? null)
     } catch {
       return null
     }

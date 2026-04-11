@@ -54,11 +54,12 @@ export const getProductsFromIDB = async () => {
 }
 
 export const getProductByBarcodeFromIDB = async (barcode) => {
+  const t = String(barcode).trim()
   const db = await getDB()
-  const direct = await db.getFromIndex('products', 'barcode', barcode)
+  const direct = await db.getFromIndex('products', 'barcode', t)
   if (direct) return direct
   const all = await db.getAll('products')
-  return all.find((p) => (p.additional_barcodes || []).includes(barcode)) ?? null
+  return all.find((p) => String(p.box_barcode) === t || (p.additional_barcodes || []).includes(t)) ?? null
 }
 
 // ── Customers cache ──

@@ -61,7 +61,11 @@ class ProductController extends Controller {
         }
 
         $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
-        $this->productModel->assertBarcodesAvailable(null, $main, $extras);
+        $extrasToCheck = $extras;
+        if (!empty($data['box_barcode'])) {
+            $extrasToCheck[] = $data['box_barcode'];
+        }
+        $this->productModel->assertBarcodesAvailable(null, $main, $extrasToCheck);
 
         $db = Database::getInstance();
         $db->beginTransaction();
@@ -111,7 +115,11 @@ class ProductController extends Controller {
         }
 
         $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
-        $this->productModel->assertBarcodesAvailable($pid, $main, $extras);
+        $extrasToCheck = $extras;
+        if (!empty($data['box_barcode'])) {
+            $extrasToCheck[] = $data['box_barcode'];
+        }
+        $this->productModel->assertBarcodesAvailable($pid, $main, $extrasToCheck);
 
         $db = Database::getInstance();
         $db->beginTransaction();

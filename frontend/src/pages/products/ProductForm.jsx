@@ -12,17 +12,20 @@ export function findProductOwningBarcode(allProducts, barcode, excludeProductId)
   for (const p of allProducts) {
     if (excludeProductId != null && Number(p.id) === Number(excludeProductId)) continue
     if (String(p.barcode ?? '') === t) return p
+    if (String(p.box_barcode ?? '') === t) return p
     if ((p.additional_barcodes || []).some((b) => String(b) === t)) return p
   }
   return null
 }
 
-export function getBarcodeRowConflict(barcodes, rowIndex, excludeProductId, allProducts) {
-  const bc = String(barcodes[rowIndex] ?? '').trim()
+export function getBarcodeRowConflict(barcodes, rowIndex, excludeProductId, allProducts, form) {
+  const bc = rowIndex === 'box'
+    ? String(form?.box_barcode ?? '').trim()
+    : String(barcodes[rowIndex] ?? '').trim()
   if (!bc) return null
-  const dupElsewhere = barcodes.some(
-    (b, j) => j !== rowIndex && String(b).trim() === bc
-  )
+  const dupElsewhere = rowIndex === 'box'
+    ? barcodes.some(b => String(b).trim() === bc)
+    : barcodes.some((b, j) => j !== rowIndex && String(b).trim() === bc) || String(form?.box_barcode ?? '').trim() === bc
   if (dupElsewhere) {
     return {
       kind: 'duplicate',
@@ -193,13 +196,13 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
   const [barcodeCameraRow, setBarcodeCameraRow] = useState(null)
   const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState(null)
 
-  const openBarcodeCamera = async (rowIndex) => {
+  const openBarcodeCamera = async (target) => {
     try {
       if (!BarcodeScannerLazy) {
         const m = await import('../../components/BarcodeCameraScanner')
         setBarcodeScannerLazy(() => m.default)
       }
-      setBarcodeCameraRow(rowIndex)
+      setBarcodeCameraRow(target)
     } catch {
       toast.error('تعذر تحميل ماسح الباركود')
     }
@@ -271,7 +274,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
           اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية. على الهاتف يمكنك الضغط على أيقونة الكاميرا لمسح الباركود.
         </p>
         {barcodes.map((bc, idx) => {
-          const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts)
+          const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts, form)
           return (
             <div key={idx} style={{ marginBottom: '0.45rem' }}>
               <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
@@ -355,20 +358,50 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
         <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
       </div>
       <div style={{ gridColumn: 'span 2', background: 'rgba(59,130,246,0.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
-        <Label>📦 عدد القطع في الصندوق</Label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.65rem' }}>
+          <div>
+            <Label>📦 عدد القطع في الصندوق</Label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              step="1"
+              {...f('units_per_box')}
+              placeholder="1"
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div>
+            <Label>باركود الصندوق (اختياري)</Label>
+            <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <input
+                  className="input"
+                  {...f('box_barcode')}
+                  placeholder="امسح باركود الكرتونة"
+                  style={{
+                    width: '100%',
+                    borderColor: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '#dc2626' : undefined,
+                    boxShadow: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
+                  }}
+                  title={getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form)?.title}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => openBarcodeCamera('box')}
+                title="مسح بالكاميرا"
+              >
+                <Camera size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
         <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
-          عند البيع بالصندوق في نقطة البيع، سيتم إضافة هذا العدد من القطع دفعةً واحدة إلى السلة.
+          عند مسح "باركود الصندوق" في نقطة البيع، سيتم إضافة كمية الصندوق المعرفة دفعةً واحدة إلى الفاتورة.
         </p>
         <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
-          <input
-            className="input"
-            type="number"
-            min="1"
-            step="1"
-            {...f('units_per_box')}
-            placeholder="1"
-            style={{ width: '7rem', flexShrink: 0 }}
-          />
           <div
             style={{
               flex: 1,
@@ -402,7 +435,11 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
     {BarcodeScannerLazy && barcodeCameraRow !== null && (
       <BarcodeScannerLazy
         onResult={(text) => {
-          setBarcodeAt(barcodeCameraRow, text)
+          if (barcodeCameraRow === 'box') {
+            setForm((p) => ({ ...p, box_barcode: text }))
+          } else {
+            setBarcodeAt(barcodeCameraRow, text)
+          }
           setBarcodeCameraRow(null)
           toast.success('تمت قراءة الباركود')
         }}

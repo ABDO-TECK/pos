@@ -17,7 +17,7 @@ class Product {
         $params = [];
 
         if (!empty($filters['search'])) {
-            $where[]          = '(p.name LIKE :search OR p.barcode LIKE :search
+            $where[]          = '(p.name LIKE :search OR p.barcode LIKE :search OR p.box_barcode LIKE :search
                 OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode LIKE :search))';
             $params['search'] = '%' . $filters['search'] . '%';
         }
@@ -108,10 +108,11 @@ class Product {
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
              WHERE p.barcode = ?
+                OR p.box_barcode = ?
                 OR p.id IN (SELECT product_id FROM product_barcodes WHERE barcode = ?)
              LIMIT 1'
         );
-        $stmt->execute([$barcode, $barcode]);
+        $stmt->execute([$barcode, $barcode, $barcode]);
         $product = $stmt->fetch();
         if (!$product) {
             return null;
@@ -128,8 +129,8 @@ class Product {
     }
 
     public function findOwnerProductIdByBarcode(string $barcode): ?int {
-        $stmt = $this->db->prepare('SELECT id FROM products WHERE barcode = ? LIMIT 1');
-        $stmt->execute([$barcode]);
+        $stmt = $this->db->prepare('SELECT id FROM products WHERE barcode = ? OR box_barcode = ? LIMIT 1');
+        $stmt->execute([$barcode, $barcode]);
         $id = $stmt->fetchColumn();
         if ($id !== false && $id !== null) {
             return (int) $id;
@@ -200,12 +201,13 @@ class Product {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box)
-             VALUES (:name, :barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box)'
+            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box)
+             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box)'
         );
         $stmt->execute([
             'name'                => $data['name'],
             'barcode'             => $data['barcode'],
+            'box_barcode'         => !empty($data['box_barcode']) ? $data['box_barcode'] : null,
             'price'               => $data['price'],
             'cost'                => $data['cost'] ?? 0,
             'quantity'            => $data['quantity'] ?? 0,
@@ -226,6 +228,7 @@ class Product {
             'UPDATE products SET
                 name = :name,
                 barcode = :barcode,
+                box_barcode = :box_barcode,
                 price = :price,
                 cost = :cost,
                 quantity = :quantity,
@@ -237,6 +240,7 @@ class Product {
         $stmt->execute([
             'name'                => $data['name'],
             'barcode'             => $data['barcode'],
+            'box_barcode'         => !empty($data['box_barcode']) ? $data['box_barcode'] : null,
             'price'               => $data['price'],
             'cost'                => $data['cost'] ?? 0,
             'quantity'            => $data['quantity'] ?? 0,
