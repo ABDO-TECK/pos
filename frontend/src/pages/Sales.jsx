@@ -151,25 +151,38 @@ export default function Sales() {
               <thead>
                 <tr>
                   <th># الفاتورة</th>
-                  <th>الكاشير</th>
+                  <th className="hide-mobile">الكاشير</th>
                   <th>الإجمالي</th>
-                  <th>طريقة الدفع</th>
-                  <th>التاريخ</th>
+                  <th className="hide-mobile">طريقة الدفع</th>
+                  <th className="hide-mobile">التاريخ</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {sales.map(s => (
                   <tr key={s.id}>
-                    <td style={{ color: 'var(--text-muted)' }}>#{formatNumber(s.id)}</td>
-                    <td>{s.cashier_name ?? '—'}</td>
-                    <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>{formatCurrency(s.total)}</td>
                     <td>
+                      <span style={{ color: 'var(--text-muted)' }}>#{formatNumber(s.id)}</span>
+                      <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginTop: '0.2rem' }}>
+                        {formatDate(s.created_at)}
+                        {s.cashier_name ? ` · ${s.cashier_name}` : ''}
+                      </div>
+                    </td>
+                    <td className="hide-mobile">{s.cashier_name ?? '—'}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>
+                      {formatCurrency(s.total)}
+                      <div className="show-mobile" style={{ marginTop: '0.2rem' }}>
+                        <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>
+                          {METHOD_LABELS[s.payment_method] ?? s.payment_method}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="hide-mobile">
                       <span className="badge badge-blue">
                         {METHOD_LABELS[s.payment_method] ?? s.payment_method}
                       </span>
                     </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDate(s.created_at)}</td>
+                    <td className="hide-mobile" style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDate(s.created_at)}</td>
                     <td>
                       <button
                         className="btn btn-ghost btn-sm"

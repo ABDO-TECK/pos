@@ -345,17 +345,14 @@ function ProductCard({ product, onAdd }) {
     >
       <div style={{
         fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.3,
-        overflow: 'hidden', display: '-webkit-box',
-        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+        wordBreak: 'break-word', overflowWrap: 'anywhere',
         color: 'var(--text)',
+        marginBottom: '0.2rem',
       }}>
         {product.name}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem', gap: '0.25rem', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)' }}>
-          {formatCurrency(product.price)}
-        </span>
-        <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: 'auto', gap: '0.3rem', width: '100%' }}>
+        <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {upb > 1 && (
             <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
               📦 {formatNumber(upb)}
@@ -364,6 +361,9 @@ function ProductCard({ product, onAdd }) {
           {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}
           {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
         </div>
+        <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--primary)' }}>
+          {formatCurrency(product.price)}
+        </span>
       </div>
     </button>
   )
