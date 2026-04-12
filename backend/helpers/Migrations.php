@@ -172,6 +172,40 @@ class Migrations {
             $this->mark('010_products_box_barcode');
         }
 
+        // ── 011: invoices.customer_id & amount_due (Fix for old backups) ──
+        if (!$this->applied('011_invoices_credit_columns')) {
+            try {
+                $this->db->exec(
+                    'ALTER TABLE invoices
+                     ADD COLUMN customer_id INT UNSIGNED NULL COMMENT "رابط العميل — فارغ للمبيعات النقدية" AFTER user_id'
+                );
+            } catch (Throwable $e) {}
+            try {
+                $this->db->exec(
+                    'ALTER TABLE invoices
+                     ADD COLUMN amount_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT "المتبقي على ذمة العميل بعد خصم العربون" AFTER change_due'
+                );
+            } catch (Throwable $e) {}
+            try {
+                $this->db->exec(
+                    'ALTER TABLE invoices
+                     ADD CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL'
+                );
+            } catch (Throwable $e) {}
+            $this->mark('011_invoices_credit_columns');
+        }
+
+        // ── 012: purchases.purchase_invoice_id (Fix for old backups) ──────
+        if (!$this->applied('012_purchases_invoice_link')) {
+            try {
+                $this->db->exec(
+                    'ALTER TABLE purchases
+                     ADD COLUMN purchase_invoice_id INT UNSIGNED NULL AFTER id'
+                );
+            } catch (Throwable $e) {}
+            $this->mark('012_purchases_invoice_link');
+        }
+
         // ── 007: Auto-cleanup expired tokens ──────────────────────────
         // يُنفَّذ في كل طلب لكن خفيف الحمل — يحذف Tokens المنتهية فقط
         if (!$this->applied('007_token_cleanup_event')) {
