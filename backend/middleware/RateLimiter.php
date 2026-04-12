@@ -3,13 +3,15 @@
 /**
  * Rate Limiter Middleware — حماية API من الطلبات المفرطة
  *
- * يستخدم ملفات مؤقتة لتتبع عدد الطلبات لكل IP.
+ * يستخدم ملفات مؤقتة مع قفل ذري (flock) لتتبع الطلبات لكل IP —
+ * آمن للطلبات المتزامنة (Concurrent-safe).
+ *
  * الحد الافتراضي: 120 طلب/دقيقة (مناسب لنظام POS سريع الاستخدام).
  */
 class RateLimiter
 {
-    private int    $maxRequests;    // عدد الطلبات المسموح
-    private int    $windowSeconds; // فترة القياس بالثواني
+    private int    $maxRequests;
+    private int    $windowSeconds;
     private string $storageDir;
 
     public function __construct(int $maxRequests = 120, int $windowSeconds = 60)
@@ -33,33 +35,88 @@ class RateLimiter
         $file = $this->storageDir . '/' . md5($ip) . '.json';
         $now  = time();
 
-        $data = $this->readFile($file);
-
-        // تنظيف الطلبات القديمة خارج النافذة الزمنية
-        $windowStart = $now - $this->windowSeconds;
-        $data['requests'] = array_values(
-            array_filter($data['requests'] ?? [], fn($ts) => $ts >= $windowStart)
-        );
-
-        // فحص الحد
-        if (count($data['requests']) >= $this->maxRequests) {
-            $oldestInWindow = min($data['requests']);
-            $retryAfter     = ($oldestInWindow + $this->windowSeconds) - $now;
-            $retryAfter     = max(1, $retryAfter);
-
-            header("Retry-After: $retryAfter");
-            http_response_code(429);
-            echo json_encode([
-                'status'      => 'error',
-                'message'     => 'تم تجاوز الحد المسموح من الطلبات. يرجى الانتظار.',
-                'retry_after' => $retryAfter,
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
+        // ── قراءة + تحديث ذري (atomic read-modify-write) ─────
+        $handle = @fopen($file, 'c+');
+        if ($handle === false) {
+            // فشل فتح الملف — نسمح بالمرور (fail open) بدلاً من حظر المستخدم
+            return;
         }
 
-        // تسجيل الطلب الحالي
-        $data['requests'][] = $now;
-        $this->writeFile($file, $data);
+        // قفل حصري — ينتظر حتى يتحرر القفل من طلب آخر
+        if (!flock($handle, LOCK_EX)) {
+            fclose($handle);
+            return;
+        }
+
+        try {
+            // قراءة المحتوى الحالي
+            $content = stream_get_contents($handle);
+            $data    = ($content !== '' && $content !== false)
+                ? json_decode($content, true)
+                : null;
+
+            if (!is_array($data) || !isset($data['timestamps'])) {
+                $data = ['timestamps' => []];
+            }
+
+            // تنظيف الطلبات القديمة خارج النافذة الزمنية
+            $windowStart = $now - $this->windowSeconds;
+            $data['timestamps'] = array_values(
+                array_filter($data['timestamps'], fn($ts) => $ts >= $windowStart)
+            );
+
+            // فحص الحد
+            if (count($data['timestamps']) >= $this->maxRequests) {
+                $oldestInWindow = min($data['timestamps']);
+                $retryAfter     = ($oldestInWindow + $this->windowSeconds) - $now;
+                $retryAfter     = max(1, $retryAfter);
+
+                // كتابة البيانات بدون إضافة الطلب الحالي
+                $this->writeAndUnlock($handle, $file, $data);
+
+                header("Retry-After: $retryAfter");
+                http_response_code(429);
+                echo json_encode([
+                    'status'      => 'error',
+                    'message'     => 'تم تجاوز الحد المسموح من الطلبات. يرجى الانتظار.',
+                    'retry_after' => $retryAfter,
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // تسجيل الطلب الحالي
+            $data['timestamps'][] = $now;
+
+            // الاحتفاظ فقط بآخر N+10 عنصر لمنع نمو الملف بلا حدود
+            $maxKeep = $this->maxRequests + 10;
+            if (count($data['timestamps']) > $maxKeep) {
+                $data['timestamps'] = array_slice($data['timestamps'], -$maxKeep);
+            }
+
+            $this->writeAndUnlock($handle, $file, $data);
+        } catch (Throwable $e) {
+            // فك القفل في حال حدوث خطأ
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            // fail open — لا نحظر المستخدم بسبب خطأ داخلي
+            Logger::error('RateLimiter error', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * كتابة البيانات المحدّثة وتحرير القفل.
+     *
+     * @param resource $handle
+     */
+    private function writeAndUnlock($handle, string $file, array $data): void
+    {
+        // إعادة الكتابة من البداية
+        fseek($handle, 0);
+        ftruncate($handle, 0);
+        fwrite($handle, json_encode($data, JSON_UNESCAPED_UNICODE));
+        fflush($handle);
+        flock($handle, LOCK_UN);
+        fclose($handle);
     }
 
     /**
@@ -67,7 +124,6 @@ class RateLimiter
      */
     private function getClientIp(): string
     {
-        // الأولوية: X-Forwarded-For → X-Real-IP → REMOTE_ADDR
         if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
             $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
             return trim($ips[0]);
@@ -78,30 +134,12 @@ class RateLimiter
         return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 
-    private function readFile(string $path): array
-    {
-        if (!file_exists($path)) {
-            return ['requests' => []];
-        }
-        $content = @file_get_contents($path);
-        if ($content === false) {
-            return ['requests' => []];
-        }
-        $data = json_decode($content, true);
-        return is_array($data) ? $data : ['requests' => []];
-    }
-
-    private function writeFile(string $path, array $data): void
-    {
-        @file_put_contents($path, json_encode($data), LOCK_EX);
-    }
-
     /**
      * تنظيف ملفات Rate Limit القديمة (يمكن استدعاؤها دورياً).
      */
     public function cleanup(): void
     {
-        $files = glob($this->storageDir . '/*.json');
+        $files  = glob($this->storageDir . '/*.json') ?: [];
         $expiry = time() - ($this->windowSeconds * 2);
         foreach ($files as $file) {
             if (filemtime($file) < $expiry) {
@@ -110,3 +148,4 @@ class RateLimiter
         }
     }
 }
+

@@ -11,7 +11,18 @@ class SupplierController extends Controller {
     }
 
     public function index(): void {
-        Response::success($this->supplierModel->all());
+        $filters = [];
+        if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
+        if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
+        if ($this->getParam('limit'))   $filters['limit']   = $this->getParam('limit');
+
+        $result = $this->supplierModel->all($filters);
+
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result);
+        }
     }
 
     public function show(string $id): void {
@@ -120,7 +131,7 @@ class SupplierController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل إضافة المورد', ['error' => $e->getMessage()]);
             Response::serverError('Failed to delete purchase invoice');
         }
 
@@ -249,7 +260,7 @@ class SupplierController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل عملية شراء بالجملة', ['error' => $e->getMessage()]);
             Response::serverError('Failed to record bulk purchase');
         }
 

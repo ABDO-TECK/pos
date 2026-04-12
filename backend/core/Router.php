@@ -37,6 +37,11 @@ class Router {
             $uri = substr($uri, strlen($base));
         }
 
+        // ── API Versioning ────────────────────────────────────────
+        // دعم /api/v1/... → /api/... (backward-compatible)
+        // يسمح باستخدام /api/v1/products أو /api/products بنفس النتيجة
+        $uri = preg_replace('#^/api/v\d+/#', '/api/', $uri);
+
         foreach ($this->routes as $route) {
             $params = $this->match($route['method'], $route['path'], $method, $uri);
             if ($params !== null) {

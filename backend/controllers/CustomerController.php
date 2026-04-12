@@ -10,7 +10,19 @@ class CustomerController extends Controller {
 
     /** GET /api/customers */
     public function index(): void {
-        Response::success($this->model->all());
+        $filters = [];
+        if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
+        if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
+        if ($this->getParam('limit'))   $filters['limit']   = $this->getParam('limit');
+
+        $result = $this->model->all($filters);
+
+        // إذا أُرجع pagination — إرسال مع metadata
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result);
+        }
     }
 
     /** GET /api/customers/{id} — بيانات العميل + كشف الحساب */
@@ -38,7 +50,7 @@ class CustomerController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل إضافة العميل', ['error' => $e->getMessage()]);
             Response::serverError('فشل في إضافة العميل');
         }
 

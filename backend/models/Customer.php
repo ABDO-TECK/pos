@@ -7,17 +7,75 @@ class Customer {
         $this->db = Database::getInstance();
     }
 
-    /** جميع العملاء مع رصيدهم الحالي */
-    public function all(): array {
-        $rows = $this->db->query(
-            'SELECT c.*,
-                COALESCE(SUM(CASE WHEN cl.type = "debit"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
-                COALESCE(SUM(CASE WHEN cl.type = "credit" THEN cl.amount ELSE 0 END), 0) AS total_credit
+    /** جميع العملاء مع رصيدهم الحالي — مع دعم pagination اختياري */
+    public function all(array $filters = []): array {
+        $where  = ['1=1'];
+        $params = [];
+
+        if (!empty($filters['search'])) {
+            $where[]          = '(c.name LIKE :search OR c.phone LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $whereClause = implode(' AND ', $where);
+
+        // ── Pagination (اختياري) ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
+        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+
+        if ($page !== null && $limit !== null) {
+            $countSql = "SELECT COUNT(*) FROM customers c WHERE $whereClause";
+            $countStmt = $this->db->prepare($countSql);
+            $countStmt->execute($params);
+            $total = (int) $countStmt->fetchColumn();
+
+            $offset = ($page - 1) * $limit;
+            $sql = "SELECT c.*,
+                COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
+                COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
              FROM customers c
              LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
+             WHERE $whereClause
              GROUP BY c.id
-             ORDER BY c.name ASC'
-        )->fetchAll();
+             ORDER BY c.name ASC
+             LIMIT $limit OFFSET $offset";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+
+            foreach ($rows as &$r) {
+                $r['balance'] = round(
+                    (float)$r['initial_balance'] + (float)$r['total_debit'] - (float)$r['total_credit'],
+                    2
+                );
+            }
+            unset($r);
+
+            return [
+                'data' => $rows,
+                'pagination' => [
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'pages' => (int) ceil($total / $limit),
+                ],
+            ];
+        }
+
+        // ── بدون pagination — إرجاع الكل (backward-compatible) ──
+        $rows = $this->db->prepare(
+            "SELECT c.*,
+                COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
+                COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
+             FROM customers c
+             LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
+             WHERE $whereClause
+             GROUP BY c.id
+             ORDER BY c.name ASC"
+        );
+        $rows->execute($params);
+        $rows = $rows->fetchAll();
 
         foreach ($rows as &$r) {
             $r['balance'] = round(

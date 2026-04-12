@@ -17,9 +17,11 @@ frontend/.cache/
 frontend/*.local
 
 # ── Backend / PHP ───────────────────────────────────────
+backend/storage/
 backend/cache/
 backend/logs/
 backend/*.log
+backend/.env
 
 # ── Database ────────────────────────────────────────────
 database/*.sql.bak

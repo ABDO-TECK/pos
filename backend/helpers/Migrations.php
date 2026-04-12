@@ -47,7 +47,7 @@ class Migrations {
                 );
             } catch (Throwable $e) {
                 // Column may already have correct ENUM — ignore
-                error_log('Migration 001 notice: ' . $e->getMessage());
+                Logger::warning('Migration 001 notice', ['error' => $e->getMessage()]);
             }
             $this->mark('001_payment_method_enum');
         }
@@ -78,7 +78,7 @@ class Migrations {
                      NOT NULL DEFAULT 'cash'"
                 );
             } catch (Throwable $e) {
-                error_log('Migration 003 notice: ' . $e->getMessage());
+                Logger::warning('Migration 003 notice', ['error' => $e->getMessage()]);
             }
             $this->mark('003_payment_method_credit');
         }
@@ -94,7 +94,7 @@ class Migrations {
                 );
             } catch (Throwable $e) {
                 if (!str_contains($e->getMessage(), 'Duplicate column')) {
-                    error_log('Migration 004 add column: ' . $e->getMessage());
+                    Logger::warning('Migration 004 add column', ['error' => $e->getMessage()]);
                 }
             }
             try {
@@ -104,7 +104,7 @@ class Migrations {
                      SET ii.unit_cost = p.cost'
                 );
             } catch (Throwable $e) {
-                error_log('Migration 004 backfill: ' . $e->getMessage());
+                Logger::warning('Migration 004 backfill', ['error' => $e->getMessage()]);
             }
             $this->mark('004_invoice_items_unit_cost');
         }
@@ -120,7 +120,7 @@ class Migrations {
                 );
             } catch (Throwable $e) {
                 if (!str_contains($e->getMessage(), 'Duplicate column')) {
-                    error_log('Migration 005: ' . $e->getMessage());
+                    Logger::warning('Migration 005', ['error' => $e->getMessage()]);
                 }
             }
             $this->mark('005_suppliers_initial_balance');
@@ -146,5 +146,65 @@ class Migrations {
             );
             $this->mark('006_supplier_ledger');
         }
+
+        // ── 007: Auto-cleanup expired tokens ──────────────────────────
+        // يُنفَّذ في كل طلب لكن خفيف الحمل — يحذف Tokens المنتهية فقط
+        if (!$this->applied('007_token_cleanup_event')) {
+            try {
+                // إنشاء event لتنظيف الـ tokens (يومياً)
+                // إذا كان scheduler غير مفعّل — نحذف يدوياً
+                $this->db->exec('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()');
+            } catch (Throwable $e) {
+                Logger::warning('Migration 007', ['error' => $e->getMessage()]);
+            }
+            $this->mark('007_token_cleanup_event');
+        }
+
+        // تنظيف Tokens المنتهية دورياً (بدون migration — يُنفَّذ كل 100 طلب تقريباً)
+        try {
+            if (mt_rand(1, 100) === 1) {
+                $this->db->exec('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()');
+            }
+        } catch (Throwable) {}
+
+        // ── 008: Composite indexes for reports performance ───────────
+        if (!$this->applied('008_report_indexes')) {
+            $indexes = [
+                'ALTER TABLE invoices ADD INDEX idx_status_created (status, created_at)',
+                'ALTER TABLE invoice_items ADD INDEX idx_invoice_product (invoice_id, product_id)',
+                'ALTER TABLE purchases ADD INDEX idx_supplier_created (supplier_id, created_at)',
+                'ALTER TABLE customer_ledger ADD INDEX idx_customer_type (customer_id, type)',
+                'ALTER TABLE supplier_ledger ADD INDEX idx_supplier_type (supplier_id, type)',
+            ];
+            foreach ($indexes as $sql) {
+                try {
+                    $this->db->exec($sql);
+                } catch (Throwable $e) {
+                    // الفهرس قد يكون موجوداً — تجاهل
+                    if (!str_contains($e->getMessage(), 'Duplicate key name')) {
+                        Logger::warning('Migration 008 index', ['sql' => $sql, 'error' => $e->getMessage()]);
+                    }
+                }
+            }
+            $this->mark('008_report_indexes');
+        }
+
+        // ── 009: Log cleanup + Rate Limit cleanup ────────────────────
+        if (!$this->applied('009_cleanup_setup')) {
+            // تنظيف ملفات اللوج القديمة
+            try {
+                Logger::cleanup();
+                (new RateLimiter())->cleanup();
+            } catch (Throwable) {}
+            $this->mark('009_cleanup_setup');
+        }
+
+        // تنظيف دوري (مرة كل ~200 طلب)
+        try {
+            if (mt_rand(1, 200) === 1) {
+                Logger::cleanup();
+                (new RateLimiter())->cleanup();
+            }
+        } catch (Throwable) {}
     }
 }

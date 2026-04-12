@@ -197,7 +197,7 @@ class SaleController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل إنشاء عملية بيع', ['error' => $e->getMessage()]);
             Response::serverError('Failed to process sale');
         }
 
@@ -236,7 +236,7 @@ class SaleController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل حذف الفاتورة', ['error' => $e->getMessage()]);
             Response::serverError('Failed to delete invoice');
         }
 

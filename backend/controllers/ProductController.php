@@ -82,7 +82,7 @@ class ProductController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل إضافة المنتج', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
             }
@@ -130,7 +130,7 @@ class ProductController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            error_log($e->getMessage());
+            Logger::error('فشل تحديث المنتج', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
             }
@@ -192,7 +192,7 @@ class ProductController extends Controller {
                     409
                 );
             }
-            error_log($e->getMessage());
+            Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
             Response::serverError('Failed to delete product');
         }
 
