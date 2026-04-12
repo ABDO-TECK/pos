@@ -147,6 +147,22 @@ class Migrations {
             $this->mark('006_supplier_ledger');
         }
 
+        // ── 010: products.box_barcode & units_per_box (Fix for old backups) ──
+        if (!$this->applied('010_products_box_barcode')) {
+            try {
+                $this->db->exec(
+                    'ALTER TABLE products
+                     ADD COLUMN box_barcode VARCHAR(100) NULL DEFAULT NULL UNIQUE AFTER barcode,
+                     ADD COLUMN units_per_box INT NOT NULL DEFAULT 1 COMMENT "عدد القطع في الصندوق الواحد" AFTER low_stock_threshold'
+                );
+            } catch (Throwable $e) {
+                if (!str_contains($e->getMessage(), 'Duplicate column')) {
+                    Logger::warning('Migration 010', ['error' => $e->getMessage()]);
+                }
+            }
+            $this->mark('010_products_box_barcode');
+        }
+
         // ── 007: Auto-cleanup expired tokens ──────────────────────────
         // يُنفَّذ في كل طلب لكن خفيف الحمل — يحذف Tokens المنتهية فقط
         if (!$this->applied('007_token_cleanup_event')) {
