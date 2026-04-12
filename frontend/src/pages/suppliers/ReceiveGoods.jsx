@@ -116,7 +116,7 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
   const product     = line.product
   const unitsPerBox = Math.max(1, parseInt(product.units_per_box, 10) || 1)
   const hasBox      = unitsPerBox > 1
-  const [unitMode, setUnitMode] = useState('piece')
+  const [unitMode, setUnitMode] = useState(product.scanned_as_box && hasBox ? 'box' : 'piece')
 
   const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(line.quantity / unitsPerBox)) : null
   const displayQty = unitMode === 'box' ? boxCount : line.quantity
@@ -343,18 +343,21 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
 
   /* ── Cart helpers ── */
   const addToCart = (product) => {
+    const unitsPerBox = Math.max(1, parseInt(product.units_per_box) || 1)
+    const qtyToAdd = product.scanned_as_box ? unitsPerBox : 1
+
     setCart((prev) => {
       const existing = prev.find((c) => c.product.id === product.id)
       if (existing) {
         return prev.map((c) =>
-          c.product.id === product.id ? { ...c, quantity: c.quantity + 1 } : c
+          c.product.id === product.id ? { ...c, quantity: c.quantity + qtyToAdd } : c
         )
       }
       return [
         ...prev,
         {
           product,
-          quantity: 1,
+          quantity: qtyToAdd,
           cost:
             parseFloat(product.cost) > 0
               ? parseFloat(product.cost)

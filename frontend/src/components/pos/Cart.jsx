@@ -54,7 +54,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
   const hasBox      = unitsPerBox > 1
 
   // unitMode: 'piece' | 'box'  — local UI state only, doesn't affect cart store
-  const [unitMode, setUnitMode] = useState('piece')
+  const [unitMode, setUnitMode] = useState(item.scanned_as_box && hasBox ? 'box' : 'piece')
 
   // عدد الصناديق المعروض (يُحسب من الكمية الكلية)
   const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(item.quantity / unitsPerBox)) : null
