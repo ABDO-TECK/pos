@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Package, Truck, BarChart2,
@@ -6,6 +7,7 @@ import {
 import useAuthStore from '../../store/authStore'
 import useSettingsStore from '../../store/settingsStore'
 import useThemeStore from '../../store/themeStore'
+import useUpdateStore from '../../store/updateStore'
 import toast from 'react-hot-toast'
 
 const navItems = [
@@ -25,6 +27,15 @@ export default function Sidebar({ onClose }) {
   const themeMode        = useThemeStore((s) => s.mode)
   const toggleTheme      = useThemeStore((s) => s.toggle)
   const navigate         = useNavigate()
+  
+  // Updates
+  const { hasUpdate, currentVersion, silentCheck } = useUpdateStore()
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      silentCheck()
+    }
+  }, [user?.role, silentCheck])
 
   const handleLogout = async () => {
     await logout()
@@ -77,7 +88,16 @@ export default function Sidebar({ onClose }) {
               `sidebar-link${isActive ? ' sidebar-link--active' : ''}`
             }
           >
-            <item.icon size={18} style={{ flexShrink: 0 }} />
+            <div style={{ position: 'relative', display: 'flex' }}>
+              <item.icon size={18} style={{ flexShrink: 0 }} />
+              {item.to === '/settings' && hasUpdate && (
+                <span style={{
+                  position: 'absolute', top: '-2px', right: '-2px',
+                  width: '8px', height: '8px', background: 'var(--danger)',
+                  borderRadius: '50%', border: '2px solid var(--sidebar-bg)'
+                }} />
+              )}
+            </div>
             <span className="nav-label">{item.label}</span>
           </NavLink>
         ))}
@@ -100,6 +120,11 @@ export default function Sidebar({ onClose }) {
         >
           <LogOut size={16} /> تسجيل الخروج
         </button>
+        {currentVersion && (
+          <div style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>
+            v{currentVersion}
+          </div>
+        )}
       </div>
     </aside>
   )

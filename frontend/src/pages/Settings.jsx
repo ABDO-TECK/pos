@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Save, Download, Upload, Store, Percent, Database, RefreshCw, CloudDownload, List } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { updateSettings, downloadBackup, restoreBackup, checkUpdate, applyUpdate, getChangelog } from '../api/endpoints'
+import { updateSettings, downloadBackup, restoreBackup, applyUpdate } from '../api/endpoints'
 import useSettingsStore from '../store/settingsStore'
+import useUpdateStore from '../store/updateStore'
 
 export default function Settings() {
   const { storeName, taxEnabled, taxRate, fetchSettings, setSettings } = useSettingsStore()
@@ -14,11 +15,9 @@ export default function Settings() {
   const restoreInputRef = useRef(null)
 
   // Update State
-  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [applyingUpdate, setApplyingUpdate] = useState(false)
-  const [updateInfo, setUpdateInfo]         = useState(null)
-  const [changelog, setChangelog]           = useState([])
   const [showChangelog, setShowChangelog]   = useState(false)
+  const { hasUpdate, currentVersion, latestVersion, changelog, isChecking, forceCheck } = useUpdateStore()
 
   useEffect(() => {
     fetchSettings().then(() => {
@@ -105,43 +104,27 @@ export default function Settings() {
   }
 
   const handleCheckUpdate = async () => {
-    setCheckingUpdate(true)
     try {
-      const res = await checkUpdate()
-      setUpdateInfo(res.data.data)
-      if (res.data.data.has_update) {
+      const data = await forceCheck()
+      if (data?.has_update) {
         toast.success('تم العثور على تحديث جديد!')
+        setShowChangelog(true)
       } else {
         toast.success('النظام محدّث لأحدث إصدار')
       }
     } catch {
       toast.error('فشل التحقق من التحديثات')
-    } finally {
-      setCheckingUpdate(false)
-    }
-  }
-
-  const loadChangelog = async () => {
-    if (showChangelog) {
-      setShowChangelog(false)
-      return
-    }
-    try {
-      const res = await getChangelog()
-      setChangelog(res.data.data ?? [])
-      setShowChangelog(true)
-    } catch {
-      toast.error('فشل جلب سجل التغييرات')
     }
   }
 
   const handleApplyUpdate = async () => {
-    if (!confirm('الرجاء التأكد من حفظ جميع أعمالك، سيتم إعادة تحميل النظام بعد التحديث. هل أنت متأكد؟')) return
+    if (!confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)')) return
+    
     setApplyingUpdate(true)
     try {
       await applyUpdate()
       toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
-      setTimeout(() => window.location.reload(), 1500)
+      setTimeout(() => window.location.reload(), 2000)
     } catch {
       toast.error('فشل تطبيق التحديث. يرجى مراجعة السجلات والتواصل مع الدعم.')
       setApplyingUpdate(false)
@@ -256,22 +239,36 @@ export default function Settings() {
           التحقق من توفر تحديثات جديدة للنظام من المطور وتطبيقها بضغطة زر واحدة مجاناً بفضل نظام التشغيل السحابي.
         </p>
         
-        {updateInfo && (
-          <div style={{
-            padding: '1rem', 
-            borderRadius: 'var(--radius)', 
-            background: updateInfo.has_update ? 'rgba(40, 167, 69, 0.1)' : 'var(--bg)',
-            border: updateInfo.has_update ? '1px solid rgba(40, 167, 69, 0.3)' : '1px solid var(--border)'
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: updateInfo.has_update ? 'var(--success)' : 'var(--text)' }}>
-              {updateInfo.has_update ? '🎉 تحديث جديد متوفر!' : '✅ النظام مُحدَّث'}
-            </h3>
-            <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem' }}>
-              الإصدار الحالي الديك: <strong>v{updateInfo.current_version}</strong>
-            </p>
+        <div style={{
+          padding: '1rem', 
+          borderRadius: 'var(--radius)', 
+          background: hasUpdate ? 'rgba(40, 167, 69, 0.1)' : 'var(--bg)',
+          border: hasUpdate ? '1px solid rgba(40, 167, 69, 0.3)' : '1px solid var(--border)'
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: hasUpdate ? 'var(--success)' : 'var(--text)' }}>
+            {hasUpdate ? '🎉 تحديث جديد متوفر!' : '✅ النظام مُحدَّث'}
+          </h3>
+          <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem' }}>
+            الإصدار الحالي الديك: <strong>{currentVersion ? `v${currentVersion}` : 'غير معروف'}</strong>
+          </p>
+          {latestVersion && (
             <p style={{ margin: 0, fontSize: '0.85rem' }}>
-              أحدث إصدار متاح: <strong>v{updateInfo.latest_version}</strong> {updateInfo.released_at && `(${updateInfo.released_at})`}
+              أحدث إصدار متاح: <strong>v{latestVersion}</strong>
             </p>
+          )}
+        </div>
+
+        {applyingUpdate && (
+          <div style={{ padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--primary)', borderRadius: 'var(--radius)', marginTop: '0.5rem' }}>
+            <div style={{ fontWeight: 600, color: 'var(--primary-d)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="spinner" style={{ borderColor: 'currentColor', borderRightColor: 'transparent' }} /> جاري التحديث... الرجاء عدم إغلاق هذه الصفحة
+            </div>
+            <ul style={{ margin: 0, padding: '0 1.2rem', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', color: 'var(--text)' }}>
+              <li>1️⃣ جاري إنشاء نسخة احتياطية من قاعدة البيانات...</li>
+              <li>2️⃣ جاري سحب أحدث ملفات النظام...</li>
+              <li>3️⃣ جاري تثبيت الحزم والمتطلبات (إن وجدت)...</li>
+              <li>🔄 سيتم إعادة تحميل الصفحة تلقائياً فور الانتهاء.</li>
+            </ul>
           </div>
         )}
 
@@ -279,24 +276,26 @@ export default function Settings() {
           <button
             type="button"
             onClick={handleCheckUpdate}
-            disabled={checkingUpdate || applyingUpdate}
+            disabled={isChecking || applyingUpdate}
             className="btn btn-secondary"
           >
-            {checkingUpdate ? <span className="spinner" /> : <RefreshCw size={16}/>}
-            {checkingUpdate ? 'جاري التحقق…' : 'التحقق من التحديثات'}
+            {isChecking ? <span className="spinner" /> : <RefreshCw size={16}/>}
+            {isChecking ? 'جاري التحقق…' : 'التحقق من التحديثات'}
           </button>
 
-          <button
-            type="button"
-            onClick={loadChangelog}
-            disabled={checkingUpdate || applyingUpdate}
-            className="btn btn-ghost"
-          >
-            <List size={16}/>
-            {showChangelog ? 'إخفاء سجل التغييرات' : 'عرض التغييرات الجديدة'}
-          </button>
+          {changelog.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowChangelog(!showChangelog)}
+              disabled={isChecking || applyingUpdate}
+              className="btn btn-ghost"
+            >
+              <List size={16}/>
+              {showChangelog ? 'إخفاء ملاحظات الإصدار' : 'عرض ملاحظات الإصدار'}
+            </button>
+          )}
 
-          {updateInfo?.has_update && (
+          {hasUpdate && (
              <button
              type="button"
              onClick={handleApplyUpdate}
@@ -304,27 +303,21 @@ export default function Settings() {
              className="btn btn-primary"
              style={{ background: 'var(--success)', border: 'none' }}
            >
-             {applyingUpdate ? <span className="spinner" /> : <CloudDownload size={16}/>}
-             {applyingUpdate ? 'جاري التحديث… (لا تغلق الصفحة)' : 'تحديث الآن'}
+             {applyingUpdate ? 'جاري التحديث...' : 'تحديث الآن'}
            </button>
           )}
         </div>
 
-        {showChangelog && (
+        {showChangelog && changelog.length > 0 && (
           <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: 'var(--radius)', maxHeight: '300px', overflowY: 'auto' }}>
-            <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.9rem' }}>أهم التغييرات الأخيرة:</h4>
-            {changelog.length === 0 ? (
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>لا توجد تفاصيل لتغييرات حديثة.</p>
-            ) : (
-              <ul style={{ margin: 0, padding: '0 1.2rem', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                {changelog.map((c, i) => (
-                  <li key={i}>
-                    <strong>{c.message}</strong> 
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginRight: '0.4rem' }}>({c.date?.substring(0, 10)})</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.9rem' }}>أهم المميزات والإصلاحات الجديدة:</h4>
+            <ul style={{ margin: 0, padding: '0 1.2rem', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {changelog.map((c, i) => (
+                <li key={i}>
+                  <strong>{typeof c === 'string' ? c : c.message}</strong>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </section>

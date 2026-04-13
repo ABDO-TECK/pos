@@ -42,7 +42,7 @@ class UpdateController extends Controller {
         $remote = $this->fetchRemoteVersion();
 
         if (!$remote) {
-            Response::error('تعذر الاتصال بخادم التحديثات (GitHub). الرجاء المحاولة لاحقاً.', 500);
+            Response::error('تعذر الاتصال بخادم التحديثات أو ملف version.json غير موجود على GitHub (تأكد من رفعه).', 500);
         }
 
         $hasUpdate = version_compare($remote['version'], $local['version'], '>');
@@ -51,75 +51,108 @@ class UpdateController extends Controller {
             'current_version' => $local['version'],
             'latest_version'  => $remote['version'],
             'has_update'      => $hasUpdate,
-            'released_at'     => $remote['released_at']
+            'released_at'     => $remote['released_at'] ?? null,
+            'changelog'       => $remote['changelog'] ?? [],
+            'requires_npm_install' => $remote['requires_npm_install'] ?? false
         ]);
     }
 
     public function changelog(): void {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->commitsUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'ABDO-TECK-POS-Updater');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $remote = $this->fetchRemoteVersion();
+        Response::success($remote['changelog'] ?? []);
+    }
 
-        if ($httpCode !== 200 || !$result) {
-            Response::error('تعذر جلب سجل التغييرات.', 500);
+    private function doDatabaseBackup(string $rootDir): string {
+        $db = Database::getInstance();
+        $tables = $db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+
+        $sql  = "-- Auto-Update Backup\n";
+        $sql .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
+        $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
+
+        foreach ($tables as $table) {
+            $createStmt = $db->query("SHOW CREATE TABLE `$table`")->fetch();
+            $sql .= "-- Table: $table\n";
+            $sql .= "DROP TABLE IF EXISTS `$table`;\n";
+            $sql .= $createStmt['Create Table'] . ";\n\n";
+
+            $rows = $db->query("SELECT * FROM `$table`")->fetchAll();
+            if (!empty($rows)) {
+                $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
+                $sql .= "INSERT INTO `$table` ($columns) VALUES\n";
+                $values = [];
+                foreach ($rows as $row) {
+                    $escaped = array_map(function ($v) use ($db) {
+                        if ($v === null) return 'NULL';
+                        return $db->quote((string)$v);
+                    }, array_values($row));
+                    $values[] = '(' . implode(', ', $escaped) . ')';
+                }
+                $sql .= implode(",\n", $values) . ";\n\n";
+            }
         }
+        $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
 
-        $commits = json_decode($result, true);
-        if (!is_array($commits)) {
-            Response::error('رد غير صالح من خادم التحديثات.', 500);
+        $backupDir = $rootDir . '/backend/storage/update-backups';
+        if (!is_dir($backupDir)) {
+            mkdir($backupDir, 0777, true);
         }
-
-        $changelog = [];
-        foreach ($commits as $c) {
-            $msg = $c['commit']['message'] ?? '';
-            // skip merge commits or automated
-            if (str_starts_with(strtolower($msg), 'merge') || str_starts_with($msg, 'Auto-build')) continue;
-            
-            $changelog[] = [
-                'sha'     => substr($c['sha'], 0, 7),
-                'message' => explode("\n", $msg)[0], // first line only
-                'date'    => $c['commit']['author']['date'] ?? '',
-                'author'  => $c['commit']['author']['name'] ?? 'Unknown'
-            ];
-        }
-
-        Response::success($changelog);
+        $filename = $backupDir . '/pre_update_' . date('Y-m-d_H-i-s') . '.sql';
+        file_put_contents($filename, $sql);
+        return $filename;
     }
 
     public function apply(): void {
-        // مسار المشروع (يجب تعديله ليكون الجذر وليس ملف الكنترولر)
         $rootDir = realpath(__DIR__ . '/../../');
+        $output = [];
 
-        // Commands to fetch and hard reset to match remote unconditionally. 
-        // This is safe since user approved "what is best" and we decided hard reset guarantees consistency without conflict issues.
+        // 1. Database Backup
+        try {
+            $backupFile = $this->doDatabaseBackup($rootDir);
+            $output[] = "Database backup created: " . basename($backupFile);
+        } catch (Throwable $e) {
+            Logger::error('Update Backup Failed', ['error' => $e->getMessage()]);
+            Response::error('فشل إنشاء نسخة احتياطية من قاعدة البيانات לפני التحديث', 500);
+        }
+
+        // 2. Fetch and Check
+        $remote = $this->fetchRemoteVersion();
+        $requiresNpm = $remote['requires_npm_install'] ?? false;
+
+        // 3. Git Operations
         $commands = [
             "cd " . escapeshellarg($rootDir),
             "git fetch origin main",
             "git reset --hard origin/main"
         ];
         
-        $output = [];
-        $returnVar = 0;
-        
         $cmd = implode(' && ', $commands);
-        exec($cmd . ' 2>&1', $output, $returnVar);
+        $returnVar = 0;
+        exec($cmd . ' 2>&1', $execOut, $returnVar);
+        $output = array_merge($output, $execOut);
 
         if ($returnVar !== 0) {
-            Logger::error('فشل عملية التحديث', ['output' => $output]);
-            Response::error('حدث خطأ أثناء تنزيل أو تطبيق التحديثات. تحقق من السجلات.', 500, ['logs' => escapeshellarg($rootDir)]);
+            Logger::error('Update Git Failed', ['output' => $output]);
+            Response::error('حدث خطأ أثناء تنزيل التحديثات', 500, ['logs' => $output]);
         }
 
-        // Install dependencies if necessary
-        // exec("cd " . escapeshellarg($rootDir . "/frontend") . " && npm install 2>&1", $npmOut, $npmRet);
+        // 4. NPM Install if required
+        if ($requiresNpm) {
+            $npmCommand = "cd " . escapeshellarg($rootDir . "/frontend") . " && npm install";
+            $output[] = "Running npm install...";
+            exec($npmCommand . ' 2>&1', $npmOut, $npmRet);
+            $output = array_merge($output, $npmOut);
+            if ($npmRet !== 0) {
+                Logger::error('Update NPM Failed', ['output' => $output]);
+                // We don't fail the entire update, but we warn the user
+            } else {
+                $output[] = "NPM install completed successfully.";
+            }
+        }
 
         Response::success([
-            'message' => 'تم تطبيق التحديث بنجاح. سيتم الآن تحديث قاعدة البيانات إن وجدت تعديلات.',
+            'message' => 'تم استكمال التحديث بنجاح',
+            'latest_version' => $remote['version'] ?? 'unknown',
             'logs'    => $output
         ]);
     }
