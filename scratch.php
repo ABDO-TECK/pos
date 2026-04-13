@@ -1,21 +1,12 @@
 <?php
-require 'backend/helpers/EnvLoader.php';
-EnvLoader::load('backend/.env');
-define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
-define('DB_NAME', getenv('DB_NAME') ?: 'pos_db');
-define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
-
-try {
-    $db = new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME, DB_USER, DB_PASS);
-    
-    // Add missing column to purchases
-    try {
-        echo "Adding purchase_invoice_id to purchases... ";
-        $db->exec('ALTER TABLE purchases ADD COLUMN purchase_invoice_id INT UNSIGNED NULL AFTER id');
-        echo "Done.\n";
-    } catch (Throwable $e) { echo "Error: " . $e->getMessage() . "\n"; }
-
-} catch (Exception $e) {
-    echo $e->getMessage();
-}
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_USERAGENT, 'ABDO-TECK-POS-Updater');
+curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+$result = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+curl_close($ch);
+echo json_encode(['code' => $httpCode, 'error' => $error, 'body' => $result]);

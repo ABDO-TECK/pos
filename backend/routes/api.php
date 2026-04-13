@@ -65,6 +65,11 @@ $router->delete('/api/users/{id}', [UserController::class, 'destroy', [AuthMiddl
 $router->get('/api/settings',  [SettingsController::class, 'index',  [AuthMiddleware::class]]);
 $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddleware::class, AdminMiddleware::class]]);
 
+// ── Updates ────────────────────────────────────────────────────
+$router->get('/api/update/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, AdminMiddleware::class]]);
+$router->post('/api/update/apply',    [UpdateController::class, 'apply',     [AuthMiddleware::class, AdminMiddleware::class]]);
+$router->get('/api/update/changelog', [UpdateController::class, 'changelog', [AuthMiddleware::class, AdminMiddleware::class]]);
+
 // ── Backup ─────────────────────────────────────────────────────
 $router->get('/api/backup', [BackupController::class, 'download', [AuthMiddleware::class, AdminMiddleware::class]]);
 $router->post('/api/backup/restore', [BackupController::class, 'restore', [AuthMiddleware::class, AdminMiddleware::class]]);

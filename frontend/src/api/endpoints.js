@@ -5,6 +5,8 @@ export const login = (data) => api.post('/login', data)
 export const logout = () => api.post('/logout')
 export const getMe = () => api.get('/user')
 
+export const getChangelog = () => api.get('/update/changelog')
+
 // Categories
 export const getCategories = (params) => api.get('/categories', { params })
 export const createCategory = (data) => api.post('/categories', data)
@@ -55,6 +57,12 @@ export const deleteUser = (id) => api.delete(`/users/${id}`)
 // Settings
 export const getSettings = () => api.get('/settings')
 export const updateSettings = (data) => api.post('/settings', data)
+
+// Updates
+export const checkUpdate = () => api.get('/update/check')
+export const applyUpdate = () => api.post('/update/apply')
+
+// Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
 /** FormData مع الحقل sql_file */
 export const restoreBackup = (formData) =>
