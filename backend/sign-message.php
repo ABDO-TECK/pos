@@ -14,10 +14,17 @@
  *   header("Content-type: text/plain"); echo ''; exit(0);
  */
 
-// Allow the Vite dev server (localhost:5173) to call this endpoint
-header("Access-Control-Allow-Origin: *");
+// Allow CORS for credentials
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
+header("Access-Control-Allow-Origin: $origin");
+header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
+
+if (empty($_COOKIE['pos_token'])) {
+    http_response_code(401);
+    exit('Unauthorized: session cookie missing');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);

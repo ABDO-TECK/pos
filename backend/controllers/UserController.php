@@ -9,7 +9,17 @@ class UserController extends Controller {
     }
 
     public function index(): void {
-        Response::success($this->userModel->all());
+        $filters = [];
+        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
+        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+
+        $result = $this->userModel->all($filters);
+
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result['data']);
+        }
     }
 
     public function store(): void {

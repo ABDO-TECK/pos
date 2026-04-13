@@ -32,8 +32,31 @@ class User {
         $stmt->execute([$token]);
     }
 
-    public function all(): array {
-        return $this->db->query('SELECT id, name, email, role, is_active, created_at FROM users ORDER BY id DESC')->fetchAll();
+    public function all(array $filters = []): array {
+        $sql = 'SELECT id, name, email, role, is_active, created_at FROM users ORDER BY id DESC';
+        
+        if (!empty($filters['page']) && !empty($filters['limit'])) {
+            $page  = max(1, (int)$filters['page']);
+            $limit = max(1, (int)$filters['limit']);
+            $offset = ($page - 1) * $limit;
+            
+            $total = $this->db->query("SELECT COUNT(*) FROM users")->fetchColumn();
+            
+            $sql .= " LIMIT $limit OFFSET $offset";
+            $data = $this->db->query($sql)->fetchAll();
+            
+            return [
+                'data'       => $data,
+                'pagination' => [
+                    'total'        => (int) $total,
+                    'per_page'     => $limit,
+                    'current_page' => $page,
+                    'last_page'    => ceil($total / $limit)
+                ]
+            ];
+        }
+
+        return ['data' => $this->db->query($sql)->fetchAll()];
     }
 
     public function create(array $data): int {

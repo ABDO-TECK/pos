@@ -27,8 +27,18 @@ class AuthController extends Controller {
 
         $token = $this->userModel->createToken($user['id']);
 
+        // Set HttpOnly cookie for strict security
+        setcookie('pos_token', $token, [
+            'expires'  => time() + TOKEN_LIFETIME,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+
         Response::success([
-            'token' => $token,
+            'token' => $token, // Keep sending in body backwards-compatibility
             'user'  => [
                 'id'    => $user['id'],
                 'name'  => $user['name'],
@@ -39,10 +49,19 @@ class AuthController extends Controller {
     }
 
     public function logout(): void {
-        $token = $this->extractBearerToken();
+        $token = $this->extractToken();
         if ($token) {
             $this->userModel->deleteToken($token);
         }
+        // Clear HttpOnly cookie
+        setcookie('pos_token', '', [
+            'expires'  => time() - 3600,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
         Response::success(null, 'Logged out successfully');
     }
 
@@ -52,7 +71,8 @@ class AuthController extends Controller {
         Response::success($user);
     }
 
-    private function extractBearerToken(): ?string {
+    private function extractToken(): ?string {
+        if (!empty($_COOKIE['pos_token'])) return $_COOKIE['pos_token'];
         $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
         if (str_starts_with($header, 'Bearer ')) {
             return substr($header, 7);

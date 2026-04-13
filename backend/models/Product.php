@@ -53,10 +53,7 @@ class Product {
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
             $rows = $stmt->fetchAll();
-            foreach ($rows as &$row) {
-                $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
-            }
-            unset($row);
+            $this->attachAdditionalBarcodes($rows);
 
             return [
                 'data' => $rows,
@@ -79,10 +76,7 @@ class Product {
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) {
-            $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
-        }
-        unset($row);
+        $this->attachAdditionalBarcodes($rows);
         return $rows;
     }
 
@@ -126,6 +120,22 @@ class Product {
         $stmt = $this->db->prepare('SELECT barcode FROM product_barcodes WHERE product_id = ? ORDER BY id ASC');
         $stmt->execute([$productId]);
         return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'barcode');
+    }
+
+    /** Helper to load barcodes for multiple products in ONE query */
+    private function attachAdditionalBarcodes(array &$rows): void {
+        if (empty($rows)) return;
+        $ids = array_column($rows, 'id');
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $this->db->prepare("SELECT product_id, barcode FROM product_barcodes WHERE product_id IN ($placeholders)");
+        $stmt->execute($ids);
+        $grouped = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $grouped[$row['product_id']][] = $row['barcode'];
+        }
+        foreach ($rows as &$r) {
+            $r['additional_barcodes'] = $grouped[$r['id']] ?? [];
+        }
     }
 
     public function findOwnerProductIdByBarcode(string $barcode): ?int {
@@ -290,10 +300,7 @@ class Product {
              WHERE p.quantity <= p.low_stock_threshold
              ORDER BY p.quantity ASC'
         )->fetchAll();
-        foreach ($rows as &$row) {
-            $row['additional_barcodes'] = $this->getAdditionalBarcodesList((int) $row['id']);
-        }
-        unset($row);
+        $this->attachAdditionalBarcodes($rows);
         return $rows;
     }
 }

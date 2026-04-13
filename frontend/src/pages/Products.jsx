@@ -12,6 +12,7 @@ import toast from 'react-hot-toast'
 import ProductsTab from './products/ProductsTab'
 import CategoriesTab from './products/CategoriesTab'
 import ProductForm from './products/ProductForm'
+import Pagination from '../components/Pagination'
 
 const emptyProduct = {
   name: '',
@@ -50,6 +51,8 @@ export default function Products() {
   const [editProductId, setEditProductId]   = useState(null)
   const [savingProduct, setSavingProduct]   = useState(false)
   const [lowStock, setLowStock]             = useState([])
+  const [currentPage, setCurrentPage]       = useState(1)
+  const [totalPages, setTotalPages]         = useState(1)
 
   // ── Categories ──
   const [categories, setCategories]             = useState([])
@@ -58,23 +61,47 @@ export default function Products() {
   const [categoryForm, setCategoryForm]         = useState({ name: '' })
   const [editCategoryId, setEditCategoryId]     = useState(null)
   const [savingCategory, setSavingCategory]     = useState(false)
+  const [currentPageCat, setCurrentPageCat]     = useState(1)
+  const [totalPagesCat, setTotalPagesCat]       = useState(1)
 
   // ── Load ──
-  const loadProducts = async () => {
+  const loadProducts = async (p = 1) => {
     setLoadingProducts(true)
-    try { setAllProducts((await getProducts({ limit: 9999 })).data.data ?? []) }
+    try { 
+      const res = await getProducts({ page: p, limit: 15 })
+      setAllProducts(res.data.data ?? [])
+      const pg = res.data.pagination
+      if (pg) {
+        setTotalPages(pg.last_page || pg.pages || 1)
+        setCurrentPage(pg.current_page || pg.page || 1)
+      } else {
+        setTotalPages(1)
+        setCurrentPage(1)
+      }
+    }
     finally { setLoadingProducts(false) }
   }
 
-  const loadCategories = async () => {
+  const loadCategories = async (p = 1) => {
     setLoadingCategories(true)
-    try { setCategories((await getCategories()).data.data) }
+    try { 
+      const res = await getCategories({ page: p, limit: 15 })
+      setCategories(res.data.data ?? [])
+      const pg = res.data.pagination
+      if (pg) {
+        setTotalPagesCat(pg.last_page || pg.pages || 1)
+        setCurrentPageCat(pg.current_page || pg.page || 1)
+      } else {
+        setTotalPagesCat(1)
+        setCurrentPageCat(1)
+      }
+    }
     finally { setLoadingCategories(false) }
   }
 
   useEffect(() => {
-    loadProducts()
-    loadCategories()
+    loadProducts(1)
+    loadCategories(1)
     getLowStock().then(r => setLowStock(r.data.data ?? []))
   }, [])
 
@@ -113,14 +140,14 @@ export default function Products() {
         toast.success('تم تحديث المنتج')
       }
       setProductModal(null)
-      loadProducts()
+      loadProducts(currentPage)
     } catch (err) { toast.error(formatProductApiError(err)) }
     finally { setSavingProduct(false) }
   }
 
   const handleDeleteProduct = async (id, name) => {
     if (!confirm(`هل تريد حذف "${name}"؟`)) return
-    try { await deleteProduct(id); toast.success('تم حذف المنتج'); loadProducts() }
+    try { await deleteProduct(id); toast.success('تم حذف المنتج'); loadProducts(currentPage) }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
@@ -134,14 +161,14 @@ export default function Products() {
     try {
       if (categoryModal === 'create') { await createCategory(categoryForm); toast.success('تم إضافة الفئة') }
       else { await updateCategory(editCategoryId, categoryForm); toast.success('تم تحديث الفئة') }
-      setCategoryModal(null); loadCategories()
+      setCategoryModal(null); loadCategories(currentPageCat)
     } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
     finally { setSavingCategory(false) }
   }
 
   const handleDeleteCategory = async (id, name) => {
     if (!confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`)) return
-    try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
+    try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(currentPageCat); loadProducts(currentPage) }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
@@ -172,25 +199,39 @@ export default function Products() {
 
       {/* ── Products Tab ── */}
       {tab === 'products' && (
-        <ProductsTab
-          allProducts={allProducts}
-          loadingProducts={loadingProducts}
-          categories={categories}
-          lowStock={lowStock}
-          onEditProduct={openEditProduct}
-          onDeleteProduct={handleDeleteProduct}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <ProductsTab
+            allProducts={allProducts}
+            loadingProducts={loadingProducts}
+            categories={categories}
+            lowStock={lowStock}
+            onEditProduct={openEditProduct}
+            onDeleteProduct={handleDeleteProduct}
+          />
+          <Pagination 
+            current={currentPage} 
+            total={totalPages} 
+            onPage={(p) => loadProducts(p)} 
+          />
+        </div>
       )}
 
       {/* ── Categories Tab ── */}
       {tab === 'categories' && (
-        <CategoriesTab
-          categories={categories}
-          loadingCategories={loadingCategories}
-          allProducts={allProducts}
-          onEditCategory={openEditCategory}
-          onDeleteCategory={handleDeleteCategory}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <CategoriesTab
+            categories={categories}
+            loadingCategories={loadingCategories}
+            allProducts={allProducts}
+            onEditCategory={openEditCategory}
+            onDeleteCategory={handleDeleteCategory}
+          />
+          <Pagination 
+            current={currentPageCat} 
+            total={totalPagesCat} 
+            onPage={(p) => loadCategories(p)} 
+          />
+        </div>
       )}
 
       {/* ── Product Modal ── */}

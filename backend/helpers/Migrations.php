@@ -25,14 +25,27 @@ class Migrations {
         );
     }
 
+    private array $appliedCache = [];
+    private bool $cacheLoaded = false;
+
     private function applied(string $name): bool {
-        $stmt = $this->db->prepare('SELECT 1 FROM migrations WHERE name = ?');
-        $stmt->execute([$name]);
-        return (bool)$stmt->fetchColumn();
+        if (!$this->cacheLoaded) {
+            try {
+                $stmt = $this->db->query('SELECT name FROM migrations');
+                if ($stmt) {
+                    $this->appliedCache = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                }
+            } catch (Throwable $e) {
+                // Fallback if table doesn't exist yet
+            }
+            $this->cacheLoaded = true;
+        }
+        return in_array($name, $this->appliedCache, true);
     }
 
     private function mark(string $name): void {
         $this->db->prepare('INSERT IGNORE INTO migrations (name) VALUES (?)')->execute([$name]);
+        $this->appliedCache[] = $name; // Sync cache
     }
 
     public function run(): void {

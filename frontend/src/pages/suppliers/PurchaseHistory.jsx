@@ -5,6 +5,7 @@ import useSettingsStore from '../../store/settingsStore'
 import { browserPrintPurchase, buildPurchaseReceiptHTML } from '../../utils/receiptBuilder'
 import useQZPrinter from '../../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../../components/QZPrinterUI'
+import Pagination from '../../components/Pagination'
 import toast from 'react-hot-toast'
 import {
   getSuppliers, getPurchaseInvoices, getPurchaseInvoice, deletePurchaseInvoice,
@@ -49,6 +50,8 @@ export default function PurchaseHistory({ onReturnToCart }) {
   const [deleting, setDeleting]       = useState(false)
   const [filterSupplier, setSupplier] = useState('')
   const [filters, setFilters]         = useState({ date: '', month: '', year: '' })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages]   = useState(1)
   const [suppliers, setSuppliers]     = useState([])
   const searchTimer                   = useRef(null)
   const user                          = useAuthStore((s) => s.user)
@@ -60,16 +63,25 @@ export default function PurchaseHistory({ onReturnToCart }) {
     getSuppliers().then(r => setSuppliers(r.data.data)).catch(console.error)
   }, [])
 
-  const load = async (f = filters, supId = filterSupplier) => {
+  const load = async (f = filters, supId = filterSupplier, p = 1) => {
     setLoading(true)
     try {
-      const params = {}
+      const params = { page: p, limit: 15 }
       if (f.date)  params.date  = f.date
       if (f.month) params.month = f.month
       if (f.year)  params.year  = f.year
       if (supId)   params.supplier_id = supId
       const res = await getPurchaseInvoices(params)
       setInvoices(res.data.data ?? [])
+      
+      const pg = res.data.pagination
+      if (pg) {
+        setTotalPages(pg.last_page || pg.pages || 1)
+        setCurrentPage(pg.current_page || pg.page || 1)
+      } else {
+        setTotalPages(1)
+        setCurrentPage(1)
+      }
     } catch {
       toast.error('فشل تحميل فواتير المشتريات')
     } finally {
@@ -82,21 +94,24 @@ export default function PurchaseHistory({ onReturnToCart }) {
   const handleFilter = (key, val) => {
     const next = { ...filters, [key]: val }
     setFilters(next)
+    setCurrentPage(1)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(next, filterSupplier), 400)
+    searchTimer.current = setTimeout(() => load(next, filterSupplier, 1), 400)
   }
 
   const handleSupplierFilter = (val) => {
     setSupplier(val)
+    setCurrentPage(1)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(filters, val), 400)
+    searchTimer.current = setTimeout(() => load(filters, val, 1), 400)
   }
 
   const clearFilters = () => {
     const cleared = { date: '', month: '', year: '' }
     setFilters(cleared)
     setSupplier('')
-    load(cleared, '')
+    setCurrentPage(1)
+    load(cleared, '', 1)
   }
 
   const openDetail = async (id) => {
@@ -119,7 +134,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
       await deletePurchaseInvoice(selected.id)
       toast.success('تم حذف الفاتورة واسترجاع المخزون')
       setSelected(null)
-      load()
+      load(filters, filterSupplier, currentPage)
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
     } finally {
@@ -201,6 +216,11 @@ export default function PurchaseHistory({ onReturnToCart }) {
                 ))}
               </tbody>
             </table>
+            <Pagination 
+              current={currentPage} 
+              total={totalPages} 
+              onPage={(p) => load(filters, filterSupplier, p)} 
+            />
           </div>
         )}
       </div>

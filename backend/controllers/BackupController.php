@@ -37,7 +37,7 @@ class BackupController extends Controller {
                 foreach ($rows as $row) {
                     $escaped = array_map(function ($v) {
                         if ($v === null) return 'NULL';
-                        return "'" . addslashes((string)$v) . "'";
+                        return $this->db->quote((string)$v);
                     }, array_values($row));
                     $values[] = '(' . implode(', ', $escaped) . ')';
                 }

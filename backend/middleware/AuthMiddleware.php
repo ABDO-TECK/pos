@@ -43,6 +43,10 @@ class AuthMiddleware {
     }
 
     private function extractToken(): ?string {
+        if (!empty($_COOKIE['pos_token'])) {
+            return $_COOKIE['pos_token'];
+        }
+
         // 1. Standard $_SERVER key (works when .htaccess passes the header)
         $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 

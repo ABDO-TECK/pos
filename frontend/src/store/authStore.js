@@ -15,8 +15,8 @@ const useAuthStore = create(
       login: async (email, password) => {
         const res = await loginApi({ email, password })
         const { token, user } = res.data.data
-        localStorage.setItem('pos_token', token)
-        set({ user, token, isAuthenticated: true })
+        localStorage.removeItem('pos_token') // Clear old ones if migrating
+        set({ user, token: null, isAuthenticated: true })
         return user
       },
 
@@ -30,7 +30,7 @@ const useAuthStore = create(
     }),
     {
       name: 'pos_auth',
-      partialize: (s) => ({ user: s.user, token: s.token, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ user: s.user, isAuthenticated: s.isAuthenticated }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true)
       },

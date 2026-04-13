@@ -71,6 +71,7 @@ function ensureSecurity() {
     qz.security.setSignaturePromise(toSign => (resolve, reject) => {
         fetch(`${cfg.signUrl}?request=${encodeURIComponent(toSign)}`, {
             cache: 'no-store',
+            credentials: 'include',
             headers: { 'Content-Type': 'text/plain' },
         })
             .then(r => {

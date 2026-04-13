@@ -10,6 +10,7 @@ import useAuthStore from '../store/authStore'
 import useCartStore from '../store/cartStore'
 import useQZPrinter from '../hooks/useQZPrinter'
 import { QZStatusBar, QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
+import Pagination from '../components/Pagination'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -27,6 +28,8 @@ export default function Sales() {
   const [detailLoading, setDL]  = useState(false)
   const [deleting, setDeleting]  = useState(false)
   const [filters, setFilters]   = useState({ date: '', month: '', year: '' })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages]   = useState(1)
   const searchTimer             = useRef(null)
   const settings                = useSettingsStore()
   const navigate                = useNavigate()
@@ -35,15 +38,24 @@ export default function Sales() {
   const isAdmin                 = user?.role === 'admin'
   const qz = useQZPrinter()
 
-  const load = async (f = filters) => {
+  const load = async (f = filters, p = 1) => {
     setLoading(true)
     try {
-      const params = {}
+      const params = { page: p, limit: 15 }
       if (f.date)  params.date  = f.date
       if (f.month) params.month = f.month
       if (f.year)  params.year  = f.year
       const res = await getSales(params)
       setSales(res.data.data ?? [])
+      
+      const pg = res.data.pagination
+      if (pg) {
+        setTotalPages(pg.last_page || pg.pages || 1)
+        setCurrentPage(pg.current_page || pg.page || 1)
+      } else {
+        setTotalPages(1)
+        setCurrentPage(1)
+      }
     } catch {
       toast.error('فشل تحميل المبيعات')
     } finally {
@@ -51,19 +63,21 @@ export default function Sales() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(filters, 1) }, [])
 
   const handleFilter = (key, val) => {
     const next = { ...filters, [key]: val }
     setFilters(next)
+    setCurrentPage(1)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(next), 400)
+    searchTimer.current = setTimeout(() => load(next, 1), 400)
   }
 
   const clearFilters = () => {
     const cleared = { date: '', month: '', year: '' }
     setFilters(cleared)
-    load(cleared)
+    setCurrentPage(1)
+    load(cleared, 1)
   }
 
   const openDetail = async (id) => {
@@ -98,7 +112,7 @@ export default function Sales() {
       await deleteSale(selected.id)
       toast.success('تم حذف الفاتورة')
       setSelected(null)
-      load()
+      load(filters, currentPage)
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
     } finally {
@@ -196,6 +210,11 @@ export default function Sales() {
                 ))}
               </tbody>
             </table>
+            <Pagination 
+              current={currentPage} 
+              total={totalPages} 
+              onPage={(p) => load(filters, p)} 
+            />
           </div>
         )}
       </div>

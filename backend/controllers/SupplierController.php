@@ -104,8 +104,16 @@ class SupplierController extends Controller {
             'date'        => $this->getParam('date'),
             'month'       => $this->getParam('month'),
             'year'        => $this->getParam('year'),
+            'page'        => $this->getParam('page'),
+            'limit'       => $this->getParam('limit'),
         ];
-        Response::success($this->supplierModel->getPurchaseInvoices($filters));
+        
+        $result = $this->supplierModel->getPurchaseInvoices($filters);
+        if (isset($result['pagination'])) {
+            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+        } else {
+            Response::success($result);
+        }
     }
 
     /** Get single purchase invoice detail (like sales detail) */

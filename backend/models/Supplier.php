@@ -199,15 +199,41 @@ class Supplier {
             $params['year']   = $filters['year'];
         }
 
+        $limitStr = "LIMIT 200";
+        if (isset($filters['page']) && isset($filters['limit'])) {
+            $page  = max(1, (int)$filters['page']);
+            $limit = max(1, (int)$filters['limit']);
+            $offset = ($page - 1) * $limit;
+            
+            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM purchase_invoices pi WHERE ' . implode(' AND ', $where));
+            $countStmt->execute($params);
+            $total = (int) $countStmt->fetchColumn();
+            
+            $limitStr = "LIMIT $limit OFFSET $offset";
+        }
+
         $stmt = $this->db->prepare(
             'SELECT pi.*, s.name AS supplier_name
              FROM purchase_invoices pi
              JOIN suppliers s ON s.id = pi.supplier_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY pi.created_at DESC
-             LIMIT 200'
+             ' . $limitStr
         );
         $stmt->execute($params);
+
+        if (isset($page, $limit)) {
+            return [
+                'data' => $stmt->fetchAll(),
+                'pagination' => [
+                    'total'        => $total,
+                    'per_page'     => $limit,
+                    'current_page' => $page,
+                    'last_page'    => ceil($total / $limit)
+                ]
+            ];
+        }
+
         return $stmt->fetchAll();
     }
 

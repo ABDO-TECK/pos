@@ -32,8 +32,35 @@ class RateLimiter
     public function check(): void
     {
         $ip   = $this->getClientIp();
-        $file = $this->storageDir . '/' . md5($ip) . '.json';
         $now  = time();
+
+        // ── 1. استخدام APCu في حال توفره (أداء أعلى بكثير) ──
+        if (function_exists('apcu_inc')) {
+            $key = 'rate_limit_' . md5($ip) . '_' . floor($now / $this->windowSeconds);
+            $success = false;
+            $count = apcu_inc($key, 1, $success);
+            
+            if (!$success) {
+                apcu_store($key, 1, $this->windowSeconds + 10);
+                $count = 1;
+            }
+            
+            if ($count > $this->maxRequests) {
+                $retryAfter = max(1, $this->windowSeconds - ($now % $this->windowSeconds));
+                header("Retry-After: $retryAfter");
+                http_response_code(429);
+                echo json_encode([
+                    'status'      => 'error',
+                    'message'     => 'تم تجاوز الحد المسموح من الطلبات. يرجى الانتظار.',
+                    'retry_after' => $retryAfter,
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            return;
+        }
+
+        // ── 2. التراجع (Fallback) لنظام الملفات في حال غياب APCu ──
+        $file = $this->storageDir . '/' . md5($ip) . '.json';
 
         // ── قراءة + تحديث ذري (atomic read-modify-write) ─────
         $handle = @fopen($file, 'c+');
