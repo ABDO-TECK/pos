@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -31,12 +31,12 @@ html[data-theme="dark"] {
   --shadow-md:  0 4px 20px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.2);
 }
 
-/* ── Breakpoints ──────────────────────────────────────────────────────────
-   --sm:  ≥ 480px   (large phone landscape)
-   Drawer shell: ≤1023px (phone + tablet — top bar + slide-over sidebar)
-   --lg:  ≥ 1024px  (desktop — sticky sidebar)
+/* â”€â”€ Breakpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   --sm:  â‰¥ 480px   (large phone landscape)
+   Drawer shell: â‰¤1023px (phone + tablet â€” top bar + slide-over sidebar)
+   --lg:  â‰¥ 1024px  (desktop â€” sticky sidebar)
    Mobile-first: default = mobile, then override upward.
-────────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 html { font-size: 15px; direction: rtl; }
 
 body {
@@ -59,7 +59,7 @@ input, select, textarea {
   font-size: 1rem;
 }
 
-/* إخفاء أسهم الزيادة/النقصان من حقول الأرقام */
+/* Ø¥Ø®ÙØ§Ø¡ Ø£Ø³Ù‡Ù… Ø§Ù„Ø²ÙŠØ§Ø¯Ø©/Ø§Ù„Ù†Ù‚ØµØ§Ù† Ù…Ù† Ø­Ù‚ÙˆÙ„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -223,7 +223,7 @@ html[data-theme="dark"] .alert-warning {
 @keyframes fadeIn  { from { opacity: 0; } }
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } }
 
-/* ── App shell ─────────────────────────────────────────────────────────── */
+/* â”€â”€ App shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app-layout {
   display: flex;
   height: 100vh; /* fallback */
@@ -232,7 +232,7 @@ html[data-theme="dark"] .alert-warning {
   overflow: hidden;
 }
 
-/* Mobile top header — hidden on desktop */
+/* Mobile top header â€” hidden on desktop */
 .mobile-header {
   display: none;
   position: fixed;
@@ -279,7 +279,7 @@ html[data-theme="dark"] .alert-warning {
   z-index: 299;
 }
 
-/* Sidebar interior — hover/active via CSS (smooth transitions, no inline hover fights) */
+/* Sidebar interior â€” hover/active via CSS (smooth transitions, no inline hover fights) */
 .sidebar-panel {
   width: 100%;
   height: 100vh;
@@ -395,7 +395,7 @@ html.theme-changing .mobile-header {
   min-width: 0;
 }
 
-/* ── Responsive page header (title + button) ──────────────────────────── */
+/* â”€â”€ Responsive page header (title + button) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .page-header {
   display: flex;
   align-items: center;
@@ -406,7 +406,7 @@ html.theme-changing .mobile-header {
 }
 .page-header h2 { font-size: 1.2rem; font-weight: 700; }
 
-/* ── Stats grid ───────────────────────────────────────────────────────── */
+/* â”€â”€ Stats grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -414,7 +414,7 @@ html.theme-changing .mobile-header {
   margin-bottom: 1.25rem;
 }
 
-/* ── Form grid ────────────────────────────────────────────────────────── */
+/* â”€â”€ Form grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -423,10 +423,10 @@ html.theme-changing .mobile-header {
 .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
 .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
 
-/* ── Table wrapper (horizontal scroll on mobile) ─────────────────────── */
+/* â”€â”€ Table wrapper (horizontal scroll on mobile) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* ── Phone + tablet: same as mobile — top bar + drawer sidebar ─────────── */
+/* â”€â”€ Phone + tablet: same as mobile â€” top bar + drawer sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 1023px) {
   .mobile-header { display: flex; }
 
@@ -453,7 +453,7 @@ html.theme-changing .mobile-header {
   .sidebar-close-btn { display: flex !important; }
 }
 
-/* ── Phone-only: tighter type + modals ───────────────────────────────── */
+/* â”€â”€ Phone-only: tighter type + modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 767px) {
   .modal {
     padding: 1.25rem;
@@ -463,7 +463,7 @@ html.theme-changing .mobile-header {
   html { font-size: 14px; }
 }
 
-/* ── Responsive 2-col grid (collapses on small screens) ──────────────── */
+/* â”€â”€ Responsive 2-col grid (collapses on small screens) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .resp-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -476,7 +476,7 @@ html.theme-changing .mobile-header {
 /* Show-mobile: hidden by default, shown only on mobile */
 .show-mobile { display: none; }
 
-/* ── Scrollable tab bar ───────────────────────────────────────────────── */
+/* â”€â”€ Scrollable tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tabs-scroll {
   display: flex;
   overflow-x: auto;
@@ -488,7 +488,7 @@ html.theme-changing .mobile-header {
 .tabs-scroll::-webkit-scrollbar { display: none; }
 .tabs-scroll button { white-space: nowrap; flex-shrink: 0; }
 
-/* ── Filter bar ───────────────────────────────────────────────────────── */
+/* â”€â”€ Filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -498,14 +498,14 @@ html.theme-changing .mobile-header {
 .filter-bar .input,
 .filter-bar select { min-width: 130px; }
 
-/* ── Card grid (auto-fill) ────────────────────────────────────────────── */
+/* â”€â”€ Card grid (auto-fill) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.75rem;
 }
 
-/* ── Product grid (POS & Suppliers shared) ───────────────────────────── */
+/* â”€â”€ Product grid (POS & Suppliers shared) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
@@ -515,7 +515,7 @@ html.theme-changing .mobile-header {
   align-content: start;
 }
 
-/* ── Generic page padding fix for phone ──────────────────────────────── */
+/* â”€â”€ Generic page padding fix for phone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 767px) {
   h1, h2 { font-size: 1.1rem !important; }
 
@@ -535,7 +535,7 @@ html.theme-changing .mobile-header {
   .filter-bar select { width: 100%; }
 }
 
-/* ── Login page (theme-aware background) ──────────────────────────────── */
+/* â”€â”€ Login page (theme-aware background) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .login-page {
   min-height: 100vh;
   display: flex;
@@ -575,7 +575,7 @@ html[data-theme="dark"] .login-theme-toggle:hover {
   background: rgba(255,255,255,.06);
 }
 
-/* ── Barcode camera scanner (Products — portal over modals) ─────────── */
+/* â”€â”€ Barcode camera scanner (Products â€” portal over modals) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .barcode-scanner-overlay {
   padding: 0.75rem;
   align-items: center;
@@ -627,7 +627,7 @@ html[data-theme="dark"] .login-theme-toggle:hover {
   overflow: hidden;
 }
 
-/* contain: لا يقصّ إطار الكاميرا (cover يخفي أجزاء قد يكون فيها الباركود) */
+/* contain: Ù„Ø§ ÙŠÙ‚ØµÙ‘ Ø¥Ø·Ø§Ø± Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§ (cover ÙŠØ®ÙÙŠ Ø£Ø¬Ø²Ø§Ø¡ Ù‚Ø¯ ÙŠÙƒÙˆÙ† ÙÙŠÙ‡Ø§ Ø§Ù„Ø¨Ø§Ø±ÙƒÙˆØ¯) */
 .barcode-scanner-video {
   display: block;
   width: 100%;
@@ -636,13 +636,13 @@ html[data-theme="dark"] .login-theme-toggle:hover {
   object-position: center;
 }
 
-/* إطار أخضر في المنتصف + تعتيم حوله */
+/* Ø¥Ø·Ø§Ø± Ø£Ø®Ø¶Ø± ÙÙŠ Ø§Ù„Ù…Ù†ØªØµÙ + ØªØ¹ØªÙŠÙ… Ø­ÙˆÙ„Ù‡ */
 .barcode-scanner-frame {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  /* مستطيل أوسع يناسب الباركود الخطي (EAN/Code128) */
+  /* Ù…Ø³ØªØ·ÙŠÙ„ Ø£ÙˆØ³Ø¹ ÙŠÙ†Ø§Ø³Ø¨ Ø§Ù„Ø¨Ø§Ø±ÙƒÙˆØ¯ Ø§Ù„Ø®Ø·ÙŠ (EAN/Code128) */
   width: min(88vw, 300px);
   height: min(28vw, 120px);
   max-width: 300px;
@@ -689,7 +689,7 @@ html[data-theme="dark"] .barcode-scanner-error {
   margin-top: 0.25rem;
 }
 
-/* ── Responsive Split Layout (List + Ledger Detail) ───────── */
+/* â”€â”€ Responsive Split Layout (List + Ledger Detail) â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .split-layout {
   display: flex;
   height: 100%;
@@ -725,7 +725,7 @@ html[data-theme="dark"] .barcode-scanner-error {
   }
 }
 
-/* ── Specific Responsive Layouts ────────────────────────────── */
+/* â”€â”€ Specific Responsive Layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .ledger-header {
   display: flex;
   align-items: center;
@@ -804,7 +804,7 @@ html[data-theme="dark"] .barcode-scanner-error {
   }
 }
 
-/* ── QZ Printer Picker ── */
+/* â”€â”€ QZ Printer Picker â”€â”€ */
 .qz-printer-item {
   padding: 0.65rem 1rem;
   text-align: right;
@@ -834,4 +834,56 @@ html[data-theme="dark"] .barcode-scanner-error {
 html[data-theme="dark"] .qz-printer-item.selected {
   background: rgba(34, 197, 94, 0.15);
   color: var(--primary);
+}
+
+/* ── Payment / Modal buttons ───────────────────────────── */
+.pay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.4rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 0.82rem;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.pay-btn:hover { background: var(--bg); }
+html[data-theme="dark"] .pay-btn:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+
+.pay-btn.active-normal {
+  border-color: var(--primary);
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--primary);
+}
+.pay-btn.active-credit {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.cust-mode-btn {
+  flex: 1;
+  padding: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cust-mode-btn:hover { background: var(--bg); }
+html[data-theme="dark"] .cust-mode-btn:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+
+.cust-mode-btn.active {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
 }

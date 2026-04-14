@@ -207,12 +207,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
             <div style={{ display: 'flex', gap: '0.4rem' }}>
               {['existing', 'new'].map(mode => (
                 <button key={mode} onClick={() => setCustomerMode(mode)}
-                  style={{
-                    flex: 1, padding: '0.35rem', fontSize: '0.8rem', fontWeight: 600,
-                    borderRadius: 'var(--radius)', border: `1px solid ${customerMode === mode ? 'var(--danger)' : 'var(--border)'}`,
-                    background: customerMode === mode ? 'rgba(239,68,68,.1)' : 'var(--surface)',
-                    color: customerMode === mode ? 'var(--danger)' : 'var(--text)', cursor: 'pointer',
-                  }}>
+                  className={`cust-mode-btn ${customerMode === mode ? 'active' : ''}`}>
                   {mode === 'existing' ? '👤 عميل موجود' : '➕ عميل جديد'}
                 </button>
               ))}
@@ -261,9 +256,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
         )}
 
         {/* Checkout button */}
-        <button className="btn btn-primary btn-lg"
-          style={{ width: '100%', justifyContent: 'center', fontSize: '1.05rem',
-            ...(isCreditSale ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : {}) }}
+        <button className={`btn ${isCreditSale ? 'btn-danger' : 'btn-primary'} btn-lg`}
+          style={{ width: '100%', justifyContent: 'center', fontSize: '1.05rem' }}
           onClick={handleCheckout} disabled={loading}>
           {loading ? <span className="spinner" /> : <CheckCircle2 size={20} />}
           {rebillingInvoiceId ? 'حفظ التعديل — '
@@ -286,15 +280,9 @@ function Row({ label, value, bold, color }) {
 }
 
 function PayBtn({ active, onClick, icon, label, isCredit }) {
+  const activeClass = active ? (isCredit ? 'active-credit' : 'active-normal') : '';
   return (
-    <button onClick={onClick} style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-      padding: '0.5rem 0.4rem', borderRadius: 'var(--radius)', fontWeight: 600, fontSize: '0.82rem',
-      border: `2px solid ${active ? (isCredit ? 'var(--danger)' : 'var(--primary)') : 'var(--border)'}`,
-      background: active ? (isCredit ? 'rgba(239,68,68,.1)' : '#dcfce7') : 'var(--surface)',
-      color: active ? (isCredit ? 'var(--danger)' : 'var(--primary-d)') : 'var(--text)',
-      cursor: 'pointer', whiteSpace: 'nowrap',
-    }}>
+    <button onClick={onClick} className={`pay-btn ${activeClass}`}>
       {icon} {label}
     </button>
   )

@@ -16,7 +16,7 @@
  *    real file — the .htaccess rewrite condition is !-f).
  */
 
-import { buildReceiptHTML } from './receiptBuilder'
+import { buildReceiptHTML, buildPurchaseReceiptHTML } from './receiptBuilder'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -230,7 +230,6 @@ export async function printInvoice(invoice, change = 0, settings = {}, printerNa
  * Build and print a purchase invoice via QZ Tray.
  */
 export async function printPurchaseInvoice(invoice, settings = {}, printerName = null) {
-    const { buildPurchaseReceiptHTML } = await import('./receiptBuilder')
     const html = buildPurchaseReceiptHTML(invoice, settings)
     await printHTML(html, printerName)
 }
