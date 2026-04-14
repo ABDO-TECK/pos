@@ -60,7 +60,7 @@ export const updateSettings = (data) => api.post('/settings', data)
 
 // Updates
 export const checkUpdate = () => api.get('/update/check')
-export const applyUpdate = () => api.post('/update/apply')
+export const applyUpdate = () => api.post('/update/apply', null, { timeout: 300_000 })
 
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })

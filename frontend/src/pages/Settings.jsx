@@ -117,20 +117,30 @@ export default function Settings() {
     }
   }
 
+  const [updateLogs, setUpdateLogs]       = useState([])
+
   const handleApplyUpdate = async () => {
     if (!confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)')) return
     
     setApplyingUpdate(true)
+    setUpdateLogs([])
     try {
-      await applyUpdate()
+      const res = await applyUpdate()
+      const logs = res.data?.data?.logs || []
+      setUpdateLogs(logs)
       toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
-      setTimeout(() => window.location.reload(), 2000)
+      setTimeout(() => window.location.reload(), 3000)
     } catch (err) {
       const msg = err.response?.data?.message || 'فشل تطبيق التحديث.'
-      const logs = err.response?.data?.errors?.logs
+      const logs = err.response?.data?.errors?.logs || err.response?.data?.data?.logs || []
+      setUpdateLogs(logs)
       toast.error(msg)
       if (Array.isArray(logs) && logs.length) {
         console.error('سجل التحديث:', logs)
+      }
+      const diag = err.response?.data?.errors?.diagnostics || err.response?.data?.data?.diagnostics
+      if (diag) {
+        console.error('تشخيص البيئة:', diag)
       }
       setApplyingUpdate(false)
     }
@@ -263,17 +273,43 @@ export default function Settings() {
           )}
         </div>
 
-        {applyingUpdate && (
-          <div style={{ padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--primary)', borderRadius: 'var(--radius)', marginTop: '0.5rem' }}>
-            <div style={{ fontWeight: 600, color: 'var(--primary-d)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className="spinner" style={{ borderColor: 'currentColor', borderRightColor: 'transparent' }} /> جاري التحديث... الرجاء عدم إغلاق هذه الصفحة
+        {(applyingUpdate || updateLogs.length > 0) && (
+          <div style={{ padding: '1rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginTop: '0.5rem' }}>
+            {applyingUpdate && (
+              <div style={{ fontWeight: 600, color: 'var(--primary-d)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="spinner" style={{ borderColor: 'currentColor', borderRightColor: 'transparent' }} /> جاري التحديث... الرجاء عدم إغلاق هذه الصفحة
+              </div>
+            )}
+            <div
+              style={{
+                background: '#1a1a2e',
+                color: '#e0e0e0',
+                padding: '0.8rem 1rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontFamily: 'Consolas, monospace',
+                maxHeight: '260px',
+                overflowY: 'auto',
+                direction: 'ltr',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.2rem',
+              }}
+            >
+              {updateLogs.length > 0 ? (
+                updateLogs.map((line, i) => (
+                  <div key={i} style={{ 
+                    color: line.startsWith('✅') ? '#4ade80' : line.startsWith('⚠️') ? '#fbbf24' : line.startsWith('❌') ? '#f87171' : line.startsWith('🎉') ? '#34d399' : '#e0e0e0',
+                    lineHeight: 1.5,
+                  }}>
+                    {line || '\u00A0'}
+                  </div>
+                ))
+              ) : (
+                <div style={{ color: '#888' }}>في انتظار استجابة الخادم...</div>
+              )}
             </div>
-            <ul style={{ margin: 0, padding: '0 1.2rem', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', color: 'var(--text)' }}>
-              <li>1️⃣ جاري إنشاء نسخة احتياطية من قاعدة البيانات...</li>
-              <li>2️⃣ جاري سحب أحدث ملفات النظام...</li>
-              <li>3️⃣ جاري تثبيت الحزم والمتطلبات (إن وجدت)...</li>
-              <li>🔄 سيتم إعادة تحميل الصفحة تلقائياً فور الانتهاء.</li>
-            </ul>
           </div>
         )}
 
