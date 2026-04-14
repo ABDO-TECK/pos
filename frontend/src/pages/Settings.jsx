@@ -125,8 +125,13 @@ export default function Settings() {
       await applyUpdate()
       toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
       setTimeout(() => window.location.reload(), 2000)
-    } catch {
-      toast.error('فشل تطبيق التحديث. يرجى مراجعة السجلات والتواصل مع الدعم.')
+    } catch (err) {
+      const msg = err.response?.data?.message || 'فشل تطبيق التحديث.'
+      const logs = err.response?.data?.errors?.logs
+      toast.error(msg)
+      if (Array.isArray(logs) && logs.length) {
+        console.error('سجل التحديث:', logs)
+      }
       setApplyingUpdate(false)
     }
   }
