@@ -27,7 +27,7 @@ function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposi
               flex: 1, padding: '0.35rem', fontSize: '0.82rem', fontWeight: 600,
               borderRadius: 'var(--radius)',
               border: `2px solid ${paymentType === m.id ? (m.id === 'credit' ? 'var(--danger)' : 'var(--primary)') : 'var(--border)'}`,
-              background: paymentType === m.id ? (m.id === 'credit' ? 'rgba(239,68,68,.1)' : '#dcfce7') : 'var(--surface)',
+              background: paymentType === m.id ? (m.id === 'credit' ? 'rgba(239,68,68,.1)' : 'var(--sup-primary-soft)') : 'var(--surface)',
               color: paymentType === m.id ? (m.id === 'credit' ? 'var(--danger)' : 'var(--primary-d)') : 'var(--text)',
               cursor: 'pointer',
             }}>
@@ -650,7 +650,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           }
           .pos-tab.active {
             color: var(--primary);
-            background: rgba(34,197,94,.08);
+            background: var(--sup-primary-soft);
           }
           .tab-badge {
             position: absolute;

@@ -145,7 +145,7 @@ export default function SupplierAccounts() {
                 >
                   <div style={{
                     width: '36px', height: '36px', borderRadius: '50%',
-                    background: bal > 0 ? 'rgba(239,68,68,.12)' : 'rgba(34,197,94,.12)',
+                    background: bal > 0 ? 'rgba(239,68,68,.12)' : 'var(--sup-primary-soft)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: '1rem', flexShrink: 0,
                   }}>🏭</div>
@@ -190,8 +190,8 @@ export default function SupplierAccounts() {
 
             <div className="ledger-header-actions">
               <div className="ledger-balance" style={{
-                background: ledgerData.balance > 0 ? 'rgba(239,68,68,.08)' : 'rgba(34,197,94,.08)',
-                border: `1px solid ${ledgerData.balance > 0 ? '#fca5a5' : '#86efac'}`,
+                background: ledgerData.balance > 0 ? 'rgba(239,68,68,.08)' : 'var(--sup-primary-soft)',
+                border: `1px solid ${ledgerData.balance > 0 ? '#fca5a5' : 'var(--sup-settled-border)'}`,
                 borderRadius: 'var(--radius)', padding: '0.4rem 0.9rem', textAlign: 'center',
               }}>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.1rem' }}>الرصيد المستحق</div>
@@ -328,7 +328,7 @@ export default function SupplierAccounts() {
                 <div style={{ display: 'flex', gap: '0.35rem' }}>
                   {[
                     { id: 'credit', label: 'دفع مبلغ للمورد',  color: 'var(--danger)',   bg: 'rgba(239,68,68,.1)' },
-                    { id: 'debit',  label: 'استرداد من المورد', color: 'var(--primary)', bg: 'rgba(34,197,94,.1)' },
+                    { id: 'debit',  label: 'استرداد من المورد', color: 'var(--primary)', bg: 'var(--sup-primary-soft)' },
                   ].map(d => (
                     <button key={d.id} type="button" onClick={() => setPayType(d.id)}
                       style={{
