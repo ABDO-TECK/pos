@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Pencil, Trash2, Search, Tag } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
+import Pagination from '../../components/Pagination'
 
 export default function CategoriesTab({
   categories,
@@ -12,10 +13,19 @@ export default function CategoriesTab({
   const [categoryTabSearch, setCategoryTabSearch] = useState('')
 
   const categoryTabQ = categoryTabSearch.trim().toLowerCase()
+  const [currentPage, setCurrentPage] = useState(1)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [categoryTabQ])
+
   const filteredCategoriesTab = useMemo(() => {
     if (!categoryTabQ) return categories
     return categories.filter((c) => (c.name || '').toLowerCase().includes(categoryTabQ))
   }, [categories, categoryTabQ])
+
+  const totalPages = Math.ceil(filteredCategoriesTab.length / 15) || 1
+  const paginatedCategories = filteredCategoriesTab.slice((currentPage - 1) * 15, currentPage * 15)
 
   return (
     <>
@@ -57,17 +67,17 @@ export default function CategoriesTab({
                     لا توجد فئات — أضف فئة جديدة للبدء
                   </td>
                 </tr>
-              ) : filteredCategoriesTab.length === 0 ? (
+              ) : paginatedCategories.length === 0 ? (
                 <tr>
                   <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     لا توجد فئات تطابق البحث
                   </td>
                 </tr>
-              ) : filteredCategoriesTab.map((c, i) => {
+              ) : paginatedCategories.map((c, i) => {
                 const count = allProducts.filter((p) => p.category_id === c.id).length
                 return (
                   <tr key={c.id}>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(i + 1)}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatNumber(((currentPage - 1) * 15) + i + 1)}</td>
                     <td style={{ fontWeight: 600 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                         <Tag size={14} color="var(--secondary)" />{c.name}
@@ -87,6 +97,11 @@ export default function CategoriesTab({
           </table>
         </div>
       </div>
+      <Pagination 
+        current={currentPage} 
+        total={totalPages} 
+        onPage={setCurrentPage} 
+      />
     </>
   )
 }

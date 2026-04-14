@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Pencil, Trash2, Search, X, SlidersHorizontal, AlertTriangle, Warehouse, Camera } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
+import Pagination from '../../components/Pagination'
 import toast from 'react-hot-toast'
 
 const STOCK_FILTERS = [
@@ -49,8 +50,15 @@ export default function ProductsTab({
   const [sortKey, setSortKey]           = useState('name_asc')
   const [searchCameraOpen, setSearchCameraOpen] = useState(false)
   const [SearchScannerLazy, setSearchScannerLazy] = useState(null)
+  
+  const [currentPage, setCurrentPage] = useState(1)
 
   const q = search.trim().toLowerCase()
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [q, categoryFilter, stockFilter, sortKey])
 
   const displayProducts = useMemo(() => {
     let list = allProducts
@@ -143,6 +151,9 @@ export default function ProductsTab({
     sortKey !== 'name_asc' ||
     Boolean(categoryFilter) ||
     Boolean(search.trim())
+
+  const totalPages = Math.ceil(displayProducts.length / 15) || 1
+  const paginatedProducts = displayProducts.slice((currentPage - 1) * 15, currentPage * 15)
 
   const clearProductFilters = () => {
     setStockFilter('all')
@@ -285,9 +296,9 @@ export default function ProductsTab({
             <tbody>
               {loadingProducts ? (
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}><span className="spinner" /></td></tr>
-              ) : displayProducts.length === 0 ? (
+              ) : paginatedProducts.length === 0 ? (
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد منتجات</td></tr>
-              ) : displayProducts.map((p) => (
+              ) : paginatedProducts.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontWeight: 600 }}>
                     {p.name}
@@ -329,6 +340,12 @@ export default function ProductsTab({
           </table>
         </div>
       </div>
+
+      <Pagination 
+        current={currentPage} 
+        total={totalPages} 
+        onPage={setCurrentPage} 
+      />
 
       {/* Search Barcode Camera Scanner */}
       {SearchScannerLazy && searchCameraOpen && (
