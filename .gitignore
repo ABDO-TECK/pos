@@ -2,6 +2,7 @@
 private-key.pem
 *.pem
 *.key
+*digital-certificate.txt
 # مجلد الشهادات المحلية — اترك README فقط إن رغبت
 certs/*.pem
 certs/*-key.pem
