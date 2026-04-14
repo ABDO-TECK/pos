@@ -117,6 +117,10 @@ class UpdateController extends Controller {
 
         // 2. Fetch and Check
         $remote = $this->fetchRemoteVersion();
+        if (!$remote) {
+            Logger::error('Update Check Failed', ['error' => 'Could not fetch remote version.json. Check internet connection.']);
+            Response::error('تعذر الاتصال بخادم التحديثات أو الملف غير صالح. يرجى التحقق من اتصالك بالإنترنت.', 500);
+        }
         $requiresNpm = $remote['requires_npm_install'] ?? false;
 
         // 3. Git Operations
