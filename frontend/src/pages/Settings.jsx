@@ -336,15 +336,17 @@ export default function Settings() {
             </button>
           )}
 
-           <button
+          {hasUpdate && (
+             <button
              type="button"
              onClick={handleApplyUpdate}
              disabled={applyingUpdate}
              className="btn btn-primary"
              style={{ background: 'var(--success)', border: 'none' }}
            >
-             {applyingUpdate ? 'جاري التحديث...' : 'تحديث الآن (فرض التحديث)'}
+             {applyingUpdate ? 'جاري التحديث...' : 'تحديث الآن'}
            </button>
+          )}
         </div>
 
         {showChangelog && changelog.length > 0 && (
