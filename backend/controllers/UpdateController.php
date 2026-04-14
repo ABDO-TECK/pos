@@ -334,6 +334,14 @@ class UpdateController extends Controller {
             [$revOut, $revCode] = $this->runGit(['rev-parse', '--git-dir']);
             if ($revCode !== 0) {
                 Logger::error('Update: .git not found', $diag);
+                file_put_contents($this->rootDir . '/backend/git_debug_error.log', json_encode([
+                    'diag' => $diag,
+                    'output' => $output,
+                    'gitDir' => $gitDir,
+                    'is_dir' => is_dir($gitDir),
+                    'file_exists' => file_exists($gitDir),
+                    'revOut' => $revOut
+                ], JSON_PRETTY_PRINT));
                 Response::error(
                     'لا يمكن التحديث التلقائي: المجلد ليس مستنسخاً عبر Git (لا يوجد .git).' . "\n"
                     . 'الحل: افتح Terminal وشغّل:' . "\n"
