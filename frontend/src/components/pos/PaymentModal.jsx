@@ -181,16 +181,17 @@ export default function PaymentModal({ onClose, onSuccess }) {
           </div>
         )}
 
-        {/* Change */}
         {currentMethod.cashInput && !isCreditSale && (
-          <div style={{
-            background: computedChange > 0 ? '#dcfce7' : 'var(--bg)',
+          <div 
+            className={computedChange > 0 ? "change-box-active" : ""}
+            style={{
+            background: computedChange > 0 ? undefined : 'var(--bg)',
             borderRadius: 'var(--radius)', padding: '0.75rem 1rem',
             display: 'flex', justifyContent: 'space-between',
             fontWeight: 700, fontSize: '1.05rem', marginBottom: '1rem',
           }}>
             <span>الباقي</span>
-            <span style={{ color: 'var(--primary)' }}>{formatCurrency(computedChange)}</span>
+            <span style={{ color: computedChange > 0 ? 'inherit' : 'var(--primary)' }}>{formatCurrency(computedChange)}</span>
           </div>
         )}
 
