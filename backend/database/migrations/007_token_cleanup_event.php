@@ -5,7 +5,7 @@ return new class {
         try {
                 // إنشاء event لتنظيف الـ tokens (يومياً)
                 // إذا كان scheduler غير مفعّل — نحذف يدوياً
-                $this->db->exec('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()');
+                $db->exec('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()');
             } catch (Throwable $e) {
                 Logger::warning('Migration 007', ['error' => $e->getMessage()]);
             }

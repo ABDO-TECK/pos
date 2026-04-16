@@ -7,16 +7,40 @@ import useAuthStore from './store/authStore'
 import useSettingsStore from './store/settingsStore'
 import useThemeStore from './store/themeStore'
 
-// Code splitting via lazy imports
-const Login     = lazy(() => import('./pages/Login'))
-const POS       = lazy(() => import('./pages/POS'))
-const Products  = lazy(() => import('./pages/Products'))
-const Suppliers = lazy(() => import('./pages/Suppliers'))
-const Reports   = lazy(() => import('./pages/Reports'))
-const Users     = lazy(() => import('./pages/Users'))
-const Sales     = lazy(() => import('./pages/Sales'))
-const Settings  = lazy(() => import('./pages/Settings'))
-const Customers = lazy(() => import('./pages/Customers'))
+/**
+ * Retry wrapper for lazy imports — handles transient network/SSL failures.
+ * Retries up to `maxRetries` times with exponential delay before reloading the page.
+ */
+function lazyRetry(importFn, maxRetries = 2) {
+  return lazy(() => {
+    const attempt = (retriesLeft) =>
+      importFn().catch((err) => {
+        if (retriesLeft > 0) {
+          return new Promise((resolve) => setTimeout(resolve, 500)).then(() =>
+            attempt(retriesLeft - 1)
+          )
+        }
+        // All retries failed — force a full page reload (clears stale chunks)
+        if (!sessionStorage.getItem('chunk_reload')) {
+          sessionStorage.setItem('chunk_reload', '1')
+          window.location.reload()
+        }
+        throw err
+      })
+    return attempt(maxRetries)
+  })
+}
+
+// Code splitting via lazy imports with retry
+const Login     = lazyRetry(() => import('./pages/Login'))
+const POS       = lazyRetry(() => import('./pages/POS'))
+const Products  = lazyRetry(() => import('./pages/Products'))
+const Suppliers = lazyRetry(() => import('./pages/Suppliers'))
+const Reports   = lazyRetry(() => import('./pages/Reports'))
+const Users     = lazyRetry(() => import('./pages/Users'))
+const Sales     = lazyRetry(() => import('./pages/Sales'))
+const Settings  = lazyRetry(() => import('./pages/Settings'))
+const Customers = lazyRetry(() => import('./pages/Customers'))
 
 function PageLoader() {
   return (

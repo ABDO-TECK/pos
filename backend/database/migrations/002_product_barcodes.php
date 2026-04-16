@@ -2,7 +2,7 @@
 
 return new class {
     public function up(PDO $db): void {
-        $this->db->exec(
+        $db->exec(
                 'CREATE TABLE IF NOT EXISTS product_barcodes (
                     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                     product_id INT UNSIGNED NOT NULL,

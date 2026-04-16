@@ -3,7 +3,7 @@
 return new class {
     public function up(PDO $db): void {
         try {
-                $this->db->exec(
+                $db->exec(
                     'ALTER TABLE suppliers
                      ADD COLUMN initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00
                      COMMENT "رصيد مبدئي — لمورد قديم له دين مسبق"

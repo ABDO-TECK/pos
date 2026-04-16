@@ -3,7 +3,7 @@
 return new class {
     public function up(PDO $db): void {
         try {
-                $this->db->exec(
+                $db->exec(
                     'ALTER TABLE products
                      ADD COLUMN box_barcode VARCHAR(100) NULL DEFAULT NULL UNIQUE AFTER barcode'
                 );
@@ -13,7 +13,7 @@ return new class {
                 }
             }
             try {
-                $this->db->exec(
+                $db->exec(
                     'ALTER TABLE products
                      ADD COLUMN units_per_box INT NOT NULL DEFAULT 1 COMMENT "عدد القطع في الصندوق الواحد" AFTER low_stock_threshold'
                 );

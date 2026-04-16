@@ -3,7 +3,7 @@
 return new class {
     public function up(PDO $db): void {
         try {
-                $this->db->exec(
+                $db->exec(
                     "ALTER TABLE invoices
                      MODIFY COLUMN payment_method
                      ENUM('cash','card','vodafone_cash','instapay','other_wallet','credit')

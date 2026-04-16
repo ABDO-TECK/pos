@@ -2,7 +2,7 @@
 
 return new class {
     public function up(PDO $db): void {
-        $this->db->exec(
+        $db->exec(
                 'CREATE TABLE IF NOT EXISTS supplier_ledger (
                     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                     supplier_id INT UNSIGNED NOT NULL,

@@ -11,7 +11,7 @@ return new class {
             ];
             foreach ($indexes as $sql) {
                 try {
-                    $this->db->exec($sql);
+                    $db->exec($sql);
                 } catch (Throwable $e) {
                     // الفهرس قد يكون موجوداً — تجاهل
                     if (!str_contains($e->getMessage(), 'Duplicate key name')) {
