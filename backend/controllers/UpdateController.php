@@ -149,16 +149,34 @@ class UpdateController extends Controller {
     }
 
     private function fetchRemoteVersion(): ?array {
+        $certPath = __DIR__ . '/../certs/cacert.pem';
+        
+        // Auto-download cacert.pem if missing (e.g. fresh clone on XAMPP windows)
+        if (!file_exists($certPath)) {
+            if (!is_dir(dirname($certPath))) {
+                mkdir(dirname($certPath), 0777, true);
+            }
+            $certContent = @file_get_contents('https://curl.se/ca/cacert.pem');
+            if ($certContent) {
+                file_put_contents($certPath, $certContent);
+            }
+        }
+
         $ch = curl_init();
-        curl_setopt_array($ch, [
+        $curlOptions = [
             CURLOPT_URL            => $this->repoUrl,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_CAINFO         => __DIR__ . '/../certs/cacert.pem',
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_TIMEOUT        => 15,
             CURLOPT_FOLLOWLOCATION => true,
-        ]);
+        ];
+
+        if (file_exists($certPath)) {
+            $curlOptions[CURLOPT_CAINFO] = $certPath;
+        }
+
+        curl_setopt_array($ch, $curlOptions);
         $result   = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
