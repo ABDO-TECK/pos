@@ -13,22 +13,35 @@ export default function Inventory() {
   const [newQty, setNewQty]     = useState(0)
   const searchTimer             = useRef(null)
 
-  const load = async (s = '') => {
-    setLoading(true)
+  const searchRef = useRef('')
+
+  const load = async (s = '', showLoader = true) => {
+    if (showLoader) setLoading(true)
     try {
       const [invRes, lowRes] = await Promise.all([getInventory({ search: s }), getLowStock()])
       setProducts(invRes.data.data)
       setLowStock(lowRes.data.data)
-    } catch { toast.error('فشل تحميل المخزون') }
-    finally { setLoading(false) }
+    } catch { 
+      if (showLoader) toast.error('فشل تحميل المخزون') 
+    }
+    finally { 
+      if (showLoader) setLoading(false) 
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { 
+    load('', true) 
+    const intervalId = setInterval(() => {
+      load(searchRef.current, false)
+    }, 10000)
+    return () => clearInterval(intervalId)
+  }, [])
 
   const handleSearch = (val) => {
     setSearch(val)
+    searchRef.current = val
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(val), 400)
+    searchTimer.current = setTimeout(() => load(val, true), 400)
   }
 
   const handleAdjust = async () => {

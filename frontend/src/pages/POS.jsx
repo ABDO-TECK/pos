@@ -44,7 +44,13 @@ export default function POS() {
   const tax      = Math.round(subtotal * rate * 100) / 100
   const total    = Math.round((subtotal + tax) * 100) / 100
 
-  useEffect(() => { fetchProducts() }, [])
+  useEffect(() => {
+    fetchProducts()
+    const intervalId = setInterval(() => {
+      fetchProducts() // Auto-refresh products in background (real-time feel)
+    }, 10000)
+    return () => clearInterval(intervalId)
+  }, [])
 
   const handleSuccess = (inv, ch) => {
     setInvoice(inv)

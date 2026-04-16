@@ -329,16 +329,26 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     : allProducts
 
   useEffect(() => {
-    getSuppliers().then(r => setSuppliers(r.data.data ?? []))
-    setLoading(true)
-    getProducts({ limit: 9999 })
-      .then((r) => {
-        const list = r.data.data ?? []
-        setAllProducts(list)
-        useProductStore.getState().setProducts(list)
-      })
-      .catch(() => toast.error('فشل تحميل المنتجات'))
-      .finally(() => setLoading(false))
+    const fetchAll = (isInitial = false) => {
+      getSuppliers().then(r => setSuppliers(r.data.data ?? [])).catch(() => {})
+      if (isInitial) setLoading(true)
+      getProducts({ limit: 9999 })
+        .then((r) => {
+          const list = r.data.data ?? []
+          setAllProducts(list)
+          useProductStore.getState().setProducts(list)
+        })
+        .catch((err) => {
+          if (isInitial) toast.error('فشل تحميل المنتجات')
+        })
+        .finally(() => {
+          if (isInitial) setLoading(false)
+        })
+    }
+    
+    fetchAll(true)
+    const intervalId = setInterval(() => fetchAll(false), 10000)
+    return () => clearInterval(intervalId)
   }, [])
 
   /* ── Cart helpers ── */
