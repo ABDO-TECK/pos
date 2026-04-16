@@ -2,7 +2,7 @@
 
 class UpdateController extends Controller {
 
-    private string $repoUrl = 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json';
+    private string $repoUrl = 'https://api.github.com/repos/ABDO-TECK/pos/contents/version.json?ref=main';
     private string $localVersionFile;
     private string $rootDir;
 
@@ -170,6 +170,10 @@ class UpdateController extends Controller {
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_TIMEOUT        => 15,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTPHEADER     => [
+                'Accept: application/vnd.github.v3.raw',
+                'Cache-Control: no-cache',
+            ],
         ];
 
         if (file_exists($certPath)) {
