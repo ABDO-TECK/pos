@@ -39,8 +39,7 @@ export default function useQZPrinter() {
             .then(() => { setQzStatus('ready'); setRemoteError(null); loadPrinters() })
             .catch((err) => {
                 setQzStatus('error')
-                // حفظ رسالة الخطأ إذا كان الاتصال من جهاز خارجي
-                if (err?.isRemoteQZ) {
+                if (err?.isQZError || err?.certUrl) {
                     setRemoteError({ message: err.message, certUrl: err.certUrl })
                 }
             })
@@ -60,7 +59,7 @@ export default function useQZPrinter() {
             .then(() => { setQzStatus('ready'); loadPrinters() })
             .catch((err) => {
                 setQzStatus('error')
-                if (err?.isRemoteQZ) {
+                if (err?.isQZError || err?.certUrl) {
                     setRemoteError({ message: err.message, certUrl: err.certUrl })
                 }
             })

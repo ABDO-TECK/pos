@@ -1,12 +1,29 @@
 <?php
 
 class CsrfMiddleware {
+    
+    /** Routes that don't require CSRF verification (pre-auth) */
+    private array $exempt = [
+        '/api/login',
+        '/api/csrf-cookie',
+    ];
+    
     public function handle(callable $next): mixed {
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         
         // Skip safe methods
         if (in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
             return $next();
+        }
+        
+        // Skip exempt routes (pre-authentication)
+        $uri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+        $uri = preg_replace('#^/pos/backend#', '', $uri);
+        $uri = preg_replace('#^/api/v\d+/#', '/api/', $uri);
+        foreach ($this->exempt as $path) {
+            if ($uri === $path) {
+                return $next();
+            }
         }
         
         $cookieToken = $_COOKIE['XSRF-TOKEN'] ?? '';

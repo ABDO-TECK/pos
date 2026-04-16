@@ -29,14 +29,11 @@ function getQZ() {
 
 function getCfg() {
     const base = window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }
-    // عند الوصول من جهاز آخر على الشبكة، نستخدم hostname الصفحة كـ QZ host
-    // لأن QZ Tray يعمل على نفس جهاز السيرفر
-    const pageHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-    const isRemote = pageHost !== 'localhost' && pageHost !== '127.0.0.1'
+    // QZ Tray دائماً يعمل على جهاز العميل (صاحب الطابعة)، وليس على السيرفر.
+    // المتصفح يجب أن يتصل دائماً بـ localhost — بغض النظر عن عنوان السيرفر.
     return {
         ...base,
-        host: isRemote ? pageHost : (base.host || 'localhost'),
-        _isRemote: isRemote,
+        host: 'localhost',
     }
 }
 
@@ -45,7 +42,7 @@ function getCfg() {
 let _securitySet = false
 
 function ensureSecurity() {
-    if (_securitySet) return
+    // Always re-apply security callbacks — QZ Tray resets them after disconnect
     const qz  = getQZ()
     const cfg = getCfg()
 
@@ -77,17 +74,14 @@ function ensureSecurity() {
             .then(r => {
                 if (r.ok) {
                     r.text().then(t => {
-                        // If server returned an empty body (anonymous mode), resolve without arg
                         resolve(t || undefined)
                     })
                 } else {
-                    // Non-OK (404, 500, etc.) → fall back to unsigned mode
                     console.warn('[QZ] sign-message endpoint returned', r.status, '— using unsigned mode')
                     resolve()
                 }
             })
             .catch(() => {
-                // Network error (CORS, offline, etc.) → unsigned fallback
                 resolve()
             })
     })
@@ -103,11 +97,20 @@ let _connecting = null  // in-flight promise guard
  * رسالة تعليمات واضحة عند فشل الاتصال من جهاز خارجي.
  * السبب الأكثر شيوعاً: المتصفح لم يقبل شهادة QZ Tray بعد.
  */
-function buildRemoteQZError(host) {
-    const certUrl = `https://${host}:8181`
+function buildQZError() {
     return {
-        message: `لا يمكن الاتصال بـ QZ Tray عبر الشبكة.\n\nلتفعيل الطباعة من هذا الجهاز:\n1. افتح الرابط التالي في المتصفح:\n   ${certUrl}\n2. اضغط \"متابعة\" أو \"Advanced → Proceed\" لقبول الشهادة\n3. ارجع لهذه الصفحة وأعد المحاولة`,
-        certUrl,
+        message: [
+            'لا يمكن الاتصال بـ QZ Tray على هذا الجهاز.',
+            '',
+            'للطباعة من هذا الجهاز يجب:',
+            '1. تثبيت QZ Tray على هذا الجهاز (qz.io/download)',
+            '2. تشغيله قبل فتح النظام',
+            '3. قبول شهادة الأمان — افتح في المتصفح:',
+            '   https://localhost:8181',
+            '   ثم Advanced → Proceed',
+            '4. ارجع لهذه الصفحة وأعد المحاولة',
+        ].join('\n'),
+        certUrl: 'https://localhost:8181',
     }
 }
 
@@ -119,34 +122,31 @@ export async function connectQZ() {
 
     if (_connecting) return _connecting
 
+    // Re-apply security every time (QZ Tray resets callbacks after disconnect)
+    _securitySet = false
     ensureSecurity()
 
     const connectOpts = {
-        host: cfg.host,
-        retries: cfg.retries ?? 2,
-        delay: cfg.delay ?? 0,
+        host:      'localhost',   // QZ Tray دائماً على نفس جهاز المتصفح
+        port:      cfg.port ?? { secure: [8181, 8282, 8383, 8484], insecure: [8182, 8283, 8384, 8485] },
+        keepAlive: cfg.keepAlive ?? 60,
+        retries:   cfg.retries ?? 2,
+        delay:     cfg.delay ?? 0,
     }
 
-    if (cfg._isRemote) {
-        console.info(`[QZ] Remote mode → connecting to ${cfg.host} via secure WebSocket (wss://)`)
-    }
+    console.info(`[QZ] Connecting to QZ Tray on localhost ports=${JSON.stringify(connectOpts.port)}`)
 
     _connecting = qz.websocket
         .connect(connectOpts)
         .then(() => { _connecting = null; return true })
         .catch(err => {
             _connecting = null
-
-            // عند فشل الاتصال من جهاز خارجي — إضافة تعليمات واضحة
-            if (cfg._isRemote) {
-                const info = buildRemoteQZError(cfg.host)
-                console.error(`[QZ] ${info.message}`)
-                const remoteErr = new Error(info.message)
-                remoteErr.certUrl = info.certUrl
-                remoteErr.isRemoteQZ = true
-                throw remoteErr
-            }
-            throw err
+            const info = buildQZError()
+            console.error(`[QZ] ${info.message}`)
+            const qzErr = new Error(info.message)
+            qzErr.certUrl = info.certUrl
+            qzErr.isQZError = true
+            throw qzErr
         })
 
     return _connecting

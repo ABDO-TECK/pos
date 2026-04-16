@@ -18,40 +18,36 @@ export function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRet
     }
     const { bg, text, label } = cfg[status] ?? cfg.idle
 
-    // عند فشل الاتصال من جهاز خارجي — إظهار تعليمات واضحة
+    // عند فشل الاتصال بـ QZ Tray — إظهار تعليمات واضحة
     if (status === 'error' && remoteError) {
         return (
             <div style={{
-                padding: '0.5rem 0.75rem',
+                padding: '0.6rem 0.75rem',
                 background: '#fef3c7', color: '#92400e', borderRadius: 'var(--radius)',
                 fontSize: '0.72rem', fontWeight: 600,
-                display: 'flex', flexDirection: 'column', gap: '0.4rem',
+                display: 'flex', flexDirection: 'column', gap: '0.35rem',
             }}>
-                <span>🖨️ لتفعيل الطباعة عبر الشبكة:</span>
+                <span> لتفعيل الطباعة على هذا الجهاز:</span>
                 <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>
-                    1. افتح{' '}
-                    <a
-                        href={remoteError.certUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: '#1d4ed8', textDecoration: 'underline', fontWeight: 600 }}
-                    >
-                        هذا الرابط
-                    </a>
-                    {' '}واقبل الشهادة
+                    ① تأكد أن <strong>QZ Tray</strong> مثبت ويعمل على <strong>هذا الجهاز</strong>
                 </span>
-                <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>2. ارجع هنا واضغط «إعادة المحاولة»</span>
+                <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>
+                    ② افتح{' '}
+                    <a href="https://localhost:8181" target="_blank" rel="noopener noreferrer"
+                        style={{ color: '#1d4ed8', textDecoration: 'underline', fontWeight: 700 }}>
+                        https://localhost:8181
+                    </a>
+                    {' '}واضغط <strong>Advanced → Proceed</strong>
+                </span>
+                <span style={{ fontWeight: 400, fontSize: '0.68rem' }}>③ ارجع هنا واضغط «إعادة المحاولة»</span>
                 {onRetry && (
-                    <button
-                        onClick={onRetry}
-                        style={{
-                            marginTop: '0.25rem', padding: '0.3rem 0.6rem',
-                            background: '#1d4ed8', color: '#fff', border: 'none',
-                            borderRadius: 'var(--radius)', cursor: 'pointer',
-                            fontSize: '0.7rem', fontWeight: 600,
-                        }}
-                    >
-                        🔄 إعادة المحاولة
+                    <button onClick={onRetry} style={{
+                        marginTop: '0.1rem', padding: '0.3rem 0.6rem',
+                        background: '#1d4ed8', color: '#fff', border: 'none',
+                        borderRadius: 'var(--radius)', cursor: 'pointer',
+                        fontSize: '0.7rem', fontWeight: 600, alignSelf: 'flex-start',
+                    }}>
+                         إعادة المحاولة
                     </button>
                 )}
             </div>

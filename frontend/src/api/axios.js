@@ -6,9 +6,20 @@ const api = axios.create({
   withCredentials: true,
 })
 
+// Helper: read a cookie by name
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+  return match ? decodeURIComponent(match[2]) : null
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pos_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  
+  // Attach XSRF-TOKEN header for CSRF protection
+  const xsrf = getCookie('XSRF-TOKEN')
+  if (xsrf) config.headers['X-XSRF-TOKEN'] = xsrf
+  
   return config
 })
 
