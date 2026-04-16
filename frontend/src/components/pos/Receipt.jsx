@@ -106,85 +106,102 @@ export default function Receipt({ invoice, change, onClose }) {
                     <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
                 </div>
 
-                {/* ── Receipt preview (screen only — uses invoice-container CSS) ── */}
+                {/* ── Receipt preview (Matches Printed Version Exactly) ── */}
                 <div style={{
-                    border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                    padding: '0.75rem', background: '#fff',
-                    fontFamily: "Arial, Tahoma, 'DejaVu Sans', sans-serif",
-                    fontSize: '0.82rem', lineHeight: 1.5, color: '#000',
+                    background: '#e5e7eb', padding: '1rem',
+                    borderRadius: 'var(--radius)',
                     maxHeight: '55vh', overflowY: 'auto',
+                    display: 'flex', justifyContent: 'center'
                 }}>
-                    {/* Header */}
-                    <div style={{ textAlign: 'center', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1.5px solid #000' }}>
-                        <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>🛒 {storeName || 'سوبر ماركت'}</div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>فاتورة رقم: #{formatNumber(invoice.id)}</div>
-                    </div>
-
-                    {/* Info rows — time + cashier on same line */}
-                    <div style={{ marginBottom: '6px', fontSize: '0.72rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
-                            <span><strong>التاريخ:</strong> {formatDate(invoice.created_at)}</span>
-                            <span><strong>طريقة الدفع:</strong> {METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method}</span>
+                    {/* The 80mm Thermal Paper */}
+                    <div style={{
+                        background: '#ffffff',
+                        width: '80mm', // standard thermal size
+                        maxWidth: '100%',
+                        padding: '4mm',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                        fontFamily: "Arial, Tahoma, 'DejaVu Sans', sans-serif",
+                        fontSize: '3mm', lineHeight: 1.2, color: '#000',
+                        direction: 'rtl', textShadow: 'none',
+                    }}>
+                        {/* Header */}
+                        <div style={{
+                            textAlign: 'center', marginBottom: '2mm',
+                            paddingBottom: '2mm', borderBottom: '1.5pt solid #000'
+                        }}>
+                            <h2 style={{ fontSize: '5mm', margin: '0.5mm 0', fontWeight: 900, color: '#000' }}>
+                                {storeName || 'سوبر ماركت'}
+                            </h2>
+                            <div style={{ fontWeight: 900, fontSize: '3.5mm', marginTop: '1mm' }}>
+                                فاتورة رقم: #{formatNumber(invoice.id)}
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
-                            <span><strong>الوقت:</strong> {new Date(invoice.created_at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}</span>
-                            <span><strong>الكاشير:</strong> {invoice.cashier_name ?? '—'}</span>
-                        </div>
-                    </div>
 
-                    {/* Items table — no currency symbol in price/total columns */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px', fontSize: '0.7rem' }}>
-                        <thead>
-                            <tr style={{ background: '#f0f0f0' }}>
-                                <Th>#</Th>
-                                <Th align="right">المنتج</Th>
-                                <Th>الكمية</Th>
-                                <Th>السعر</Th>
-                                <Th>الإجمالي</Th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(invoice.items ?? []).map((item, i) => (
-                                <tr key={item.id ?? i}>
-                                    <Td>{formatNumber(i + 1)}</Td>
-                                    <Td align="right">{item.product_name ?? item.name}</Td>
-                                    <Td>{formatNumber(item.quantity)}</Td>
-                                    <Td>{formatNumber(parseFloat(item.price).toFixed(2))}</Td>
-                                    <Td>{formatNumber((parseFloat(item.price) * parseFloat(item.quantity)).toFixed(2))}</Td>
+                        {/* Details */}
+                        <div style={{ margin: '1.5mm 0', paddingBottom: '1mm' }}>
+                            <InfoRow label="التاريخ" value={formatDate(invoice.created_at)} />
+                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method} />
+                            <InfoRow label="الوقت" value={new Date(invoice.created_at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })} />
+                            <InfoRow label="الكاشير" value={invoice.cashier_name ?? '—'} />
+                        </div>
+
+                        {/* Items table */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', margin: '1.5mm 0' }}>
+                            <thead>
+                                <tr>
+                                    <Th>#</Th>
+                                    <Th align="right">المنتج</Th>
+                                    <Th>الكمية</Th>
+                                    <Th>السعر</Th>
+                                    <Th>الإجمالي</Th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {(invoice.items ?? []).map((item, i) => (
+                                    <tr key={item.id ?? i}>
+                                        <Td>{formatNumber(i + 1)}</Td>
+                                        <Td align="right" isName>{item.product_name ?? item.name}</Td>
+                                        <Td>{formatNumber(item.quantity)}</Td>
+                                        <Td>{formatNumber(parseFloat(item.price).toFixed(2))}</Td>
+                                        <Td>{formatNumber((parseFloat(item.price) * parseFloat(item.quantity)).toFixed(2))}</Td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
 
-                    {/* Totals */}
-                    <div style={{ paddingTop: '4px' }}>
-                        <TotalLine label="المجموع الجزئي" value={formatCurrency(invoice.subtotal)} />
-                        {parseFloat(invoice.discount) > 0 && (
-                            <TotalLine label="الخصم" value={`- ${formatCurrency(invoice.discount)}`} />
-                        )}
-                        {taxEnabled && parseFloat(invoice.tax) > 0 && (
-                            <TotalLine label={`ضريبة (${formatPercent(taxRate)})`} value={formatCurrency(invoice.tax)} />
-                        )}
-                        <TotalLine label="الإجمالي" value={formatCurrency(invoice.total)} bold />
-                        {isCash && (
-                            <>
-                                <TotalLine label="المدفوع" value={formatCurrency(invoice.amount_paid)} />
-                                <TotalLine label="المسترد" value={formatCurrency(changeAmt)} />
-                            </>
-                        )}
-                        {invoice.payment_method === 'credit' && (
-                            <>
-                                {parseFloat(invoice.amount_paid) > 0 && (
-                                    <TotalLine label="عربون مدفوع" value={formatCurrency(invoice.amount_paid)} />
-                                )}
-                                <TotalLine label="متبقي آجلاً" value={formatCurrency(invoice.amount_due ?? (invoice.total - invoice.amount_paid))} bold />
-                            </>
-                        )}
-                    </div>
+                        {/* Totals */}
+                        <div style={{ marginTop: '1mm' }}>
+                            <TotalLine label="المجموع الجزئي" value={formatCurrency(invoice.subtotal)} />
+                            {parseFloat(invoice.discount) > 0 && (
+                                <TotalLine label="الخصم" value={`- ${formatCurrency(invoice.discount)}`} />
+                            )}
+                            {taxEnabled && parseFloat(invoice.tax) > 0 && (
+                                <TotalLine label={`ضريبة (${formatPercent(taxRate)})`} value={formatCurrency(invoice.tax)} />
+                            )}
+                            <TotalLine label="الإجمالي" value={formatCurrency(invoice.total)} grand />
+                            {isCash && (
+                                <>
+                                    <TotalLine label="المدفوع" value={formatCurrency(invoice.amount_paid)} />
+                                    <TotalLine label="المسترد" value={formatCurrency(changeAmt)} />
+                                </>
+                            )}
+                            {invoice.payment_method === 'credit' && (
+                                <>
+                                    {parseFloat(invoice.amount_paid) > 0 && (
+                                        <TotalLine label="عربون مدفوع" value={formatCurrency(invoice.amount_paid)} />
+                                    )}
+                                    <TotalLine label="متبقي آجلاً" value={formatCurrency(invoice.amount_due ?? (invoice.total - invoice.amount_paid))} grand />
+                                </>
+                            )}
+                        </div>
 
-                    {/* Footer */}
-                    <div style={{ textAlign: 'center', marginTop: '8px', paddingTop: '4px', fontSize: '0.78rem', fontWeight: 700 }}>
-                        شكراً لزيارتكم 
+                        {/* Footer */}
+                        <div style={{
+                            textAlign: 'center', marginTop: '2mm',
+                            fontSize: '3mm', fontWeight: 700, color: '#000'
+                        }}>
+                            <p style={{ margin: '0.5mm 0' }}>شكراً لزيارتكم — نتمنى لكم تجربة ممتعة</p>
+                        </div>
                     </div>
                 </div>
 
@@ -280,9 +297,9 @@ export default function Receipt({ invoice, change, onClose }) {
 
 function InfoRow({ label, value }) {
     return (
-        <div style={{ display: 'flex', gap: '4px', margin: '2px 0', fontSize: '0.78rem' }}>
-            <span style={{ fontWeight: 800 }}>{label}:</span>
-            <span>{value}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0.8mm 0', fontSize: '3mm' }}>
+            <span style={{ fontWeight: 900, whiteSpace: 'nowrap' }}>{label}:</span>
+            <span style={{ textAlign: 'left' }}>{value}</span>
         </div>
     )
 }
@@ -290,36 +307,39 @@ function InfoRow({ label, value }) {
 function Th({ children, align = 'center' }) {
     return (
         <th style={{
-            padding: '3px 4px', fontSize: '0.78rem', fontWeight: 900,
-            border: '1.5px solid #000', textAlign: align,
-            background: '#fff', color: '#000',
+            padding: '0.8mm 1mm', fontSize: '2.8mm', fontWeight: 900,
+            border: '1pt solid #000', textAlign: align,
+            background: '#fff', color: '#000', verticalAlign: 'middle',
         }}>
             {children}
         </th>
     )
 }
 
-function Td({ children, align = 'center' }) {
+function Td({ children, align = 'center', isName }) {
     return (
         <td style={{
-            padding: '3px 4px', fontSize: '0.78rem', fontWeight: 700,
-            border: '1.5px solid #000', textAlign: align,
-            background: '#fff', color: '#000',
+            padding: '0.8mm 1mm', fontSize: '2.8mm', fontWeight: 700,
+            border: '1pt solid #000', textAlign: align,
+            background: '#fff', color: '#000', verticalAlign: 'middle',
+            maxWidth: isName ? '25mm' : 'auto', wordBreak: isName ? 'break-word' : 'normal'
         }}>
             {children}
         </td>
     )
 }
 
-function TotalLine({ label, value, bold }) {
+function TotalLine({ label, value, grand }) {
     return (
         <div style={{
             display: 'flex', justifyContent: 'space-between',
-            padding: bold ? '2px 0' : '1px 0',
-            fontWeight: bold ? 900 : 700,
-            fontSize: bold ? '0.92rem' : '0.82rem',
-            borderTop: bold ? '1.5px solid #000' : 'none',
-            borderBottom: bold ? '1.5px solid #000' : 'none',
+            margin: grand ? '0.5mm 0 0.8mm 0' : '0.8mm 0',
+            padding: grand ? '1mm 0' : '0',
+            fontSize: grand ? '4mm' : '3mm',
+            fontWeight: grand ? 900 : 700,
+            color: '#000',
+            borderTop: grand ? '1.5pt solid #000' : 'none',
+            borderBottom: grand ? '1.5pt solid #000' : 'none',
         }}>
             <span>{label}</span>
             <span>{value}</span>
