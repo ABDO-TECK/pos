@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { login as loginApi, logout as logoutApi } from '../api/endpoints'
+import { login as loginApi, logout as logoutApi, getCsrfCookie } from '../api/endpoints'
 
 const useAuthStore = create(
   persist(
@@ -13,6 +13,7 @@ const useAuthStore = create(
       setHasHydrated: (val) => set({ _hasHydrated: val }),
 
       login: async (email, password) => {
+        try { await getCsrfCookie() } catch(e) {}
         const res = await loginApi({ email, password })
         const { token, user } = res.data.data
         localStorage.removeItem('pos_token') // Clear old ones if migrating

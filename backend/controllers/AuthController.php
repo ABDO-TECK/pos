@@ -8,7 +8,7 @@ class AuthController extends Controller {
         $this->userModel = new User();
     }
 
-    public function login(): void {
+    public function login() {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'email'    => 'required|email',
@@ -16,13 +16,13 @@ class AuthController extends Controller {
         ]);
 
         if ($errors) {
-            Response::error('Validation failed', 422, $errors);
+            return Response::error('Validation failed', 422, $errors);
         }
 
         $user = $this->userModel->findByEmail($data['email']);
 
         if (!$user || !password_verify($data['password'], $user['password'])) {
-            Response::unauthorized('Invalid email or password');
+            return Response::unauthorized('Invalid email or password');
         }
 
         $token = $this->userModel->createToken($user['id']);
@@ -37,7 +37,7 @@ class AuthController extends Controller {
             'samesite' => 'Strict',
         ]);
 
-        Response::success([
+        return Response::success([
             'token' => $token, // Keep sending in body backwards-compatibility
             'user'  => [
                 'id'    => $user['id'],
@@ -48,7 +48,7 @@ class AuthController extends Controller {
         ], 'Login successful');
     }
 
-    public function logout(): void {
+    public function logout() {
         $token = $this->extractToken();
         if ($token) {
             $this->userModel->deleteToken($token);
@@ -62,13 +62,26 @@ class AuthController extends Controller {
             'httponly' => true,
             'samesite' => 'Strict',
         ]);
-        Response::success(null, 'Logged out successfully');
+        return Response::success(null, 'Logged out successfully');
     }
 
-    public function me(): void {
+    public function csrfCookie() {
+        $token = bin2hex(random_bytes(32));
+        setcookie('XSRF-TOKEN', $token, [
+            'expires'  => time() + TOKEN_LIFETIME,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+            'httponly' => false, // Cannot be httponly because frontend js must read it
+            'samesite' => 'Strict',
+        ]);
+        return Response::success(null, 'CSRF cookie set');
+    }
+
+    public function me() {
         $auth = $_SERVER['AUTH_USER'];
         $user = $this->userModel->findById($auth['id']);
-        Response::success($user);
+        return Response::success($user);
     }
 
     private function extractToken(): ?string {
@@ -80,3 +93,6 @@ class AuthController extends Controller {
         return null;
     }
 }
+
+
+

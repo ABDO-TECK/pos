@@ -14,7 +14,7 @@ class SaleController extends Controller {
         $this->db            = Database::getInstance();
     }
 
-    private function getSettings(): array {
+    private function getSettings() {
         try {
             $rows = $this->db->query('SELECT `key`, `value` FROM settings')->fetchAll();
             $s = [];
@@ -26,7 +26,7 @@ class SaleController extends Controller {
         }
     }
 
-    public function index(): void {
+    public function index() {
         $filters = [
             'date'  => $this->getParam('date'),
             'month' => $this->getParam('month'),
@@ -38,28 +38,28 @@ class SaleController extends Controller {
         $result = $this->invoiceModel->all($filters);
 
         if (isset($result['pagination'])) {
-            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
         } else {
-            Response::success($result);
+            return Response::success($result);
         }
     }
 
-    public function show(string $id): void {
+    public function show(string $id) {
         $invoice = $this->invoiceModel->findById((int)$id);
-        if (!$invoice) Response::notFound('Invoice not found');
-        Response::success($invoice);
+        if (!$invoice) return Response::notFound('Invoice not found');
+        return Response::success($invoice);
     }
 
-    public function store(): void {
+    public function store() {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'items'          => 'required',
             'payment_method' => 'required',
         ]);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         if (empty($data['items']) || !is_array($data['items'])) {
-            Response::error('Cart cannot be empty', 400);
+            return Response::error('Cart cannot be empty', 400);
         }
 
         $replaceInvoiceId = isset($data['invoice_id']) ? (int) $data['invoice_id'] : 0;
@@ -67,7 +67,7 @@ class SaleController extends Controller {
         if ($replaceInvoiceId > 0) {
             $existingInvoice = $this->invoiceModel->findById($replaceInvoiceId);
             if (!$existingInvoice) {
-                Response::notFound('Invoice not found');
+                return Response::notFound('Invoice not found');
             }
         }
 
@@ -77,11 +77,11 @@ class SaleController extends Controller {
         $enrichedItems = [];
         foreach ($data['items'] as $item) {
             if (empty($item['product_id']) || empty($item['quantity'])) {
-                Response::error('Invalid item data', 400);
+                return Response::error('Invalid item data', 400);
             }
             $product = $this->productModel->findById((int)$item['product_id']);
             if (!$product) {
-                Response::error("Product ID {$item['product_id']} not found", 400);
+                return Response::error("Product ID {$item['product_id']} not found", 400);
             }
             // Negative stock allowed — no stock check
             $enrichedItems[] = [
@@ -198,7 +198,7 @@ class SaleController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             Logger::error('فشل إنشاء عملية بيع', ['error' => $e->getMessage()]);
-            Response::serverError('Failed to process sale');
+            return Response::serverError('Failed to process sale');
         }
 
         $invoice = $this->invoiceModel->findById($invoiceId);
@@ -210,7 +210,7 @@ class SaleController extends Controller {
         );
 
         $isUpdate = $replaceInvoiceId > 0;
-        Response::success([
+        return Response::success([
             'invoice'          => $invoice,
             'low_stock_alerts' => array_values($lowStock),
         ], $isUpdate ? 'Invoice updated' : 'Sale completed', $isUpdate ? 200 : 201);
@@ -219,11 +219,11 @@ class SaleController extends Controller {
     /**
      * Permanently delete invoice and its lines; restore product quantities to stock.
      */
-    public function destroy(string $id): void {
+    public function destroy(string $id) {
         $invoiceId = (int) $id;
         $invoice   = $this->invoiceModel->findById($invoiceId);
         if (!$invoice) {
-            Response::notFound('Invoice not found');
+            return Response::notFound('Invoice not found');
         }
 
         $db = $this->db;
@@ -237,9 +237,11 @@ class SaleController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             Logger::error('فشل حذف الفاتورة', ['error' => $e->getMessage()]);
-            Response::serverError('Failed to delete invoice');
+            return Response::serverError('Failed to delete invoice');
         }
 
-        Response::success(null, 'Invoice deleted');
+        return Response::success(null, 'Invoice deleted');
     }
 }
+
+

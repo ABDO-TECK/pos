@@ -9,7 +9,7 @@ class CustomerController extends Controller {
     }
 
     /** GET /api/customers */
-    public function index(): void {
+    public function index() {
         $filters = [];
         if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
         if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
@@ -19,26 +19,26 @@ class CustomerController extends Controller {
 
         // إذا أُرجع pagination — إرسال مع metadata
         if (isset($result['pagination'])) {
-            Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         } else {
-            Response::success($result);
+            return Response::success($result);
         }
     }
 
     /** GET /api/customers/{id} — بيانات العميل + كشف الحساب */
-    public function show(string $id): void {
+    public function show(string $id) {
         $data = $this->model->getLedger((int)$id);
         if (!$data['customer']) {
-            Response::notFound('العميل غير موجود');
+            return Response::notFound('العميل غير موجود');
         }
-        Response::success($data);
+        return Response::success($data);
     }
 
     /** POST /api/customers */
-    public function store(): void {
+    public function store() {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $db = Database::getInstance();
         $db->beginTransaction();
@@ -51,34 +51,34 @@ class CustomerController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             Logger::error('فشل إضافة العميل', ['error' => $e->getMessage()]);
-            Response::serverError('فشل في إضافة العميل');
+            return Response::serverError('فشل في إضافة العميل');
         }
 
-        Response::success($this->model->findById($id), 'تم إضافة العميل', 201);
+        return Response::success($this->model->findById($id), 'تم إضافة العميل', 201);
     }
 
     /** PUT /api/customers/{id} */
-    public function update(string $id): void {
+    public function update(string $id) {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $cid = (int)$id;
         if (!$this->model->findById($cid)) {
-            Response::notFound('العميل غير موجود');
+            return Response::notFound('العميل غير موجود');
         }
         $this->model->update($cid, $data);
-        Response::success($this->model->findById($cid), 'تم تحديث العميل');
+        return Response::success($this->model->findById($cid), 'تم تحديث العميل');
     }
 
     /** DELETE /api/customers/{id} */
-    public function destroy(string $id): void {
+    public function destroy(string $id) {
         $cid = (int)$id;
         if (!$this->model->findById($cid)) {
-            Response::notFound('العميل غير موجود');
+            return Response::notFound('العميل غير موجود');
         }
         $this->model->delete($cid);
-        Response::success(null, 'تم حذف العميل');
+        return Response::success(null, 'تم حذف العميل');
     }
 
     /**
@@ -86,18 +86,18 @@ class CustomerController extends Controller {
      * body: { amount: float, description?: string }
      * تسجيل دفعة (قيد دائن) في كشف حساب العميل
      */
-    public function addPayment(string $id): void {
+    public function addPayment(string $id) {
         $cid  = (int)$id;
         $data = $this->getBody();
 
         $customer = $this->model->findById($cid);
         if (!$customer) {
-            Response::notFound('العميل غير موجود');
+            return Response::notFound('العميل غير موجود');
         }
 
         $amount = (float)($data['amount'] ?? 0);
         if ($amount <= 0) {
-            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
 
         $type = $data['type'] === 'debit' ? 'debit' : 'credit';
@@ -113,29 +113,29 @@ class CustomerController extends Controller {
         ]);
 
         // إعادة كشف الحساب المحدَّث
-        Response::success($this->model->getLedger($cid), 'تم تسجيل الدفعة');
+        return Response::success($this->model->getLedger($cid), 'تم تسجيل الدفعة');
     }
 
     /**
      * PUT /api/customers/ledger/{entryId}
      * body: { type: 'debit'|'credit', amount: float, description?: string }
      */
-    public function updateLedgerEntry(string $entryId): void {
+    public function updateLedgerEntry(string $entryId) {
         $eid  = (int)$entryId;
         $data = $this->getBody();
 
         $entry = $this->model->getLedgerEntry($eid);
         if (!$entry) {
-            Response::notFound('القيد غير موجود');
+            return Response::notFound('القيد غير موجود');
         }
 
         $amount = (float)($data['amount'] ?? 0);
         if ($amount <= 0) {
-            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
         $type = $data['type'] ?? $entry['type'];
         if (!in_array($type, ['debit', 'credit'])) {
-            Response::error('نوع القيد غير صحيح', 422);
+            return Response::error('نوع القيد غير صحيح', 422);
         }
 
         $this->model->updateLedgerEntry($eid, [
@@ -145,6 +145,8 @@ class CustomerController extends Controller {
         ]);
 
         // إعادة كشف الحساب المحدَّث
-        Response::success($this->model->getLedger((int)$entry['customer_id']), 'تم تحديث القيد');
+        return Response::success($this->model->getLedger((int)$entry['customer_id']), 'تم تحديث القيد');
     }
 }
+
+

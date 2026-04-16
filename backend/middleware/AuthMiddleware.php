@@ -2,11 +2,11 @@
 
 class AuthMiddleware {
 
-    public function handle(callable $next): void {
+    public function handle(callable $next): mixed {
         $token = $this->extractToken();
 
         if (!$token) {
-            Response::unauthorized('No authentication token provided');
+            return Response::unauthorized('No authentication token provided');
         }
 
         $db   = Database::getInstance();
@@ -20,15 +20,15 @@ class AuthMiddleware {
         $row = $stmt->fetch();
 
         if (!$row) {
-            Response::unauthorized('Invalid token');
+            return Response::unauthorized('Invalid token');
         }
 
         if (!$row['is_active']) {
-            Response::unauthorized('Account is disabled');
+            return Response::unauthorized('Account is disabled');
         }
 
         if ($row['expires_at'] && strtotime($row['expires_at']) < time()) {
-            Response::unauthorized('Token expired');
+            return Response::unauthorized('Token expired');
         }
 
         // Store auth user in request context
@@ -39,7 +39,7 @@ class AuthMiddleware {
             'role'  => $row['role'],
         ];
 
-        $next();
+        return $next();
     }
 
     private function extractToken(): ?string {

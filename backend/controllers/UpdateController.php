@@ -46,7 +46,7 @@ class UpdateController extends Controller {
      *
      * @return array{0: string[], 1: int}  [output_lines, exit_code]
      */
-    private function runGit(array $gitArgs, ?string $cwd = null): array {
+    private function runGit(array $gitArgs, ?string $cwd = null) {
         $git = $this->resolveGitExecutable();
         $dir = $cwd ?? $this->rootDir;
         $cmd = array_merge([$git, '-C', $dir], $gitArgs);
@@ -80,7 +80,7 @@ class UpdateController extends Controller {
      * التأكد من أن Git يثق بمجلد المشروع (safe.directory).
      * يحاول الإضافة تلقائياً إذا لم يكن موجوداً.
      */
-    private function ensureSafeDirectory(): void {
+    private function ensureSafeDirectory() {
         $dir = str_replace('\\', '/', $this->rootDir);
 
         // فحص هل المجلد مسجّل بالفعل
@@ -104,7 +104,7 @@ class UpdateController extends Controller {
     /**
      * فحص شامل لحالة Git — يُرجع مصفوفة تشخيصية.
      */
-    private function diagnoseGit(): array {
+    private function diagnoseGit() {
         $diag = [];
 
         // 1. هل المجلد .git موجود
@@ -139,7 +139,7 @@ class UpdateController extends Controller {
     //  Version helpers
     // ══════════════════════════════════════════════════════════════
 
-    private function getLocalVersion(): array {
+    private function getLocalVersion() {
         if (!file_exists($this->localVersionFile)) {
             return ['version' => '0.0.0', 'released_at' => null, 'changelog' => []];
         }
@@ -153,7 +153,8 @@ class UpdateController extends Controller {
         curl_setopt_array($ch, [
             CURLOPT_URL            => $this->repoUrl,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_CAINFO         => __DIR__ . '/../certs/cacert.pem',
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_TIMEOUT        => 15,
             CURLOPT_FOLLOWLOCATION => true,
@@ -244,12 +245,12 @@ class UpdateController extends Controller {
      * GET /api/update/check
      * التحقق من وجود تحديث جديد.
      */
-    public function check(): void {
+    public function check() {
         $local  = $this->getLocalVersion();
         $remote = $this->fetchRemoteVersion();
 
         if (!$remote) {
-            Response::error(
+            return Response::error(
                 'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت وأن ملف version.json موجود على GitHub.',
                 502
             );
@@ -257,7 +258,7 @@ class UpdateController extends Controller {
 
         $hasUpdate = version_compare($remote['version'], $local['version'], '>');
 
-        Response::success([
+        return Response::success([
             'current_version'      => $local['version'],
             'latest_version'       => $remote['version'],
             'has_update'           => $hasUpdate,
@@ -270,16 +271,16 @@ class UpdateController extends Controller {
     /**
      * GET /api/update/changelog
      */
-    public function changelog(): void {
+    public function changelog() {
         $remote = $this->fetchRemoteVersion();
-        Response::success($remote['changelog'] ?? []);
+        return Response::success($remote['changelog'] ?? []);
     }
 
     /**
      * POST /api/update/apply
      * تطبيق التحديث: نسخة احتياطية → git pull → npm install (اختياري) → بناء frontend.
      */
-    public function apply(): void {
+    public function apply() {
         $output = [];
         $stepTimings = [];
 
@@ -301,7 +302,7 @@ class UpdateController extends Controller {
             $output[]   = "✅ تم إنشاء النسخة الاحتياطية: " . basename($backupFile) . " ({$elapsed}s)";
         } catch (Throwable $e) {
             Logger::error('Update: backup failed', ['error' => $e->getMessage()]);
-            Response::error(
+            return Response::error(
                 'فشل إنشاء نسخة احتياطية من قاعدة البيانات: ' . $e->getMessage(),
                 500,
                 ['logs' => $output]
@@ -314,7 +315,7 @@ class UpdateController extends Controller {
         $output[] = '🌐 الاتصال بخادم التحديثات...';
         $remote = $this->fetchRemoteVersion();
         if (!$remote) {
-            Response::error(
+            return Response::error(
                 'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت.',
                 502,
                 ['logs' => $output]
@@ -342,7 +343,7 @@ class UpdateController extends Controller {
                     'file_exists' => file_exists($gitDir),
                     'revOut' => $revOut
                 ], JSON_PRETTY_PRINT));
-                Response::error(
+                return Response::error(
                     'لا يمكن التحديث التلقائي: المجلد ليس مستنسخاً عبر Git (لا يوجد .git).' . "\n"
                     . 'الحل: افتح Terminal وشغّل:' . "\n"
                     . 'cd C:\\xampp\\htdocs && git clone https://github.com/ABDO-TECK/pos.git',
@@ -374,7 +375,7 @@ class UpdateController extends Controller {
                     Logger::error('Update: git status failed after safe.directory fix', [
                         'output' => $testOut3, 'code' => $testCode3, 'diag' => $diag
                     ]);
-                    Response::error(
+                    return Response::error(
                         'Git لا يعمل تحت Apache. ' . implode(' ', $testOut3),
                         500,
                         ['logs' => $output, 'diagnostics' => $diag]
@@ -395,7 +396,7 @@ class UpdateController extends Controller {
 
         if ($fetchCode !== 0) {
             Logger::error('Update: git fetch failed', ['code' => $fetchCode, 'output' => $fetchOut]);
-            Response::error(
+            return Response::error(
                 'فشل أمر git fetch — تحقق من اتصال الإنترنت ومن إعدادات المستودع.',
                 500,
                 ['logs' => $output]
@@ -410,7 +411,7 @@ class UpdateController extends Controller {
 
         if ($resetCode !== 0) {
             Logger::error('Update: git reset failed', ['code' => $resetCode, 'output' => $resetOut]);
-            Response::error(
+            return Response::error(
                 'فشل أمر git reset — تحقق من صلاحيات المجلد.',
                 500,
                 ['logs' => $output]
@@ -493,7 +494,7 @@ class UpdateController extends Controller {
             'to'      => $remote['version'] ?? '?',
         ]);
 
-        Response::success([
+        return Response::success([
             'message'        => 'تم استكمال التحديث بنجاح',
             'latest_version' => $remote['version'] ?? 'unknown',
             'changelog'      => $remote['changelog'] ?? [],
@@ -504,7 +505,7 @@ class UpdateController extends Controller {
     /**
      * نسخ محتوى مجلد إلى آخر (استبدال).
      */
-    private function copyDirectory(string $src, string $dst): void {
+    private function copyDirectory(string $src, string $dst) {
         $dir = opendir($src);
         if (!$dir) return;
 
@@ -527,3 +528,5 @@ class UpdateController extends Controller {
         closedir($dir);
     }
 }
+
+

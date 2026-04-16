@@ -126,16 +126,6 @@ abstract class Controller {
         return $errors;
     }
 
-    /**
-     * التحقق + إرسال خطأ 422 تلقائيًا إذا كان هناك أخطاء.
-     * اختصار شائع في Controllers.
-     */
-    protected function validateOrFail(array $data, array $rules): void {
-        $errors = $this->validate($data, $rules);
-        if ($errors) {
-            Response::error('فشل التحقق من البيانات', 422, $errors);
-        }
-    }
 
     protected function sanitize(mixed $value): string {
         return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');

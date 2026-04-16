@@ -2,6 +2,11 @@
 
 class Router {
     private array $routes = [];
+    private Container $container;
+
+    public function __construct(?Container $container = null) {
+        $this->container = $container ?? new Container();
+    }
 
     public function get(string $path, array $handler): void {
         $this->add('GET', $path, $handler);
@@ -46,15 +51,30 @@ class Router {
             $params = $this->match($route['method'], $route['path'], $method, $uri);
             if ($params !== null) {
                 [$controllerClass, $action, $middlewares] = $this->parseHandler($route['handler']);
-                $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
-                    $controller = new $controllerClass();
-                    $controller->$action(...array_values($params));
+                
+                // Inject CsrfMiddleware globally as the first middleware
+                array_unshift($middlewares, CsrfMiddleware::class);
+
+                $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
+                    $controller = $this->container->get($controllerClass);
+                    return $controller->$action(...array_values($params));
                 });
+                $this->sendResponse($response);
                 return;
             }
         }
 
-        Response::notFound('Route not found');
+        $this->sendResponse(Response::notFound('Route not found'));
+    }
+
+    private function sendResponse(mixed $response): void {
+        if (is_array($response) && isset($response['status_code'], $response['body'])) {
+            http_response_code($response['status_code']);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } else if (is_string($response)) {
+            echo $response;
+        }
     }
 
     private function match(string $routeMethod, string $routePath, string $method, string $uri): ?array {
@@ -87,12 +107,12 @@ class Router {
         return [$controllerClass, $action, $middlewares];
     }
 
-    private function runMiddlewares(array $middlewares, callable $final): void {
+    private function runMiddlewares(array $middlewares, callable $final): mixed {
         $chain = array_reduce(
             array_reverse($middlewares),
             fn($next, $mw) => fn() => (new $mw())->handle($next),
             $final
         );
-        $chain();
+        return $chain();
     }
 }

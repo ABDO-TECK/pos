@@ -10,7 +10,7 @@ class SupplierController extends Controller {
         $this->productModel  = new Product();
     }
 
-    public function index(): void {
+    public function index() {
         $filters = [];
         if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
         if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
@@ -19,53 +19,53 @@ class SupplierController extends Controller {
         $result = $this->supplierModel->all($filters);
 
         if (isset($result['pagination'])) {
-            Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         } else {
-            Response::success($result);
+            return Response::success($result);
         }
     }
 
-    public function show(string $id): void {
+    public function show(string $id) {
         $data = $this->supplierModel->getLedger((int)$id);
         if (!$data['supplier']) {
-            Response::notFound('Supplier not found');
+            return Response::notFound('Supplier not found');
         }
-        Response::success($data);
+        return Response::success($data);
     }
 
-    public function store(): void {
+    public function store() {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
         $id       = $this->supplierModel->create($data);
         $supplier = $this->supplierModel->findById($id);
-        Response::success($supplier, 'Supplier created', 201);
+        return Response::success($supplier, 'Supplier created', 201);
     }
 
-    public function update(string $id): void {
+    public function update(string $id) {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $supplier = $this->supplierModel->findById((int)$id);
-        if (!$supplier) Response::notFound('Supplier not found');
+        if (!$supplier) return Response::notFound('Supplier not found');
 
         $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
         $this->supplierModel->update((int)$id, $data);
-        Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
+        return Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
     }
 
-    public function destroy(string $id): void {
+    public function destroy(string $id) {
         $supplier = $this->supplierModel->findById((int)$id);
-        if (!$supplier) Response::notFound('Supplier not found');
+        if (!$supplier) return Response::notFound('Supplier not found');
         $this->supplierModel->delete((int)$id);
-        Response::success(null, 'Supplier deleted');
+        return Response::success(null, 'Supplier deleted');
     }
 
     /** Single-item purchase (legacy) */
-    public function purchase(): void {
+    public function purchase() {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'supplier_id' => 'required',
@@ -73,13 +73,13 @@ class SupplierController extends Controller {
             'quantity'    => 'required|numeric',
             'cost'        => 'required|numeric',
         ]);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $product = $this->productModel->findById((int)$data['product_id']);
-        if (!$product) Response::notFound('Product not found');
+        if (!$product) return Response::notFound('Product not found');
 
         $supplier = $this->supplierModel->findById((int)$data['supplier_id']);
-        if (!$supplier) Response::notFound('Supplier not found');
+        if (!$supplier) return Response::notFound('Supplier not found');
 
         $db = Database::getInstance();
         $db->beginTransaction();
@@ -89,16 +89,16 @@ class SupplierController extends Controller {
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            Response::serverError('Failed to record purchase');
+            return Response::serverError('Failed to record purchase');
         }
 
-        Response::success([
+        return Response::success([
             'product' => $this->productModel->findById((int)$data['product_id']),
         ], 'Purchase recorded and stock updated', 201);
     }
 
     /** List purchase invoices (like sales list) */
-    public function purchaseInvoices(): void {
+    public function purchaseInvoices() {
         $filters = [
             'supplier_id' => $this->getParam('supplier_id'),
             'date'        => $this->getParam('date'),
@@ -110,23 +110,23 @@ class SupplierController extends Controller {
         
         $result = $this->supplierModel->getPurchaseInvoices($filters);
         if (isset($result['pagination'])) {
-            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
         } else {
-            Response::success($result);
+            return Response::success($result);
         }
     }
 
     /** Get single purchase invoice detail (like sales detail) */
-    public function purchaseInvoiceDetail(string $id): void {
+    public function purchaseInvoiceDetail(string $id) {
         $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
-        if (!$invoice) Response::notFound('Purchase invoice not found');
-        Response::success($invoice);
+        if (!$invoice) return Response::notFound('Purchase invoice not found');
+        return Response::success($invoice);
     }
 
     /** Delete a purchase invoice and restore stock */
-    public function purchaseInvoiceDelete(string $id): void {
+    public function purchaseInvoiceDelete(string $id) {
         $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
-        if (!$invoice) Response::notFound('Purchase invoice not found');
+        if (!$invoice) return Response::notFound('Purchase invoice not found');
 
         $db = Database::getInstance();
         $db->beginTransaction();
@@ -140,41 +140,41 @@ class SupplierController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             Logger::error('فشل إضافة المورد', ['error' => $e->getMessage()]);
-            Response::serverError('Failed to delete purchase invoice');
+            return Response::serverError('Failed to delete purchase invoice');
         }
 
-        Response::success(null, 'Purchase invoice deleted and stock restored');
+        return Response::success(null, 'Purchase invoice deleted and stock restored');
     }
 
     /** Legacy flat purchases list */
-    public function purchases(): void {
+    public function purchases() {
         $filters = [
             'supplier_id' => $this->getParam('supplier_id'),
             'date_from'   => $this->getParam('date_from'),
             'date_to'     => $this->getParam('date_to'),
         ];
-        Response::success($this->supplierModel->getPurchases($filters));
+        return Response::success($this->supplierModel->getPurchases($filters));
     }
 
     /** Bulk purchase — creates a purchase invoice + items */
-    public function purchaseBulk(): void {
+    public function purchaseBulk() {
         $data = $this->getBody();
 
         if (empty($data['supplier_id'])) {
-            Response::error('supplier_id is required', 422);
+            return Response::error('supplier_id is required', 422);
         }
         if (empty($data['items']) || !is_array($data['items'])) {
-            Response::error('items array is required', 422);
+            return Response::error('items array is required', 422);
         }
 
         $supplier = $this->supplierModel->findById((int)$data['supplier_id']);
-        if (!$supplier) Response::notFound('Supplier not found');
+        if (!$supplier) return Response::notFound('Supplier not found');
 
         $replaceInvoiceId = isset($data['replace_invoice_id']) ? (int) $data['replace_invoice_id'] : 0;
         $existingInvoice = null;
         if ($replaceInvoiceId > 0) {
             $existingInvoice = $this->supplierModel->getPurchaseInvoice($replaceInvoiceId);
-            if (!$existingInvoice) Response::notFound('Original invoice not found for replacement');
+            if (!$existingInvoice) return Response::notFound('Original invoice not found for replacement');
         }
 
         $db = Database::getInstance();
@@ -212,13 +212,13 @@ class SupplierController extends Controller {
             foreach ($data['items'] as $item) {
                 if (empty($item['product_id']) || empty($item['quantity']) || !isset($item['cost'])) {
                     $db->rollBack();
-                    Response::error('Each item needs product_id, quantity, and cost', 422);
+                    return Response::error('Each item needs product_id, quantity, and cost', 422);
                 }
 
                 $product = $this->productModel->findById((int)$item['product_id']);
                 if (!$product) {
                     $db->rollBack();
-                    Response::notFound("Product ID {$item['product_id']} not found");
+                    return Response::notFound("Product ID {$item['product_id']} not found");
                 }
 
                 $this->supplierModel->createPurchase([
@@ -269,10 +269,10 @@ class SupplierController extends Controller {
         } catch (Throwable $e) {
             $db->rollBack();
             Logger::error('فشل عملية شراء بالجملة', ['error' => $e->getMessage()]);
-            Response::serverError('Failed to record bulk purchase');
+            return Response::serverError('Failed to record bulk purchase');
         }
 
-        Response::success([
+        return Response::success([
             'invoice_id'      => $invoiceId,
             'items_processed' => count($data['items']),
         ], $replaceInvoiceId > 0 ? 'Purchase invoice updated' : 'Bulk purchase recorded', $replaceInvoiceId > 0 ? 200 : 201);
@@ -283,18 +283,18 @@ class SupplierController extends Controller {
      * body: { amount: float, description?: string }
      * تسجيل دفعة (قيد دائن) في كشف حساب المورد
      */
-    public function addPayment(string $id): void {
+    public function addPayment(string $id) {
         $sid  = (int)$id;
         $data = $this->getBody();
 
         $supplier = $this->supplierModel->findById($sid);
         if (!$supplier) {
-            Response::notFound('المورد غير موجود');
+            return Response::notFound('المورد غير موجود');
         }
 
         $amount = (float)($data['amount'] ?? 0);
         if ($amount <= 0) {
-            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
 
         $type = $data['type'] === 'debit' ? 'debit' : 'credit';
@@ -310,29 +310,29 @@ class SupplierController extends Controller {
         ]);
 
         // إعادة كشف الحساب المحدَّث
-        Response::success($this->supplierModel->getLedger($sid), 'تم تسجيل الدفعة');
+        return Response::success($this->supplierModel->getLedger($sid), 'تم تسجيل الدفعة');
     }
 
     /**
      * PUT /api/suppliers/ledger/{entryId}
      * body: { type: 'debit'|'credit', amount: float, description?: string }
      */
-    public function updateLedgerEntry(string $entryId): void {
+    public function updateLedgerEntry(string $entryId) {
         $eid  = (int)$entryId;
         $data = $this->getBody();
 
         $entry = $this->supplierModel->getLedgerEntry($eid);
         if (!$entry) {
-            Response::notFound('القيد غير موجود');
+            return Response::notFound('القيد غير موجود');
         }
 
         $amount = (float)($data['amount'] ?? 0);
         if ($amount <= 0) {
-            Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
+            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
         $type = $data['type'] ?? $entry['type'];
         if (!in_array($type, ['debit', 'credit'])) {
-            Response::error('نوع القيد غير صحيح', 422);
+            return Response::error('نوع القيد غير صحيح', 422);
         }
 
         $this->supplierModel->updateLedgerEntry($eid, [
@@ -342,6 +342,8 @@ class SupplierController extends Controller {
         ]);
 
         // إعادة كشف الحساب المحدَّث
-        Response::success($this->supplierModel->getLedger((int)$entry['supplier_id']), 'تم تحديث القيد');
+        return Response::success($this->supplierModel->getLedger((int)$entry['supplier_id']), 'تم تحديث القيد');
     }
 }
+
+

@@ -8,34 +8,36 @@ class InventoryController extends Controller {
         $this->productModel = new Product();
     }
 
-    public function index(): void {
+    public function index() {
         $filters = [
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
         ];
         $products = $this->productModel->all($filters);
-        Response::success($products);
+        return Response::success($products);
     }
 
-    public function lowStock(): void {
-        Response::success($this->productModel->getLowStock());
+    public function lowStock() {
+        return Response::success($this->productModel->getLowStock());
     }
 
-    public function adjust(string $id): void {
+    public function adjust(string $id) {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['quantity' => 'required|numeric']);
-        if ($errors) Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('Validation failed', 422, $errors);
 
         $product = $this->productModel->findById((int)$id);
-        if (!$product) Response::notFound('Product not found');
+        if (!$product) return Response::notFound('Product not found');
 
         $newQty = (int)$data['quantity'];
-        if ($newQty < 0) Response::error('Quantity cannot be negative', 400);
+        if ($newQty < 0) return Response::error('Quantity cannot be negative', 400);
 
         $db   = Database::getInstance();
         $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');
         $stmt->execute([$newQty, $id]);
 
-        Response::success($this->productModel->findById((int)$id), 'Inventory adjusted');
+        return Response::success($this->productModel->findById((int)$id), 'Inventory adjusted');
     }
 }
+
+

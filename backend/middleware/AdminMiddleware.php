@@ -2,11 +2,11 @@
 
 class AdminMiddleware {
 
-    public function handle(callable $next): void {
+    public function handle(callable $next): mixed {
         $user = $_SERVER['AUTH_USER'] ?? null;
         if (!$user || $user['role'] !== 'admin') {
-            Response::forbidden('Admin access required');
+            return Response::forbidden('Admin access required');
         }
-        $next();
+        return $next();
     }
 }

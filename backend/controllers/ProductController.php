@@ -8,7 +8,7 @@ class ProductController extends Controller {
         $this->productModel = new Product();
     }
 
-    public function index(): void {
+    public function index() {
         $filters = [
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
@@ -21,13 +21,13 @@ class ProductController extends Controller {
 
         // إذا كانت النتيجة paginated (تحتوي data + pagination)
         if (isset($result['pagination'])) {
-            Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
         } else {
-            Response::success($result);
+            return Response::success($result);
         }
     }
 
-    public function show(string $id): void {
+    public function show(string $id) {
         // Support lookup by barcode via ?barcode=xxx
         $barcode = $this->getParam('barcode');
         if ($id === 'barcode' && $barcode) {
@@ -37,19 +37,19 @@ class ProductController extends Controller {
         }
 
         if (!$product) {
-            Response::notFound('Product not found');
+            return Response::notFound('Product not found');
         }
-        Response::success($product);
+        return Response::success($product);
     }
 
-    public function store(): void {
+    public function store() {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'name'  => 'required',
             'price' => 'required|numeric',
         ]);
         if ($errors) {
-            Response::error($this->productValidationMessage($errors), 422, $errors);
+            return Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
         // توليد باركود تلقائي إذا كان فارغاً
@@ -84,28 +84,28 @@ class ProductController extends Controller {
             $db->rollBack();
             Logger::error('فشل إضافة المنتج', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
-                Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
+                return Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
             }
-            Response::serverError('Failed to create product');
+            return Response::serverError('Failed to create product');
         }
 
-        Response::success($this->productModel->findById($id), 'Product created', 201);
+        return Response::success($this->productModel->findById($id), 'Product created', 201);
     }
 
-    public function update(string $id): void {
+    public function update(string $id) {
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'name'  => 'required',
             'price' => 'required|numeric',
         ]);
         if ($errors) {
-            Response::error($this->productValidationMessage($errors), 422, $errors);
+            return Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
         $pid = (int) $id;
         $product = $this->productModel->findById($pid);
         if (!$product) {
-            Response::notFound('Product not found');
+            return Response::notFound('Product not found');
         }
 
         // إذا كان الباركود فارغاً احتفظ بالباركود القديم
@@ -132,12 +132,12 @@ class ProductController extends Controller {
             $db->rollBack();
             Logger::error('فشل تحديث المنتج', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
-                Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
+                return Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
             }
-            Response::serverError('Failed to update product');
+            return Response::serverError('Failed to update product');
         }
 
-        Response::success($this->productModel->findById($pid), 'Product updated');
+        return Response::success($this->productModel->findById($pid), 'Product updated');
     }
 
     /** رسالة عربية بدل "Validation failed" + أسماء حقول إنجليزية */
@@ -159,11 +159,11 @@ class ProductController extends Controller {
         return $parts !== [] ? implode(' ', $parts) : 'تحقق من الحقول المطلوبة.';
     }
 
-    public function destroy(string $id): void {
+    public function destroy(string $id) {
         $pid     = (int) $id;
         $product = $this->productModel->findById($pid);
         if (!$product) {
-            Response::notFound('Product not found');
+            return Response::notFound('Product not found');
         }
 
         $refs = $this->productModel->referenceCounts($pid);
@@ -176,7 +176,7 @@ class ProductController extends Controller {
                 $parts[] = sprintf('موجود في %d سجل مشتريات', $refs['purchases']);
             }
             $detail = implode('، ', $parts);
-            Response::error(
+            return Response::error(
                 'لا يمكن حذف المنتج: ' . $detail
                 . '. احذف الفواتير المرتبطة من صفحة المبيعات أو عدّل سجلات المشتريات، أو أبقِ المنتج للحفاظ على السجل المحاسبي.',
                 409
@@ -187,15 +187,17 @@ class ProductController extends Controller {
             $this->productModel->delete($pid);
         } catch (PDOException $e) {
             if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
-                Response::error(
+                return Response::error(
                     'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.',
                     409
                 );
             }
             Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
-            Response::serverError('Failed to delete product');
+            return Response::serverError('Failed to delete product');
         }
 
-        Response::success(null, 'Product deleted');
+        return Response::success(null, 'Product deleted');
     }
 }
+
+

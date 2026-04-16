@@ -8,18 +8,18 @@ class ReportController extends Controller {
         $this->invoiceModel = new Invoice();
     }
 
-    public function daily(): void {
+    public function daily() {
         $date    = $this->getParam('date', date('Y-m-d'));
         $summary = $this->invoiceModel->getDailySummary($date);
         $invoices = $this->invoiceModel->all(['date' => $date]);
-        Response::success([
+        return Response::success([
             'date'     => $date,
             'summary'  => $summary,
             'invoices' => $invoices,
         ]);
     }
 
-    public function monthly(): void {
+    public function monthly() {
         $month = (int)$this->getParam('month', date('n'));
         $year  = (int)$this->getParam('year', date('Y'));
         $data  = $this->invoiceModel->getMonthlySummary($month, $year);
@@ -29,7 +29,7 @@ class ReportController extends Controller {
         $totalProfit   = $this->invoiceModel->getTotalProfitForMonth($month, $year);
         $totalCost     = $this->invoiceModel->getTotalCostForMonth($month, $year);
 
-        Response::success([
+        return Response::success([
             'month'           => $month,
             'year'            => $year,
             'total_revenue'   => $totalRevenue,
@@ -40,15 +40,15 @@ class ReportController extends Controller {
         ]);
     }
 
-    public function topProducts(): void {
+    public function topProducts() {
         $limit    = (int)$this->getParam('limit', 10);
         $fromDate = $this->getParam('from');
         $toDate   = $this->getParam('to');
         $products = $this->invoiceModel->getTopProducts($limit, $fromDate, $toDate);
-        Response::success($products);
+        return Response::success($products);
     }
 
-    public function profitReport(): void {
+    public function profitReport() {
         $db    = Database::getInstance();
         $month = (int)$this->getParam('month', date('n'));
         $year  = (int)$this->getParam('year', date('Y'));
@@ -112,7 +112,7 @@ class ReportController extends Controller {
         $profit  = (float)$totals['total_profit'];
         $margin  = $revenue > 0 ? round($profit / $revenue * 100, 2) : 0;
 
-        Response::success([
+        return Response::success([
             'month'          => $month,
             'year'           => $year,
             'total_revenue'  => $revenue,
@@ -124,7 +124,7 @@ class ReportController extends Controller {
         ]);
     }
 
-    public function summary(): void {
+    public function summary() {
         $db = Database::getInstance();
 
         $todayRevenue = $db->query(
@@ -148,7 +148,7 @@ class ReportController extends Controller {
         $todayCost   = $this->invoiceModel->getTotalCostForDate(date('Y-m-d'));
         $monthCost   = $this->invoiceModel->getTotalCostForMonth((int)date('n'), (int)date('Y'));
 
-        Response::success([
+        return Response::success([
             'today_revenue'  => (float)$todayRevenue,
             'month_revenue'  => (float)$monthRevenue,
             'today_cost'     => $todayCost,
@@ -162,3 +162,5 @@ class ReportController extends Controller {
         ]);
     }
 }
+
+

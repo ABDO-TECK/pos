@@ -10,7 +10,7 @@ class SettingsController extends Controller {
     }
 
     /** Create the settings table + default rows if they don't exist yet. */
-    private function ensureTable(): void {
+    private function ensureTable() {
         $this->db->exec(
             'CREATE TABLE IF NOT EXISTS settings (
                 `key`       VARCHAR(100) NOT NULL PRIMARY KEY,
@@ -33,7 +33,7 @@ class SettingsController extends Controller {
         }
     }
 
-    private function all(): array {
+    private function all() {
         $rows     = $this->db->query('SELECT `key`, `value` FROM settings')->fetchAll();
         $settings = [];
         foreach ($rows as $row) {
@@ -42,11 +42,11 @@ class SettingsController extends Controller {
         return $settings;
     }
 
-    public function index(): void {
-        Response::success($this->all());
+    public function index() {
+        return Response::success($this->all());
     }
 
-    public function update(): void {
+    public function update() {
         $data = $this->getBody();
 
         $allowed = ['store_name', 'tax_enabled', 'tax_rate'];
@@ -62,6 +62,8 @@ class SettingsController extends Controller {
             }
         }
 
-        Response::success($this->all(), 'Settings updated');
+        return Response::success($this->all(), 'Settings updated');
     }
 }
+
+

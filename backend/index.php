@@ -61,7 +61,8 @@ set_exception_handler(function (Throwable $e) {
 });
 
 // ── Routes ─────────────────────────────────────────────────────
-$router = new Router();
+$container = new Container();
+$router = new Router($container);
 require_once __DIR__ . '/routes/api.php';
 $router->dispatch();
 
