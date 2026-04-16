@@ -35,7 +35,7 @@ function fshort(d) {
 const PDF_CSS = `
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
   font-size: 11px;
   color: #1e293b;
   background: #fff;

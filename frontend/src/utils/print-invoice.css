@@ -5,7 +5,7 @@
 
 /* إعدادات عامة للشاشة */
 body {
-    font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
     background-color: white;
     font-size: 10px;
     font-weight: 900;
@@ -32,7 +32,7 @@ body {
     margin-bottom: 3mm;
     padding-bottom: 3mm;
     direction: rtl;
-    font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
     color: #000000;
 }
 
@@ -62,7 +62,7 @@ body {
     color: #000000;
     text-align: center;
     direction: rtl;
-    font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
 }
 
 .invoice-details {
@@ -112,7 +112,7 @@ body {
     border: 1.5pt solid #000000;
     text-align: center;
     vertical-align: middle;
-    font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
     font-weight: 700;
     direction: rtl;
     color: #000000;
@@ -214,7 +214,7 @@ body {
     }
     
     body {
-        font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif !important;
         font-size: 10px !important;
         font-weight: 900 !important;
         line-height: 1.3 !important;
@@ -251,7 +251,7 @@ body {
         font-size: 5mm !important;
         font-weight: 900 !important;
         margin: 2mm 0 !important;
-        font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif !important;
         direction: rtl !important;
         color: #000000 !important;
     }
@@ -262,7 +262,7 @@ body {
         margin: 2mm 0 !important;
         text-align: center !important;
         direction: rtl !important;
-        font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif !important;
         color: #000000 !important;
     }
     
@@ -312,7 +312,7 @@ body {
         border: 1.5pt solid #000000 !important;
         text-align: center !important;
         vertical-align: middle !important;
-        font-family: Arial, 'Tahoma', 'DejaVu Sans', sans-serif !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif !important;
         font-weight: 700 !important;
         direction: rtl !important;
         color: #000000 !important;
