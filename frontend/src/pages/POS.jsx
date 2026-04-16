@@ -47,7 +47,7 @@ export default function POS() {
   useEffect(() => {
     fetchProducts()
     const intervalId = setInterval(() => {
-      fetchProducts() // Auto-refresh products in background (real-time feel)
+      fetchProducts({}, true) // Auto-refresh (bypasses 5-minute store cache)
     }, 10000)
     return () => clearInterval(intervalId)
   }, [])
