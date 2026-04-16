@@ -1,10 +1,12 @@
 # ── Private keys & secrets ─────────────────────────────
 private-key.pem
 *.pem
+!backend/certs/cacert.pem
 *.key
 *digital-certificate.txt
 # مجلد الشهادات المحلية — اترك README فقط إن رغبت
 certs/*.pem
+!backend/certs/cacert.pem
 certs/*-key.pem
 .env
 .env.*
@@ -36,3 +38,4 @@ desktop.ini
 .vscode/settings.json
 *.swp
 *.swo
+
