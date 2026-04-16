@@ -40,15 +40,24 @@ if errorlevel 1 (
 :: ── 3. Wait briefly for services ────────────────────────────
 timeout /t 2 /nobreak >nul
 
+:: ── Get Local IP Address ───────────────────────────────────────
+set "LOCAL_IP=localhost"
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /I "IPv4"') do (
+    set "LOCAL_IP=%%a"
+    goto :ip_found
+)
+:ip_found
+set "LOCAL_IP=%LOCAL_IP: =%"
+
 :: ── 4. Start frontend (npm) ──────────────────────────────────
 if /I "%FRONTEND_MODE%"=="preview" (
     set FRONTEND_PORT=4173
-    set FRONTEND_URL=http://localhost:4173
+    set "FRONTEND_URL=http://%LOCAL_IP%:4173"
     set NPM_CMD=npm run preview
 ) else (
     set FRONTEND_PORT=5173
-    set "FRONTEND_URL=http://localhost:5173"
-    for /f "delims=" %%F in ('dir /b "%POS_ROOT%\certs\*-key.pem" 2^>nul') do set "FRONTEND_URL=https://localhost:5173"
+    set "FRONTEND_URL=http://%LOCAL_IP%:5173"
+    for /f "delims=" %%F in ('dir /b "%POS_ROOT%\certs\*-key.pem" 2^>nul') do set "FRONTEND_URL=https://%LOCAL_IP%:5173"
     if /I "%FRONTEND_MODE%"=="dev" (
         set NPM_CMD=npm run dev
     ) else (
@@ -78,8 +87,8 @@ if %tries% lss 15 goto wait_loop
 echo [%date% %time%] Timeout waiting for port %FRONTEND_PORT%. Opening anyway... >> "%LOG%"
 
 :open_browser
-echo [%date% %time%] Opening browser... >> "%LOG%"
-start "" "%FRONTEND_URL%"
+echo [%date% %time%] Opening Chrome browser at %FRONTEND_URL%... >> "%LOG%"
+start chrome "%FRONTEND_URL%" || start "" "%FRONTEND_URL%"
 echo [%date% %time%] Done. >> "%LOG%"
 goto :eof
 
