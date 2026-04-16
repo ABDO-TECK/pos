@@ -34,7 +34,7 @@ class AuthController extends Controller {
             'domain'   => '',
             'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => 'Lax',
         ]);
 
         return Response::success([
@@ -60,7 +60,7 @@ class AuthController extends Controller {
             'domain'   => '',
             'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => 'Lax',
         ]);
         return Response::success(null, 'Logged out successfully');
     }
@@ -72,8 +72,8 @@ class AuthController extends Controller {
             'path'     => '/',
             'domain'   => '',
             'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
-            'httponly' => false, // Cannot be httponly because frontend js must read it
-            'samesite' => 'Strict',
+            'httponly' => false,
+            'samesite' => 'Lax',
         ]);
         return Response::success(null, 'CSRF cookie set');
     }
