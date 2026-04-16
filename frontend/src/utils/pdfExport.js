@@ -5,6 +5,8 @@
  * Color scheme: Professional blue tones (dark blue headers, light blue alternating rows).
  */
 
+import html2pdf from 'html2pdf.js'
+
 const AR = 'ar-EG-u-nu-latn'
 
 function fc(n) {
@@ -29,6 +31,34 @@ function fshort(d) {
   return new Intl.DateTimeFormat('en-GB', {
     year: 'numeric', month: 'short', day: 'numeric',
   }).format(dt)
+}
+
+function generatePDF(htmlString, filename) {
+  // We use html2pdf to bypass buggy OS PDF Printers (like MS Print to PDF) that reverse Arabic
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '-9999px';
+  container.style.width = '1000px'; 
+  container.style.backgroundColor = '#fff';
+  container.style.direction = 'rtl';
+  container.innerHTML = htmlString;
+  document.body.appendChild(container);
+
+  const opt = {
+    margin:       [10, 10, 10, 10], 
+    filename:     filename,
+    image:        { type: 'jpeg', quality: 1 },
+    html2canvas:  { scale: 2, useCORS: true, letterRendering: true, logging: false },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  html2pdf().set(opt).from(container).save().then(() => {
+    document.body.removeChild(container);
+  }).catch((err) => {
+    console.error('PDF Generation Error:', err);
+    document.body.removeChild(container);
+  });
 }
 
 // ── Shared PDF CSS (Excel-like look) ─────────────────────────────────────────
@@ -303,12 +333,9 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
     return
   }
 
-  const win = window.open('', '_blank', 'width=1100,height=750,scrollbars=yes')
-  if (!win) { alert('يرجى السماح بالنوافذ المنبثقة'); return }
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  setTimeout(() => { win.focus(); win.print() }, 500)
+  const dateStr = new Intl.DateTimeFormat('en-GB').format(new Date()).replace(/\//g, '-')
+  const filename = `Customer_Statement_${ledgerData.customer.name}_${dateStr}.pdf`
+  generatePDF(html, filename)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -417,10 +444,7 @@ export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر مار
     return
   }
 
-  const win = window.open('', '_blank', 'width=1100,height=750,scrollbars=yes')
-  if (!win) { alert('يرجى السماح بالنوافذ المنبثقة'); return }
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  setTimeout(() => { win.focus(); win.print() }, 500)
+  const dateStr = new Intl.DateTimeFormat('en-GB').format(new Date()).replace(/\//g, '-')
+  const filename = `Supplier_Statement_${ledgerData.supplier.name}_${dateStr}.pdf`
+  generatePDF(html, filename)
 }
