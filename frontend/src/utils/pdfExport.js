@@ -38,6 +38,12 @@ function fshort(d) {
   }).format(dt) + PDI
 }
 
+/** Wrap any dynamic value in BiDi isolate chars so adjacent Arabic labels don't get reversed */
+function bidi(val) {
+  if (!val) return ''
+  return LRI + val + PDI
+}
+
 /**
  * Opens a new browser window with the HTML content and triggers print.
  * Chrome's native print → "Save as PDF" handles RTL/BiDi text perfectly.
@@ -238,7 +244,7 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
+        <td>${bidi(row.description) || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
         <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
         <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
         <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
@@ -257,12 +263,12 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب العميل</h1>
-    <div class="subtitle">${storeName}</div>
+    <div class="subtitle">${bidi(storeName)}</div>
   </div>
   <div class="meta-block">
-    <div><strong>العميل:</strong> ${customer.name}</div>
-    ${customer.phone ? `<div><strong>الهاتف:</strong> ${customer.phone}</div>` : ''}
-    ${customer.address ? `<div><strong>العنوان:</strong> ${customer.address}</div>` : ''}
+    <div><strong>العميل:</strong> ${bidi(customer.name)}</div>
+    ${customer.phone ? `<div><strong>الهاتف:</strong> ${bidi(customer.phone)}</div>` : ''}
+    ${customer.address ? `<div><strong>العنوان:</strong> ${bidi(customer.address)}</div>` : ''}
     <div><strong>تاريخ الطباعة:</strong> ${fdate(now)}</div>
   </div>
 </div>
@@ -309,7 +315,7 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
 </table>
 
 <div class="report-footer">
-  <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
+  <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${bidi(storeName)}</span>
   <span>${fdate(now)}</span>
 </div>
 </div>
@@ -345,7 +351,7 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
+        <td>${bidi(row.description) || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
         <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
         <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
         <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
@@ -364,13 +370,13 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب المورد</h1>
-    <div class="subtitle">${storeName}</div>
+    <div class="subtitle">${bidi(storeName)}</div>
   </div>
   <div class="meta-block">
-    <div><strong>المورد:</strong> ${supplier.name}</div>
-    ${supplier.phone ? `<div><strong>الهاتف:</strong> ${supplier.phone}</div>` : ''}
-    ${supplier.address ? `<div><strong>العنوان:</strong> ${supplier.address}</div>` : ''}
-    ${supplier.email ? `<div><strong>البريد:</strong> ${supplier.email}</div>` : ''}
+    <div><strong>المورد:</strong> ${bidi(supplier.name)}</div>
+    ${supplier.phone ? `<div><strong>الهاتف:</strong> ${bidi(supplier.phone)}</div>` : ''}
+    ${supplier.address ? `<div><strong>العنوان:</strong> ${bidi(supplier.address)}</div>` : ''}
+    ${supplier.email ? `<div><strong>البريد:</strong> ${bidi(supplier.email)}</div>` : ''}
     <div><strong>تاريخ الطباعة:</strong> ${fdate(now)}</div>
   </div>
 </div>
@@ -417,7 +423,7 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
 </table>
 
 <div class="report-footer">
-  <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
+  <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${bidi(storeName)}</span>
   <span>${fdate(now)}</span>
 </div>
 </div>

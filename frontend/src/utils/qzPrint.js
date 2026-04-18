@@ -200,7 +200,9 @@ export async function printHTML(html, printerName = null) {
 
     const config = qz.configs.create(printer, {
         orientation: 'portrait',
-        margins: 0
+        margins: 0,
+        altPrinting: true,   // Uses browser's native renderer — fixes Arabic BiDi with MS Print to PDF
+        encoding: 'UTF-8',
     })
     
     await qz.print(config, [{ 
