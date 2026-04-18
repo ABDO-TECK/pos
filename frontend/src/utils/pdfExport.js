@@ -10,38 +10,34 @@
 
 const AR = 'ar-EG-u-nu-latn'
 
-// Unicode BiDi Isolate characters — forces correct text ordering in ANY renderer
-const LRI = '\u2066' // LEFT-TO-RIGHT ISOLATE — start an LTR-isolated segment
-const PDI = '\u2069' // POP DIRECTIONAL ISOLATE — end the isolated segment
-
 function fc(n) {
-  return LRI + new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(n ?? 0) + PDI
+  return `<bdi>${new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(n ?? 0)}</bdi>`
 }
 function fn(n) {
-  return LRI + new Intl.NumberFormat(AR).format(n ?? 0) + PDI
+  return `<bdi>${new Intl.NumberFormat(AR).format(n ?? 0)}</bdi>`
 }
 function fdate(d) {
   if (!d) return '—'
   const dt = new Date(d)
   if (Number.isNaN(dt.getTime())) return '—'
-  return LRI + new Intl.DateTimeFormat('en-GB', {
+  return `<bdi>${new Intl.DateTimeFormat('en-GB', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(dt) + PDI
+  }).format(dt)}</bdi>`
 }
 function fshort(d) {
   if (!d) return '—'
   const dt = new Date(d)
   if (Number.isNaN(dt.getTime())) return '—'
-  return LRI + new Intl.DateTimeFormat('en-GB', {
+  return `<bdi>${new Intl.DateTimeFormat('en-GB', {
     year: 'numeric', month: 'short', day: 'numeric',
-  }).format(dt) + PDI
+  }).format(dt)}</bdi>`
 }
 
-/** Wrap any dynamic value in BiDi isolate chars so adjacent Arabic labels don't get reversed */
+/** Wrap any dynamic value in <bdi> so adjacent Arabic labels don't get reversed */
 function bidi(val) {
   if (!val) return ''
-  return LRI + val + PDI
+  return `<bdi>${val}</bdi>`
 }
 
 /**
