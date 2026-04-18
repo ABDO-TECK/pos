@@ -63,30 +63,28 @@ function generatePDF(htmlString, filename) {
 
 // ── Shared PDF CSS (Excel-like look) ─────────────────────────────────────────
 const PDF_CSS = `
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
+* { 
+  box-sizing: border-box; 
+  margin: 0; 
+  padding: 0; 
+  direction: rtl;
+  unicode-bidi: plaintext;
+}
+.ledger-container {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
   font-size: 11px;
   color: #1e293b;
   background: #fff;
   direction: rtl;
+  unicode-bidi: embed;
   padding: 12mm;
-  text-align: center;
-  width: 100%;
-}
-.ledger-container {
-  max-width: 1000px;
-  width: 100%;
-  margin: 0 auto;
   text-align: right;
-  display: inline-block;
-}
-@page {
-  size: A4 portrait;
-  margin: 10mm;
+  width: 1000px;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 @media print {
-  body { padding: 0; }
+  .ledger-container { padding: 0; }
   .no-print { display: none !important; }
 }
 
@@ -247,22 +245,15 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
-        <td class="${isDebit ? 'debit' : 'muted num'}">${isDebit ? fc(row.debit) : '—'}</td>
-        <td class="${isCredit ? 'credit' : 'muted num'}">${isCredit ? fc(row.credit) : '—'}</td>
-        <td class="${balClass} num bold">${fc(Math.abs(row.balance))} ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
+        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6"><span dir="rtl">(رصيد مبدئي)</span></small>' : ''}</td>
+        <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
+        <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
+        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> <span dir="rtl">${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</span></td>
       </tr>`
   }).join('')
 
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <title>كشف حساب — ${customer.name}</title>
-  <style>${PDF_CSS}</style>
-</head>
-<body>
-<div class="ledger-container">
+  return `<style>${PDF_CSS}</style>
+<div class="ledger-container" dir="rtl">
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب العميل</h1>
@@ -279,19 +270,19 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
 <div class="summary-row">
   <div class="summary-card">
     <div class="label">عدد الحركات</div>
-    <div class="value">${fn(entries.length)}</div>
+    <div class="value"><span dir="ltr">${fn(entries.length)}</span></div>
   </div>
   <div class="summary-card danger">
     <div class="label">إجمالي المدين</div>
-    <div class="value">${fc(totalDebit)}</div>
+    <div class="value"><span dir="ltr">${fc(totalDebit)}</span></div>
   </div>
   <div class="summary-card success">
     <div class="label">إجمالي الدائن</div>
-    <div class="value">${fc(totalCredit)}</div>
+    <div class="value"><span dir="ltr">${fc(totalCredit)}</span></div>
   </div>
   <div class="summary-card ${balance > 0 ? 'danger' : 'success'}">
     <div class="label">الرصيد الحالي</div>
-    <div class="value">${fc(Math.abs(balance))} ${balance > 0 ? '(مدين)' : '(دائن)'}</div>
+    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? '(مدين)' : '(دائن)'}</span></div>
   </div>
 </div>
 
@@ -310,9 +301,9 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
   <tfoot>
     <tr>
       <td colspan="3">الإجمالي</td>
-      <td class="debit num">${fc(totalDebit)}</td>
-      <td class="credit num">${fc(totalCredit)}</td>
-      <td class="balance num">${fc(Math.abs(balance))} ${balance > 0 ? 'مدين' : 'دائن'}</td>
+      <td class="debit num"><span dir="ltr">${fc(totalDebit)}</span></td>
+      <td class="credit num"><span dir="ltr">${fc(totalCredit)}</span></td>
+      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? 'مدين' : 'دائن'}</span></td>
     </tr>
   </tfoot>
 </table>
@@ -321,9 +312,7 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-</div>
-</body>
-</html>`
+</div>`
 }
 
 export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
@@ -357,22 +346,15 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
-        <td class="${isDebit ? 'debit' : 'muted num'}">${isDebit ? fc(row.debit) : '—'}</td>
-        <td class="${isCredit ? 'credit' : 'muted num'}">${isCredit ? fc(row.credit) : '—'}</td>
-        <td class="${balClass} num bold">${fc(Math.abs(row.balance))} ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
+        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6"><span dir="rtl">(رصيد مبدئي)</span></small>' : ''}</td>
+        <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
+        <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
+        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> <span dir="rtl">${row.balance > 0 ? 'مستحق' : row.balance < 0 ? 'مُسدَّد' : ''}</span></td>
       </tr>`
   }).join('')
 
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <title>كشف حساب — ${supplier.name}</title>
-  <style>${PDF_CSS}</style>
-</head>
-<body>
-<div class="ledger-container">
+  return `<style>${PDF_CSS}</style>
+<div class="ledger-container" dir="rtl">
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب المورد</h1>
@@ -390,19 +372,19 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
 <div class="summary-row">
   <div class="summary-card">
     <div class="label">عدد الحركات</div>
-    <div class="value">${fn(entries.length)}</div>
+    <div class="value"><span dir="ltr">${fn(entries.length)}</span></div>
   </div>
   <div class="summary-card danger">
     <div class="label">إجمالي المدين</div>
-    <div class="value">${fc(totalDebit)}</div>
+    <div class="value"><span dir="ltr">${fc(totalDebit)}</span></div>
   </div>
   <div class="summary-card success">
     <div class="label">إجمالي الدائن</div>
-    <div class="value">${fc(totalCredit)}</div>
+    <div class="value"><span dir="ltr">${fc(totalCredit)}</span></div>
   </div>
   <div class="summary-card ${balance > 0 ? 'danger' : 'success'}">
     <div class="label">الرصيد الحالي</div>
-    <div class="value">${fc(Math.abs(balance))} ${balance > 0 ? '(مستحق)' : '(مُسدَّد)'}</div>
+    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? '(مستحق)' : '(مُسدَّد)'}</span></div>
   </div>
 </div>
 
@@ -421,9 +403,9 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
   <tfoot>
     <tr>
       <td colspan="3">الإجمالي</td>
-      <td class="debit num">${fc(totalDebit)}</td>
-      <td class="credit num">${fc(totalCredit)}</td>
-      <td class="balance num">${fc(Math.abs(balance))} ${balance > 0 ? 'مستحق' : 'مُسدَّد'}</td>
+      <td class="debit num"><span dir="ltr">${fc(totalDebit)}</span></td>
+      <td class="credit num"><span dir="ltr">${fc(totalCredit)}</span></td>
+      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? 'مستحق' : 'مُسدَّد'}</span></td>
     </tr>
   </tfoot>
 </table>
@@ -432,9 +414,7 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-</div>
-</body>
-</html>`
+</div>`
 }
 
 export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
