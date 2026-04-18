@@ -11,6 +11,7 @@ import {
     getSavedPrinter,
     savePrinter,
     printHTML,
+    printPDFBase64,
 } from '../utils/qzPrint'
 
 export default function useQZPrinter() {
@@ -79,6 +80,20 @@ export default function useQZPrinter() {
         }
     }, [selectedPrinter])
 
+    /** Print PDF (base64) via QZ Tray. Returns { ok, error }. */
+    const qzPrintPDF = useCallback(async (base64) => {
+        if (!selectedPrinter) { setShowPrinterPicker(true); return { ok: false, error: 'لم يتم اختيار طابعة' } }
+        setPrinting(true)
+        try {
+            await printPDFBase64(base64, selectedPrinter)
+            return { ok: true }
+        } catch (err) {
+            return { ok: false, error: err.message ?? 'فشل الطباعة' }
+        } finally {
+            setPrinting(false)
+        }
+    }, [selectedPrinter])
+
     return {
         qzStatus,
         qzReady: qzStatus === 'ready',
@@ -89,6 +104,7 @@ export default function useQZPrinter() {
         handlePrinterSelect,
         printing,
         qzPrint,
+        qzPrintPDF,
         remoteError,
         retryConnect,
     }

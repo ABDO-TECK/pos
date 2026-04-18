@@ -3,7 +3,7 @@ import {
   UserPlus, Search, ChevronRight, X, Trash2, Edit2,
   PlusCircle, Phone, MapPin, BookOpen, ArrowRight, Download,
 } from 'lucide-react'
-import { exportCustomerLedgerPDF, buildCustomerLedgerHTML } from '../utils/pdfExport'
+import { exportCustomerLedgerPDF } from '../utils/pdfExport'
 import useQZPrinter from '../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
 import useSettingsStore from '../store/settingsStore'
@@ -51,6 +51,7 @@ export default function Customers() {
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
   const settings = useSettingsStore()
+
   const qz = useQZPrinter()
 
   // ── data ──
@@ -257,13 +258,14 @@ export default function Customers() {
                   qzReady={qz.qzReady}
                   printing={qz.printing}
                   onQZPrint={async () => {
-                    const html = buildCustomerLedgerHTML(ledgerData, settings.storeName)
-                    const r = await qz.qzPrint(html)
+                    const b64 = await exportCustomerLedgerPDF(ledgerData.customer.id, true)
+                    if (!b64) return
+                    const r = await qz.qzPrintPDF(b64)
                     if (r.ok) toast.success('تمت الطباعة بنجاح')
                     else if (r.error) toast.error('فشل الطباعة: ' + r.error)
                   }}
                   onPickPrinter={() => qz.setShowPrinterPicker(true)}
-                  onBrowserPrint={() => exportCustomerLedgerPDF(ledgerData, settings.storeName)}
+                  onBrowserPrint={() => exportCustomerLedgerPDF(ledgerData.customer.id)}
                   label="طباعة وتصدير"
                 />
               </div>
@@ -495,6 +497,7 @@ export default function Customers() {
           </div>
         </div>
       )}
+
 
       {qz.showPrinterPicker && (
         <QZPrinterPicker

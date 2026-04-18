@@ -15,5 +15,8 @@
             "helpers/",
             "services/"
         ]
+    },
+    "require": {
+        "mpdf/mpdf": "^8.3"
     }
 }

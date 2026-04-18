@@ -11,6 +11,11 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/core/Autoloader.php';
 Autoloader::register();
 
+// ── Composer Autoloader (for mPDF) ────────────────────────────
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
 // ── CORS ──────────────────────────────────────────────────────
 $allowedOrigins = [
     'http://localhost:5173',

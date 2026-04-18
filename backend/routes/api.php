@@ -49,6 +49,10 @@ $router->post('/api/purchases/bulk', [SupplierController::class, 'purchaseBulk',
 $router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class]]);
 $router->put('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
 
+// ── Ledger PDF Export (Server-side mPDF) ───────────────────────
+$router->get('/api/customers/{id}/pdf', [LedgerPdfController::class, 'customerPdf', [AuthMiddleware::class]]);
+$router->get('/api/suppliers/{id}/pdf', [LedgerPdfController::class, 'supplierPdf', [AuthMiddleware::class]]);
+
 // ── Reports ────────────────────────────────────────────────────
 $router->get('/api/reports/daily',    [ReportController::class, 'daily',        [AuthMiddleware::class]]);
 $router->get('/api/reports/monthly',  [ReportController::class, 'monthly',      [AuthMiddleware::class]]);

@@ -212,6 +212,27 @@ export async function printHTML(html, printerName = null) {
     }])
 }
 
+/**
+ * Print a PDF (from Base64 data) via QZ Tray.
+ * @param {string} base64Data  - Base64 encoded PDF string
+ * @param {string} [printerName] - Override printer
+ */
+export async function printPDFBase64(base64Data, printerName = null) {
+    await connectQZ()
+    const qz = getQZ()
+
+    const printer = printerName ?? getSavedPrinter()
+    if (!printer) throw new Error('لم يتم اختيار طابعة')
+
+    const config = qz.configs.create(printer)
+    
+    await qz.print(config, [{ 
+        type: 'pdf', 
+        format: 'base64', 
+        data: base64Data 
+    }])
+}
+
 // ── High-level helper: print an invoice object ─────────────────────────────
 
 /**

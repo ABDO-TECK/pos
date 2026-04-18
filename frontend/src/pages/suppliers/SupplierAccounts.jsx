@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Edit2, Search, X, Package } from 'lucide-react'
 import useSettingsStore from '../../store/settingsStore'
-import { exportSupplierLedgerPDF, buildSupplierLedgerHTML } from '../../utils/pdfExport'
+import { exportSupplierLedgerPDF } from '../../utils/pdfExport'
 import useQZPrinter from '../../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../../components/QZPrinterUI'
 import toast from 'react-hot-toast'
@@ -208,13 +208,14 @@ export default function SupplierAccounts() {
                   qzReady={qz.qzReady}
                   printing={qz.printing}
                   onQZPrint={async () => {
-                    const html = buildSupplierLedgerHTML(ledgerData, settings.storeName)
-                    const r = await qz.qzPrint(html)
+                    const b64 = await exportSupplierLedgerPDF(ledgerData.supplier.id, true)
+                    if (!b64) return
+                    const r = await qz.qzPrintPDF(b64)
                     if (r.ok) toast.success('تمت الطباعة بنجاح')
                     else if (r.error) toast.error('فشل الطباعة: ' + r.error)
                   }}
                   onPickPrinter={() => qz.setShowPrinterPicker(true)}
-                  onBrowserPrint={() => exportSupplierLedgerPDF(ledgerData, settings.storeName)}
+                  onBrowserPrint={() => exportSupplierLedgerPDF(ledgerData.supplier.id)}
                   label="طباعة وتصدير"
                 />
               </div>
@@ -418,6 +419,7 @@ export default function SupplierAccounts() {
           </div>
         </div>
       )}
+
 
       {qz.showPrinterPicker && (
         <QZPrinterPicker
