@@ -10,28 +10,32 @@
 
 const AR = 'ar-EG-u-nu-latn'
 
+// Unicode BiDi Isolate characters — forces correct text ordering in ANY renderer
+const LRI = '\u2066' // LEFT-TO-RIGHT ISOLATE — start an LTR-isolated segment
+const PDI = '\u2069' // POP DIRECTIONAL ISOLATE — end the isolated segment
+
 function fc(n) {
-  return new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(n ?? 0)
+  return LRI + new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(n ?? 0) + PDI
 }
 function fn(n) {
-  return new Intl.NumberFormat(AR).format(n ?? 0)
+  return LRI + new Intl.NumberFormat(AR).format(n ?? 0) + PDI
 }
 function fdate(d) {
   if (!d) return '—'
   const dt = new Date(d)
   if (Number.isNaN(dt.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-GB', {
+  return LRI + new Intl.DateTimeFormat('en-GB', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(dt)
+  }).format(dt) + PDI
 }
 function fshort(d) {
   if (!d) return '—'
   const dt = new Date(d)
   if (Number.isNaN(dt.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-GB', {
+  return LRI + new Intl.DateTimeFormat('en-GB', {
     year: 'numeric', month: 'short', day: 'numeric',
-  }).format(dt)
+  }).format(dt) + PDI
 }
 
 /**
