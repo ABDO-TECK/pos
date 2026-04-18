@@ -39,7 +39,7 @@ function generatePDF(htmlString, filename) {
   container.style.position = 'absolute';
   container.style.left = '-9999px';
   container.style.top = '-9999px';
-  container.style.width = '1000px'; 
+  container.style.width = '800px'; // A4 friendly width to prevent horizontal cutoff
   container.style.backgroundColor = '#fff';
   container.style.direction = 'rtl';
   container.innerHTML = htmlString;
@@ -49,8 +49,9 @@ function generatePDF(htmlString, filename) {
     margin:       [10, 10, 10, 10], 
     filename:     filename,
     image:        { type: 'jpeg', quality: 1 },
-    html2canvas:  { scale: 2, useCORS: true, letterRendering: true, logging: false },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    html2canvas:  { scale: 2, useCORS: true, letterRendering: true, logging: false, windowWidth: 800 },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak:    { mode: ['css', 'legacy'] } // Automatically adds new pages instead of cutting vertically
   };
 
   html2pdf().set(opt).from(container).save().then(() => {
@@ -77,10 +78,10 @@ const PDF_CSS = `
   background: #fff;
   direction: rtl;
   unicode-bidi: embed;
-  padding: 12mm;
+  padding: 8mm;
   text-align: right;
-  width: 1000px;
-  max-width: 1000px;
+  width: 800px;
+  max-width: 800px;
   margin: 0 auto;
 }
 @media print {
