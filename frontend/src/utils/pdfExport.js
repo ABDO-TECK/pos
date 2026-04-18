@@ -1,11 +1,12 @@
 /**
  * pdfExport.js
- * Generates Excel-styled PDF exports via the browser's print dialog.
+ * Generates Excel-styled PDF exports via the browser's native print dialog.
  * Uses a new window with print-optimized CSS for clean PDF output.
- * Color scheme: Professional blue tones (dark blue headers, light blue alternating rows).
+ * 
+ * IMPORTANT: This uses window.open() + window.print() (Chrome's native renderer)
+ * which handles Arabic/English mixed text (BiDi) perfectly.
+ * DO NOT use html2canvas/html2pdf.js — they break Arabic text rendering.
  */
-
-import html2pdf from 'html2pdf.js'
 
 const AR = 'ar-EG-u-nu-latn'
 
@@ -33,59 +34,46 @@ function fshort(d) {
   }).format(dt)
 }
 
-function generatePDF(htmlString, filename) {
-  // We use html2pdf to bypass buggy OS PDF Printers (like MS Print to PDF) that reverse Arabic
-  const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
-  container.style.width = '800px'; // A4 friendly width to prevent horizontal cutoff
-  container.style.backgroundColor = '#fff';
-  container.style.direction = 'rtl';
-  container.innerHTML = htmlString;
-  document.body.appendChild(container);
-
-  const opt = {
-    margin:       [10, 10, 10, 10], 
-    filename:     filename,
-    image:        { type: 'jpeg', quality: 1 },
-    html2canvas:  { scale: 2, useCORS: true, letterRendering: true, logging: false, windowWidth: 800 },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak:    { mode: ['css', 'legacy'] } // Automatically adds new pages instead of cutting vertically
-  };
-
-  html2pdf().set(opt).from(container).save().then(() => {
-    document.body.removeChild(container);
-  }).catch((err) => {
-    console.error('PDF Generation Error:', err);
-    document.body.removeChild(container);
-  });
+/**
+ * Opens a new browser window with the HTML content and triggers print.
+ * Chrome's native print → "Save as PDF" handles RTL/BiDi text perfectly.
+ */
+function openPrintWindow(html) {
+  const win = window.open('', '_blank', 'width=1100,height=750,scrollbars=yes')
+  if (!win) { alert('يرجى السماح بالنوافذ المنبثقة (Popups) في المتصفح'); return }
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
+  setTimeout(() => { win.focus(); win.print() }, 600)
 }
 
 // ── Shared PDF CSS (Excel-like look) ─────────────────────────────────────────
 const PDF_CSS = `
-* { 
-  box-sizing: border-box; 
-  margin: 0; 
-  padding: 0; 
-  direction: rtl;
-  unicode-bidi: plaintext;
-}
-.ledger-container {
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
   font-size: 11px;
   color: #1e293b;
   background: #fff;
   direction: rtl;
   unicode-bidi: embed;
-  padding: 8mm;
-  text-align: right;
-  width: 800px;
-  max-width: 800px;
+  padding: 12mm;
+  text-align: center;
+  width: 100%;
+}
+.ledger-container {
+  max-width: 1000px;
+  width: 100%;
   margin: 0 auto;
+  text-align: right;
+  display: inline-block;
+}
+@page {
+  size: A4 portrait;
+  margin: 10mm;
 }
 @media print {
-  .ledger-container { padding: 0; }
+  body { padding: 0; }
   .no-print { display: none !important; }
 }
 
@@ -246,15 +234,22 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6"><span dir="rtl">(رصيد مبدئي)</span></small>' : ''}</td>
+        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
         <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
         <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
-        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> <span dir="rtl">${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</span></td>
+        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
       </tr>`
   }).join('')
 
-  return `<style>${PDF_CSS}</style>
-<div class="ledger-container" dir="rtl">
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>كشف حساب — ${customer.name}</title>
+  <style>${PDF_CSS}</style>
+</head>
+<body>
+<div class="ledger-container">
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب العميل</h1>
@@ -283,7 +278,7 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
   </div>
   <div class="summary-card ${balance > 0 ? 'danger' : 'success'}">
     <div class="label">الرصيد الحالي</div>
-    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? '(مدين)' : '(دائن)'}</span></div>
+    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> ${balance > 0 ? '(مدين)' : '(دائن)'}</div>
   </div>
 </div>
 
@@ -304,7 +299,7 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
       <td colspan="3">الإجمالي</td>
       <td class="debit num"><span dir="ltr">${fc(totalDebit)}</span></td>
       <td class="credit num"><span dir="ltr">${fc(totalCredit)}</span></td>
-      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? 'مدين' : 'دائن'}</span></td>
+      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> ${balance > 0 ? 'مدين' : 'دائن'}</td>
     </tr>
   </tfoot>
 </table>
@@ -313,7 +308,9 @@ export function buildCustomerLedgerHTML(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-</div>`
+</div>
+</body>
+</html>`
 }
 
 export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
@@ -322,10 +319,7 @@ export function exportCustomerLedgerPDF(ledgerData, storeName = 'سوبر مار
     alert('لا توجد حركات لعرضها')
     return
   }
-
-  const dateStr = new Intl.DateTimeFormat('en-GB').format(new Date()).replace(/\//g, '-')
-  const filename = `Customer_Statement_${ledgerData.customer.name}_${dateStr}.pdf`
-  generatePDF(html, filename)
+  openPrintWindow(html)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -347,15 +341,22 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
       <tr>
         <td class="muted num">${fn(i + 1)}</td>
         <td style="white-space:nowrap">${fdate(row.date)}</td>
-        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6"><span dir="rtl">(رصيد مبدئي)</span></small>' : ''}</td>
+        <td>${row.description || '—'}${row.type === 'initial' ? ' <small style="color:#3b82f6">(رصيد مبدئي)</small>' : ''}</td>
         <td class="${isDebit ? 'debit' : 'muted num'}"><span dir="ltr">${isDebit ? fc(row.debit) : '—'}</span></td>
         <td class="${isCredit ? 'credit' : 'muted num'}"><span dir="ltr">${isCredit ? fc(row.credit) : '—'}</span></td>
-        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> <span dir="rtl">${row.balance > 0 ? 'مستحق' : row.balance < 0 ? 'مُسدَّد' : ''}</span></td>
+        <td class="${balClass} num bold"><span dir="ltr">${fc(Math.abs(row.balance))}</span> ${row.balance > 0 ? 'مدين' : row.balance < 0 ? 'دائن' : ''}</td>
       </tr>`
   }).join('')
 
-  return `<style>${PDF_CSS}</style>
-<div class="ledger-container" dir="rtl">
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>كشف حساب — ${supplier.name}</title>
+  <style>${PDF_CSS}</style>
+</head>
+<body>
+<div class="ledger-container">
 <div class="report-header">
   <div class="title-block">
     <h1>كشف حساب المورد</h1>
@@ -385,7 +386,7 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
   </div>
   <div class="summary-card ${balance > 0 ? 'danger' : 'success'}">
     <div class="label">الرصيد الحالي</div>
-    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? '(مستحق)' : '(مُسدَّد)'}</span></div>
+    <div class="value"><span dir="ltr">${fc(Math.abs(balance))}</span> ${balance > 0 ? '(مستحق)' : '(مُسدَّد)'}</div>
   </div>
 </div>
 
@@ -406,7 +407,7 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
       <td colspan="3">الإجمالي</td>
       <td class="debit num"><span dir="ltr">${fc(totalDebit)}</span></td>
       <td class="credit num"><span dir="ltr">${fc(totalCredit)}</span></td>
-      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> <span dir="rtl">${balance > 0 ? 'مستحق' : 'مُسدَّد'}</span></td>
+      <td class="balance num"><span dir="ltr">${fc(Math.abs(balance))}</span> ${balance > 0 ? 'مستحق' : 'مُسدَّد'}</td>
     </tr>
   </tfoot>
 </table>
@@ -415,7 +416,9 @@ export function buildSupplierLedgerHTML(ledgerData, storeName = 'سوبر مار
   <span>تم إنشاء هذا التقرير بواسطة نظام نقاط البيع — ${storeName}</span>
   <span>${fdate(now)}</span>
 </div>
-</div>`
+</div>
+</body>
+</html>`
 }
 
 export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر ماركت') {
@@ -424,8 +427,5 @@ export function exportSupplierLedgerPDF(ledgerData, storeName = 'سوبر مار
     alert('لا توجد حركات لعرضها')
     return
   }
-
-  const dateStr = new Intl.DateTimeFormat('en-GB').format(new Date()).replace(/\//g, '-')
-  const filename = `Supplier_Statement_${ledgerData.supplier.name}_${dateStr}.pdf`
-  generatePDF(html, filename)
+  openPrintWindow(html)
 }
