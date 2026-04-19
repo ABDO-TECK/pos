@@ -20,27 +20,43 @@ class Response {
         return self::json($body, $status);
     }
 
-    public static function error(string $message, int $status = 400, mixed $errors = null): array {
+    public static function cacheable(mixed $data = null, int $ttl = 60, ?string $etag = null): array {
+        $response = self::success($data);
+        $response['headers'] = [
+            'Cache-Control' => "public, max-age={$ttl}",
+        ];
+        if ($etag !== null) {
+            $response['headers']['ETag'] = 'W/"' . $etag . '"';
+        }
+        return $response;
+    }
+
+    public static function error(string $message, int $status = 400, mixed $errors = null, ?string $errorCode = null): array {
         $body = ['status' => 'error', 'message' => $message];
+        
+        if ($errorCode !== null) {
+            $body['error_code'] = $errorCode;
+        }
+
         if ($errors !== null) {
             $body['errors'] = $errors;
         }
         return self::json($body, $status);
     }
 
-    public static function notFound(string $message = 'Resource not found'): array {
-        return self::error($message, 404);
+    public static function notFound(string $message = 'Resource not found', ?string $errorCode = ErrorCodes::NOT_FOUND): array {
+        return self::error($message, 404, null, $errorCode);
     }
 
-    public static function unauthorized(string $message = 'Unauthorized'): array {
-        return self::error($message, 401);
+    public static function unauthorized(string $message = 'Unauthorized', ?string $errorCode = ErrorCodes::UNAUTHORIZED): array {
+        return self::error($message, 401, null, $errorCode);
     }
 
-    public static function forbidden(string $message = 'Forbidden'): array {
-        return self::error($message, 403);
+    public static function forbidden(string $message = 'Forbidden', ?string $errorCode = ErrorCodes::FORBIDDEN): array {
+        return self::error($message, 403, null, $errorCode);
     }
 
-    public static function serverError(string $message = 'Internal server error'): array {
-        return self::error($message, 500);
+    public static function serverError(string $message = 'Internal server error', ?string $errorCode = ErrorCodes::SERVER_ERROR): array {
+        return self::error($message, 500, null, $errorCode);
     }
 }

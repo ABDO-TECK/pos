@@ -123,6 +123,10 @@ abstract class Controller {
                 }
             }
         }
+        if (!empty($errors)) {
+            throw new ValidationException($errors, 'فشل التحقق من صحة البيانات');
+        }
+        
         return $errors;
     }
 

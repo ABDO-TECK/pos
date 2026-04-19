@@ -87,3 +87,6 @@ $router->put('/api/customers/{id}',            [CustomerController::class, 'upda
 $router->delete('/api/customers/{id}',         [CustomerController::class, 'destroy',    [AuthMiddleware::class, AdminMiddleware::class]]);
 $router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment',       [AuthMiddleware::class]]);
 $router->put('/api/customers/ledger/{entryId}', [CustomerController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
+
+// ── Health Check ───────────────────────────────────────────────
+$router->get('/api/health', [HealthController::class, 'check']);

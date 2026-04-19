@@ -71,6 +71,11 @@ class Router {
         if (is_array($response) && isset($response['status_code'], $response['body'])) {
             http_response_code($response['status_code']);
             header('Content-Type: application/json; charset=utf-8');
+            if (isset($response['headers']) && is_array($response['headers'])) {
+                foreach ($response['headers'] as $k => $v) {
+                    header("{$k}: {$v}");
+                }
+            }
             echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         } else if (is_string($response)) {
             echo $response;

@@ -79,13 +79,14 @@ class Logger
         $time     = date('Y-m-d H:i:s');
         $filePath = self::$logDir . "/pos-{$date}.log";
 
-        // بناء السطر
-        $line = "[{$time}] [{$level}] {$message}";
-        if (!empty($context)) {
-            $contextStr = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $line .= " | context: {$contextStr}";
-        }
-        $line .= PHP_EOL;
+        // بناء السطر بتنسيق JSON (Structured Logging)
+        $logData = [
+            'timestamp' => $time,
+            'level'     => $level,
+            'message'   => $message,
+            'context'   => $context
+        ];
+        $line = json_encode($logData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 
         // كتابة ذرية (مع قفل)
         @file_put_contents($filePath, $line, FILE_APPEND | LOCK_EX);

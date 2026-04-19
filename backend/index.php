@@ -60,9 +60,18 @@ try {
 
 // ── Error handling ─────────────────────────────────────────────
 set_exception_handler(function (Throwable $e) {
+    if ($e instanceof ValidationException) {
+        $resp = Response::error($e->getMessage(), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
+        http_response_code(422);
+        echo json_encode($resp['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return;
+    }
+
     $message = APP_DEBUG ? $e->getMessage() : 'Internal server error';
     Logger::critical($e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
-    Response::serverError($message);
+    $resp = Response::serverError($message);
+    http_response_code(500);
+    echo json_encode($resp['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 });
 
 // ── Routes ─────────────────────────────────────────────────────
