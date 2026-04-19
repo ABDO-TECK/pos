@@ -2,12 +2,14 @@
 
 class SupplierController extends Controller {
 
-    private Supplier $supplierModel;
-    private Product  $productModel;
+    private Supplier         $supplierModel;
+    private Product          $productModel;
+    private InventoryService $inventoryService;
 
     public function __construct() {
-        $this->supplierModel = new Supplier();
-        $this->productModel  = new Product();
+        $this->supplierModel    = new Supplier();
+        $this->productModel     = new Product();
+        $this->inventoryService = new InventoryService();
     }
 
     public function index() {
@@ -125,22 +127,13 @@ class SupplierController extends Controller {
 
     /** Delete a purchase invoice and restore stock */
     public function purchaseInvoiceDelete(string $id) {
-        $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
-        if (!$invoice) return Response::notFound('Purchase invoice not found');
+        $result = $this->inventoryService->deletePurchaseInvoice((int)$id);
 
-        $db = Database::getInstance();
-        $db->beginTransaction();
-        try {
-            // Restore stock quantities
-            foreach ($invoice['items'] as $item) {
-                $this->productModel->decrementQuantity((int)$item['product_id'], (int)$item['quantity']);
-            }
-            $this->supplierModel->deletePurchaseInvoice((int)$id);
-            $db->commit();
-        } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل إضافة المورد', ['error' => $e->getMessage()]);
-            return Response::serverError('Failed to delete purchase invoice');
+        if (!$result['ok']) {
+            $code = $result['code'] ?? 500;
+            return $code === 404
+                ? Response::notFound($result['error'])
+                : Response::serverError($result['error']);
         }
 
         return Response::success(null, 'Purchase invoice deleted and stock restored');
@@ -158,124 +151,22 @@ class SupplierController extends Controller {
 
     /** Bulk purchase — creates a purchase invoice + items */
     public function purchaseBulk() {
-        $data = $this->getBody();
+        $data   = $this->getBody();
+        $auth   = $_SERVER['AUTH_USER'];
+        $result = $this->inventoryService->processBulkPurchase($data, $auth);
 
-        if (empty($data['supplier_id'])) {
-            return Response::error('supplier_id is required', 422);
-        }
-        if (empty($data['items']) || !is_array($data['items'])) {
-            return Response::error('items array is required', 422);
-        }
-
-        $supplier = $this->supplierModel->findById((int)$data['supplier_id']);
-        if (!$supplier) return Response::notFound('Supplier not found');
-
-        $replaceInvoiceId = isset($data['replace_invoice_id']) ? (int) $data['replace_invoice_id'] : 0;
-        $existingInvoice = null;
-        if ($replaceInvoiceId > 0) {
-            $existingInvoice = $this->supplierModel->getPurchaseInvoice($replaceInvoiceId);
-            if (!$existingInvoice) return Response::notFound('Original invoice not found for replacement');
+        if (!$result['ok']) {
+            $code = $result['code'] ?? 500;
+            return $code === 404
+                ? Response::notFound($result['error'])
+                : Response::error($result['error'], $code);
         }
 
-        $db = Database::getInstance();
-        $db->beginTransaction();
-        try {
-            // Calculate total
-            $grandTotal = 0;
-            foreach ($data['items'] as $item) {
-                $grandTotal += (float)$item['cost'] * (int)$item['quantity'];
-            }
-
-            if ($replaceInvoiceId > 0) {
-                // Revert old stock
-                foreach ($existingInvoice['items'] as $oldItem) {
-                    $this->productModel->decrementQuantity((int)$oldItem['product_id'], (int)$oldItem['quantity']);
-                }
-                // Delete old items
-                $this->supplierModel->deletePurchaseInvoiceItems($replaceInvoiceId);
-                // Update header
-                $this->supplierModel->updatePurchaseInvoiceTotals($replaceInvoiceId, [
-                    'total' => $grandTotal,
-                    'items_count' => count($data['items']),
-                    'notes' => $data['notes'] ?? null
-                ]);
-                $invoiceId = $replaceInvoiceId;
-            } else {
-                $invoiceId = $this->supplierModel->createPurchaseInvoice([
-                    'supplier_id' => (int)$data['supplier_id'],
-                    'total'       => $grandTotal,
-                    'items_count' => count($data['items']),
-                    'notes'       => $data['notes'] ?? null,
-                ]);
-            }
-
-            foreach ($data['items'] as $item) {
-                if (empty($item['product_id']) || empty($item['quantity']) || !isset($item['cost'])) {
-                    $db->rollBack();
-                    return Response::error('Each item needs product_id, quantity, and cost', 422);
-                }
-
-                $product = $this->productModel->findById((int)$item['product_id']);
-                if (!$product) {
-                    $db->rollBack();
-                    return Response::notFound("Product ID {$item['product_id']} not found");
-                }
-
-                $this->supplierModel->createPurchase([
-                    'purchase_invoice_id' => $invoiceId,
-                    'supplier_id'         => (int)$data['supplier_id'],
-                    'product_id'          => (int)$item['product_id'],
-                    'quantity'            => (int)$item['quantity'],
-                    'cost'                => (float)$item['cost'],
-                ]);
-                $this->productModel->incrementQuantity((int)$item['product_id'], (int)$item['quantity']);
-
-                // Update product cost price if provided
-                if (!empty($item['update_cost'])) {
-                    $db->prepare('UPDATE products SET cost = ? WHERE id = ?')
-                       ->execute([(float)$item['cost'], (int)$item['product_id']]);
-                }
-            }
-            // تسجيل قيد مدين في كشف حساب المورد (شراء آجل)
-            $isCreditPurchase = ($data['payment_type'] ?? '') === 'credit';
-            if ($isCreditPurchase && $replaceInvoiceId === 0) {
-                $auth = $_SERVER['AUTH_USER'];
-                $deposit = (float)($data['deposit'] ?? 0);
-
-                // قيد مدين بقيمة الفاتورة الكاملة
-                $this->supplierModel->addLedgerEntry([
-                    'supplier_id'         => (int)$data['supplier_id'],
-                    'type'                => 'debit',
-                    'amount'              => $grandTotal,
-                    'description'         => "فاتورة شراء #{$invoiceId}" . ($deposit > 0 ? " (عربون {$deposit})" : ''),
-                    'purchase_invoice_id' => $invoiceId,
-                    'created_by'          => $auth['id'],
-                ]);
-
-                // قيد دائن للعربون إذا كان موجوداً
-                if ($deposit > 0) {
-                    $this->supplierModel->addLedgerEntry([
-                        'supplier_id'         => (int)$data['supplier_id'],
-                        'type'                => 'credit',
-                        'amount'              => $deposit,
-                        'description'         => "عربون فاتورة شراء #{$invoiceId}",
-                        'purchase_invoice_id' => $invoiceId,
-                        'created_by'          => $auth['id'],
-                    ]);
-                }
-            }
-
-            $db->commit();
-        } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل عملية شراء بالجملة', ['error' => $e->getMessage()]);
-            return Response::serverError('Failed to record bulk purchase');
-        }
-
+        $isUpdate = $result['is_update'] ?? false;
         return Response::success([
-            'invoice_id'      => $invoiceId,
-            'items_processed' => count($data['items']),
-        ], $replaceInvoiceId > 0 ? 'Purchase invoice updated' : 'Bulk purchase recorded', $replaceInvoiceId > 0 ? 200 : 201);
+            'invoice_id'      => $result['invoice_id'],
+            'items_processed' => $result['items_processed'],
+        ], $isUpdate ? 'Purchase invoice updated' : 'Bulk purchase recorded', $isUpdate ? 200 : 201);
     }
 
     /**

@@ -32,6 +32,7 @@ class Autoloader
             realpath($base . '/models')       ?: $base . '/models',
             realpath($base . '/middleware')    ?: $base . '/middleware',
             realpath($base . '/helpers')      ?: $base . '/helpers',
+            realpath($base . '/services')     ?: $base . '/services',
         ];
 
         spl_autoload_register([self::class, 'loadClass']);

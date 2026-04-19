@@ -5,14 +5,20 @@
  * Signs the QZ Tray request string with the private RSA key and returns the
  * base64-encoded SHA-512 signature.
  *
- * Key file location: place your private-key.pem at one of:
- *   - C:/private/private-key.pem  (default, as in original QZ Tray docs)
- *   - C:/xampp/htdocs/pos/private-key.pem  (XAMPP-friendly alternative)
+ * Key file location is configured via QZ_PRIVATE_KEY_PATH in .env:
+ *   QZ_PRIVATE_KEY_PATH="C:/private/private-key.pem"
  *
- * To use unsigned / anonymous mode (development only), comment out the key
- * loading and echo an empty string:
- *   header("Content-type: text/plain"); echo ''; exit(0);
+ * If the variable is not set, the following fallback paths are tried:
+ *   - C:/private/private-key.pem
+ *   - (project root)/private-key.pem
+ *
+ * To use unsigned / anonymous mode (development only), set:
+ *   QZ_PRIVATE_KEY_PATH=""
  */
+
+// Load .env so QZ_PRIVATE_KEY_PATH is available
+require_once __DIR__ . '/helpers/EnvLoader.php';
+EnvLoader::load(__DIR__ . '/.env');
 
 // Allow CORS for credentials
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
@@ -32,16 +38,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Key file path ──────────────────────────────────────────────────────────
-// Try multiple locations; use the first one found.
-$possibleKeys = [
-    'C:/private/private-key.pem',
-    'C:/xampp/htdocs/pos/private-key.pem',
-    __DIR__ . '/../private-key.pem',
-];
+// Read from .env first; fall back to known locations.
+$envKeyPath = EnvLoader::get('QZ_PRIVATE_KEY_PATH', '');
 
 $KEY = null;
-foreach ($possibleKeys as $path) {
-    if (file_exists($path)) { $KEY = $path; break; }
+if ($envKeyPath !== '' && file_exists($envKeyPath)) {
+    $KEY = $envKeyPath;
+} else {
+    // Fallback paths (only used when .env key is not set)
+    $possibleKeys = [
+        'C:/private/private-key.pem',
+        __DIR__ . '/../private-key.pem',
+    ];
+    foreach ($possibleKeys as $path) {
+        if (file_exists($path)) { $KEY = $path; break; }
+    }
 }
 
 // ── Anonymous / unsigned fallback (if no key file exists) ─────────────────

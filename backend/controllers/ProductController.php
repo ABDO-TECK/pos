@@ -2,10 +2,12 @@
 
 class ProductController extends Controller {
 
-    private Product $productModel;
+    private ProductService $productService;
+    private Product        $productModel;
 
     public function __construct() {
-        $this->productModel = new Product();
+        $this->productService = new ProductService();
+        $this->productModel   = $this->productService->getProductModel();
     }
 
     public function index() {
@@ -52,44 +54,12 @@ class ProductController extends Controller {
             return Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
-        // توليد باركود تلقائي إذا كان فارغاً
-        $main = trim($data['barcode'] ?? '');
-        $isAutoBarcode = ($main === '');
-        if ($isAutoBarcode) {
-            // باركود مؤقت فريد ريثما نحصل على الـ ID
-            $main = 'TEMP-' . uniqid('', true);
+        $result = $this->productService->createProduct($data);
+
+        if (!$result['ok']) {
+            return Response::error($result['error'], $result['code']);
         }
-
-        $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
-        $extrasToCheck = $extras;
-        if (!empty($data['box_barcode'])) {
-            $extrasToCheck[] = $data['box_barcode'];
-        }
-        $this->productModel->assertBarcodesAvailable(null, $main, $extrasToCheck);
-
-        $db = Database::getInstance();
-        $db->beginTransaction();
-        try {
-            $data['barcode'] = $main;
-            $id              = $this->productModel->create($data);
-
-            // استبدال الباركود المؤقت برقم ID (1، 2، 3 ...)
-            if ($isAutoBarcode) {
-                $this->productModel->updateMainBarcode($id, (string)$id);
-            }
-
-            $this->productModel->syncAdditionalBarcodes($id, $extras);
-            $db->commit();
-        } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل إضافة المنتج', ['error' => $e->getMessage()]);
-            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
-                return Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
-            }
-            return Response::serverError('Failed to create product');
-        }
-
-        return Response::success($this->productModel->findById($id), 'Product created', 201);
+        return Response::success($result['product'], 'Product created', 201);
     }
 
     public function update(string $id) {
@@ -102,42 +72,15 @@ class ProductController extends Controller {
             return Response::error($this->productValidationMessage($errors), 422, $errors);
         }
 
-        $pid = (int) $id;
-        $product = $this->productModel->findById($pid);
-        if (!$product) {
-            return Response::notFound('Product not found');
-        }
+        $result = $this->productService->updateProduct((int) $id, $data);
 
-        // إذا كان الباركود فارغاً احتفظ بالباركود القديم
-        $main = trim($data['barcode'] ?? '');
-        if ($main === '') {
-            $main = $product['barcode'];
+        if (!$result['ok']) {
+            $code = $result['code'] ?? 500;
+            return $code === 404
+                ? Response::notFound($result['error'])
+                : Response::error($result['error'], $code);
         }
-
-        $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
-        $extrasToCheck = $extras;
-        if (!empty($data['box_barcode'])) {
-            $extrasToCheck[] = $data['box_barcode'];
-        }
-        $this->productModel->assertBarcodesAvailable($pid, $main, $extrasToCheck);
-
-        $db = Database::getInstance();
-        $db->beginTransaction();
-        try {
-            $data['barcode'] = $main;
-            $this->productModel->update($pid, $data);
-            $this->productModel->syncAdditionalBarcodes($pid, $extras);
-            $db->commit();
-        } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل تحديث المنتج', ['error' => $e->getMessage()]);
-            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
-                return Response::error('هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 422);
-            }
-            return Response::serverError('Failed to update product');
-        }
-
-        return Response::success($this->productModel->findById($pid), 'Product updated');
+        return Response::success($result['product'], 'Product updated');
     }
 
     /** رسالة عربية بدل "Validation failed" + أسماء حقول إنجليزية */
@@ -160,44 +103,14 @@ class ProductController extends Controller {
     }
 
     public function destroy(string $id) {
-        $pid     = (int) $id;
-        $product = $this->productModel->findById($pid);
-        if (!$product) {
-            return Response::notFound('Product not found');
-        }
+        $result = $this->productService->deleteProduct((int) $id);
 
-        $refs = $this->productModel->referenceCounts($pid);
-        if ($refs['invoice_items'] > 0 || $refs['purchases'] > 0) {
-            $parts = [];
-            if ($refs['invoice_items'] > 0) {
-                $parts[] = sprintf('موجود في %d سطر من فواتير البيع', $refs['invoice_items']);
-            }
-            if ($refs['purchases'] > 0) {
-                $parts[] = sprintf('موجود في %d سجل مشتريات', $refs['purchases']);
-            }
-            $detail = implode('، ', $parts);
-            return Response::error(
-                'لا يمكن حذف المنتج: ' . $detail
-                . '. احذف الفواتير المرتبطة من صفحة المبيعات أو عدّل سجلات المشتريات، أو أبقِ المنتج للحفاظ على السجل المحاسبي.',
-                409
-            );
+        if (!$result['ok']) {
+            $code = $result['code'] ?? 500;
+            return $code === 404
+                ? Response::notFound($result['error'])
+                : Response::error($result['error'], $code);
         }
-
-        try {
-            $this->productModel->delete($pid);
-        } catch (PDOException $e) {
-            if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
-                return Response::error(
-                    'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.',
-                    409
-                );
-            }
-            Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
-            return Response::serverError('Failed to delete product');
-        }
-
         return Response::success(null, 'Product deleted');
     }
 }
-
-
