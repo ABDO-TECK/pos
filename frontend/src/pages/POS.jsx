@@ -359,6 +359,9 @@ function ProductCard({ product, onAdd }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: 'auto', gap: '0.3rem', width: '100%' }}>
         <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {parseInt(product.sell_by_weight) === 1 && (
+            <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>⚖️ وزن</span>
+          )}
           {upb > 1 && (
             <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
               📦 {formatNumber(upb)}

@@ -208,6 +208,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
     }
   }
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
+  const isByWeight = parseInt(form.sell_by_weight) === 1
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
   const setBarcodeAt = (i, v) => {
@@ -341,86 +342,128 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
           إضافة باركود
         </button>
       </div>
+      {/* ── Sell by weight toggle ── */}
+      <div style={{ gridColumn: 'span 2' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0.6rem 0.75rem',
+          background: isByWeight ? 'rgba(34,197,94,0.06)' : 'var(--bg)',
+          border: `1px solid ${isByWeight ? 'var(--primary)' : 'var(--border)'}`,
+          borderRadius: 'var(--radius)',
+          transition: 'all .2s',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.1rem' }}>⚖️</span>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>يُباع بالوزن (كيلو)</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {isByWeight ? 'الكمية والمبيعات ستكون بالكيلوجرام (يدعم الكسور: 0.5 = نصف كيلو)' : 'المنتج يُباع بالقطعة حالياً'}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm(p => ({ ...p, sell_by_weight: p.sell_by_weight ? 0 : 1 }))}
+            style={{
+              width: '44px', height: '24px', borderRadius: '12px', border: 'none',
+              background: isByWeight ? 'var(--primary)' : 'var(--border)',
+              position: 'relative', cursor: 'pointer', transition: 'background .2s', flexShrink: 0,
+            }}
+            aria-label="تبديل البيع بالوزن"
+          >
+            <span style={{
+              position: 'absolute', top: '2px',
+              right: isByWeight ? '2px' : '20px',
+              width: '20px', height: '20px', borderRadius: '50%',
+              background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+              transition: 'right .2s',
+            }} />
+          </button>
+        </div>
+      </div>
       <div>
-        <Label>سعر البيع *</Label>
+        <Label>سعر البيع {isByWeight ? 'للكيلو' : ''} *</Label>
         <input className="input" type="number" step="0.01" min="0" {...f('price')} placeholder="0.00" required />
       </div>
       <div>
-        <Label>سعر التكلفة</Label>
+        <Label>سعر التكلفة {isByWeight ? 'للكيلو' : ''}</Label>
         <input className="input" type="number" step="0.01" min="0" {...f('cost')} placeholder="0.00" />
       </div>
       <div>
-        <Label>الكمية</Label>
-        <input className="input" type="number" min="0" {...f('quantity')} placeholder="0" />
+        <Label>{isByWeight ? 'الوزن الحالي (كجم)' : 'الكمية'}</Label>
+        <input className="input" type="number" min="0" step={isByWeight ? '0.001' : '1'} {...f('quantity')} placeholder={isByWeight ? '0.000' : '0'} />
+        {isByWeight && <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>مثال: 50 = خمسون كيلو في المخزن</p>}
       </div>
       <div>
         <Label>حد التنبيه المنخفض</Label>
         <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
       </div>
-      <div style={{ gridColumn: 'span 2', background: 'rgba(59,130,246,0.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.65rem' }}>
-          <div>
-            <Label>📦 عدد القطع في الصندوق</Label>
-            <input
-              className="input"
-              type="number"
-              min="1"
-              step="1"
-              {...f('units_per_box')}
-              placeholder="1"
-              style={{ width: '100%' }}
-            />
-          </div>
-          <div>
-            <Label>باركود الصندوق (اختياري)</Label>
-            <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <input
-                  className="input"
-                  {...f('box_barcode')}
-                  placeholder="امسح باركود الكرتونة"
-                  style={{
-                    width: '100%',
-                    borderColor: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '#dc2626' : undefined,
-                    boxShadow: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
-                  }}
-                  title={getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form)?.title}
-                />
+      {!isByWeight && (
+        <div style={{ gridColumn: 'span 2', background: 'rgba(59,130,246,0.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.65rem' }}>
+            <div>
+              <Label>📦 عدد القطع في الصندوق</Label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                step="1"
+                {...f('units_per_box')}
+                placeholder="1"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <Label>باركود الصندوق (اختياري)</Label>
+              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    className="input"
+                    {...f('box_barcode')}
+                    placeholder="امسح باركود الكرتونة"
+                    style={{
+                      width: '100%',
+                      borderColor: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '#dc2626' : undefined,
+                      boxShadow: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
+                    }}
+                    title={getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form)?.title}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  onClick={() => openBarcodeCamera('box')}
+                  title="مسح بالكاميرا"
+                >
+                  <Camera size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                onClick={() => openBarcodeCamera('box')}
-                title="مسح بالكاميرا"
-              >
-                <Camera size={18} />
-              </button>
+            </div>
+          </div>
+          <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
+            عند مسح "باركود الصندوق" في نقطة البيع، سيتم إضافة كمية الصندوق المعرفة دفعةً واحدة إلى الفاتورة.
+          </p>
+          <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: '200px',
+                fontSize: '0.76rem',
+                fontWeight: 600,
+                color: 'var(--secondary)',
+                lineHeight: 1.5,
+                padding: '0.45rem 0.55rem',
+                background: 'rgba(59,130,246,0.1)',
+                borderRadius: '6px',
+                border: '1px solid rgba(59,130,246,0.22)',
+                alignSelf: 'center',
+              }}
+            >
+              {stockBoxesHint}
             </div>
           </div>
         </div>
-        <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
-          عند مسح "باركود الصندوق" في نقطة البيع، سيتم إضافة كمية الصندوق المعرفة دفعةً واحدة إلى الفاتورة.
-        </p>
-        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
-          <div
-            style={{
-              flex: 1,
-              minWidth: '200px',
-              fontSize: '0.76rem',
-              fontWeight: 600,
-              color: 'var(--secondary)',
-              lineHeight: 1.5,
-              padding: '0.45rem 0.55rem',
-              background: 'rgba(59,130,246,0.1)',
-              borderRadius: '6px',
-              border: '1px solid rgba(59,130,246,0.22)',
-              alignSelf: 'center',
-            }}
-          >
-            {stockBoxesHint}
-          </div>
-        </div>
-      </div>
+      )}
       <div style={{ gridColumn: 'span 2' }}>
         <Label>الفئة</Label>
         <CategoryCombobox

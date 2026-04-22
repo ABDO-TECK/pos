@@ -88,5 +88,16 @@ $router->delete('/api/customers/{id}',         [CustomerController::class, 'dest
 $router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment',       [AuthMiddleware::class]]);
 $router->put('/api/customers/ledger/{entryId}', [CustomerController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
 
+// ── Expenses ─────────────────────────────────────────────────────
+$router->get('/api/expense-categories',         [ExpenseController::class, 'getCategories', [AuthMiddleware::class]]);
+$router->post('/api/expense-categories',        [ExpenseController::class, 'createCategory', [AuthMiddleware::class]]);
+$router->put('/api/expense-categories/{id}',    [ExpenseController::class, 'updateCategory', [AuthMiddleware::class]]);
+$router->delete('/api/expense-categories/{id}', [ExpenseController::class, 'deleteCategory', [AuthMiddleware::class, AdminMiddleware::class]]);
+
+$router->get('/api/expenses',         [ExpenseController::class, 'getExpenses', [AuthMiddleware::class]]);
+$router->post('/api/expenses',        [ExpenseController::class, 'createExpense', [AuthMiddleware::class]]);
+$router->put('/api/expenses/{id}',    [ExpenseController::class, 'updateExpense', [AuthMiddleware::class]]);
+$router->delete('/api/expenses/{id}', [ExpenseController::class, 'deleteExpense', [AuthMiddleware::class, AdminMiddleware::class]]);
+
 // ── Health Check ───────────────────────────────────────────────
 $router->get('/api/health', [HealthController::class, 'check']);

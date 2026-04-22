@@ -22,6 +22,7 @@ const emptyProduct = {
   low_stock_threshold: 5,
   units_per_box: 1,
   category_id: '',
+  sell_by_weight: 0,
 }
 
 function TabBtn({ active, onClick, children }) {
@@ -96,6 +97,7 @@ export default function Products() {
       ...p,
       category_id: p.category_id ?? '',
       units_per_box: p.units_per_box ?? 1,
+      sell_by_weight: p.sell_by_weight ?? 0,
       barcodes: [p.barcode || '', ...extras],
     })
     setEditProductId(p.id)

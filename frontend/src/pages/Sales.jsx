@@ -277,14 +277,19 @@ export default function Sales() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(selected.items ?? []).map((item, idx) => (
+                      {(selected.items ?? []).map((item, idx) => {
+                        const qty = parseFloat(item.quantity)
+                        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
+                        const qtyDisplay = isByWeight ? `${qty.toFixed(3)} كجم` : formatNumber(item.quantity)
+                        return (
                         <tr key={idx}>
-                          <td>{item.product_name ?? item.name}</td>
-                          <td>{formatNumber(item.quantity)}</td>
+                          <td>{item.product_name ?? item.name}{isByWeight ? ' ⚖️' : ''}</td>
+                          <td>{qtyDisplay}</td>
                           <td>{formatCurrency(item.price)}</td>
-                          <td style={{ fontWeight: 600 }}>{formatCurrency(item.price * item.quantity)}</td>
+                          <td style={{ fontWeight: 600 }}>{formatCurrency(item.price * qty)}</td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

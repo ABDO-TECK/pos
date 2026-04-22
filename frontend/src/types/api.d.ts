@@ -36,6 +36,11 @@ declare global {
     purchase_price: number;
     sale_price: number;
     stock_quantity: number;
+    sell_by_weight: 0 | 1;
+    units_per_box?: number;
+    box_barcode?: string | null;
+    additional_barcodes?: string[];
+    low_stock_threshold?: number;
     created_at?: string;
     updated_at?: string;
   }
@@ -88,6 +93,26 @@ declare global {
     amount: number;
     type: 'payment' | 'receipt';
     notes?: string;
+  }
+
+  // ── Expenses ─────────────────────────────────────────────────────────
+  interface ExpenseCategory {
+    id: number;
+    name: string;
+    created_at?: string;
+  }
+
+  interface Expense {
+    id: number;
+    category_id: number;
+    category_name?: string;
+    user_id: number;
+    user_name?: string;
+    amount: number;
+    notes: string | null;
+    expense_date: string;
+    created_at?: string;
+    updated_at?: string;
   }
 
   // ── API Responses ────────────────────────────────────────────────────

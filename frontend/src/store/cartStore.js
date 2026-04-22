@@ -13,9 +13,11 @@ const useCartStore = create((set, get) => ({
     // Always store price as a proper float to avoid NaN from API strings
     const price = parseFloat(product.price) || 0
     const unitsPerBox = Math.max(1, parseInt(product.units_per_box) || 1)
+    const isByWeight = parseInt(product.sell_by_weight) === 1
     
     // إذا مُسح كصندوق، السلة ستضيف الكمية كاملة لتساوي الصندوق
-    const qtyToAdd = product.scanned_as_box ? unitsPerBox : 1
+    // المنتجات الوزنية تبدأ بـ 1 كجم
+    const qtyToAdd = product.scanned_as_box ? unitsPerBox : (isByWeight ? 1 : 1)
 
     const existing = items.find((i) => i.id === product.id)
     if (existing) {
@@ -28,7 +30,7 @@ const useCartStore = create((set, get) => ({
       })
     } else {
       set({
-        items: [...items, { ...product, price, quantity: qtyToAdd, subtotal: price * qtyToAdd, units_per_box: unitsPerBox }],
+        items: [...items, { ...product, price, quantity: qtyToAdd, subtotal: price * qtyToAdd, units_per_box: unitsPerBox, sell_by_weight: isByWeight ? 1 : 0 }],
       })
     }
   },
@@ -46,7 +48,7 @@ const useCartStore = create((set, get) => ({
         items = state.items.filter((i) => i.id !== id)
       } else {
         items = state.items.map((i) =>
-          i.id === id ? { ...i, quantity: qty, subtotal: qty * parseFloat(i.price) } : i
+          i.id === id ? { ...i, quantity: parseFloat(qty) || 0, subtotal: (parseFloat(qty) || 0) * parseFloat(i.price) } : i
         )
       }
       return { items, rebillingInvoiceId: items.length === 0 ? null : state.rebillingInvoiceId }

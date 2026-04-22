@@ -3,15 +3,24 @@
 class ReportController extends Controller {
 
     private Invoice $invoiceModel;
+    private Expense $expenseModel;
 
     public function __construct() {
         $this->invoiceModel = new Invoice();
+        $this->expenseModel = new Expense();
     }
 
     public function daily() {
         $date    = $this->getParam('date', date('Y-m-d'));
         $summary = $this->invoiceModel->getDailySummary($date);
         $invoices = $this->invoiceModel->all(['date' => $date]);
+        $totalExpenses = $this->expenseModel->getTotalExpensesForDate($date);
+
+        if ($summary) {
+            $summary['total_expenses'] = $totalExpenses;
+            $summary['net_profit'] = (float)($summary['total_profit'] ?? 0) - $totalExpenses;
+        }
+
         return Response::success([
             'date'     => $date,
             'summary'  => $summary,
@@ -28,6 +37,8 @@ class ReportController extends Controller {
         $totalInvoices = array_sum(array_column($data, 'total_invoices'));
         $totalProfit   = $this->invoiceModel->getTotalProfitForMonth($month, $year);
         $totalCost     = $this->invoiceModel->getTotalCostForMonth($month, $year);
+        $totalExpenses = $this->expenseModel->getTotalExpensesForMonth($month, $year);
+        $netProfit     = $totalProfit - $totalExpenses;
 
         return Response::success([
             'month'           => $month,
@@ -36,6 +47,8 @@ class ReportController extends Controller {
             'total_cost'      => $totalCost,
             'total_invoices'  => $totalInvoices,
             'total_profit'    => $totalProfit,
+            'total_expenses'  => $totalExpenses,
+            'net_profit'      => $netProfit,
             'daily_breakdown' => $data,
         ]);
     }
@@ -110,7 +123,9 @@ class ReportController extends Controller {
         $revenue = (float)$totals['total_revenue'];
         $cost    = (float)$totals['total_cost'];
         $profit  = (float)$totals['total_profit'];
-        $margin  = $revenue > 0 ? round($profit / $revenue * 100, 2) : 0;
+        $expenses = $this->expenseModel->getTotalExpensesForMonth($month, $year);
+        $netProfit = $profit - $expenses;
+        $margin  = $revenue > 0 ? round($netProfit / $revenue * 100, 2) : 0;
 
         return Response::success([
             'month'          => $month,
@@ -118,6 +133,8 @@ class ReportController extends Controller {
             'total_revenue'  => $revenue,
             'total_cost'     => $cost,
             'total_profit'   => $profit,
+            'total_expenses' => $expenses,
+            'net_profit'     => $netProfit,
             'profit_margin'  => $margin,
             'top_products'   => $topProfit->fetchAll(),
             'daily_breakdown'=> $dailyBreakdown->fetchAll(),
@@ -147,6 +164,9 @@ class ReportController extends Controller {
         $todayProfit = $this->invoiceModel->getTotalProfitForDate(date('Y-m-d'));
         $todayCost   = $this->invoiceModel->getTotalCostForDate(date('Y-m-d'));
         $monthCost   = $this->invoiceModel->getTotalCostForMonth((int)date('n'), (int)date('Y'));
+        
+        $todayExpenses = $this->expenseModel->getTotalExpensesForDate(date('Y-m-d'));
+        $monthExpenses = $this->expenseModel->getTotalExpensesForMonth((int)date('n'), (int)date('Y'));
 
         return Response::success([
             'today_revenue'  => (float)$todayRevenue,
@@ -155,6 +175,10 @@ class ReportController extends Controller {
             'month_cost'     => $monthCost,
             'today_profit'   => $todayProfit,
             'month_profit'   => $monthProfit,
+            'today_expenses' => $todayExpenses,
+            'month_expenses' => $monthExpenses,
+            'today_net_profit' => $todayProfit - $todayExpenses,
+            'month_net_profit' => $monthProfit - $monthExpenses,
             'today_invoices' => (int)$todayInvoices,
             'total_products' => (int)$totalProducts,
             'low_stock_count'=> (int)$lowStockCount,

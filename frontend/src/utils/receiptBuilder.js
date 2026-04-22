@@ -164,14 +164,20 @@ export function buildReceiptHTML(invoice, change = 0, settings = {}) {
     const payLabel  = PAYMENT_LABELS[invoice.payment_method] ?? invoice.payment_method
 
     // ── Items rows — no currency symbol in table ──
-    const itemRows = (invoice.items ?? []).map((item, i) => `
+    const itemRows = (invoice.items ?? []).map((item, i) => {
+        const qty = parseFloat(item.quantity)
+        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
+        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : fn(item.quantity)
+        const nameStr = (item.product_name ?? item.name ?? '') + (isByWeight ? ' ⚖️' : '')
+        return `
         <tr>
             <td>${fn(i + 1)}</td>
-            <td class="name">${item.product_name ?? item.name ?? ''}</td>
-            <td>${fn(item.quantity)}</td>
+            <td class="name">${nameStr}</td>
+            <td>${qtyStr}</td>
             <td>${fd2(item.price)}</td>
-            <td>${fd2(parseFloat(item.price) * parseFloat(item.quantity))}</td>
-        </tr>`).join('')
+            <td>${fd2(parseFloat(item.price) * qty)}</td>
+        </tr>`
+    }).join('')
 
     // ── Totals ──
     const discountRow = parseFloat(invoice.discount) > 0
@@ -271,14 +277,20 @@ export function browserPrint(invoice, change, settings) {
 export function buildPurchaseReceiptHTML(invoice, settings = {}) {
     const storeName  = settings.storeName  ?? 'سوبر ماركت'
 
-    const itemRows = (invoice.items ?? []).map((item, i) => `
+    const itemRows = (invoice.items ?? []).map((item, i) => {
+        const qty = parseFloat(item.quantity)
+        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
+        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : fn(item.quantity)
+        const nameStr = (item.product_name ?? item.name ?? '') + (isByWeight ? ' ⚖️' : '')
+        return `
         <tr>
             <td>${fn(i + 1)}</td>
-            <td class="name">${item.product_name ?? item.name ?? ''}</td>
-            <td>${fn(item.quantity)}</td>
+            <td class="name">${nameStr}</td>
+            <td>${qtyStr}</td>
             <td>${fd2(item.cost)}</td>
-            <td>${fd2(parseFloat(item.cost) * parseFloat(item.quantity))}</td>
-        </tr>`).join('')
+            <td>${fd2(parseFloat(item.cost) * qty)}</td>
+        </tr>`
+    }).join('')
 
     return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">

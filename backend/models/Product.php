@@ -211,8 +211,8 @@ class Product {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box)
-             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box)'
+            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box, sell_by_weight)
+             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box, :sell_by_weight)'
         );
         $stmt->execute([
             'name'                => $data['name'],
@@ -224,6 +224,7 @@ class Product {
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
+            'sell_by_weight'      => (int)($data['sell_by_weight'] ?? 0),
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -244,7 +245,8 @@ class Product {
                 quantity = :quantity,
                 low_stock_threshold = :low_stock_threshold,
                 category_id = :category_id,
-                units_per_box = :units_per_box
+                units_per_box = :units_per_box,
+                sell_by_weight = :sell_by_weight
              WHERE id = :id'
         );
         $stmt->execute([
@@ -257,6 +259,7 @@ class Product {
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
+            'sell_by_weight'      => (int)($data['sell_by_weight'] ?? 0),
             'id'                  => $id,
         ]);
     }
@@ -284,11 +287,11 @@ class Product {
         $this->db->prepare('DELETE FROM products WHERE id = ?')->execute([$id]);
     }
 
-    public function decrementQuantity(int $id, int $qty): void {
+    public function decrementQuantity(int $id, float $qty): void {
         $this->db->prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?')->execute([$qty, $id]);
     }
 
-    public function incrementQuantity(int $id, int $qty): void {
+    public function incrementQuantity(int $id, float $qty): void {
         $this->db->prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?')->execute([$qty, $id]);
     }
 

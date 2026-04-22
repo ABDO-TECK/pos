@@ -53,9 +53,10 @@ class SaleService
             if (!$product) {
                 return ['ok' => false, 'error' => "Product ID {$item['product_id']} not found", 'code' => 400];
             }
+            // Use float for quantity to support sell-by-weight products (e.g. 0.5 kg)
             $enriched[] = [
                 'product_id' => $product['id'],
-                'quantity'   => (int) $item['quantity'],
+                'quantity'   => (float) $item['quantity'],
                 'price'      => isset($item['price']) ? (float) $item['price'] : (float) $product['price'],
                 'unit_cost'  => (float) ($product['cost'] ?? 0),
                 'product'    => $product,

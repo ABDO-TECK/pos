@@ -16,6 +16,7 @@ const navItems = [
   { to: '/products',   label: 'المنتجات',     icon: Package,      roles: ['admin'] },
   { to: '/customers',  label: 'العملاء',       icon: UserCheck,    roles: ['admin', 'cashier'] },
   { to: '/suppliers',  label: 'الموردون',      icon: Truck,        roles: ['admin'] },
+  { to: '/expenses',   label: 'المصروفات',     icon: Receipt,      roles: ['admin'] },
   { to: '/reports',    label: 'التقارير',      icon: BarChart2,    roles: ['admin'] },
   { to: '/users',      label: 'المستخدمون',   icon: Users,        roles: ['admin'] },
   { to: '/settings',   label: 'الإعدادات',    icon: Settings,     roles: ['admin'] },

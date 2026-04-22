@@ -41,6 +41,7 @@ const Users     = lazyRetry(() => import('./pages/Users'))
 const Sales     = lazyRetry(() => import('./pages/Sales'))
 const Settings  = lazyRetry(() => import('./pages/Settings'))
 const Customers = lazyRetry(() => import('./pages/Customers'))
+const Expenses  = lazyRetry(() => import('./pages/Expenses'))
 
 function PageLoader() {
   return (
@@ -116,6 +117,14 @@ function AppShell() {
             <PrivateRoute>
               <AdminRoute>
                 <Layout><Reports /></Layout>
+              </AdminRoute>
+            </PrivateRoute>
+          } />
+
+          <Route path="/expenses" element={
+            <PrivateRoute>
+              <AdminRoute>
+                <Layout><Expenses /></Layout>
               </AdminRoute>
             </PrivateRoute>
           } />

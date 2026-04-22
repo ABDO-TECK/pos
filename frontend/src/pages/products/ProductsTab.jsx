@@ -302,6 +302,7 @@ export default function ProductsTab({
                 <tr key={p.id}>
                   <td style={{ fontWeight: 600 }}>
                     {p.name}
+                    {parseInt(p.sell_by_weight) === 1 && <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', marginRight: '0.3rem' }}>⚖️ وزن</span>}
                     <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                       {p.barcode}
                       {(p.additional_barcodes || []).length > 0 && ` (+${formatNumber((p.additional_barcodes || []).length)})`}
@@ -320,8 +321,20 @@ export default function ProductsTab({
                   <td className="hide-mobile">{formatCurrency(p.cost)}</td>
                   <td>
                     <span className={`badge ${p.quantity <= 0 ? 'badge-red' : p.quantity <= p.low_stock_threshold ? 'badge-yellow' : 'badge-green'}`}>
-                      {formatNumber(p.quantity)}
+                      {parseInt(p.sell_by_weight) === 1 ? `${parseFloat(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
                     </span>
+                    {p.units_per_box > 1 && !parseInt(p.sell_by_weight) && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                        {(() => {
+                          const boxes = Math.floor(p.quantity / p.units_per_box);
+                          const remainder = p.quantity % p.units_per_box;
+                          
+                          if (boxes > 0 && remainder > 0) return `📦 ${boxes} صندوق و ${remainder} قطعة`;
+                          if (boxes > 0) return `📦 ${boxes} صندوق`;
+                          return `📦 0 صندوق و ${remainder} قطعة`;
+                        })()}
+                      </div>
+                    )}
                   </td>
                   <td className="hide-mobile">
                     {p.category_name

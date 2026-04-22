@@ -62,6 +62,7 @@ function ProductCard({ product, onAdd }) {
   const isOutOfStock = product.quantity <= 0
   const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
   const upb          = parseInt(product.units_per_box) || 1
+  const isByWeight   = parseInt(product.sell_by_weight) === 1
 
   return (
     <button
@@ -95,6 +96,9 @@ function ProductCard({ product, onAdd }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: 'auto', gap: '0.3rem', width: '100%' }}>
         <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {isByWeight && (
+            <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>⚖️ وزن</span>
+          )}
           {upb > 1 && (
             <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
               📦 {formatNumber(upb)}
@@ -116,7 +120,9 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
   const product     = line.product
   const unitsPerBox = Math.max(1, parseInt(product.units_per_box, 10) || 1)
   const hasBox      = unitsPerBox > 1
-  const [unitMode, setUnitMode] = useState(product.scanned_as_box && hasBox ? 'box' : 'piece')
+  const isByWeight  = parseInt(product.sell_by_weight) === 1
+  const defaultMode = isByWeight ? 'kg' : (product.scanned_as_box && hasBox ? 'box' : 'piece')
+  const [unitMode, setUnitMode] = useState(defaultMode)
 
   const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(line.quantity / unitsPerBox)) : null
   const displayQty = unitMode === 'box' ? boxCount : line.quantity
@@ -124,7 +130,9 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
   const handleUnitModeChange = (mode) => {
     if (mode === unitMode) return
     setUnitMode(mode)
-    if (mode === 'piece') {
+    if (mode === 'kg') {
+      onUpdateQty(product.id, 1)
+    } else if (mode === 'piece') {
       onUpdateQty(product.id, 1)
     } else {
       onUpdateQty(product.id, unitsPerBox)
@@ -135,6 +143,8 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
     if (unitMode === 'box') {
       const newBoxes = Math.max(1, boxCount - 1)
       onUpdateQty(product.id, newBoxes * unitsPerBox)
+    } else if (unitMode === 'kg') {
+      onUpdateQty(product.id, Math.max(0.001, parseFloat((line.quantity - 0.25).toFixed(3))))
     } else {
       onUpdateQty(product.id, line.quantity - 1)
     }
@@ -143,16 +153,22 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
   const handleIncrement = () => {
     if (unitMode === 'box') {
       onUpdateQty(product.id, (boxCount + 1) * unitsPerBox)
+    } else if (unitMode === 'kg') {
+      onUpdateQty(product.id, parseFloat((line.quantity + 0.25).toFixed(3)))
     } else {
       onUpdateQty(product.id, line.quantity + 1)
     }
   }
 
   const handleQtyInputChange = (raw) => {
-    const val = parseInt(raw, 10) || 1
-    if (unitMode === 'box') {
+    if (unitMode === 'kg') {
+      const val = parseFloat(raw) || 0.001
+      onUpdateQty(product.id, Math.max(0.001, val))
+    } else if (unitMode === 'box') {
+      const val = parseInt(raw, 10) || 1
       onUpdateQty(product.id, Math.max(1, val) * unitsPerBox)
     } else {
+      const val = parseInt(raw, 10) || 1
       onUpdateQty(product.id, Math.max(1, val))
     }
   }
@@ -230,7 +246,7 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
-        {hasBox && (
+        {(hasBox || isByWeight) && (
           <select
             value={unitMode}
             onChange={(e) => handleUnitModeChange(e.target.value)}
@@ -238,17 +254,18 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
               fontSize: '0.75rem',
               fontWeight: 600,
               padding: '0.22rem 0.35rem',
-              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : 'var(--border)'}`,
+              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--border)'}`,
               borderRadius: '0.3rem',
-              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
-              color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text)',
+              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : unitMode === 'kg' ? 'rgba(34,197,94,0.08)' : 'var(--surface)',
+              color: unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--text)',
               cursor: 'pointer',
               flexShrink: 0,
               fontFamily: 'inherit',
             }}
           >
-            <option value="piece">قطعة</option>
-            <option value="box">صندوق ({unitsPerBox})</option>
+            {!isByWeight && <option value="piece">قطعة</option>}
+            {isByWeight && <option value="kg">كيلو ⚖️</option>}
+            {hasBox && <option value="box">صندوق ({unitsPerBox})</option>}
           </select>
         )}
 
@@ -263,11 +280,12 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
           </button>
           <input
             type="number"
-            min={1}
+            min={unitMode === 'kg' ? 0.001 : 1}
+            step={unitMode === 'kg' ? '0.001' : '1'}
             value={displayQty}
             onChange={(e) => handleQtyInputChange(e.target.value)}
             style={{
-              width: '3rem',
+              width: unitMode === 'kg' ? '4rem' : '3rem',
               textAlign: 'center',
               border: '1px solid var(--border)',
               borderRadius: '0.3rem',
@@ -285,10 +303,26 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
           </button>
         </div>
 
+        {/* أزرار أوزان سريعة */}
+        {unitMode === 'kg' && (
+          <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0 }}>
+            {[0.25, 0.5, 0.75, 1].map(w => (
+              <button key={w} type="button" className="btn btn-ghost btn-sm"
+                onClick={() => onUpdateQty(product.id, w)}
+                style={{ padding: '0.15rem 0.3rem', fontSize: '0.68rem', fontWeight: 700, borderRadius: '0.25rem', minWidth: '28px',
+                  border: line.quantity === w ? '1px solid var(--primary)' : undefined,
+                  color: line.quantity === w ? 'var(--primary)' : undefined }}
+                title={`${w} كجم`}>
+                {w === 0.25 ? '¼' : w === 0.5 ? '½' : w === 0.75 ? '¾' : '1'}
+              </button>
+            ))}
+          </div>
+        )}
+
         <span
           style={{
             fontSize: '0.72rem',
-            color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text-muted)',
+            color: unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--text-muted)',
             fontWeight: 600,
             flexShrink: 0,
             display: 'flex',
@@ -300,7 +334,7 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
             <>
               <Package size={11} /> {formatNumber(line.quantity)} قطعة
             </>
-          ) : null}
+          ) : unitMode === 'kg' ? `${parseFloat(line.quantity).toFixed(3)} كجم` : null}
         </span>
       </div>
     </div>
@@ -379,7 +413,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
   }
 
   const updateLineQuantity = (productId, qty) => {
-    const q = Math.max(1, parseInt(qty, 10) || 1)
+    const q = Math.max(0.001, parseFloat(qty) || 0.001)
     setCart((prev) =>
       prev.map((c) => (c.product.id === productId ? { ...c, quantity: q } : c))
     )
