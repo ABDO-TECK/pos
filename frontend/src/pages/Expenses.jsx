@@ -249,9 +249,9 @@ function ExpenseLogTab() {
                 <textarea className="input" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} placeholder="مثل: فاتورة كهرباء شهر مايو..." />
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)} style={{ flex: 1 }}>إلغاء</button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 2 }}>حفظ المصروف</button>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', justifyContent: 'center' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>إلغاء</button>
+                <button type="submit" className="btn btn-primary">حفظ المصروف</button>
               </div>
             </form>
           </div>
@@ -370,9 +370,9 @@ function ExpenseCategoriesTab() {
                 <label>اسم التصنيف *</label>
                 <input type="text" className="input" value={name} onChange={e => setName(e.target.value)} required autoFocus />
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)} style={{ flex: 1 }}>إلغاء</button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>حفظ</button>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>إلغاء</button>
+                <button type="submit" className="btn btn-primary">حفظ</button>
               </div>
             </form>
           </div>

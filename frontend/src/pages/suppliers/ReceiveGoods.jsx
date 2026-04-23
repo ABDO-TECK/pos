@@ -99,7 +99,7 @@ function ProductCard({ product, onAdd }) {
           {isByWeight && (
             <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>⚖️ وزن</span>
           )}
-          {upb > 1 && (
+          {upb > 1 && !isByWeight && (
             <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
               📦 {formatNumber(upb)}
             </span>
@@ -119,8 +119,8 @@ function ProductCard({ product, onAdd }) {
 function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
   const product     = line.product
   const unitsPerBox = Math.max(1, parseInt(product.units_per_box, 10) || 1)
-  const hasBox      = unitsPerBox > 1
   const isByWeight  = parseInt(product.sell_by_weight) === 1
+  const hasBox      = unitsPerBox > 1 && !isByWeight
   const defaultMode = isByWeight ? 'kg' : (product.scanned_as_box && hasBox ? 'box' : 'piece')
   const [unitMode, setUnitMode] = useState(defaultMode)
 
@@ -246,7 +246,7 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
-        {(hasBox || isByWeight) && (
+        {hasBox ? (
           <select
             value={unitMode}
             onChange={(e) => handleUnitModeChange(e.target.value)}
@@ -254,20 +254,34 @@ function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
               fontSize: '0.75rem',
               fontWeight: 600,
               padding: '0.22rem 0.35rem',
-              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--border)'}`,
+              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : 'var(--border)'}`,
               borderRadius: '0.3rem',
-              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : unitMode === 'kg' ? 'rgba(34,197,94,0.08)' : 'var(--surface)',
-              color: unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--text)',
+              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
+              color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text)',
               cursor: 'pointer',
               flexShrink: 0,
               fontFamily: 'inherit',
             }}
           >
-            {!isByWeight && <option value="piece">قطعة</option>}
-            {isByWeight && <option value="kg">كيلو ⚖️</option>}
-            {hasBox && <option value="box">صندوق ({unitsPerBox})</option>}
+            <option value="piece">قطعة</option>
+            <option value="box">صندوق ({unitsPerBox})</option>
           </select>
-        )}
+        ) : isByWeight ? (
+          <span
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '0.22rem 0.35rem',
+              border: '1px solid var(--primary)',
+              borderRadius: '0.3rem',
+              background: 'rgba(34,197,94,0.08)',
+              color: 'var(--primary)',
+              flexShrink: 0,
+            }}
+          >
+            كيلو ⚖️
+          </span>
+        ) : null}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: 1, minWidth: '140px' }}>
           <button

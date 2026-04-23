@@ -51,8 +51,8 @@ export default function Cart() {
 
 function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
   const unitsPerBox = Math.max(1, parseInt(item.units_per_box) || 1)
-  const hasBox      = unitsPerBox > 1
   const isByWeight  = parseInt(item.sell_by_weight) === 1
+  const hasBox      = unitsPerBox > 1 && !isByWeight
 
   // unitMode: 'piece' | 'box' | 'kg'
   const defaultMode = isByWeight ? 'kg' : (item.scanned_as_box && hasBox ? 'box' : 'piece')
@@ -173,8 +173,8 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
       {/* الصف الثاني: ضوابط الكمية + القائمة المنسدلة */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
 
-        {/* قائمة منسدلة: قطعة / صندوق / كيلو */}
-        {(hasBox || isByWeight) && (
+        {/* قائمة منسدلة: قطعة / صندوق (للمنتجات العادية) أو إشارة للكيلو */}
+        {hasBox ? (
           <select
             value={unitMode}
             onChange={(e) => handleUnitModeChange(e.target.value)}
@@ -182,20 +182,34 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
               fontSize: '0.75rem',
               fontWeight: 600,
               padding: '0.22rem 0.35rem',
-              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--border)'}`,
+              border: `1px solid ${unitMode === 'box' ? 'var(--secondary)' : 'var(--border)'}`,
               borderRadius: '0.3rem',
-              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : unitMode === 'kg' ? 'rgba(34,197,94,0.08)' : 'var(--surface)',
-              color: unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--text)',
+              background: unitMode === 'box' ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
+              color: unitMode === 'box' ? 'var(--secondary)' : 'var(--text)',
               cursor: 'pointer',
               flexShrink: 0,
               fontFamily: 'inherit',
             }}
           >
-            {!isByWeight && <option value="piece">قطعة</option>}
-            {isByWeight && <option value="kg">كيلو ⚖️</option>}
-            {hasBox && <option value="box">صندوق ({unitsPerBox})</option>}
+            <option value="piece">قطعة</option>
+            <option value="box">صندوق ({unitsPerBox})</option>
           </select>
-        )}
+        ) : isByWeight ? (
+          <span
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '0.22rem 0.35rem',
+              border: '1px solid var(--primary)',
+              borderRadius: '0.3rem',
+              background: 'rgba(34,197,94,0.08)',
+              color: 'var(--primary)',
+              flexShrink: 0,
+            }}
+          >
+            كيلو ⚖️
+          </span>
+        ) : null}
 
         {/* أزرار الكمية */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: 1 }}>

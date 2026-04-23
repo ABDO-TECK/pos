@@ -8,6 +8,7 @@ import {
 import { formatNumber } from '../utils/formatters'
 import { formatProductApiError } from './products/ProductForm'
 import toast from 'react-hot-toast'
+import useProductStore from '../store/productStore'
 
 import ProductsTab from './products/ProductsTab'
 import CategoriesTab from './products/CategoriesTab'
@@ -122,13 +123,19 @@ export default function Products() {
       }
       setProductModal(null)
       loadProducts()
+      useProductStore.getState().invalidateCache()
     } catch (err) { toast.error(formatProductApiError(err)) }
     finally { setSavingProduct(false) }
   }
 
   const handleDeleteProduct = async (id, name) => {
     if (!confirm(`هل تريد حذف "${name}"؟`)) return
-    try { await deleteProduct(id); toast.success('تم حذف المنتج'); loadProducts() }
+    try { 
+      await deleteProduct(id)
+      toast.success('تم حذف المنتج')
+      loadProducts()
+      useProductStore.getState().invalidateCache()
+    }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 

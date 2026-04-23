@@ -324,15 +324,10 @@ export default function ProductsTab({
                       {parseInt(p.sell_by_weight) === 1 ? `${parseFloat(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
                     </span>
                     {p.units_per_box > 1 && !parseInt(p.sell_by_weight) && (
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
-                        {(() => {
-                          const boxes = Math.floor(p.quantity / p.units_per_box);
-                          const remainder = p.quantity % p.units_per_box;
-                          
-                          if (boxes > 0 && remainder > 0) return `📦 ${boxes} صندوق و ${remainder} قطعة`;
-                          if (boxes > 0) return `📦 ${boxes} صندوق`;
-                          return `📦 0 صندوق و ${remainder} قطعة`;
-                        })()}
+                      <div style={{ marginTop: '0.3rem' }}>
+                        <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem' }} title="عدد القطع في الصندوق">
+                          📦 {formatNumber(p.units_per_box)}
+                        </span>
                       </div>
                     )}
                   </td>

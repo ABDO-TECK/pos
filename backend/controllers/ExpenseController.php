@@ -98,8 +98,7 @@ class ExpenseController
             return Response::error('البيانات المطلوبة غير مكتملة', 400);
         }
 
-        $auth = new AuthController();
-        $user = current_user();
+        $user = $_SERVER['AUTH_USER'] ?? null;
         if (!$user) {
             return Response::error('غير مصرح', 401);
         }
