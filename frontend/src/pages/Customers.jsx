@@ -14,6 +14,7 @@ import {
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import useAuthStore from '../store/authStore'
+import { useConfirmStore } from '../store/confirmStore'
 import CustomerCard from '../components/customers/CustomerCard'
 import LedgerRow from '../components/customers/LedgerRow'
 
@@ -27,6 +28,7 @@ export default function Customers() {
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
   const { user } = useAuthStore()
+  const { confirm } = useConfirmStore()
 
   // كشف الحساب
   const [ledgerData, setLedgerData]     = useState(null)   // { customer, entries, balance }
@@ -124,7 +126,7 @@ export default function Customers() {
 
   const handleDelete = async (c, e) => {
     e.stopPropagation()
-    if (!window.confirm(`هل تريد حذف العميل "${c.name}"؟`)) return
+    if (!(await confirm(`هل تريد حذف العميل "${c.name}"؟`))) return
     try {
       await deleteCustomer(c.id)
       toast.success('تم الحذف')

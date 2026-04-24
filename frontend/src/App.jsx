@@ -70,6 +70,8 @@ function SettingsLoader() {
   return null
 }
 
+import ConfirmModal from './components/common/ConfirmModal'
+
 function AppShell() {
   const themeMode = useThemeStore((s) => s.mode)
   const toastStyle = {
@@ -83,6 +85,7 @@ function AppShell() {
 
   return (
     <BrowserRouter>
+      <ConfirmModal />
       <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
       <SettingsLoader />
       <Suspense fallback={<PageLoader />}>

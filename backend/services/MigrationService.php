@@ -86,25 +86,46 @@ class MigrationService {
         }
         $mysqli->set_charset('utf8mb4');
 
-        if (!$mysqli->multi_query($content)) {
-            if (class_exists('Logger')) Logger::error("Migration failed: $file", ['error' => $mysqli->error]);
-            $mysqli->close();
-            return false;
-        }
+        try {
+            if (!$mysqli->multi_query($content)) {
+                $errno = $mysqli->errno;
+                if (in_array($errno, [1060, 1061, 1050])) {
+                    // Ignore
+                } else {
+                    if (class_exists('Logger')) Logger::error("Migration failed: $file", ['error' => $mysqli->error]);
+                    $mysqli->close();
+                    return false;
+                }
+            }
 
-        do {
-            if ($res = $mysqli->store_result()) {
-                $res->free();
-            }
-            if (!$mysqli->more_results()) {
-                break;
-            }
-            if (!$mysqli->next_result()) {
-                if (class_exists('Logger')) Logger::error("Migration step failed: $file", ['error' => $mysqli->error]);
+            do {
+                if ($res = $mysqli->store_result()) {
+                    $res->free();
+                }
+                if (!$mysqli->more_results()) {
+                    break;
+                }
+                if (!$mysqli->next_result()) {
+                    $errno = $mysqli->errno;
+                    if (in_array($errno, [1060, 1061, 1050])) {
+                        continue;
+                    }
+                    if (class_exists('Logger')) Logger::error("Migration step failed: $file", ['error' => $mysqli->error]);
+                    $mysqli->close();
+                    return false;
+                }
+            } while (true);
+        } catch (mysqli_sql_exception $e) {
+            $errno = $e->getCode();
+            // 1060: Duplicate column name, 1061: Duplicate key name, 1050: Table already exists
+            if (in_array($errno, [1060, 1061, 1050])) {
+                // Ignore and treat as success
+            } else {
+                if (class_exists('Logger')) Logger::error("Migration Exception: $file", ['error' => $e->getMessage()]);
                 $mysqli->close();
                 return false;
             }
-        } while (true);
+        }
 
         $mysqli->close();
         Database::resetInstance(); // إعادة تهيئة اتصال PDO الأساسي لتحديث الهيكل

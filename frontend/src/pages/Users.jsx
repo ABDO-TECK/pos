@@ -5,6 +5,8 @@ import useAuthStore from '../store/authStore'
 import { formatDate } from '../utils/formatters'
 import toast from 'react-hot-toast'
 
+import { useConfirmStore } from '../store/confirmStore'
+
 const emptyForm = { name: '', email: '', password: '', role: 'cashier', is_active: 1 }
 
 export default function Users() {
@@ -14,6 +16,7 @@ export default function Users() {
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const { user: me, setUser } = useAuthStore()
+  const { confirm } = useConfirmStore()
 
   const load = async () => {
     const res = await getUsers()
@@ -42,7 +45,7 @@ export default function Users() {
 
   const handleDelete = async (id, name) => {
     if (id === me?.id) { toast.error('لا يمكنك حذف حسابك الخاص'); return }
-    if (!confirm(`حذف "${name}"؟`)) return
+    if (!(await confirm(`حذف "${name}"؟`))) return
     await deleteUser(id)
     toast.success('تم الحذف')
     load()

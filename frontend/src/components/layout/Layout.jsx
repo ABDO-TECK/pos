@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Menu, Store, Moon, Sun } from 'lucide-react'
 import Sidebar from './Sidebar'
 import useSettingsStore from '../../store/settingsStore'
@@ -9,6 +9,10 @@ export default function Layout({ children }) {
   const { storeName } = useSettingsStore()
   const themeMode = useThemeStore((s) => s.mode)
   const toggleTheme = useThemeStore((s) => s.toggle)
+
+  useEffect(() => {
+    document.title = storeName || 'نظام الكاشير'
+  }, [storeName])
 
   const close = useCallback(() => setOpen(false), [])
 

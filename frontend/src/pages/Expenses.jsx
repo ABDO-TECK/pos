@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import api from '../api/axios'
 import { formatCurrency, formatShortDate } from '../utils/formatters'
 import useAuthStore from '../store/authStore'
+import { useConfirmStore } from '../store/confirmStore'
 
 export default function Expenses() {
   const [tab, setTab] = useState('log') // 'log' or 'categories'
@@ -55,6 +56,7 @@ function ExpenseLogTab() {
   
   const [form, setForm] = useState({ category_id: '', amount: '', expense_date: new Date().toISOString().slice(0,16), notes: '' })
   const user = useAuthStore(s => s.user)
+  const { confirm } = useConfirmStore()
   const isAdmin = user?.role === 'admin'
 
   const loadExpenses = async () => {
@@ -112,7 +114,7 @@ function ExpenseLogTab() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('هل أنت متأكد من حذف هذا المصروف؟')) return
+    if (!(await confirm('هل أنت متأكد من حذف هذا المصروف؟'))) return
     try {
       await api.delete(`/expenses/${id}`)
       toast.success('تم الحذف بنجاح')
@@ -268,6 +270,7 @@ function ExpenseCategoriesTab() {
   const [editingCat, setEditingCat] = useState(null)
   const [name, setName] = useState('')
   const user = useAuthStore(s => s.user)
+  const { confirm } = useConfirmStore()
   const isAdmin = user?.role === 'admin'
 
   const loadCategories = async () => {
@@ -305,7 +308,7 @@ function ExpenseCategoriesTab() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('هل أنت متأكد من حذف هذا التصنيف؟')) return
+    if (!(await confirm('هل أنت متأكد من حذف هذا التصنيف؟'))) return
     try {
       await api.delete(`/expense-categories/${id}`)
       toast.success('تم الحذف بنجاح')

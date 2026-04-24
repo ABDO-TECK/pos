@@ -9,6 +9,7 @@ import { formatNumber } from '../utils/formatters'
 import { formatProductApiError } from './products/ProductForm'
 import toast from 'react-hot-toast'
 import useProductStore from '../store/productStore'
+import { useConfirmStore } from '../store/confirmStore'
 
 import ProductsTab from './products/ProductsTab'
 import CategoriesTab from './products/CategoriesTab'
@@ -60,6 +61,7 @@ export default function Products() {
   const [categoryForm, setCategoryForm]         = useState({ name: '' })
   const [editCategoryId, setEditCategoryId]     = useState(null)
   const [savingCategory, setSavingCategory]     = useState(false)
+  const { confirm }                             = useConfirmStore()
 
   // ── Load ──
   const loadProducts = async () => {
@@ -129,7 +131,7 @@ export default function Products() {
   }
 
   const handleDeleteProduct = async (id, name) => {
-    if (!confirm(`هل تريد حذف "${name}"؟`)) return
+    if (!(await confirm(`هل تريد حذف "${name}"؟`))) return
     try { 
       await deleteProduct(id)
       toast.success('تم حذف المنتج')
@@ -155,7 +157,7 @@ export default function Products() {
   }
 
   const handleDeleteCategory = async (id, name) => {
-    if (!confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`)) return
+    if (!(await confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`))) return
     try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
     catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }

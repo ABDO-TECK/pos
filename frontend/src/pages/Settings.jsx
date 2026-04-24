@@ -4,9 +4,11 @@ import toast from 'react-hot-toast'
 import { updateSettings, downloadBackup, restoreBackup, applyUpdate } from '../api/endpoints'
 import useSettingsStore from '../store/settingsStore'
 import useUpdateStore from '../store/updateStore'
+import { useConfirmStore } from '../store/confirmStore'
 
 export default function Settings() {
   const { storeName, taxEnabled, taxRate, fetchSettings, setSettings } = useSettingsStore()
+  const { confirm } = useConfirmStore()
 
   const [form, setForm]       = useState({ store_name: '', tax_enabled: '0', tax_rate: '15' })
   const [saving, setSaving]   = useState(false)
@@ -76,11 +78,7 @@ export default function Settings() {
       toast.error('اختر ملفاً بصيغة .sql')
       return
     }
-    if (
-      !confirm(
-        'سيتم استبدال قاعدة البيانات الحالية بالكامل بمحتوى الملف. لن يمكن التراجع تلقائياً. هل تريد المتابعة؟'
-      )
-    ) {
+    if (!(await confirm('سيتم استبدال قاعدة البيانات الحالية بالكامل بمحتوى الملف. لن يمكن التراجع تلقائياً. هل تريد المتابعة؟'))) {
       return
     }
     setRestoring(true)
@@ -120,7 +118,7 @@ export default function Settings() {
   const [updateLogs, setUpdateLogs]       = useState([])
 
   const handleApplyUpdate = async () => {
-    if (!confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)')) return
+    if (!(await confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)'))) return
     
     setApplyingUpdate(true)
     setUpdateLogs([])
@@ -147,7 +145,7 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '680px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '680px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>الإعدادات</h1>
 
       <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

@@ -3,10 +3,12 @@ import { X, CheckCircle2, Trash2, Calendar, Clock } from 'lucide-react'
 import { getSales, getSale, deleteSale } from '../../api/endpoints'
 import { formatCurrency, formatShortDate } from '../../utils/formatters'
 import toast from 'react-hot-toast'
+import { useConfirmStore } from '../../store/confirmStore'
 
 export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
+  const { confirm } = useConfirmStore()
 
   const loadReserved = async () => {
     setLoading(true)
@@ -26,7 +28,7 @@ export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
   }, [])
 
   const handleCancel = async (id) => {
-    if (!confirm('هل أنت متأكد من إلغاء هذه الفاتورة المحجوزة واسترداد المخزون؟')) return
+    if (!(await confirm('هل أنت متأكد من إلغاء هذه الفاتورة المحجوزة واسترداد المخزون؟'))) return
     try {
       await deleteSale(id)
       toast.success('تم إلغاء الفاتورة وإرجاع المنتجات')

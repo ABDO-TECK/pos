@@ -11,6 +11,7 @@ import useCartStore from '../store/cartStore'
 import useQZPrinter from '../hooks/useQZPrinter'
 import { QZStatusBar, QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
 import Pagination from '../components/Pagination'
+import { useConfirmStore } from '../store/confirmStore'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -35,6 +36,7 @@ export default function Sales() {
   const navigate                = useNavigate()
   const user                    = useAuthStore((s) => s.user)
   const mergeInvoiceLines       = useCartStore((s) => s.mergeInvoiceLines)
+  const { confirm }             = useConfirmStore()
   const isAdmin                 = user?.role === 'admin'
   const qz = useQZPrinter()
 
@@ -106,7 +108,7 @@ export default function Sales() {
 
   const handleDeleteInvoice = async () => {
     if (!selected?.id) return
-    if (!confirm('سيتم حذف الفاتورة نهائياً من السجل وإرجاع كميات المنتجات إلى المخزون. هل أنت متأكد؟')) return
+    if (!(await confirm('سيتم حذف الفاتورة نهائياً من السجل وإرجاع كميات المنتجات إلى المخزون. هل أنت متأكد؟'))) return
     setDeleting(true)
     try {
       await deleteSale(selected.id)

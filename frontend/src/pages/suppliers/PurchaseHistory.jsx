@@ -11,6 +11,7 @@ import {
   getSuppliers, getPurchaseInvoices, getPurchaseInvoice, deletePurchaseInvoice,
 } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatDate } from '../../utils/formatters'
+import { useConfirmStore } from '../../store/confirmStore'
 
 const labelSt = {
   display: 'block',
@@ -57,6 +58,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
   const user                          = useAuthStore((s) => s.user)
   const isAdmin                       = user?.role === 'admin'
   const settings                      = useSettingsStore()
+  const { confirm }                   = useConfirmStore()
   const qz = useQZPrinter()
 
   useEffect(() => {
@@ -128,7 +130,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
 
   const handleDeleteInvoice = async () => {
     if (!selected?.id) return
-    if (!confirm('سيتم حذف فاتورة المشتريات نهائياً ورجوع مخزون المنتجات إلى ما قبل الشراء. هل أنت متأكد؟')) return
+    if (!(await confirm('سيتم حذف فاتورة المشتريات نهائياً ورجوع مخزون المنتجات إلى ما قبل الشراء. هل أنت متأكد؟'))) return
     setDeleting(true)
     try {
       await deletePurchaseInvoice(selected.id)

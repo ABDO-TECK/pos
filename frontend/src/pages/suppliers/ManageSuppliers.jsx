@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../../api/endpoints'
 import { formatCurrency } from '../../utils/formatters'
+import { useConfirmStore } from '../../store/confirmStore'
 
 export default function ManageSuppliers() {
   const [suppliers, setSuppliers] = useState([])
@@ -10,6 +11,7 @@ export default function ManageSuppliers() {
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState(null)
   const [form, setForm]           = useState({ name: '', phone: '', email: '', address: '', initial_balance: '', balance_direction: 'debit' })
+  const { confirm }               = useConfirmStore()
 
   const load = async () => {
     setLoading(true)
@@ -49,7 +51,7 @@ export default function ManageSuppliers() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('حذف هذا المورد؟')) return
+    if (!(await confirm('حذف هذا المورد؟'))) return
     try { await deleteSupplier(id); toast.success('تم الحذف'); load() }
     catch { toast.error('فشل الحذف') }
   }
