@@ -124,7 +124,22 @@ class BackupController extends Controller {
         $mysqli->close();
         Database::resetInstance();
 
-        return Response::success(null, 'تمت استعادة قاعدة البيانات بنجاح');
+        // ---------------------------------------------------------
+        // الاستعادة الذكية: ترقية النسخة القديمة لتطابق الكود الحديث
+        // ---------------------------------------------------------
+        require_once __DIR__ . '/../services/MigrationService.php';
+        $migrationService = new MigrationService();
+        $migrationResult = $migrationService->runAllMigrations();
+
+        $msg = 'تمت استعادة قاعدة البيانات بنجاح';
+        if ($migrationResult['executed'] > 0) {
+            $msg .= '، وتمت ترقيتها للإصدار الحديث (' . $migrationResult['executed'] . ' تحديثات).';
+        }
+        if (!empty($migrationResult['errors'])) {
+            $msg .= ' ولكن حدثت بعض الأخطاء أثناء الترقية التلقائية.';
+        }
+
+        return Response::success(null, $msg);
     }
 }
 

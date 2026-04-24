@@ -6,10 +6,19 @@ CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unico
 USE pos_db;
 
 -- ============================================================
+-- Schema Versions (For Migration Tracking)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS schema_versions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    version VARCHAR(255) NOT NULL UNIQUE,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Categories
 -- ============================================================
 CREATE TABLE IF NOT EXISTS categories (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -18,7 +27,7 @@ CREATE TABLE IF NOT EXISTS categories (
 -- Products
 -- ============================================================
 CREATE TABLE IF NOT EXISTS products (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     barcode VARCHAR(100) UNIQUE NOT NULL,
     box_barcode VARCHAR(100) NULL DEFAULT NULL UNIQUE,
@@ -29,7 +38,7 @@ CREATE TABLE IF NOT EXISTS products (
     sell_by_weight TINYINT(1) NOT NULL DEFAULT 0,
     low_stock_threshold INT NOT NULL DEFAULT 5,
     units_per_box INT NOT NULL DEFAULT 1 COMMENT 'عدد القطع في الصندوق الواحد — للبيع بالكرتون',
-    category_id INT UNSIGNED NULL,
+    category_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_product_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
@@ -40,8 +49,8 @@ CREATE TABLE IF NOT EXISTS products (
 
 -- Extra barcodes for the same product (primary remains products.barcode)
 CREATE TABLE IF NOT EXISTS product_barcodes (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    product_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
     barcode VARCHAR(100) NOT NULL,
     UNIQUE KEY uq_product_barcodes_barcode (barcode),
     KEY idx_product_barcodes_product (product_id),
@@ -53,7 +62,7 @@ CREATE TABLE IF NOT EXISTS product_barcodes (
 -- Users
 -- ============================================================
 CREATE TABLE IF NOT EXISTS users (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
@@ -67,8 +76,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- Tokens (API Auth)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS tokens (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
     token VARCHAR(64) UNIQUE NOT NULL,
     expires_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -89,15 +98,15 @@ CREATE TABLE IF NOT EXISTS settings (
 -- Expenses
 -- ============================================================
 CREATE TABLE IF NOT EXISTS expense_categories (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS expenses (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    category_id INT UNSIGNED NOT NULL,
-    user_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    user_id INT NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     notes TEXT NULL,
     expense_date DATETIME NOT NULL,
@@ -111,7 +120,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 -- Customers (نظام العملاء والبيع بالآجل)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     phone VARCHAR(30) NULL,
     address TEXT NULL,
@@ -124,9 +133,9 @@ CREATE TABLE IF NOT EXISTS customers (
 -- Invoices
 -- ============================================================
 CREATE TABLE IF NOT EXISTS invoices (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UNSIGNED NOT NULL,
-    customer_id INT UNSIGNED NULL COMMENT 'رابط العميل — فارغ للمبيعات النقدية',
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    customer_id INT NULL COMMENT 'رابط العميل — فارغ للمبيعات النقدية',
     subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     discount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tax DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -148,9 +157,9 @@ CREATE TABLE IF NOT EXISTS invoices (
 -- Invoice Items
 -- ============================================================
 CREATE TABLE IF NOT EXISTS invoice_items (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT UNSIGNED NOT NULL,
-    product_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    invoice_id INT NOT NULL,
+    product_id INT NOT NULL,
     quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
     price DECIMAL(10,2) NOT NULL,
     unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'تكلفة الوحدة لحظة البيع (للتقارير)',
@@ -165,7 +174,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 -- Suppliers
 -- ============================================================
 CREATE TABLE IF NOT EXISTS suppliers (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     phone VARCHAR(30) NULL,
     email VARCHAR(150) NULL,
@@ -178,8 +187,8 @@ CREATE TABLE IF NOT EXISTS suppliers (
 -- Purchase Invoices (فواتير المشتريات — رأس الفاتورة)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS purchase_invoices (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    supplier_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    supplier_id INT NOT NULL,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     items_count INT NOT NULL DEFAULT 0,
     notes TEXT NULL,
@@ -193,10 +202,10 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
 -- Purchases (Stock In from Suppliers — بنود الفاتورة)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS purchases (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    purchase_invoice_id INT UNSIGNED NULL,
-    supplier_id INT UNSIGNED NOT NULL,
-    product_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    purchase_invoice_id INT NULL,
+    supplier_id INT NOT NULL,
+    product_id INT NOT NULL,
     quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
     cost DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -214,13 +223,13 @@ CREATE TABLE IF NOT EXISTS purchases (
 -- Customer Ledger (كشف الحساب — دفتر الأستاذ)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customer_ledger (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
     type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مبيعات آجلة), credit=دائن (دفعات)',
     amount DECIMAL(10,2) NOT NULL,
     description VARCHAR(500) NULL COMMENT 'البيان: فاتورة بيع / دفعة نقدية / رصيد مبدئي...',
-    invoice_id INT UNSIGNED NULL COMMENT 'رابط للفاتورة إن وجدت',
-    created_by INT UNSIGNED NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
+    invoice_id INT NULL COMMENT 'رابط للفاتورة إن وجدت',
+    created_by INT NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ledger_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     CONSTRAINT fk_ledger_invoice  FOREIGN KEY (invoice_id)  REFERENCES invoices(id)  ON DELETE SET NULL,
@@ -232,13 +241,13 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
 -- Supplier Ledger (كشف حساب المورد — دفتر الأستاذ)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS supplier_ledger (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    supplier_id INT UNSIGNED NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    supplier_id INT NOT NULL,
     type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مشتريات آجلة), credit=دائن (دفعات للمورد)',
     amount DECIMAL(10,2) NOT NULL,
     description VARCHAR(500) NULL COMMENT 'البيان: فاتورة شراء / دفعة نقدية / رصيد مبدئي...',
-    purchase_invoice_id INT UNSIGNED NULL COMMENT 'رابط لفاتورة المشتريات إن وجدت',
-    created_by INT UNSIGNED NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
+    purchase_invoice_id INT NULL COMMENT 'رابط لفاتورة المشتريات إن وجدت',
+    created_by INT NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
     CONSTRAINT fk_sledger_pinvoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
