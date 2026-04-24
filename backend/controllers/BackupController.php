@@ -88,7 +88,7 @@ class BackupController extends Controller {
 
         // تنظيف الهيكل من التضاربات المحتملة بين النسخ القديمة والحديثة
         // (إزالة UNSIGNED من أنواع البيانات لمنع خطأ Foreign Key errno 150)
-        $content = str_ireplace([' INT UNSIGNED', ' BIGINT UNSIGNED'], [' INT', ' BIGINT'], $content);
+        $content = preg_replace('/\b((?:INT|BIGINT|TINYINT|SMALLINT|MEDIUMINT)(?:\s*\([\d]+\))?)\s+UNSIGNED\b/i', '$1', $content);
 
         if (!preg_match('/\b(DROP\s+TABLE|CREATE\s+TABLE|INSERT\s+INTO)\b/is', $content)) {
             return Response::error('محتوى الملف لا يبدو ملف SQL صالحاً لقاعدة البيانات', 400);
