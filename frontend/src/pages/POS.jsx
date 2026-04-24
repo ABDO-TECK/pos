@@ -4,6 +4,7 @@ import BarcodeInput from '../components/pos/BarcodeInput'
 import Cart from '../components/pos/Cart'
 import PaymentModal from '../components/pos/PaymentModal'
 import Receipt from '../components/pos/Receipt'
+import ReservedInvoicesModal from '../components/pos/ReservedInvoicesModal'
 import useCartStore from '../store/cartStore'
 import useProductStore from '../store/productStore'
 import useSettingsStore from '../store/settingsStore'
@@ -12,6 +13,7 @@ import toast from 'react-hot-toast'
 
 export default function POS() {
   const [showPayment, setShowPayment] = useState(false)
+  const [showReserved, setShowReserved] = useState(false)
   const [invoice, setInvoice]         = useState(null)
   const [change, setChange]           = useState(0)
   const [mobileTab, setMobileTab]     = useState('products') // 'products' | 'cart'
@@ -72,9 +74,14 @@ export default function POS() {
     <>
       {/* ── Desktop layout ── */}
       <div className="pos-desktop">
-        {/* Barcode */}
-        <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem' }}>
-          <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+        {/* Barcode & Top Actions */}
+        <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+          <div style={{ flex: 1 }}>
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+          </div>
+          <button className="btn btn-warning" onClick={() => setShowReserved(true)}>
+             الفواتير المحجوزة 🕒
+          </button>
         </div>
 
         <div style={{ display: 'flex', flex: 1, gap: '0.75rem', overflow: 'hidden', minHeight: 0 }}>
@@ -115,9 +122,14 @@ export default function POS() {
 
       {/* ── Mobile layout ── */}
       <div className="pos-mobile">
-        {/* Barcode */}
-        <div className="card" style={{ padding: '0.6rem', marginBottom: '0.6rem' }}>
-          <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+        {/* Barcode & Top Actions */}
+        <div className="card" style={{ padding: '0.6rem', marginBottom: '0.6rem', display: 'flex', gap: '0.4rem' }}>
+          <div style={{ flex: 1 }}>
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+          </div>
+          <button className="btn btn-warning btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات">
+             🕒
+          </button>
         </div>
 
         {/* Tab content */}
@@ -185,6 +197,15 @@ export default function POS() {
       )}
       {invoice && (
         <Receipt invoice={invoice} change={change} onClose={() => setInvoice(null)} />
+      )}
+      {showReserved && (
+        <ReservedInvoicesModal 
+          onClose={() => setShowReserved(false)} 
+          onResumeSale={(inv) => {
+            useCartStore.getState().mergeInvoiceLines(inv.items, inv.id, inv.customer_id)
+            setShowReserved(false)
+          }} 
+        />
       )}
 
       {/* POS-specific styles */}

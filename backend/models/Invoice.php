@@ -24,6 +24,15 @@ class Invoice {
             $params['year']  = $filters['year'];
         }
 
+        if (isset($filters['status']) && $filters['status'] !== 'all') {
+            $where[]          = 'i.status = :status';
+            $params['status'] = $filters['status'];
+        } elseif (!isset($filters['status'])) {
+            // Default backward compatibility: only fetch completed
+            $where[]          = 'i.status = :status';
+            $params['status'] = 'completed';
+        }
+
         $whereClause = implode(' AND ', $where);
 
         // ── Pagination (اختياري) ──
@@ -37,9 +46,10 @@ class Invoice {
             $total = (int) $countStmt->fetchColumn();
 
             $offset = ($page - 1) * $limit;
-            $sql = "SELECT i.*, u.name AS cashier_name
+            $sql = "SELECT i.*, u.name AS cashier_name, c.name AS customer_name
                     FROM invoices i
                     JOIN users u ON u.id = i.user_id
+                    LEFT JOIN customers c ON c.id = i.customer_id
                     WHERE $whereClause
                     ORDER BY i.created_at DESC
                     LIMIT $limit OFFSET $offset";
@@ -59,9 +69,10 @@ class Invoice {
         }
 
         // ── بدون pagination ──
-        $sql = "SELECT i.*, u.name AS cashier_name
+        $sql = "SELECT i.*, u.name AS cashier_name, c.name AS customer_name
                 FROM invoices i
                 JOIN users u ON u.id = i.user_id
+                LEFT JOIN customers c ON c.id = i.customer_id
                 WHERE $whereClause
                 ORDER BY i.created_at DESC
                 LIMIT 200";
@@ -99,8 +110,8 @@ class Invoice {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO invoices (user_id, customer_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due, amount_due)
-             VALUES (:user_id, :customer_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due, :amount_due)'
+            'INSERT INTO invoices (user_id, customer_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due, amount_due, status)
+             VALUES (:user_id, :customer_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due, :amount_due, :status)'
         );
         $stmt->execute([
             'user_id'        => $data['user_id'],
@@ -113,6 +124,7 @@ class Invoice {
             'amount_paid'    => $data['amount_paid'] ?? $data['total'],
             'change_due'     => $data['change_due'] ?? 0,
             'amount_due'     => $data['amount_due'] ?? 0,
+            'status'         => $data['status'] ?? 'completed',
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -140,17 +152,21 @@ class Invoice {
     public function updateTotals(int $id, array $data): void {
         $stmt = $this->db->prepare(
             'UPDATE invoices SET
+                customer_id = :customer_id,
                 subtotal = :subtotal,
                 discount = :discount,
                 tax = :tax,
                 total = :total,
                 payment_method = :payment_method,
                 amount_paid = :amount_paid,
-                change_due = :change_due
+                change_due = :change_due,
+                amount_due = :amount_due,
+                status = :status
              WHERE id = :id'
         );
         $stmt->execute([
             'id'               => $id,
+            'customer_id'      => $data['customer_id'] ?? null,
             'subtotal'         => $data['subtotal'],
             'discount'         => $data['discount'] ?? 0,
             'tax'              => $data['tax'] ?? 0,
@@ -158,7 +174,22 @@ class Invoice {
             'payment_method'   => $data['payment_method'],
             'amount_paid'      => $data['amount_paid'],
             'change_due'       => $data['change_due'] ?? 0,
+            'amount_due'       => $data['amount_due'] ?? 0,
+            'status'           => $data['status'] ?? 'completed',
         ]);
+    }
+
+    public function updateStatus(int $id, string $status): void {
+        $stmt = $this->db->prepare('UPDATE invoices SET status = ? WHERE id = ?');
+        $stmt->execute([$status, $id]);
+
+        if ($status === 'completed') {
+            $this->db->prepare("UPDATE customer_ledger SET description = REPLACE(description, ' 🕒 (محجوزة - لم تُسلم)', '') WHERE invoice_id = ?")->execute([$id]);
+        }
+    }
+
+    public function delete(int $id): void {
+        $this->db->prepare('DELETE FROM invoices WHERE id = ?')->execute([$id]);
     }
 
     public function getDailySummary(string $date): array {

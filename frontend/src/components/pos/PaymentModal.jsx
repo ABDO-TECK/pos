@@ -17,7 +17,7 @@ const PAYMENT_METHODS = [
 ]
 
 export default function PaymentModal({ onClose, onSuccess }) {
-  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId } = useCartStore()
+  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId, rebillingCustomerId } = useCartStore()
   const { taxEnabled, taxRate } = useSettingsStore()
 
   const [loading, setLoading]                 = useState(false)
@@ -28,7 +28,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const [customers, setCustomers]         = useState([])
   const [customersLoading, setCustomersLoading] = useState(false)
   const [customerMode, setCustomerMode]   = useState('existing') // 'existing' | 'new'
-  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [selectedCustomerId, setSelectedCustomerId] = useState(rebillingCustomerId ? String(rebillingCustomerId) : '')
   const [deposit, setDeposit]             = useState(0)           // العربون
   const [newCust, setNewCust]             = useState({ name: '', phone: '', address: '' })
 
@@ -47,20 +47,23 @@ export default function PaymentModal({ onClose, onSuccess }) {
 
   useEffect(() => { setLocalAmountPaid(computedTotal) }, [computedTotal])
 
-  // تحميل العملاء عند اختيار آجل
+  const [showCustomer, setShowCustomer] = useState(!!rebillingCustomerId)
+  const isCustomerNeeded = isCreditSale || showCustomer
+
+  // تحميل العملاء عند الحاجة (إما آجل أو أراد المستخدم ربط الفاتورة)
   useEffect(() => {
-    if (!isCreditSale) return
+    if (!isCustomerNeeded) return
     setCustomersLoading(true)
     getCustomers()
       .then(r => setCustomers(r.data.data))
       .catch(() => toast.error('فشل تحميل العملاء'))
       .finally(() => setCustomersLoading(false))
-  }, [isCreditSale])
+  }, [isCustomerNeeded])
 
   // إعادة ضبط deposit عند التغيير
   useEffect(() => { if (!isCreditSale) setDeposit(0) }, [isCreditSale])
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (status = 'completed') => {
     if (items.length === 0) return
 
     if (currentMethod.cashInput && localAmountPaid < computedTotal) {
@@ -68,34 +71,38 @@ export default function PaymentModal({ onClose, onSuccess }) {
       return
     }
 
-    // التحقق من بيانات الآجل
+    // التحقق من بيانات العميل (مطلوب في الآجل، واختياري في الكاش)
     let customerId  = null
     let newCustomer = null
-    if (isCreditSale) {
+    if (isCustomerNeeded) {
       if (customerMode === 'existing') {
-        if (!selectedCustomerId) { toast.error('اختر عميلاً أو أنشئ جديداً'); return }
-        customerId = parseInt(selectedCustomerId)
+        if (!selectedCustomerId && isCreditSale) { toast.error('اختر عميلاً أو أنشئ جديداً'); return }
+        if (selectedCustomerId) customerId = parseInt(selectedCustomerId)
       } else {
-        if (!newCust.name.trim()) { toast.error('أدخل اسم العميل'); return }
-        // تُرسل بيانات العميل للباكند ليُنشئه داخل الـ transaction
-        newCustomer = { name: newCust.name.trim(), phone: newCust.phone, address: newCust.address }
+        if (!newCust.name.trim() && isCreditSale) { toast.error('أدخل اسم العميل'); return }
+        if (newCust.name.trim()) {
+          newCustomer = { name: newCust.name.trim(), phone: newCust.phone, address: newCust.address }
+        }
       }
     }
 
     setDiscount(clampedDiscount)
-    setAmountPaid(isCreditSale ? deposit : localAmountPaid)
+    const finalAmountPaid = status === 'reserved' 
+      ? (isCreditSale ? deposit : 0) 
+      : (isCreditSale ? deposit : (currentMethod.cashInput ? localAmountPaid : computedTotal))
+    
+    setAmountPaid(finalAmountPaid)
 
     const salePayload = {
       items:          items.map(i => ({ product_id: i.id, quantity: i.quantity, price: i.price })),
       discount:       clampedDiscount,
       payment_method: paymentMethod,
-      amount_paid:    isCreditSale ? deposit : (currentMethod.cashInput ? localAmountPaid : computedTotal),
-      ...(isCreditSale ? {
-        customer_id:  customerId,
-        deposit,
-        ...(newCustomer ? { new_customer: newCustomer } : {}),
-      } : {}),
+      amount_paid:    finalAmountPaid,
+      ...(customerId ? { customer_id: customerId } : {}),
+      ...(newCustomer ? { new_customer: newCustomer } : {}),
+      ...(isCreditSale ? { deposit } : {}),
       ...(rebillingInvoiceId ? { invoice_id: rebillingInvoiceId } : {}),
+      status,
     }
 
     setLoading(true)
@@ -103,11 +110,13 @@ export default function PaymentModal({ onClose, onSuccess }) {
       const res = await createSale(salePayload)
       const { invoice, low_stock_alerts } = res.data.data
       toast.success(
-        rebillingInvoiceId
-          ? `تم تحديث الفاتورة #${formatNumber(rebillingInvoiceId)}`
-          : isCreditSale
-            ? `تم تسجيل البيع الآجل 📋 — المتبقي ${formatCurrency(amountDue)}`
-            : 'تمت عملية البيع بنجاح! 🎉',
+        status === 'reserved'
+          ? `تم حجز الفاتورة بنجاح 🕒`
+          : rebillingInvoiceId
+            ? `تم تحديث الفاتورة #${formatNumber(rebillingInvoiceId)}`
+            : isCreditSale
+              ? `تم تسجيل البيع الآجل 📋 — المتبقي ${formatCurrency(amountDue)}`
+              : 'تمت عملية البيع بنجاح! 🎉',
         { duration: 3000 }
       )
       if (low_stock_alerts?.length > 0) {
@@ -195,14 +204,34 @@ export default function PaymentModal({ onClose, onSuccess }) {
           </div>
         )}
 
-        {/* ── قسم الآجل ────────────────────────────────────────────────── */}
-        {isCreditSale && (
+        {/* خيار إضافة عميل للمبيعات النقدية */}
+        {!isCreditSale && (
+          <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input 
+              type="checkbox" 
+              id="linkCustomer" 
+              checked={showCustomer} 
+              onChange={e => setShowCustomer(e.target.checked)} 
+              style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+            />
+            <label htmlFor="linkCustomer" style={{ fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
+              ربط الفاتورة بحساب عميل (لتسجيلها في كشف حسابه)
+            </label>
+          </div>
+        )}
+
+        {/* ── قسم بيانات العميل (آجل أو كاش مرتبط) ────────────────────────── */}
+        {isCustomerNeeded && (
           <div style={{
-            border: '1px solid rgba(239,68,68,.3)', borderRadius: 'var(--radius)',
-            background: 'rgba(239,68,68,.03)', padding: '0.85rem', marginBottom: '1rem',
+            border: isCreditSale ? '1px solid rgba(239,68,68,.3)' : '1px solid var(--border)', 
+            borderRadius: 'var(--radius)',
+            background: isCreditSale ? 'rgba(239,68,68,.03)' : 'var(--bg)', 
+            padding: '0.85rem', marginBottom: '1rem',
             display: 'flex', flexDirection: 'column', gap: '0.65rem',
           }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--danger)' }}>⏳ بيع بالآجل</div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: isCreditSale ? 'var(--danger)' : 'var(--primary)' }}>
+              {isCreditSale ? '⏳ بيع بالآجل (مطلوب)' : '👤 تسجيل الفاتورة على عميل (اختياري)'}
+            </div>
 
             {/* اختيار: عميل موجود أم جديد */}
             <div style={{ display: 'flex', gap: '0.4rem' }}>
@@ -239,33 +268,43 @@ export default function PaymentModal({ onClose, onSuccess }) {
               </div>
             )}
 
-            {/* العربون */}
-            <div>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
-                العربون / المبلغ المقدَّم (ج.م) — اختياري
-              </label>
-              <input className="input" type="number" min={0} max={computedTotal} step="0.5"
-                placeholder="0.00" value={deposit || ''}
-                onChange={e => setDeposit(Math.min(parseFloat(e.target.value) || 0, computedTotal))} />
-              {amountDue > 0 && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginTop: '0.25rem', fontWeight: 600 }}>
-                  ⬅ المتبقي على الذمة: {formatCurrency(amountDue)}
-                </div>
-              )}
-            </div>
+            {/* العربون (للمبيعات الآجلة فقط) */}
+            {isCreditSale && (
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+                  العربون / المبلغ المقدَّم (ج.م) — اختياري
+                </label>
+                <input className="input" type="number" min={0} max={computedTotal} step="0.5"
+                  placeholder="0.00" value={deposit || ''}
+                  onChange={e => setDeposit(Math.min(parseFloat(e.target.value) || 0, computedTotal))} />
+                {amountDue > 0 && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginTop: '0.25rem', fontWeight: 600 }}>
+                    ⬅ المتبقي على الذمة: {formatCurrency(amountDue)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
         {/* Checkout button */}
-        <button className={`btn ${isCreditSale ? 'btn-danger' : 'btn-primary'} btn-lg`}
-          style={{ width: '100%', justifyContent: 'center', fontSize: '1.05rem' }}
-          onClick={handleCheckout} disabled={loading}>
-          {loading ? <span className="spinner" /> : <CheckCircle2 size={20} />}
-          {rebillingInvoiceId ? 'حفظ التعديل — '
-            : isCreditSale ? 'تأكيد البيع الآجل — '
-            : 'تأكيد البيع — '}
-          {formatCurrency(computedTotal)}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+          <button className={`btn ${isCreditSale ? 'btn-danger' : 'btn-primary'} btn-lg`}
+            style={{ flex: 2, justifyContent: 'center', fontSize: '1.05rem' }}
+            onClick={() => handleCheckout('completed')} disabled={loading}>
+            {loading ? <span className="spinner" /> : <CheckCircle2 size={20} />}
+            {rebillingInvoiceId ? 'حفظ التعديل — '
+              : isCreditSale ? 'تأكيد الآجل — '
+              : 'تأكيد البيع — '}
+            {formatCurrency(computedTotal)}
+          </button>
+          
+          <button className="btn btn-warning btn-lg"
+            style={{ flex: 1, justifyContent: 'center', fontSize: '1rem' }}
+            onClick={() => handleCheckout('reserved')} disabled={loading}>
+            حجز 🕒
+          </button>
+        </div>
       </div>
     </div>
   )

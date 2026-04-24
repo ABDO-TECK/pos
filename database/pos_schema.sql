@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS products (
     box_barcode VARCHAR(100) NULL DEFAULT NULL UNIQUE,
     price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     cost  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    quantity INT NOT NULL DEFAULT 0,
+    quantity DECIMAL(10,3) NOT NULL DEFAULT 0.000,
+    is_weighable TINYINT(1) NOT NULL DEFAULT 0,
+    sell_by_weight TINYINT(1) NOT NULL DEFAULT 0,
     low_stock_threshold INT NOT NULL DEFAULT 5,
     units_per_box INT NOT NULL DEFAULT 1 COMMENT 'عدد القطع في الصندوق الواحد — للبيع بالكرتون',
     category_id INT UNSIGNED NULL,
@@ -75,6 +77,37 @@ CREATE TABLE IF NOT EXISTS tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- Settings
+-- ============================================================
+CREATE TABLE IF NOT EXISTS settings (
+    `key` VARCHAR(100) NOT NULL PRIMARY KEY,
+    `value` TEXT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Expenses
+-- ============================================================
+CREATE TABLE IF NOT EXISTS expense_categories (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS expenses (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    category_id INT UNSIGNED NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    notes TEXT NULL,
+    expense_date DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_expense_category FOREIGN KEY (category_id) REFERENCES expense_categories(id) ON DELETE CASCADE,
+    CONSTRAINT fk_expense_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Customers (نظام العملاء والبيع بالآجل)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
@@ -102,7 +135,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     change_due DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     amount_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'المتبقي على ذمة العميل بعد خصم العربون',
-    status ENUM('completed','refunded') NOT NULL DEFAULT 'completed',
+    status VARCHAR(20) NOT NULL DEFAULT 'completed',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_invoice_user     FOREIGN KEY (user_id)     REFERENCES users(id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
@@ -118,7 +151,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED NOT NULL,
     product_id INT UNSIGNED NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
+    quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
     price DECIMAL(10,2) NOT NULL,
     unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'تكلفة الوحدة لحظة البيع (للتقارير)',
     subtotal DECIMAL(10,2) NOT NULL,
@@ -164,7 +197,7 @@ CREATE TABLE IF NOT EXISTS purchases (
     purchase_invoice_id INT UNSIGNED NULL,
     supplier_id INT UNSIGNED NOT NULL,
     product_id INT UNSIGNED NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
+    quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
     cost DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     notes TEXT NULL,

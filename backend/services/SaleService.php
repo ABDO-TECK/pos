@@ -85,21 +85,17 @@ class SaleService
         $taxable    = $subtotal - $discount;
         $tax        = $taxEnabled ? round($taxable * $taxRate, 2) : 0;
         $total      = round($taxable + $tax, 2);
-        $amountPaid = (float) ($data['amount_paid'] ?? $total);
-        $changeDue  = round($amountPaid - $total, 2);
+        
+        $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $total;
+        
+        $changeDue  = max(0, round($amountPaid - $total, 2));
+        $amountDue  = max(0, round($total - $amountPaid, 2));
 
-        // البيع الآجل
         $customerId = isset($data['customer_id']) && $data['customer_id'] > 0
             ? (int) $data['customer_id']
             : null;
-        $isCreditSale = ($data['payment_method'] ?? '') === 'credit' || $customerId !== null;
-        $deposit      = $isCreditSale ? (float) ($data['deposit'] ?? 0) : 0;
-
-        if ($isCreditSale) {
-            $amountPaid = $deposit;
-            $changeDue  = 0;
-        }
-        $amountDue = $isCreditSale ? round($total - $deposit, 2) : 0;
+        $isCreditSale = ($data['payment_method'] ?? '') === 'credit';
+        $deposit      = $isCreditSale ? $amountPaid : 0;
 
         return [
             'subtotal'       => $subtotal,
@@ -141,10 +137,16 @@ class SaleService
             if ($replaceInvoiceId > 0) {
                 // مرتجع / إعادة فوترة
                 foreach ($existingInvoice['items'] as $old) {
-                    $this->productModel->incrementQuantity((int) $old['product_id'], (int) $old['quantity']);
+                    $this->productModel->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
                 }
+                
+                // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
+                $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$replaceInvoiceId]);
+                
                 $this->invoiceModel->deleteItemsByInvoiceId($replaceInvoiceId);
+
                 $this->invoiceModel->updateTotals($replaceInvoiceId, [
+                    'customer_id'    => $customerId,
                     'subtotal'       => $totals['subtotal'],
                     'discount'       => $totals['discount'],
                     'tax'            => $totals['tax'],
@@ -152,8 +154,15 @@ class SaleService
                     'payment_method' => $data['payment_method'],
                     'amount_paid'    => $totals['amount_paid'],
                     'change_due'     => max(0, $totals['change_due']),
+                    'amount_due'     => $totals['amount_due'],
+                    'status'         => $data['status'] ?? 'completed',
                 ]);
                 $invoiceId = $replaceInvoiceId;
+                
+                // تسجيل القيود الجديدة
+                if ($customerId !== null) {
+                    $this->recordCustomerLedger($customerId, $invoiceId, $totals, $authUser, $data['status'] ?? 'completed', $data['payment_method'] ?? 'cash');
+                }
             } else {
                 // إنشاء عميل جديد إذا لزم
                 if ($customerId === null && !empty($data['new_customer']['name'])) {
@@ -177,11 +186,12 @@ class SaleService
                     'amount_paid'    => $totals['amount_paid'],
                     'change_due'     => max(0, $totals['change_due']),
                     'amount_due'     => $totals['amount_due'],
+                    'status'         => $data['status'] ?? 'completed',
                 ]);
 
                 // تسجيل قيود كشف حساب العميل
                 if ($customerId !== null) {
-                    $this->recordCustomerLedger($customerId, $invoiceId, $totals, $authUser);
+                    $this->recordCustomerLedger($customerId, $invoiceId, $totals, $authUser, $data['status'] ?? 'completed', $data['payment_method'] ?? 'cash');
                 }
             }
 
@@ -203,26 +213,29 @@ class SaleService
 
     // ── Customer ledger entries ──────────────────────────────
 
-    private function recordCustomerLedger(int $customerId, int $invoiceId, array $totals, array $authUser): void
+    private function recordCustomerLedger(int $customerId, int $invoiceId, array $totals, array $authUser, string $status = 'completed', string $paymentMethod = 'cash'): void
     {
-        $deposit = $totals['deposit'];
-        $depositDesc = $deposit > 0 ? " (عربون {$deposit})" : '';
+        $effectivePayment = max(0, $totals['total'] - $totals['amount_due']);
+        $paymentDesc = $paymentMethod === 'credit' && $effectivePayment > 0 ? " (عربون {$effectivePayment})" : '';
+        
+        $statusMarker = $status === 'reserved' ? ' 🕒 (محجوزة - لم تُسلم)' : '';
 
         $this->customerModel->addLedgerEntry([
             'customer_id' => $customerId,
             'type'        => 'debit',
             'amount'      => $totals['total'],
-            'description' => "فاتورة بيع #{$invoiceId}{$depositDesc}",
+            'description' => "فاتورة بيع #{$invoiceId}{$paymentDesc}{$statusMarker}",
             'invoice_id'  => $invoiceId,
             'created_by'  => $authUser['id'],
         ]);
 
-        if ($deposit > 0) {
+        if ($effectivePayment > 0) {
+            $desc = $paymentMethod === 'credit' ? "عربون فاتورة #{$invoiceId}" : "سداد لفاتورة #{$invoiceId}";
             $this->customerModel->addLedgerEntry([
                 'customer_id' => $customerId,
                 'type'        => 'credit',
-                'amount'      => $deposit,
-                'description' => "عربون فاتورة #{$invoiceId}",
+                'amount'      => $effectivePayment,
+                'description' => $desc,
                 'invoice_id'  => $invoiceId,
                 'created_by'  => $authUser['id'],
             ]);
@@ -259,8 +272,12 @@ class SaleService
         $this->db->beginTransaction();
         try {
             foreach ($invoice['items'] as $item) {
-                $this->productModel->incrementQuantity((int) $item['product_id'], (int) $item['quantity']);
+                $this->productModel->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
             }
+            // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
+            $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);
+            
+            // حذف الفاتورة (والعناصر المرتبطة بها تحذف تلقائياً بفضل ON DELETE CASCADE)
             $this->db->prepare('DELETE FROM invoices WHERE id = ?')->execute([$invoiceId]);
             $this->db->commit();
         } catch (Throwable $e) {

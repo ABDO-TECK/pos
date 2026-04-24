@@ -7,6 +7,7 @@ const useCartStore = create((set, get) => ({
   amountPaid: 0,
   /** When set, checkout updates this invoice instead of creating a new one (مرتجع / إعادة فوترة) */
   rebillingInvoiceId: null,
+  rebillingCustomerId: null,
 
   addItem: (product) => {
     const items = get().items
@@ -70,10 +71,10 @@ const useCartStore = create((set, get) => ({
   setAmountPaid: (amount) => set({ amountPaid: parseFloat(amount) || 0 }),
 
   clearCart: () =>
-    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null }),
+    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null, rebillingCustomerId: null }),
 
   /** Merge invoice lines into cart; `invoiceId` links checkout to that invoice (same رقم فاتورة). */
-  mergeInvoiceLines: (lines, invoiceId = null) => {
+  mergeInvoiceLines: (lines, invoiceId = null, customerId = null) => {
     if (!lines?.length) return
     set((state) => {
       let items = [...state.items]
@@ -101,9 +102,11 @@ const useCartStore = create((set, get) => ({
         }
       }
       const rid = invoiceId != null && invoiceId !== '' ? Number(invoiceId) : null
+      const cid = customerId != null && customerId !== '' ? Number(customerId) : null
       return {
         items,
         rebillingInvoiceId: Number.isFinite(rid) && rid > 0 ? rid : state.rebillingInvoiceId,
+        rebillingCustomerId: Number.isFinite(cid) && cid > 0 ? cid : state.rebillingCustomerId,
       }
     })
   },

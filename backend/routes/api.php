@@ -23,6 +23,7 @@ $router->delete('/api/products/{id}',[ProductController::class, 'destroy', [Auth
 $router->post('/api/sales',          [SaleController::class, 'store',   [AuthMiddleware::class]]);
 $router->get('/api/sales',           [SaleController::class, 'index',   [AuthMiddleware::class]]);
 $router->get('/api/sales/{id}',      [SaleController::class, 'show',    [AuthMiddleware::class]]);
+$router->put('/api/sales/{id}/status',[SaleController::class, 'updateStatus', [AuthMiddleware::class]]);
 $router->delete('/api/sales/{id}',  [SaleController::class, 'destroy', [AuthMiddleware::class, AdminMiddleware::class]]);
 
 // ── Inventory ──────────────────────────────────────────────────

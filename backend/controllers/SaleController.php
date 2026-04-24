@@ -13,8 +13,9 @@ class SaleController extends Controller {
             'date'  => $this->getParam('date'),
             'month' => $this->getParam('month'),
             'year'  => $this->getParam('year'),
-            'page'  => $this->getParam('page'),
-            'limit' => $this->getParam('limit'),
+            'page'   => $this->getParam('page'),
+            'limit'  => $this->getParam('limit'),
+            'status' => $this->getParam('status'),
         ];
 
         $result = $this->saleService->getInvoiceModel()->all($filters);
@@ -75,6 +76,21 @@ class SaleController extends Controller {
             'invoice'          => $invoice,
             'low_stock_alerts' => $lowStock,
         ], $isUpdate ? 'Invoice updated' : 'Sale completed', $isUpdate ? 200 : 201);
+    }
+
+    public function updateStatus(string $id) {
+        $data = $this->getBody();
+        if (empty($data['status']) || !in_array($data['status'], ['completed', 'reserved', 'cancelled'])) {
+            return Response::error('Invalid status', 400);
+        }
+
+        $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);
+        if (!$invoice) {
+            return Response::notFound('Invoice not found');
+        }
+
+        $this->saleService->getInvoiceModel()->updateStatus((int)$id, $data['status']);
+        return Response::success(null, 'Invoice status updated successfully');
     }
 
     /**
