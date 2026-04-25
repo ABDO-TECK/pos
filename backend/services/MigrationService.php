@@ -4,22 +4,29 @@ class MigrationService {
 
     private PDO $db;
     private string $migrationsPath;
+    private string $flagFile;
 
     public function __construct() {
         $this->db = Database::getInstance();
-        $this->migrationsPath = __DIR__ . '/../../database/migrations/';
+        $this->migrationsPath = realpath(__DIR__ . '/../../database/migrations/') . DIRECTORY_SEPARATOR;
+        $this->flagFile = __DIR__ . '/../storage/migrations_hash.flag';
     }
 
     /**
      * تشغيل جميع المهاجرات التي لم يتم تشغيلها بعد.
      * @return array يحتوي على عدد المهاجرات المنفذة وأي أخطاء حدثت.
      */
-    public function runAllMigrations(): array {
-        $this->createMigrationsTableIfNotExists();
-
+    public function runAllMigrations(bool $force = false): array {
         if (!is_dir($this->migrationsPath)) {
             return ['executed' => 0, 'errors' => ["Migrations directory not found: {$this->migrationsPath}"]];
         }
+
+        // ── Smart skip: لا حاجة للتنفيذ إذا لم تتغير الملفات ──
+        if (!$force && $this->isUpToDate()) {
+            return ['executed' => 0, 'errors' => [], 'skipped' => true];
+        }
+
+        $this->createMigrationsTableIfNotExists();
 
         $files = scandir($this->migrationsPath);
         $migrations = [];
@@ -46,10 +53,48 @@ class MigrationService {
             }
         }
 
+        if (empty($errors)) {
+            $this->updateFlag();
+        }
+
         return [
             'executed' => $executed,
-            'errors' => $errors
+            'errors' => $errors,
+            'skipped' => false
         ];
+    }
+
+    // ── Flag-based smart skip ─────────────────────────────────
+
+    private function isUpToDate(): bool {
+        if (!is_file($this->flagFile)) {
+            return false;
+        }
+
+        $currentHash = $this->computeHash();
+        $savedHash   = @file_get_contents($this->flagFile);
+
+        return $savedHash !== false && trim($savedHash) === $currentHash;
+    }
+
+    private function updateFlag(): void {
+        $dir = dirname($this->flagFile);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents($this->flagFile, $this->computeHash(), LOCK_EX);
+    }
+
+    private function computeHash(): string {
+        $files = glob($this->migrationsPath . '*.sql') ?: [];
+        sort($files);
+
+        $fingerprint = '';
+        foreach ($files as $file) {
+            $fingerprint .= basename($file) . ':' . filesize($file) . ':' . filemtime($file) . ';';
+        }
+
+        return md5($fingerprint);
     }
 
     private function createMigrationsTableIfNotExists(): void {

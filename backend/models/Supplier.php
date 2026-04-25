@@ -19,59 +19,25 @@ class Supplier {
 
         $whereClause = implode(' AND ', $where);
 
-        // ── Pagination (اختياري) ──
-        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
-        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+        // ── Pagination الإجباري ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : 1;
+        $limit = isset($filters['limit']) ? max(1, min(1000, (int) $filters['limit'])) : 1000;
 
-        if ($page !== null && $limit !== null) {
-            $countSql = "SELECT COUNT(*) FROM suppliers s WHERE $whereClause";
-            $countStmt = $this->db->prepare($countSql);
-            $countStmt->execute($params);
-            $total = (int) $countStmt->fetchColumn();
+        $countSql = "SELECT COUNT(*) FROM suppliers s WHERE $whereClause";
+        $countStmt = $this->db->prepare($countSql);
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
 
-            $offset = ($page - 1) * $limit;
-            $sql = "SELECT s.*,
-                COALESCE(SUM(CASE WHEN sl.type = \"debit\"  THEN sl.amount ELSE 0 END), 0) AS total_debit,
-                COALESCE(SUM(CASE WHEN sl.type = \"credit\" THEN sl.amount ELSE 0 END), 0) AS total_credit
-             FROM suppliers s
-             LEFT JOIN supplier_ledger sl ON sl.supplier_id = s.id
-             WHERE $whereClause
-             GROUP BY s.id
-             ORDER BY s.name ASC
-             LIMIT $limit OFFSET $offset";
-
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            $rows = $stmt->fetchAll();
-
-            foreach ($rows as &$r) {
-                $r['balance'] = round(
-                    (float)($r['initial_balance'] ?? 0) + (float)$r['total_debit'] - (float)$r['total_credit'],
-                    2
-                );
-            }
-            unset($r);
-
-            return [
-                'data' => $rows,
-                'pagination' => [
-                    'page'  => $page,
-                    'limit' => $limit,
-                    'total' => $total,
-                    'pages' => (int) ceil($total / $limit),
-                ],
-            ];
-        }
-
-        // ── بدون pagination — إرجاع الكل (backward-compatible) ──
+        $offset = ($page - 1) * $limit;
         $sql = "SELECT s.*,
-                COALESCE(SUM(CASE WHEN sl.type = \"debit\"  THEN sl.amount ELSE 0 END), 0) AS total_debit,
-                COALESCE(SUM(CASE WHEN sl.type = \"credit\" THEN sl.amount ELSE 0 END), 0) AS total_credit
-             FROM suppliers s
-             LEFT JOIN supplier_ledger sl ON sl.supplier_id = s.id
-             WHERE $whereClause
-             GROUP BY s.id
-             ORDER BY s.name ASC";
+            COALESCE(SUM(CASE WHEN sl.type = \"debit\"  THEN sl.amount ELSE 0 END), 0) AS total_debit,
+            COALESCE(SUM(CASE WHEN sl.type = \"credit\" THEN sl.amount ELSE 0 END), 0) AS total_credit
+         FROM suppliers s
+         LEFT JOIN supplier_ledger sl ON sl.supplier_id = s.id
+         WHERE $whereClause
+         GROUP BY s.id
+         ORDER BY s.name ASC
+         LIMIT $limit OFFSET $offset";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
@@ -84,7 +50,17 @@ class Supplier {
             );
         }
         unset($r);
-        return $rows;
+
+        return [
+            'data' => $rows,
+            'pagination' => [
+                'page'  => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'pages' => (int) ceil($total / $limit),
+            ],
+        ];
+
     }
 
     public function findById(int $id): ?array {

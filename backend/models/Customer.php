@@ -19,63 +19,29 @@ class Customer {
 
         $whereClause = implode(' AND ', $where);
 
-        // ── Pagination (اختياري) ──
-        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
-        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+        // ── Pagination الإجباري ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : 1;
+        $limit = isset($filters['limit']) ? max(1, min(1000, (int) $filters['limit'])) : 1000;
 
-        if ($page !== null && $limit !== null) {
-            $countSql = "SELECT COUNT(*) FROM customers c WHERE $whereClause";
-            $countStmt = $this->db->prepare($countSql);
-            $countStmt->execute($params);
-            $total = (int) $countStmt->fetchColumn();
+        $countSql = "SELECT COUNT(*) FROM customers c WHERE $whereClause";
+        $countStmt = $this->db->prepare($countSql);
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
 
-            $offset = ($page - 1) * $limit;
-            $sql = "SELECT c.*,
-                COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
-                COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
-             FROM customers c
-             LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
-             WHERE $whereClause
-             GROUP BY c.id
-             ORDER BY c.name ASC
-             LIMIT $limit OFFSET $offset";
+        $offset = ($page - 1) * $limit;
+        $sql = "SELECT c.*,
+            COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
+            COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
+         FROM customers c
+         LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
+         WHERE $whereClause
+         GROUP BY c.id
+         ORDER BY c.name ASC
+         LIMIT $limit OFFSET $offset";
 
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            $rows = $stmt->fetchAll();
-
-            foreach ($rows as &$r) {
-                $r['balance'] = round(
-                    (float)$r['initial_balance'] + (float)$r['total_debit'] - (float)$r['total_credit'],
-                    2
-                );
-            }
-            unset($r);
-
-            return [
-                'data' => $rows,
-                'pagination' => [
-                    'page'  => $page,
-                    'limit' => $limit,
-                    'total' => $total,
-                    'pages' => (int) ceil($total / $limit),
-                ],
-            ];
-        }
-
-        // ── بدون pagination — إرجاع الكل (backward-compatible) ──
-        $rows = $this->db->prepare(
-            "SELECT c.*,
-                COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
-                COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
-             FROM customers c
-             LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
-             WHERE $whereClause
-             GROUP BY c.id
-             ORDER BY c.name ASC"
-        );
-        $rows->execute($params);
-        $rows = $rows->fetchAll();
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
 
         foreach ($rows as &$r) {
             $r['balance'] = round(
@@ -84,7 +50,17 @@ class Customer {
             );
         }
         unset($r);
-        return $rows;
+
+        return [
+            'data' => $rows,
+            'pagination' => [
+                'page'  => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'pages' => (int) ceil($total / $limit),
+            ],
+        ];
+
     }
 
     public function findById(int $id): ?array {

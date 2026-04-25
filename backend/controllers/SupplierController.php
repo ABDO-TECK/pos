@@ -5,11 +5,13 @@ class SupplierController extends Controller {
     private Supplier         $supplierModel;
     private Product          $productModel;
     private InventoryService $inventoryService;
+    private SupplierService  $supplierService;
 
     public function __construct() {
         $this->supplierModel    = new Supplier();
         $this->productModel     = new Product();
         $this->inventoryService = new InventoryService();
+        $this->supplierService  = new SupplierService();
     }
 
     public function index() {
@@ -36,27 +38,33 @@ class SupplierController extends Controller {
     }
 
     public function store() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        try {
+            $request = new SupplierRequest($this->getBody());
+            $data = $request->validated();
 
-        $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
-        $id       = $this->supplierModel->create($data);
-        $supplier = $this->supplierModel->findById($id);
-        return Response::success($supplier, 'Supplier created', 201);
+            $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
+            $id       = $this->supplierModel->create($data);
+            $supplier = $this->supplierModel->findById($id);
+            return Response::success($supplier, 'Supplier created', 201);
+        } catch (ValidationException $e) {
+            return Response::error('Validation failed', 422, $e->getErrors());
+        }
     }
 
     public function update(string $id) {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        try {
+            $request = new SupplierRequest($this->getBody());
+            $data = $request->validated();
 
-        $supplier = $this->supplierModel->findById((int)$id);
-        if (!$supplier) return Response::notFound('Supplier not found');
+            $supplier = $this->supplierModel->findById((int)$id);
+            if (!$supplier) return Response::notFound('Supplier not found');
 
-        $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
-        $this->supplierModel->update((int)$id, $data);
-        return Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
+            $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
+            $this->supplierModel->update((int)$id, $data);
+            return Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
+        } catch (ValidationException $e) {
+            return Response::error('Validation failed', 422, $e->getErrors());
+        }
     }
 
     public function destroy(string $id) {
@@ -177,31 +185,15 @@ class SupplierController extends Controller {
     public function addPayment(string $id) {
         $sid  = (int)$id;
         $data = $this->getBody();
-
-        $supplier = $this->supplierModel->findById($sid);
-        if (!$supplier) {
-            return Response::notFound('المورد غير موجود');
-        }
-
-        $amount = (float)($data['amount'] ?? 0);
-        if ($amount <= 0) {
-            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
-        }
-
-        $type = $data['type'] === 'debit' ? 'debit' : 'credit';
-
         $auth = $_SERVER['AUTH_USER'];
-        $this->supplierModel->addLedgerEntry([
-            'supplier_id'         => $sid,
-            'type'                => $type,
-            'amount'              => $amount,
-            'description'         => $data['description'] ?? 'دفعة نقدية للمورد',
-            'purchase_invoice_id' => null,
-            'created_by'          => $auth['id'],
-        ]);
 
-        // إعادة كشف الحساب المحدَّث
-        return Response::success($this->supplierModel->getLedger($sid), 'تم تسجيل الدفعة');
+        try {
+            $ledger = $this->supplierService->addPayment($sid, $data, $auth);
+            return Response::success($ledger, 'تم تسجيل الدفعة');
+        } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
+        }
     }
 
     /**
@@ -212,28 +204,13 @@ class SupplierController extends Controller {
         $eid  = (int)$entryId;
         $data = $this->getBody();
 
-        $entry = $this->supplierModel->getLedgerEntry($eid);
-        if (!$entry) {
-            return Response::notFound('القيد غير موجود');
+        try {
+            $ledger = $this->supplierService->updateLedgerEntry($eid, $data);
+            return Response::success($ledger, 'تم تحديث القيد');
+        } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
         }
-
-        $amount = (float)($data['amount'] ?? 0);
-        if ($amount <= 0) {
-            return Response::error('يجب أن يكون المبلغ أكبر من صفر', 422);
-        }
-        $type = $data['type'] ?? $entry['type'];
-        if (!in_array($type, ['debit', 'credit'])) {
-            return Response::error('نوع القيد غير صحيح', 422);
-        }
-
-        $this->supplierModel->updateLedgerEntry($eid, [
-            'type'        => $type,
-            'amount'      => $amount,
-            'description' => $data['description'] ?? $entry['description'],
-        ]);
-
-        // إعادة كشف الحساب المحدَّث
-        return Response::success($this->supplierModel->getLedger((int)$entry['supplier_id']), 'تم تحديث القيد');
     }
 }
 

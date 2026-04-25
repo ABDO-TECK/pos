@@ -16,9 +16,10 @@ class CategoryController extends Controller {
         $result = $this->categoryModel->all($filters);
 
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            $data = ['data' => $result['data'], 'pagination' => $result['pagination']];
+            return Response::cacheable($data, 300);
         } else {
-            return Response::success($result['data']);
+            return Response::cacheable($result['data'] ?? $result, 300);
         }
     }
 

@@ -48,7 +48,7 @@ if ($envKeyPath !== '' && file_exists($envKeyPath)) {
     // Fallback paths (only used when .env key is not set)
     $possibleKeys = [
         'C:/private/private-key.pem',
-        __DIR__ . '/../private-key.pem',
+        __DIR__ . '/storage/private-key.pem',
     ];
     foreach ($possibleKeys as $path) {
         if (file_exists($path)) { $KEY = $path; break; }

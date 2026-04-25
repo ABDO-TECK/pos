@@ -506,6 +506,26 @@ class UpdateController extends Controller {
         }
 
         // ───────────────────────────────────────────────────────────
+        // الخطوة 7: تطبيق المهاجرات (Migrations)
+        // ───────────────────────────────────────────────────────────
+        $output[] = '🗄️ تطبيق تحديثات قاعدة البيانات (إن وجدت)...';
+        $t0 = microtime(true);
+        require_once __DIR__ . '/../services/MigrationService.php';
+        $migrationResult = (new MigrationService())->runAllMigrations(true); // force run
+        $elapsed = round(microtime(true) - $t0, 1);
+        if ($migrationResult['executed'] > 0) {
+            $output[] = "✅ تم تطبيق {$migrationResult['executed']} تحديث(ات) لقاعدة البيانات ({$elapsed}s)";
+        } else {
+            $output[] = "✅ قاعدة البيانات محدثة سلفاً ({$elapsed}s)";
+        }
+        if (!empty($migrationResult['errors'])) {
+            $output[] = "⚠️ حدثت أخطاء أثناء التحديث:";
+            foreach ($migrationResult['errors'] as $err) {
+                $output[] = "  ↳ $err";
+            }
+        }
+
+        // ───────────────────────────────────────────────────────────
         // النتيجة النهائية
         // ───────────────────────────────────────────────────────────
         $output[] = '';

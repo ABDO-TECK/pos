@@ -43,7 +43,7 @@ class SettingsController extends Controller {
     }
 
     public function index() {
-        return Response::success($this->all());
+        return Response::cacheable($this->all(), 300); // Cache for 5 minutes
     }
 
     public function update() {

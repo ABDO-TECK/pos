@@ -11,32 +11,56 @@ class Expense
 
     public function getAll(array $filters = []): array
     {
-        $sql = "SELECT e.*, c.name as category_name, u.name as user_name 
-                FROM expenses e 
-                JOIN expense_categories c ON e.category_id = c.id 
-                JOIN users u ON e.user_id = u.id 
-                WHERE 1=1";
+        $where = ['1=1'];
         $params = [];
 
         if (!empty($filters['date'])) {
-            $sql .= " AND DATE(e.expense_date) = :date";
+            $where[] = "DATE(e.expense_date) = :date";
             $params['date'] = $filters['date'];
         }
         if (!empty($filters['month']) && !empty($filters['year'])) {
-            $sql .= " AND MONTH(e.expense_date) = :month AND YEAR(e.expense_date) = :year";
+            $where[] = "MONTH(e.expense_date) = :month AND YEAR(e.expense_date) = :year";
             $params['month'] = $filters['month'];
             $params['year'] = $filters['year'];
         }
         if (!empty($filters['category_id'])) {
-            $sql .= " AND e.category_id = :category_id";
+            $where[] = "e.category_id = :category_id";
             $params['category_id'] = $filters['category_id'];
         }
 
-        $sql .= " ORDER BY e.expense_date DESC, e.id DESC";
+        $whereClause = implode(' AND ', $where);
+
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : 1;
+        $limit = isset($filters['limit']) ? max(1, min(1000, (int) $filters['limit'])) : 1000;
+
+        $countSql = "SELECT COUNT(*) FROM expenses e WHERE $whereClause";
+        $countStmt = $this->db->prepare($countSql);
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $offset = ($page - 1) * $limit;
+
+        $sql = "SELECT e.*, c.name as category_name, u.name as user_name 
+                FROM expenses e 
+                JOIN expense_categories c ON e.category_id = c.id 
+                JOIN users u ON e.user_id = u.id 
+                WHERE $whereClause
+                ORDER BY e.expense_date DESC, e.id DESC
+                LIMIT $limit OFFSET $offset";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+
+        return [
+            'data' => $rows,
+            'pagination' => [
+                'page'  => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'pages' => (int) ceil($total / $limit),
+            ],
+        ];
     }
 
     public function findById(int $id): ?array

@@ -1,7 +1,16 @@
 import { create } from 'zustand'
 import { getSettings } from '../api/endpoints'
 
-const useSettingsStore = create((set, get) => ({
+interface SettingsState {
+  storeName: string
+  taxEnabled: boolean
+  taxRate: number
+  loaded: boolean
+  fetchSettings: () => Promise<void>
+  setSettings: (s: Partial<SettingsState>) => void
+}
+
+const useSettingsStore = create<SettingsState>((set) => ({
   storeName: 'سوبر ماركت',
   taxEnabled: false,
   taxRate: 15,
@@ -14,7 +23,7 @@ const useSettingsStore = create((set, get) => ({
       set({
         storeName:  s.store_name  ?? 'سوبر ماركت',
         taxEnabled: s.tax_enabled === '1' || s.tax_enabled === true,
-        taxRate:    parseFloat(s.tax_rate ?? 15),
+        taxRate:    parseFloat(s.tax_rate ?? '15'),
         loaded:     true,
       })
     } catch {

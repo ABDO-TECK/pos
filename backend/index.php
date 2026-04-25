@@ -48,12 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// ── Auto-Migrations ───────────────────────────────────────────
-try {
-    (new Migrations())->run();
-} catch (Throwable $e) {
-    Logger::warning('Migration runner failed', ['error' => $e->getMessage()]);
-}
+
 
 // ── Rate Limiting ── (120 طلب/دقيقة لكل IP)
 (new RateLimiter(120, 60))->check();

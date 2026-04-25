@@ -8,8 +8,6 @@ describe('App Component', () => {
     // If App does routing and requires a Router wrapper
     // Since App has its own HashRouter, rendering it directly works if it doesn't try to mock too much
     render(<App />)
-    
-    // As a simple test, just verify it rendered (meaning no crash)
-    expect(document.body).toBeInTheDocument()
+    expect(document.body.innerHTML).not.toBeNull()
   })
 })

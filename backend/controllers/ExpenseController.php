@@ -4,18 +4,20 @@ class ExpenseController
 {
     private Expense $expenseModel;
     private ExpenseCategory $categoryModel;
+    private ExpenseService $expenseService;
 
     public function __construct()
     {
         $this->expenseModel = new Expense();
         $this->categoryModel = new ExpenseCategory();
+        $this->expenseService = new ExpenseService();
     }
 
     // ── Categories ───────────────────────────────────────────────────
 
     public function getCategories(): array
     {
-        return Response::success($this->categoryModel->getAll());
+        return Response::cacheable($this->categoryModel->getAll(), 300); // Cache for 5 minutes
     }
 
     public function createCategory(): array
@@ -88,27 +90,31 @@ class ExpenseController
         }
         if (isset($_GET['category_id'])) $filters['category_id'] = $_GET['category_id'];
 
-        return Response::success($this->expenseModel->getAll($filters));
+        if (isset($_GET['page'])) $filters['page'] = $_GET['page'];
+        if (isset($_GET['limit'])) $filters['limit'] = $_GET['limit'];
+
+        $result = $this->expenseModel->getAll($filters);
+
+        if (isset($result['pagination'])) {
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+        }
+        return Response::success($result);
     }
 
     public function createExpense(): array
     {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        if (empty($data['category_id']) || empty($data['amount']) || empty($data['expense_date'])) {
-            return Response::error('البيانات المطلوبة غير مكتملة', 400);
-        }
-
         $user = $_SERVER['AUTH_USER'] ?? null;
         if (!$user) {
             return Response::error('غير مصرح', 401);
         }
 
-        $data['user_id'] = $user['id'];
-
         try {
-            $id = $this->expenseModel->create($data);
+            $id = $this->expenseService->createExpense($data, $user);
             return Response::success($this->expenseModel->findById($id));
         } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            if ($code === 400) return Response::error($e->getMessage(), 400);
             Logger::error('Failed to create expense', ['error' => $e->getMessage()]);
             return Response::error('حدث خطأ أثناء تسجيل المصروف', 500);
         }
@@ -118,18 +124,14 @@ class ExpenseController
     {
         $id = (int)$params['id'];
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        if (empty($data['category_id']) || empty($data['amount']) || empty($data['expense_date'])) {
-            return Response::error('البيانات المطلوبة غير مكتملة', 400);
-        }
-
-        if (!$this->expenseModel->findById($id)) {
-            return Response::error('المصروف غير موجود', 404);
-        }
 
         try {
-            $this->expenseModel->update($id, $data);
+            $this->expenseService->updateExpense($id, $data);
             return Response::success($this->expenseModel->findById($id));
         } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            if ($code === 400) return Response::error($e->getMessage(), 400);
+            if ($code === 404) return Response::error($e->getMessage(), 404);
             Logger::error('Failed to update expense', ['error' => $e->getMessage()]);
             return Response::error('حدث خطأ أثناء تعديل المصروف', 500);
         }
