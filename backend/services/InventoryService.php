@@ -1,5 +1,16 @@
 <?php
 
+namespace App\Services;
+
+use App\Config\Database;
+use App\Controllers\SaleController;
+use App\Controllers\SupplierController;
+use App\Helpers\Logger;
+use App\Models\Product;
+use App\Models\Supplier;
+use Throwable;
+
+
 /**
  * InventoryService — منطق المخزون المشترك.
  *
@@ -11,10 +22,10 @@ class InventoryService
     private Product  $productModel;
     private Supplier $supplierModel;
 
-    public function __construct()
+    public function __construct(Product $productModel, Supplier $supplierModel)
     {
-        $this->productModel  = new Product();
-        $this->supplierModel = new Supplier();
+        $this->productModel  = $productModel;
+        $this->supplierModel = $supplierModel;
     }
 
     // ── Bulk purchase (from supplier) ────────────────────────

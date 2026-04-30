@@ -1,13 +1,27 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Core\ValidationException;
+use App\Helpers\Response;
+use App\Models\Customer;
+use App\Requests\CustomerRequest;
+use App\Services\AuthService;
+use App\Services\CustomerService;
+use Throwable;
+
+
 class CustomerController extends Controller {
 
     private Customer $model;
     private CustomerService $service;
+    private AuthService $authService;
 
-    public function __construct() {
-        $this->model = new Customer();
-        $this->service = new CustomerService();
+    public function __construct(Customer $model, CustomerService $service, AuthService $authService) {
+        $this->model = $model;
+        $this->service = $service;
+        $this->authService = $authService;
     }
 
     /** GET /api/customers */
@@ -21,9 +35,9 @@ class CustomerController extends Controller {
 
         // إذا أُرجع pagination — إرسال مع metadata
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::success($result);
+            return Response::cacheable($result, 120);
         }
     }
 
@@ -88,7 +102,7 @@ class CustomerController extends Controller {
     public function addPayment(string $id) {
         $cid  = (int)$id;
         $data = $this->getBody();
-        $auth = $_SERVER['AUTH_USER'];
+        $auth = $this->authService->user();
 
         try {
             $ledger = $this->service->addPayment($cid, $data, $auth);

@@ -1,5 +1,10 @@
 <?php
 
+namespace App\Core;
+
+use Exception;
+
+
 /**
  * استثناء مخصص لأخطاء التحقق من صحة البيانات (Validation).
  * يمكن التقاطه في الـ Error Handler الرئيسي لتحويله إلى 422 Unprocessable Entity.

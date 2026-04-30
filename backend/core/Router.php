@@ -1,5 +1,11 @@
 <?php
 
+namespace App\Core;
+
+use App\Helpers\Response;
+use App\Middleware\CsrfMiddleware;
+
+
 class Router {
     private array $routes = [];
     private Container $container;
@@ -52,8 +58,9 @@ class Router {
             if ($params !== null) {
                 [$controllerClass, $action, $middlewares] = $this->parseHandler($route['handler']);
                 
-                // Inject CsrfMiddleware globally as the first middleware
+                // Inject global middlewares
                 array_unshift($middlewares, CsrfMiddleware::class);
+                array_unshift($middlewares, \App\Middleware\TimingMiddleware::class);
 
                 $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
                     $controller = $this->container->get($controllerClass);
@@ -68,15 +75,22 @@ class Router {
     }
 
     private function sendResponse(mixed $response): void {
-        if (is_array($response) && isset($response['status_code'], $response['body'])) {
+        if (is_array($response) && isset($response['status_code'])) {
             http_response_code($response['status_code']);
-            header('Content-Type: application/json; charset=utf-8');
+            
+            if ($response['status_code'] !== 304) {
+                header('Content-Type: application/json; charset=utf-8');
+            }
+
             if (isset($response['headers']) && is_array($response['headers'])) {
                 foreach ($response['headers'] as $k => $v) {
                     header("{$k}: {$v}");
                 }
             }
-            echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            
+            if ($response['status_code'] !== 304 && isset($response['body'])) {
+                echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
         } else if (is_string($response)) {
             echo $response;
         }
@@ -115,7 +129,7 @@ class Router {
     private function runMiddlewares(array $middlewares, callable $final): mixed {
         $chain = array_reduce(
             array_reverse($middlewares),
-            fn($next, $mw) => fn() => (new $mw())->handle($next),
+            fn($next, $mw) => fn() => $this->container->get($mw)->handle($next),
             $final
         );
         return $chain();

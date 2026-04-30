@@ -1,5 +1,8 @@
 <?php
 
+namespace App\Core;
+
+
 /**
  * الفئة الأساسية (Base Class) لطلبات الـ DTO (Data Transfer Objects).
  * تفصل منطق الـ Validation عن الكنترولر وتعزز التنظيم.
@@ -58,47 +61,6 @@ abstract class FormRequest
      */
     private function runValidation(array $data, array $rules): array
     {
-        $errors = [];
-        foreach ($rules as $field => $rule) {
-            $ruleList = explode('|', $rule);
-            $value = $data[$field] ?? null;
-
-            foreach ($ruleList as $r) {
-                if ($r === 'required' && (empty($value) && $value !== 0 && $value !== '0' && $value !== 0.0)) {
-                    $errors[$field][] = "حقل {$field} مطلوب.";
-                    break;
-                }
-                if ($value === null || $value === '') continue;
-
-                if (str_starts_with($r, 'min:')) {
-                    $min = (int) substr($r, 4);
-                    if (strlen((string)$value) < $min) $errors[$field][] = "{$field} يحتاج {$min} أحرف على الأقل.";
-                } elseif (str_starts_with($r, 'max:')) {
-                    $max = (int) substr($r, 4);
-                    if (strlen((string)$value) > $max) $errors[$field][] = "{$field} لا يجب أن يتجاوز {$max} حرف.";
-                } elseif ($r === 'numeric' && !is_numeric($value)) {
-                    $errors[$field][] = "{$field} يجب أن يكون رقماً.";
-                } elseif ($r === 'integer' && !ctype_digit(ltrim((string)$value, '-'))) {
-                    $errors[$field][] = "{$field} يجب أن يكون عدداً صحيحاً.";
-                } elseif ($r === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-                    $errors[$field][] = "{$field} يجب أن يكون بريداً إلكترونياً.";
-                } elseif ($r === 'string' && !is_string($value)) {
-                    $errors[$field][] = "{$field} يجب أن يكون نصاً.";
-                } elseif ($r === 'array' && !is_array($value)) {
-                    $errors[$field][] = "{$field} يجب أن يكون مصفوفة.";
-                } elseif ($r === 'date') {
-                    $d = \DateTime::createFromFormat('Y-m-d', (string)$value);
-                    if (!$d || $d->format('Y-m-d') !== (string)$value) {
-                        $errors[$field][] = "{$field} يجب أن يكون تاريخاً صالحاً Y-m-d.";
-                    }
-                } elseif (str_starts_with($r, 'in:')) {
-                    $allowed = explode(',', substr($r, 3));
-                    if (!in_array((string)$value, $allowed, true)) {
-                        $errors[$field][] = "{$field} خارج القيم المسموحة.";
-                    }
-                }
-            }
-        }
-        return $errors;
+        return Validator::validate($data, $rules);
     }
 }

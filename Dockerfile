@@ -1,19 +1,99 @@
-FROM php:8.2-apache
+# ══════════════════════════════════════════════════════════════════
+#  ABDO-TECK POS — Multi-stage Dockerfile
+# ══════════════════════════════════════════════════════════════════
 
-# Install dependencies and PHP extensions
-RUN apt-get update && apt-get install -y \
-    libzip-dev \
-    unzip \
-    && docker-php-ext-install pdo_mysql zip
+# ── Stage 1: Build Frontend ────────────────────────────────────────
+FROM node:18-alpine AS frontend-builder
 
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite
+WORKDIR /build
 
-# Set working directory
+# نسخ ملفات الإعتماديات أولاً (cache layer)
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --silent
+
+# نسخ كود المصدر وبناء الإنتاج
+COPY frontend/ ./
+RUN npm run build
+
+
+# ── Stage 2: Install Backend Dependencies ──────────────────────────
+FROM composer:2 AS backend-builder
+
+WORKDIR /build
+
+COPY backend/composer.json backend/composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
+COPY backend/ ./
+
+
+# ── Stage 3: Production Image ─────────────────────────────────────
+FROM php:8.2-apache AS production
+
+# تثبيت الإضافات المطلوبة
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libzip-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo_mysql zip gd \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# تفعيل mod_rewrite و mod_headers
+RUN a2enmod rewrite headers
+
+# إعداد Apache VirtualHost
+RUN echo '<VirtualHost *:80>\n\
+    ServerName localhost\n\
+    DocumentRoot /var/www/html/frontend-dist\n\
+    \n\
+    <Directory /var/www/html/frontend-dist>\n\
+        Options -Indexes +FollowSymLinks\n\
+        AllowOverride All\n\
+        Require all granted\n\
+        RewriteEngine On\n\
+        RewriteCond %{REQUEST_FILENAME} !-f\n\
+        RewriteCond %{REQUEST_FILENAME} !-d\n\
+        RewriteCond %{REQUEST_URI} !^/api/\n\
+        RewriteRule . /index.html [L]\n\
+    </Directory>\n\
+    \n\
+    Alias /api /var/www/html/backend/api\n\
+    <Directory /var/www/html/backend>\n\
+        Options -Indexes +FollowSymLinks\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    \n\
+    <FilesMatch "\\.(env|log|sql|md)$">\n\
+        Require all denied\n\
+    </FilesMatch>\n\
+    \n\
+    Header always set X-Content-Type-Options "nosniff"\n\
+    Header always set X-Frame-Options "SAMEORIGIN"\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+
+# إعداد PHP للإنتاج
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
 WORKDIR /var/www/html
 
-# Copy project files (in actual production, you'd only copy dist and backend)
-COPY . /var/www/html/
+# نسخ الباك إند (من مرحلة البناء)
+COPY --from=backend-builder /build/ ./backend/
 
-# Set Permissions
+# نسخ الفرونت إند المبني (من مرحلة البناء)
+COPY --from=frontend-builder /build/dist/ ./frontend-dist/
+
+# نسخ ملفات قاعدة البيانات
+COPY database/ ./database/
+
+# إنشاء مجلد اللوج
+RUN mkdir -p ./backend/logs && chown -R www-data:www-data ./backend/logs
+
+# ضبط الصلاحيات
 RUN chown -R www-data:www-data /var/www/html
+
+EXPOSE 80
+
+CMD ["apache2-foreground"]

@@ -1,5 +1,10 @@
 <?php
 
+namespace App\Requests;
+
+use App\Core\FormRequest;
+
+
 class SupplierRequest extends FormRequest {
     public function rules(): array {
         return [

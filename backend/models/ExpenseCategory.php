@@ -1,12 +1,18 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class ExpenseCategory
 {
     private PDO $db;
 
-    public function __construct()
+    public function __construct(PDO $db)
     {
-        $this->db = Database::getInstance();
+        $this->db = $db;
     }
 
     public function getAll(): array

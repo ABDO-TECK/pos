@@ -1,5 +1,11 @@
 <?php
 
+namespace App\Middleware;
+
+use App\Helpers\Logger;
+use Throwable;
+
+
 /**
  * Rate Limiter Middleware — حماية API من الطلبات المفرطة
  *
@@ -151,14 +157,20 @@ class RateLimiter
      */
     private function getClientIp(): string
     {
-        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-            return trim($ips[0]);
+        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $trustedProxies = defined('TRUSTED_PROXIES') ? TRUSTED_PROXIES : ['127.0.0.1', '::1'];
+
+        if (in_array($remoteAddr, $trustedProxies, true)) {
+            if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+                $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+                return trim($ips[0]);
+            }
+            if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+                return trim($_SERVER['HTTP_X_REAL_IP']);
+            }
         }
-        if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
-            return trim($_SERVER['HTTP_X_REAL_IP']);
-        }
-        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        
+        return $remoteAddr;
     }
 
     /**

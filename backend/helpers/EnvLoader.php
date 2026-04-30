@@ -1,5 +1,8 @@
 <?php
 
+namespace App\Helpers;
+
+
 /**
  * محمّل ملفات البيئة (.env) — خفيف ولا يعتمد على مكتبات خارجية.
  *
@@ -133,5 +136,43 @@ class EnvLoader
             return $default;
         }
         return in_array(strtolower($val), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * التحقق من وجود المتغيرات الإجبارية.
+     * إذا كان أي متغير مفقوداً، يتوقف التطبيق برسالة واضحة.
+     *
+     * @param string[] $requiredKeys قائمة بأسماء المتغيرات المطلوبة
+     */
+    public static function validate(array $requiredKeys): void
+    {
+        $missing = [];
+        foreach ($requiredKeys as $key) {
+            $val = self::get($key, '');
+            if ($val === '') {
+                $missing[] = $key;
+            }
+        }
+
+        if (!empty($missing)) {
+            $list = implode(', ', $missing);
+            $msg  = "❌ متغيرات بيئة مفقودة: [{$list}]\n"
+                   . "تأكد من وجودها في ملف backend/.env\n"
+                   . "يمكنك نسخ .env.example إلى .env وتعديل القيم.";
+
+            if (php_sapi_name() === 'cli') {
+                fwrite(STDERR, $msg . "\n");
+                exit(1);
+            }
+
+            // في بيئة الويب: نرسل JSON واضح
+            http_response_code(500);
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode([
+                'status'  => 'error',
+                'message' => "متغيرات بيئة مفقودة: {$list}. تحقق من ملف .env",
+            ], JSON_UNESCAPED_UNICODE);
+            exit(1);
+        }
     }
 }

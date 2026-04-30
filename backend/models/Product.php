@@ -1,10 +1,18 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use App\Helpers\Response;
+use Exception;
+use PDO;
+
+
 class Product {
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     /**
@@ -48,10 +56,15 @@ class Product {
                     LEFT JOIN categories c ON c.id = p.category_id
                     WHERE $whereClause
                     ORDER BY p.name ASC
-                    LIMIT $limit OFFSET $offset";
+                    LIMIT :pag_limit OFFSET :pag_offset";
 
             $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
+            foreach ($params as $key => $val) {
+                $stmt->bindValue($key, $val);
+            }
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
             $rows = $stmt->fetchAll();
             $this->attachAdditionalBarcodes($rows);
 
@@ -170,9 +183,8 @@ class Product {
                 $ownerName = $ownerName !== false && $ownerName !== null && $ownerName !== ''
                     ? (string)$ownerName
                     : ('#' . $owner);
-                Response::error(
-                    'الباركود «' . $code . '» مسجّل مسبقاً للمنتج: «' . $ownerName . '». استخدم باركوداً مختلفاً أو عدّل المنتج الحالي.',
-                    422
+                throw new Exception(
+                    'الباركود «' . $code . '» مسجّل مسبقاً للمنتج: «' . $ownerName . '». استخدم باركوداً مختلفاً أو عدّل المنتج الحالي.'
                 );
             }
         }
@@ -305,5 +317,26 @@ class Product {
         )->fetchAll();
         $this->attachAdditionalBarcodes($rows);
         return $rows;
+    }
+
+    public function getLowStockByProductIds(array $ids): array {
+        if (empty($ids)) return [];
+        // Ensure all IDs are integers to prevent any issues
+        $ids = array_map('intval', $ids);
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $this->db->prepare(
+            "SELECT * FROM products 
+             WHERE id IN ($placeholders) AND quantity <= low_stock_threshold"
+        );
+        $stmt->execute($ids);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getTotalProductsCount(): int {
+        return (int) $this->db->query('SELECT COUNT(*) FROM products')->fetchColumn();
+    }
+
+    public function getLowStockProductsCount(): int {
+        return (int) $this->db->query('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold')->fetchColumn();
     }
 }

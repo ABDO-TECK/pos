@@ -1,5 +1,13 @@
 <?php
 
+namespace App\Services;
+
+use App\Config\Database;
+use App\Helpers\Logger;
+use PDO;
+use PDOException;
+
+
 class MigrationService {
 
     private PDO $db;
@@ -123,56 +131,30 @@ class MigrationService {
         $content = file_get_contents($path);
         if (empty(trim($content))) return true; // ملف فارغ، يعتبر منفذ بنجاح
 
-        // نستخدم mysqli لتنفيذ الملفات التي تحتوي على استعلامات متعددة بأمان
-        $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-        if ($mysqli->connect_errno) {
-            if (class_exists('Logger')) Logger::error("Migration connection failed", ['error' => $mysqli->connect_error]);
-            return false;
-        }
-        $mysqli->set_charset('utf8mb4');
-
         try {
-            if (!$mysqli->multi_query($content)) {
-                $errno = $mysqli->errno;
-                if (in_array($errno, [1060, 1061, 1050])) {
-                    // Ignore
-                } else {
-                    if (class_exists('Logger')) Logger::error("Migration failed: $file", ['error' => $mysqli->error]);
-                    $mysqli->close();
-                    return false;
-                }
-            }
+            $this->db->setAttribute(PDO::ATTR_EMULATE_PREPARES, true);
+            $stmt = $this->db->prepare($content);
+            $stmt->execute();
 
             do {
-                if ($res = $mysqli->store_result()) {
-                    $res->free();
-                }
-                if (!$mysqli->more_results()) {
-                    break;
-                }
-                if (!$mysqli->next_result()) {
-                    $errno = $mysqli->errno;
-                    if (in_array($errno, [1060, 1061, 1050])) {
-                        continue;
-                    }
-                    if (class_exists('Logger')) Logger::error("Migration step failed: $file", ['error' => $mysqli->error]);
-                    $mysqli->close();
-                    return false;
-                }
-            } while (true);
-        } catch (mysqli_sql_exception $e) {
-            $errno = $e->getCode();
+                // Loop through all rowsets to ensure all statements are executed and catch any errors
+            } while ($stmt->nextRowset());
+            
+        } catch (PDOException $e) {
+            $errorInfo = $e->errorInfo ?? [];
+            $errno = $errorInfo[1] ?? $e->getCode();
+            
             // 1060: Duplicate column name, 1061: Duplicate key name, 1050: Table already exists
             if (in_array($errno, [1060, 1061, 1050])) {
                 // Ignore and treat as success
             } else {
-                if (class_exists('Logger')) Logger::error("Migration Exception: $file", ['error' => $e->getMessage()]);
-                $mysqli->close();
+                if (class_exists('Logger')) Logger::error("Migration failed: $file", ['error' => $e->getMessage()]);
                 return false;
             }
+        } finally {
+            $this->db->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         }
 
-        $mysqli->close();
         Database::resetInstance(); // إعادة تهيئة اتصال PDO الأساسي لتحديث الهيكل
         return true;
     }

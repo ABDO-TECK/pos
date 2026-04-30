@@ -1,10 +1,16 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class Supplier {
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     /** جميع الموردين مع رصيدهم — مع دعم pagination اختياري */
@@ -37,10 +43,15 @@ class Supplier {
          WHERE $whereClause
          GROUP BY s.id
          ORDER BY s.name ASC
-         LIMIT $limit OFFSET $offset";
+         LIMIT :pag_limit OFFSET :pag_offset";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
 
         foreach ($rows as &$r) {
@@ -175,17 +186,20 @@ class Supplier {
             $params['year']   = $filters['year'];
         }
 
-        $limitStr = "LIMIT 200";
+        $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
             $limit = max(1, (int)$filters['limit']);
             $offset = ($page - 1) * $limit;
+            $hasPagination = true;
             
             $countStmt = $this->db->prepare('SELECT COUNT(*) FROM purchase_invoices pi WHERE ' . implode(' AND ', $where));
             $countStmt->execute($params);
             $total = (int) $countStmt->fetchColumn();
             
-            $limitStr = "LIMIT $limit OFFSET $offset";
+            $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
+        } else {
+            $limitStr = "LIMIT 200";
         }
 
         $stmt = $this->db->prepare(
@@ -196,7 +210,14 @@ class Supplier {
              ORDER BY pi.created_at DESC
              ' . $limitStr
         );
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        if ($hasPagination) {
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        }
+        $stmt->execute();
 
         if (isset($page, $limit)) {
             return [
@@ -406,5 +427,9 @@ class Supplier {
         $stmt = $this->db->prepare('SELECT * FROM supplier_ledger WHERE id = ?');
         $stmt->execute([$entryId]);
         return $stmt->fetch() ?: null;
+    }
+
+    public function getTotalSuppliersCount(): int {
+        return (int) $this->db->query('SELECT COUNT(*) FROM suppliers')->fetchColumn();
     }
 }

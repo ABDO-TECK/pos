@@ -1,11 +1,20 @@
 <?php
 
+namespace App\Services;
+
+use App\Config\Database;
+use App\Helpers\Logger;
+use App\Models\Customer;
+use Exception;
+use Throwable;
+
+
 class CustomerService {
     
     private Customer $customerModel;
 
-    public function __construct() {
-        $this->customerModel = new Customer();
+    public function __construct(Customer $customerModel) {
+        $this->customerModel = $customerModel;
     }
 
     public function createCustomer(array $data): int {

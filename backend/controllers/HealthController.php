@@ -1,5 +1,11 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Config\Database;
+use Throwable;
+
+
 class HealthController {
     public function check() {
         http_response_code(200);

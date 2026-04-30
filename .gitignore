@@ -25,7 +25,9 @@ backend/cache/
 backend/logs/
 backend/*.log
 backend/.env
-
+backend/vendor/
+composer.phar
+composer-setup.php
 # ── Database ────────────────────────────────────────────
 database/*.sql.bak
 database/backups/

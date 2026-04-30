@@ -1,12 +1,18 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class Category {
 
     protected string $table = 'categories';
     protected PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     public function all(array $filters = []): array {
@@ -20,8 +26,12 @@ class Category {
             
             $total = $this->db->query("SELECT COUNT(*) FROM {$this->table}")->fetchColumn();
             
-            $sql .= " LIMIT $limit OFFSET $offset";
-            $data = $this->db->query($sql)->fetchAll();
+            $sql .= " LIMIT :pag_limit OFFSET :pag_offset";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
+            $data = $stmt->fetchAll();
             
             return [
                 'data'       => $data,

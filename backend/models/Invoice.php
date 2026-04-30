@@ -1,10 +1,22 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class Invoice {
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
+    }
+
+    private function getMonthDateRange(int $month, int $year): array {
+        $startDate = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $endDate = date('Y-m-t 23:59:59', strtotime($startDate));
+        return [$startDate, $endDate];
     }
 
     /**
@@ -19,9 +31,10 @@ class Invoice {
             $params['date'] = $filters['date'];
         }
         if (!empty($filters['month']) && !empty($filters['year'])) {
-            $where[]         = 'MONTH(i.created_at) = :month AND YEAR(i.created_at) = :year';
-            $params['month'] = $filters['month'];
-            $params['year']  = $filters['year'];
+            [$startDate, $endDate] = $this->getMonthDateRange((int)$filters['month'], (int)$filters['year']);
+            $where[] = 'i.created_at >= :start_date AND i.created_at <= :end_date';
+            $params['start_date'] = $startDate;
+            $params['end_date']   = $endDate;
         }
 
         if (isset($filters['status']) && $filters['status'] !== 'all') {
@@ -52,10 +65,15 @@ class Invoice {
                     LEFT JOIN customers c ON c.id = i.customer_id
                     WHERE $whereClause
                     ORDER BY i.created_at DESC
-                    LIMIT $limit OFFSET $offset";
+                    LIMIT :pag_limit OFFSET :pag_offset";
 
             $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
+            foreach ($params as $key => $val) {
+                $stmt->bindValue($key, $val);
+            }
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
 
             return [
                 'data' => $stmt->fetchAll(),
@@ -223,13 +241,14 @@ class Invoice {
     }
 
     public function getTotalCostForMonth(int $month, int $year): float {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
         $stmt = $this->db->prepare(
             'SELECT COALESCE(SUM(ii.unit_cost * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
+             WHERE inv.created_at >= ? AND inv.created_at <= ?'
         );
-        $stmt->execute([$month, $year]);
+        $stmt->execute([$startDate, $endDate]);
         return (float)$stmt->fetchColumn();
     }
 
@@ -246,28 +265,30 @@ class Invoice {
     }
 
     public function getTotalProfitForMonth(int $month, int $year): float {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
         $stmt = $this->db->prepare(
             'SELECT COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
+             WHERE inv.created_at >= ? AND inv.created_at <= ?'
         );
-        $stmt->execute([$month, $year]);
+        $stmt->execute([$startDate, $endDate]);
         return (float)$stmt->fetchColumn();
     }
 
     public function getMonthlySummary(int $month, int $year): array {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
         $stmt = $this->db->prepare(
             'SELECT
                 DATE(created_at) AS date,
                 COUNT(*) AS total_invoices,
                 SUM(total) AS total_revenue
              FROM invoices
-             WHERE MONTH(created_at) = ? AND YEAR(created_at) = ? AND status = "completed"
+             WHERE created_at >= ? AND created_at <= ? AND status = "completed"
              GROUP BY DATE(created_at)
              ORDER BY date ASC'
         );
-        $stmt->execute([$month, $year]);
+        $stmt->execute([$startDate, $endDate]);
         return $stmt->fetchAll();
     }
 
@@ -298,5 +319,85 @@ class Invoice {
         );
         $stmt->execute($params);
         return $stmt->fetchAll();
+    }
+
+    public function getProfitReportTotals(int $month, int $year): array {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
+        $stmt = $this->db->prepare(
+            'SELECT
+                COALESCE(SUM(ii.price * ii.quantity), 0)                      AS total_revenue,
+                COALESCE(SUM(ii.unit_cost * ii.quantity), 0)                  AS total_cost,
+                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)      AS total_profit
+             FROM invoice_items ii
+             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             WHERE inv.created_at >= ? AND inv.created_at <= ?'
+        );
+        $stmt->execute([$startDate, $endDate]);
+        return $stmt->fetch() ?: ['total_revenue' => 0, 'total_cost' => 0, 'total_profit' => 0];
+    }
+
+    public function getTopProfitProducts(int $month, int $year, int $limit = 20): array {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
+        $stmt = $this->db->prepare(
+            'SELECT
+                p.id,
+                p.name,
+                MAX(p.price) AS price,
+                SUM(ii.quantity) AS total_sold,
+                SUM(ii.price * ii.quantity) AS revenue,
+                SUM(ii.unit_cost * ii.quantity) AS cost,
+                SUM((ii.price - ii.unit_cost) * ii.quantity) AS profit,
+                ROUND(
+                    CASE WHEN SUM(ii.price * ii.quantity) > 0
+                    THEN 100 * SUM((ii.price - ii.unit_cost) * ii.quantity) / SUM(ii.price * ii.quantity)
+                    ELSE 0 END,
+                    2
+                ) AS margin_pct
+             FROM invoice_items ii
+             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             JOIN products p   ON p.id  = ii.product_id
+             WHERE inv.created_at >= ? AND inv.created_at <= ?
+             GROUP BY p.id, p.name
+             ORDER BY profit DESC
+             LIMIT ' . (int)$limit
+        );
+        $stmt->execute([$startDate, $endDate]);
+        return $stmt->fetchAll();
+    }
+
+    public function getDailyProfitBreakdown(int $month, int $year): array {
+        [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
+        $stmt = $this->db->prepare(
+            'SELECT
+                DATE(inv.created_at) AS date,
+                COALESCE(SUM(ii.price * ii.quantity), 0) AS revenue,
+                COALESCE(SUM(ii.unit_cost * ii.quantity), 0) AS cost,
+                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0) AS profit
+             FROM invoice_items ii
+             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
+             WHERE inv.created_at >= ? AND inv.created_at <= ?
+             GROUP BY DATE(inv.created_at)
+             ORDER BY date ASC'
+        );
+        $stmt->execute([$startDate, $endDate]);
+        return $stmt->fetchAll();
+    }
+
+    public function getTodayRevenue(): float {
+        return (float) $this->db->query(
+            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
+        )->fetchColumn();
+    }
+
+    public function getMonthRevenue(): float {
+        return (float) $this->db->query(
+            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) AND status="completed"'
+        )->fetchColumn();
+    }
+
+    public function getTodayInvoicesCount(): int {
+        return (int) $this->db->query(
+            'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
+        )->fetchColumn();
     }
 }

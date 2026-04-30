@@ -2,67 +2,67 @@ import api from './axios'
 
 // Auth
 export const getCsrfCookie = () => api.get('/csrf-cookie')
-export const login = (data: any) => api.post('/login', data)
+export const login = (data: Record<string, unknown>) => api.post<AuthResponse>('/login', data)
 export const logout = () => api.post('/logout')
-export const getMe = () => api.get('/user')
+export const getMe = () => api.get<ApiResponse<User>>('/user')
 
 export const getChangelog = () => api.get('/update/changelog')
 
 // Categories
-export const getCategories = (params?: any) => api.get('/categories', { params })
-export const createCategory = (data: any) => api.post('/categories', data)
-export const updateCategory = (id: number | string, data: any) => api.put(`/categories/${id}`, data)
-export const deleteCategory = (id: number | string) => api.delete(`/categories/${id}`)
+export const getCategories = (params?: Record<string, unknown>) => api.get<ApiResponse<Category[]>>('/categories', { params })
+export const createCategory = (data: Partial<Category>) => api.post<ApiResponse<Category>>('/categories', data)
+export const updateCategory = (id: number | string, data: Partial<Category>) => api.put<ApiResponse<Category>>(`/categories/${id}`, data)
+export const deleteCategory = (id: number | string) => api.delete<ApiResponse<null>>(`/categories/${id}`)
 
 // Products
-export const getProducts = (params?: any) => api.get('/products', { params })
-export const getProduct = (id: number | string) => api.get(`/products/${id}`)
+export const getProducts = (params?: Record<string, unknown>) => api.get<ApiResponse<Product[]>>('/products', { params })
+export const getProduct = (id: number | string) => api.get<ApiResponse<Product>>(`/products/${id}`)
 export const getProductByBarcode = (barcode: string) =>
-  api.get('/products/barcode', { params: { barcode } })
-export const createProduct = (data: any) => api.post('/products', data)
-export const updateProduct = (id: number | string, data: any) => api.put(`/products/${id}`, data)
-export const deleteProduct = (id: number | string) => api.delete(`/products/${id}`)
+  api.get<ApiResponse<Product>>('/products/barcode', { params: { barcode } })
+export const createProduct = (data: Partial<Product>) => api.post<ApiResponse<Product>>('/products', data)
+export const updateProduct = (id: number | string, data: Partial<Product>) => api.put<ApiResponse<Product>>(`/products/${id}`, data)
+export const deleteProduct = (id: number | string) => api.delete<ApiResponse<null>>(`/products/${id}`)
 
 // Sales
-export const createSale = (data: any) => api.post('/sales', data)
-export const getSales = (params?: any) => api.get('/sales', { params })
-export const getSale = (id: number | string) => api.get(`/sales/${id}`)
-export const updateSaleStatus = (id: number | string, data: any) => api.put(`/sales/${id}/status`, data)
-export const deleteSale = (id: number | string) => api.delete(`/sales/${id}`)
+export const createSale = (data: Partial<Sale>) => api.post<ApiResponse<Sale>>('/sales', data)
+export const getSales = (params?: Record<string, unknown>) => api.get<ApiResponse<Sale[]>>('/sales', { params })
+export const getSale = (id: number | string) => api.get<ApiResponse<Sale>>(`/sales/${id}`)
+export const updateSaleStatus = (id: number | string, data: { status: string }) => api.put<ApiResponse<null>>(`/sales/${id}/status`, data)
+export const deleteSale = (id: number | string) => api.delete<ApiResponse<null>>(`/sales/${id}`)
 
 // Inventory
-export const getInventory = (params?: any) => api.get('/inventory', { params })
-export const getLowStock = () => api.get('/inventory/low-stock')
-export const adjustInventory = (id: number | string, data: any) => api.put(`/inventory/${id}`, data)
+export const getInventory = (params?: Record<string, unknown>) => api.get<ApiResponse<Product[]>>('/inventory', { params })
+export const getLowStock = () => api.get<ApiResponse<Product[]>>('/inventory/low-stock')
+export const adjustInventory = (id: number | string, data: { type: 'add' | 'subtract' | 'set'; quantity: number }) => api.put<ApiResponse<Product>>(`/inventory/${id}`, data)
 
 // Suppliers
-export const getSuppliers = () => api.get('/suppliers')
-export const getSupplier = (id: number | string) => api.get(`/suppliers/${id}`)
-export const createSupplier = (data: any) => api.post('/suppliers', data)
-export const updateSupplier = (id: number | string, data: any) => api.put(`/suppliers/${id}`, data)
-export const deleteSupplier = (id: number | string) => api.delete(`/suppliers/${id}`)
-export const createPurchase = (data: any) => api.post('/purchases', data)
-export const getPurchases = (params?: any) => api.get('/purchases', { params })
+export const getSuppliers = (params?: Record<string, unknown>) => api.get<ApiResponse<Supplier[]>>('/suppliers', { params: { page: 1, limit: 50, ...params } })
+export const getSupplier = (id: number | string) => api.get<ApiResponse<Supplier>>(`/suppliers/${id}`)
+export const createSupplier = (data: Partial<Supplier>) => api.post<ApiResponse<Supplier>>('/suppliers', data)
+export const updateSupplier = (id: number | string, data: Partial<Supplier>) => api.put<ApiResponse<Supplier>>(`/suppliers/${id}`, data)
+export const deleteSupplier = (id: number | string) => api.delete<ApiResponse<null>>(`/suppliers/${id}`)
+export const createPurchase = (data: BulkPurchasePayload) => api.post<ApiResponse<PurchaseInvoice>>('/purchases', data)
+export const getPurchases = (params?: Record<string, unknown>) => api.get<ApiResponse<PurchaseInvoice[]>>('/purchases', { params })
 
 // Reports
-export const getDailyReport = (params?: any) => api.get('/reports/daily', { params })
-export const getMonthlyReport = (params?: any) => api.get('/reports/monthly', { params })
-export const getTopProducts = (params?: any) => api.get('/reports/products', { params })
-export const getReportSummary = () => api.get('/reports/summary')
+export const getDailyReport = (params?: Record<string, unknown>) => api.get<ApiResponse<DailyReport>>('/reports/daily', { params })
+export const getMonthlyReport = (params?: Record<string, unknown>) => api.get<ApiResponse<MonthlySummary[]>>('/reports/monthly', { params })
+export const getTopProducts = (params?: Record<string, unknown>) => api.get<ApiResponse<TopProduct[]>>('/reports/products', { params })
+export const getReportSummary = () => api.get<ApiResponse<ReportSummary>>('/reports/summary')
 
 // Users
-export const getUsers = () => api.get('/users')
-export const createUser = (data: any) => api.post('/users', data)
-export const updateUser = (id: number | string, data: any) => api.put(`/users/${id}`, data)
-export const deleteUser = (id: number | string) => api.delete(`/users/${id}`)
+export const getUsers = (params?: Record<string, unknown>) => api.get<ApiResponse<User[]>>('/users', { params: { page: 1, limit: 50, ...params } })
+export const createUser = (data: Partial<User>) => api.post<ApiResponse<User>>('/users', data)
+export const updateUser = (id: number | string, data: Partial<User>) => api.put<ApiResponse<User>>(`/users/${id}`, data)
+export const deleteUser = (id: number | string) => api.delete<ApiResponse<null>>(`/users/${id}`)
 
 // Settings
-export const getSettings = () => api.get('/settings')
-export const updateSettings = (data: any) => api.post('/settings', data)
+export const getSettings = () => api.get<ApiResponse<AppSettings>>('/settings')
+export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiResponse<AppSettings>>('/settings', data)
 
 // Updates
-export const checkUpdate = () => api.get('/update/check')
-export const applyUpdate = () => api.post('/update/apply', null, { timeout: 300_000 })
+export const checkUpdate = () => api.get<ApiResponse<UpdateCheckResult>>('/update/check')
+export const applyUpdate = () => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', null, { timeout: 300_000 })
 
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
@@ -78,23 +78,23 @@ export const restoreBackup = (formData: FormData) =>
   })
 
 // Purchases (bulk)
-export const createBulkPurchase = (data: any) => api.post('/purchases/bulk', data)
+export const createBulkPurchase = (data: BulkPurchasePayload) => api.post<ApiResponse<PurchaseInvoice>>('/purchases/bulk', data)
 
 // Purchase Invoices
-export const getPurchaseInvoices = (params?: any) => api.get('/purchase-invoices', { params })
-export const getPurchaseInvoice  = (id: number | string)     => api.get(`/purchase-invoices/${id}`)
-export const deletePurchaseInvoice = (id: number | string)   => api.delete(`/purchase-invoices/${id}`)
-export const addSupplierPayment = (id: number | string, data: any) => api.post(`/suppliers/${id}/payment`, data)
-export const updateSupplierLedgerEntry = (entryId: number | string, data: any) => api.put(`/suppliers/ledger/${entryId}`, data)
+export const getPurchaseInvoices = (params?: Record<string, unknown>) => api.get<ApiResponse<PurchaseInvoice[]>>('/purchase-invoices', { params })
+export const getPurchaseInvoice  = (id: number | string)     => api.get<ApiResponse<PurchaseInvoice>>(`/purchase-invoices/${id}`)
+export const deletePurchaseInvoice = (id: number | string)   => api.delete<ApiResponse<null>>(`/purchase-invoices/${id}`)
+export const addSupplierPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/suppliers/${id}/payment`, data)
+export const updateSupplierLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/suppliers/ledger/${entryId}`, data)
 
 // Reports (profit)
-export const getProfitReport = (params?: any) => api.get('/reports/profit', { params })
+export const getProfitReport = (params?: Record<string, unknown>) => api.get<ApiResponse<ProfitReport>>('/reports/profit', { params })
 
 // Customers
-export const getCustomers    = ()           => api.get('/customers')
-export const getCustomer     = (id: number | string)         => api.get(`/customers/${id}`)
-export const createCustomer  = (data: any)       => api.post('/customers', data)
-export const updateCustomer  = (id: number | string, data: any)   => api.put(`/customers/${id}`, data)
-export const deleteCustomer  = (id: number | string)         => api.delete(`/customers/${id}`)
-export const addCustomerPayment = (id: number | string, data: any) => api.post(`/customers/${id}/payment`, data)
-export const updateCustomerLedgerEntry = (entryId: number | string, data: any) => api.put(`/customers/ledger/${entryId}`, data)
+export const getCustomers    = (params?: Record<string, unknown>)           => api.get<ApiResponse<Customer[]>>('/customers', { params: { page: 1, limit: 50, ...params } })
+export const getCustomer     = (id: number | string)         => api.get<ApiResponse<Customer>>(`/customers/${id}`)
+export const createCustomer  = (data: Partial<Customer>)       => api.post<ApiResponse<Customer>>('/customers', data)
+export const updateCustomer  = (id: number | string, data: Partial<Customer>)   => api.put<ApiResponse<Customer>>(`/customers/${id}`, data)
+export const deleteCustomer  = (id: number | string)         => api.delete<ApiResponse<null>>(`/customers/${id}`)
+export const addCustomerPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/customers/${id}/payment`, data)
+export const updateCustomerLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`, data)

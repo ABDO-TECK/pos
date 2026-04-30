@@ -7,8 +7,12 @@ declare global {
   // ── Auth ─────────────────────────────────────────────────────────────
   interface User {
     id: number;
-    username: string;
-    role: 'admin' | 'cashier';
+    name: string;
+    username?: string;
+    email: string;
+    password?: string;
+    role: string;
+    force_password_change?: number;
     created_at?: string;
     updated_at?: string;
   }
@@ -16,6 +20,7 @@ declare global {
   interface AuthResponse {
     user: User;
     message?: string;
+    data?: User; // To allow res.data.data access
   }
 
   // ── Categories ───────────────────────────────────────────────────────
@@ -61,11 +66,13 @@ declare global {
     discount: number;
     tax: number;
     net_amount: number;
-    payment_method: 'cash' | 'card' | 'credit';
+    payment_method: string; // Changed to string to support all methods
     paid_amount: number;
     due_amount: number;
     created_at?: string;
     items?: SaleItem[];
+    invoice?: { id: number; status: string };
+    low_stock_alerts?: { product_id: number; name: string; quantity: number }[];
   }
 
   // ── Suppliers ────────────────────────────────────────────────────────
@@ -91,8 +98,9 @@ declare global {
   // ── Ledger / Payments ────────────────────────────────────────────────
   interface PaymentPayload {
     amount: number;
-    type: 'payment' | 'receipt';
+    type: string;
     notes?: string;
+    description?: string;
   }
 
   // ── Expenses ─────────────────────────────────────────────────────────
@@ -115,11 +123,118 @@ declare global {
     updated_at?: string;
   }
 
+  // ── Purchases ──────────────────────────────────────────────────
+  interface PurchaseItem {
+    product_id: number;
+    product_name?: string;
+    quantity: number;
+    unit_cost: number;
+    subtotal: number;
+  }
+
+  interface PurchaseInvoice {
+    id: number;
+    supplier_id: number;
+    supplier_name?: string;
+    user_id: number;
+    user_name?: string;
+    total: number;
+    notes?: string | null;
+    items?: PurchaseItem[];
+    created_at?: string;
+  }
+
+  interface BulkPurchasePayload {
+    supplier_id: number;
+    items: { product_id: number; quantity: number; unit_cost: number }[];
+    notes?: string;
+    payment_amount?: number;
+  }
+
+  // ── Reports ───────────────────────────────────────────────────
+  interface DailyReport {
+    date: string;
+    total_sales: number;
+    total_invoices: number;
+    total_discount: number;
+    total_tax: number;
+    net_amount: number;
+    payment_methods: Record<string, number>;
+  }
+
+  interface MonthlySummary {
+    month: string;
+    total_sales: number;
+    total_invoices: number;
+  }
+
+  interface TopProduct {
+    product_id: number;
+    product_name: string;
+    total_quantity: number;
+    total_revenue: number;
+  }
+
+  interface ReportSummary {
+    today_sales: number;
+    today_invoices: number;
+    month_sales: number;
+    month_invoices: number;
+    total_products: number;
+    low_stock_count: number;
+  }
+
+  interface ProfitReport {
+    total_revenue: number;
+    total_cost: number;
+    gross_profit: number;
+    items: { product_name: string; revenue: number; cost: number; profit: number }[];
+  }
+
+  // ── Settings ──────────────────────────────────────────────────
+  interface AppSettings {
+    store_name?: string;
+    tax_rate?: string;
+    currency?: string;
+    receipt_header?: string;
+    receipt_footer?: string;
+    [key: string]: string | undefined;
+  }
+
+  // ── Updates ───────────────────────────────────────────────────
+  interface UpdateCheckResult {
+    current_version: string;
+    latest_version: string;
+    has_update: boolean;
+    released_at: string | null;
+    changelog: any[];
+    requires_npm_install: boolean;
+  }
+
+  interface UpdateApplyResult {
+    message: string;
+    latest_version: string;
+    changelog: any[];
+    logs: string[];
+  }
+
+  // ── Ledger ────────────────────────────────────────────────────
+  interface LedgerEntry {
+    id: number;
+    type: 'debit' | 'credit';
+    amount: number;
+    description: string;
+    invoice_id: number | null;
+    created_by: number | null;
+    created_at: string;
+  }
+
   // ── API Responses ────────────────────────────────────────────────────
   interface ApiResponse<T> {
     success: boolean;
     data: T;
     message?: string;
+    pagination?: { page: number; limit: number; total: number; pages: number };
   }
 }
 

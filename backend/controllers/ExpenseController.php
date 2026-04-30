@@ -1,16 +1,34 @@
 <?php
 
-class ExpenseController
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Core\ValidationException;
+use App\Helpers\Cache;
+use App\Helpers\Logger;
+use App\Helpers\Response;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
+use App\Requests\ExpenseRequest;
+use App\Services\AuthService;
+use App\Services\ExpenseService;
+use PDOException;
+use Throwable;
+
+
+class ExpenseController extends Controller
 {
     private Expense $expenseModel;
     private ExpenseCategory $categoryModel;
     private ExpenseService $expenseService;
+    private AuthService $authService;
 
-    public function __construct()
+    public function __construct(Expense $expenseModel, ExpenseCategory $categoryModel, ExpenseService $expenseService, AuthService $authService)
     {
-        $this->expenseModel = new Expense();
-        $this->categoryModel = new ExpenseCategory();
-        $this->expenseService = new ExpenseService();
+        $this->expenseModel = $expenseModel;
+        $this->categoryModel = $categoryModel;
+        $this->expenseService = $expenseService;
+        $this->authService = $authService;
     }
 
     // ── Categories ───────────────────────────────────────────────────
@@ -22,7 +40,7 @@ class ExpenseController
 
     public function createCategory(): array
     {
-        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $data = $this->getBody();
         if (empty($data['name'])) {
             return Response::error('اسم التصنيف مطلوب', 400);
         }
@@ -38,10 +56,10 @@ class ExpenseController
         }
     }
 
-    public function updateCategory(array $params): array
+    public function updateCategory(string $id): array
     {
-        $id = (int)$params['id'];
-        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $id = (int)$id;
+        $data = $this->getBody();
         if (empty($data['name'])) {
             return Response::error('اسم التصنيف مطلوب', 400);
         }
@@ -60,9 +78,9 @@ class ExpenseController
         }
     }
 
-    public function deleteCategory(array $params): array
+    public function deleteCategory(string $id): array
     {
-        $id = (int)$params['id'];
+        $id = (int)$id;
         if (!$this->categoryModel->findById($id)) {
             return Response::error('التصنيف غير موجود', 404);
         }
@@ -83,15 +101,15 @@ class ExpenseController
     public function getExpenses(): array
     {
         $filters = [];
-        if (isset($_GET['date'])) $filters['date'] = $_GET['date'];
-        if (isset($_GET['month']) && isset($_GET['year'])) {
-            $filters['month'] = $_GET['month'];
-            $filters['year'] = $_GET['year'];
+        if ($this->getParam('date')) $filters['date'] = $this->getParam('date');
+        if ($this->getParam('month') && $this->getParam('year')) {
+            $filters['month'] = $this->getParam('month');
+            $filters['year'] = $this->getParam('year');
         }
-        if (isset($_GET['category_id'])) $filters['category_id'] = $_GET['category_id'];
+        if ($this->getParam('category_id')) $filters['category_id'] = $this->getParam('category_id');
 
-        if (isset($_GET['page'])) $filters['page'] = $_GET['page'];
-        if (isset($_GET['limit'])) $filters['limit'] = $_GET['limit'];
+        if ($this->getParam('page')) $filters['page'] = $this->getParam('page');
+        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
 
         $result = $this->expenseModel->getAll($filters);
 
@@ -103,8 +121,14 @@ class ExpenseController
 
     public function createExpense(): array
     {
-        $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $user = $_SERVER['AUTH_USER'] ?? null;
+        try {
+            $request = new ExpenseRequest($this->getBody());
+            $data = $request->validated();
+        } catch (ValidationException $e) {
+            return Response::error('Validation failed', 422, $e->getErrors());
+        }
+
+        $user = $this->authService->user() ?? null;
         if (!$user) {
             return Response::error('غير مصرح', 401);
         }
@@ -120,10 +144,15 @@ class ExpenseController
         }
     }
 
-    public function updateExpense(array $params): array
+    public function updateExpense(string $id): array
     {
-        $id = (int)$params['id'];
-        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $id = (int)$id;
+        try {
+            $request = new ExpenseRequest($this->getBody());
+            $data = $request->validated();
+        } catch (ValidationException $e) {
+            return Response::error('Validation failed', 422, $e->getErrors());
+        }
 
         try {
             $this->expenseService->updateExpense($id, $data);
@@ -137,9 +166,9 @@ class ExpenseController
         }
     }
 
-    public function deleteExpense(array $params): array
+    public function deleteExpense(string $id): array
     {
-        $id = (int)$params['id'];
+        $id = (int)$id;
         if (!$this->expenseModel->findById($id)) {
             return Response::error('المصروف غير موجود', 404);
         }

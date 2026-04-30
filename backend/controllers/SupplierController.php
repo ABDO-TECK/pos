@@ -1,17 +1,35 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Config\Database;
+use App\Core\Controller;
+use App\Core\ValidationException;
+use App\Helpers\Response;
+use App\Helpers\AuditLog;
+use App\Models\Product;
+use App\Models\Supplier;
+use App\Requests\SupplierRequest;
+use App\Services\AuthService;
+use App\Services\InventoryService;
+use App\Services\SupplierService;
+use Throwable;
+
+
 class SupplierController extends Controller {
 
     private Supplier         $supplierModel;
     private Product          $productModel;
     private InventoryService $inventoryService;
     private SupplierService  $supplierService;
+    private AuthService      $authService;
 
-    public function __construct() {
-        $this->supplierModel    = new Supplier();
-        $this->productModel     = new Product();
-        $this->inventoryService = new InventoryService();
-        $this->supplierService  = new SupplierService();
+    public function __construct(Supplier $supplierModel, Product $productModel, InventoryService $inventoryService, SupplierService $supplierService, AuthService $authService) {
+        $this->supplierModel    = $supplierModel;
+        $this->productModel     = $productModel;
+        $this->inventoryService = $inventoryService;
+        $this->supplierService  = $supplierService;
+        $this->authService      = $authService;
     }
 
     public function index() {
@@ -23,9 +41,9 @@ class SupplierController extends Controller {
         $result = $this->supplierModel->all($filters);
 
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::success($result);
+            return Response::cacheable($result, 120);
         }
     }
 
@@ -144,6 +162,8 @@ class SupplierController extends Controller {
                 : Response::serverError($result['error']);
         }
 
+        AuditLog::log('delete_purchase_invoice', 'purchase_invoice', (int)$id);
+
         return Response::success(null, 'Purchase invoice deleted and stock restored');
     }
 
@@ -160,7 +180,7 @@ class SupplierController extends Controller {
     /** Bulk purchase — creates a purchase invoice + items */
     public function purchaseBulk() {
         $data   = $this->getBody();
-        $auth   = $_SERVER['AUTH_USER'];
+        $auth   = $this->authService->user();
         $result = $this->inventoryService->processBulkPurchase($data, $auth);
 
         if (!$result['ok']) {
@@ -185,7 +205,7 @@ class SupplierController extends Controller {
     public function addPayment(string $id) {
         $sid  = (int)$id;
         $data = $this->getBody();
-        $auth = $_SERVER['AUTH_USER'];
+        $auth = $this->authService->user();
 
         try {
             $ledger = $this->supplierService->addPayment($sid, $data, $auth);

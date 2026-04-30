@@ -1,9 +1,21 @@
 <?php
 
+namespace App\Core;
+
+use App\Config\Database;
+use Exception;
+use PDO;
+use ReflectionClass;
+
+
 class Container {
     private array $instances = [];
 
     public function get(string $class) {
+        if ($class === 'PDO' || $class === \PDO::class) {
+            return Database::getInstance();
+        }
+
         if (isset($this->instances[$class])) {
             return $this->instances[$class];
         }

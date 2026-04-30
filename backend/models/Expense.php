@@ -1,12 +1,18 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class Expense
 {
     private PDO $db;
 
-    public function __construct()
+    public function __construct(PDO $db)
     {
-        $this->db = Database::getInstance();
+        $this->db = $db;
     }
 
     public function getAll(array $filters = []): array
@@ -46,10 +52,15 @@ class Expense
                 JOIN users u ON e.user_id = u.id 
                 WHERE $whereClause
                 ORDER BY e.expense_date DESC, e.id DESC
-                LIMIT $limit OFFSET $offset";
+                LIMIT :pag_limit OFFSET :pag_offset";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
 
         return [

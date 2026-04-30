@@ -1,11 +1,18 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Models\Category;
+
+
 class CategoryController extends Controller {
 
     private Category $categoryModel;
 
-    public function __construct() {
-        $this->categoryModel = new Category();
+    public function __construct(Category $categoryModel) {
+        $this->categoryModel = $categoryModel;
     }
 
     public function index() {

@@ -1,11 +1,20 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Config\Database;
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Helpers\AuditLog;
+use App\Models\Product;
+
+
 class InventoryController extends Controller {
 
     private Product $productModel;
 
-    public function __construct() {
-        $this->productModel = new Product();
+    public function __construct(Product $productModel) {
+        $this->productModel = $productModel;
     }
 
     public function index() {
@@ -18,7 +27,7 @@ class InventoryController extends Controller {
     }
 
     public function lowStock() {
-        return Response::success($this->productModel->getLowStock());
+        return Response::cacheable($this->productModel->getLowStock(), 60);
     }
 
     public function adjust(string $id) {
@@ -35,6 +44,8 @@ class InventoryController extends Controller {
         $db   = Database::getInstance();
         $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');
         $stmt->execute([$newQty, $id]);
+
+        AuditLog::log('adjust_inventory', 'product', (int)$id, null, $data);
 
         return Response::success($this->productModel->findById((int)$id), 'Inventory adjusted');
     }

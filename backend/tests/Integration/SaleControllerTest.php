@@ -1,6 +1,10 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
+use App\Services\SaleService;
+use App\Models\Invoice;
+use App\Models\Product;
+use App\Models\Customer;
 
 class SaleControllerTest extends TestCase
 {
@@ -9,7 +13,11 @@ class SaleControllerTest extends TestCase
     protected function setUp(): void
     {
         // يتطلب وجود قاعدة بيانات اختبارية تحتوي على منتجات
-        $this->saleService = new SaleService();
+        $this->saleService = new SaleService(
+            $this->createMock(Invoice::class),
+            $this->createMock(Product::class),
+            $this->createMock(Customer::class)
+        );
     }
 
     public function testEnrichItems()

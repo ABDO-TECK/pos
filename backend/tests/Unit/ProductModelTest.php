@@ -1,6 +1,7 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
+use App\Models\Product;
 
 class ProductModelTest extends TestCase
 {
@@ -13,7 +14,7 @@ class ProductModelTest extends TestCase
     {
         // تهيئة البيئة والاحتياجات قبل كل اختبار
         // يمكنك إعداد اتصال بقاعدة بيانات اختبارية (Test DB) هنا.
-        $this->productModel = new Product();
+        $this->productModel = new Product($this->createMock(\PDO::class));
     }
 
     public function testNormalizeAdditionalBarcodes()

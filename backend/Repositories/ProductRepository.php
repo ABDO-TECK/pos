@@ -1,0 +1,87 @@
+<?php
+
+namespace App\Repositories;
+
+use App\Models\Product;
+
+/**
+ * ProductRepository — طبقة وسيطة بين ProductService و Product Model.
+ *
+ * كل الدوال هنا تُمرر الاستدعاء للـ Model مباشرة.
+ * الفائدة: عند الاختبار، يمكن عمل Mock لهذا الكلاس بدل الـ Model.
+ */
+class ProductRepository
+{
+    private Product $model;
+
+    public function __construct(Product $model)
+    {
+        $this->model = $model;
+    }
+
+    public function all(array $filters = []): array
+    {
+        return $this->model->all($filters);
+    }
+
+    public function findById(int $id): ?array
+    {
+        return $this->model->findById($id) ?: null;
+    }
+
+    public function findByBarcode(string $barcode): ?array
+    {
+        return $this->model->findByBarcode($barcode) ?: null;
+    }
+
+    public function create(array $data): int
+    {
+        return $this->model->create($data);
+    }
+
+    public function update(int $id, array $data): bool
+    {
+        return $this->model->update($id, $data);
+    }
+
+    public function delete(int $id): bool
+    {
+        return $this->model->delete($id);
+    }
+
+    public function assertBarcodesAvailable(?int $excludeId, string $main, array $extras): void
+    {
+        $this->model->assertBarcodesAvailable($excludeId, $main, $extras);
+    }
+
+    public function updateMainBarcode(int $id, string $barcode): void
+    {
+        $this->model->updateMainBarcode($id, $barcode);
+    }
+
+    public function syncAdditionalBarcodes(int $id, array $barcodes): void
+    {
+        $this->model->syncAdditionalBarcodes($id, $barcodes);
+    }
+
+    public function hasReferences(int $id): bool
+    {
+        return $this->model->hasReferences($id);
+    }
+
+    public function referenceCounts(int $id): array
+    {
+        return $this->model->referenceCounts($id);
+    }
+
+    public function getLowStock(): array
+    {
+        return $this->model->getLowStock();
+    }
+
+    /** يُتيح الوصول للـ Model الأصلي عند الحاجة (backward compatibility) */
+    public function getModel(): Product
+    {
+        return $this->model;
+    }
+}

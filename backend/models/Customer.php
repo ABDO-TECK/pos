@@ -1,10 +1,16 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class Customer {
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     /** جميع العملاء مع رصيدهم الحالي — مع دعم pagination اختياري */
@@ -37,10 +43,15 @@ class Customer {
          WHERE $whereClause
          GROUP BY c.id
          ORDER BY c.name ASC
-         LIMIT $limit OFFSET $offset";
+         LIMIT :pag_limit OFFSET :pag_offset";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
 
         foreach ($rows as &$r) {

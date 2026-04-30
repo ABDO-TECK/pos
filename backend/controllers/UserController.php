@@ -1,11 +1,21 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Models\User;
+use App\Services\AuthService;
+
+
 class UserController extends Controller {
 
     private User $userModel;
+    private AuthService $authService;
 
-    public function __construct() {
-        $this->userModel = new User();
+    public function __construct(User $userModel, AuthService $authService) {
+        $this->userModel = $userModel;
+        $this->authService = $authService;
     }
 
     public function index() {
@@ -49,7 +59,7 @@ class UserController extends Controller {
     }
 
     public function destroy(string $id) {
-        $auth = $_SERVER['AUTH_USER'];
+        $auth = $this->authService->user();
         if ((int)$id === $auth['id']) {
             return Response::error('Cannot delete yourself', 400);
         }

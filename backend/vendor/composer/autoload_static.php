@@ -45,6 +45,10 @@ class ComposerStaticInita5215e37fe5475fc7472221c48dbe2fe
         array (
             'DeepCopy\\' => 9,
         ),
+        'A' =>
+        array (
+            'App\\' => 4,
+        ),
     );
 
     public static $prefixDirsPsr4 = array (
@@ -96,28 +100,14 @@ class ComposerStaticInita5215e37fe5475fc7472221c48dbe2fe
         array (
             0 => __DIR__ . '/..' . '/myclabs/deep-copy/src/DeepCopy',
         ),
+        'App\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/',
+        ),
     );
 
     public static $classMap = array (
-        'AdminMiddleware' => __DIR__ . '/../..' . '/middleware/AdminMiddleware.php',
-        'AuthController' => __DIR__ . '/../..' . '/controllers/AuthController.php',
-        'AuthMiddleware' => __DIR__ . '/../..' . '/middleware/AuthMiddleware.php',
-        'Autoloader' => __DIR__ . '/../..' . '/core/Autoloader.php',
-        'BackupController' => __DIR__ . '/../..' . '/controllers/BackupController.php',
-        'Cache' => __DIR__ . '/../..' . '/helpers/Cache.php',
-        'Category' => __DIR__ . '/../..' . '/models/Category.php',
-        'CategoryController' => __DIR__ . '/../..' . '/controllers/CategoryController.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
-        'Container' => __DIR__ . '/../..' . '/core/Container.php',
-        'Controller' => __DIR__ . '/../..' . '/core/Controller.php',
-        'CsrfMiddleware' => __DIR__ . '/../..' . '/middleware/CsrfMiddleware.php',
-        'Customer' => __DIR__ . '/../..' . '/models/Customer.php',
-        'CustomerController' => __DIR__ . '/../..' . '/controllers/CustomerController.php',
-        'EnvLoader' => __DIR__ . '/../..' . '/helpers/EnvLoader.php',
-        'InventoryController' => __DIR__ . '/../..' . '/controllers/InventoryController.php',
-        'Invoice' => __DIR__ . '/../..' . '/models/Invoice.php',
-        'Logger' => __DIR__ . '/../..' . '/helpers/Logger.php',
-        'Migrations' => __DIR__ . '/../..' . '/helpers/Migrations.php',
         'PHPUnit\\Event\\Application\\Finished' => __DIR__ . '/..' . '/phpunit/phpunit/src/Event/Events/Application/Finished.php',
         'PHPUnit\\Event\\Application\\FinishedSubscriber' => __DIR__ . '/..' . '/phpunit/phpunit/src/Event/Events/Application/FinishedSubscriber.php',
         'PHPUnit\\Event\\Application\\Started' => __DIR__ . '/..' . '/phpunit/phpunit/src/Event/Events/Application/Started.php',
@@ -1083,14 +1073,6 @@ class ComposerStaticInita5215e37fe5475fc7472221c48dbe2fe
         'PharIo\\Version\\VersionConstraintParser' => __DIR__ . '/..' . '/phar-io/version/src/VersionConstraintParser.php',
         'PharIo\\Version\\VersionConstraintValue' => __DIR__ . '/..' . '/phar-io/version/src/VersionConstraintValue.php',
         'PharIo\\Version\\VersionNumber' => __DIR__ . '/..' . '/phar-io/version/src/VersionNumber.php',
-        'Product' => __DIR__ . '/../..' . '/models/Product.php',
-        'ProductController' => __DIR__ . '/../..' . '/controllers/ProductController.php',
-        'ProductService' => __DIR__ . '/../..' . '/services/ProductService.php',
-        'RateLimiter' => __DIR__ . '/../..' . '/middleware/RateLimiter.php',
-        'ReportController' => __DIR__ . '/../..' . '/controllers/ReportController.php',
-        'Response' => __DIR__ . '/../..' . '/helpers/Response.php',
-        'Router' => __DIR__ . '/../..' . '/core/Router.php',
-        'SaleController' => __DIR__ . '/../..' . '/controllers/SaleController.php',
         'SebastianBergmann\\CliParser\\AmbiguousOptionException' => __DIR__ . '/..' . '/sebastian/cli-parser/src/exceptions/AmbiguousOptionException.php',
         'SebastianBergmann\\CliParser\\Exception' => __DIR__ . '/..' . '/sebastian/cli-parser/src/exceptions/Exception.php',
         'SebastianBergmann\\CliParser\\OptionDoesNotAllowArgumentException' => __DIR__ . '/..' . '/sebastian/cli-parser/src/exceptions/OptionDoesNotAllowArgumentException.php',
@@ -1294,9 +1276,6 @@ class ComposerStaticInita5215e37fe5475fc7472221c48dbe2fe
         'SebastianBergmann\\Type\\UnknownType' => __DIR__ . '/..' . '/sebastian/type/src/type/UnknownType.php',
         'SebastianBergmann\\Type\\VoidType' => __DIR__ . '/..' . '/sebastian/type/src/type/VoidType.php',
         'SebastianBergmann\\Version' => __DIR__ . '/..' . '/sebastian/version/src/Version.php',
-        'SettingsController' => __DIR__ . '/../..' . '/controllers/SettingsController.php',
-        'Supplier' => __DIR__ . '/../..' . '/models/Supplier.php',
-        'SupplierController' => __DIR__ . '/../..' . '/controllers/SupplierController.php',
         'TheSeer\\Tokenizer\\Exception' => __DIR__ . '/..' . '/theseer/tokenizer/src/Exception.php',
         'TheSeer\\Tokenizer\\NamespaceUri' => __DIR__ . '/..' . '/theseer/tokenizer/src/NamespaceUri.php',
         'TheSeer\\Tokenizer\\NamespaceUriException' => __DIR__ . '/..' . '/theseer/tokenizer/src/NamespaceUriException.php',
@@ -1305,9 +1284,6 @@ class ComposerStaticInita5215e37fe5475fc7472221c48dbe2fe
         'TheSeer\\Tokenizer\\TokenCollectionException' => __DIR__ . '/..' . '/theseer/tokenizer/src/TokenCollectionException.php',
         'TheSeer\\Tokenizer\\Tokenizer' => __DIR__ . '/..' . '/theseer/tokenizer/src/Tokenizer.php',
         'TheSeer\\Tokenizer\\XMLSerializer' => __DIR__ . '/..' . '/theseer/tokenizer/src/XMLSerializer.php',
-        'UpdateController' => __DIR__ . '/../..' . '/controllers/UpdateController.php',
-        'User' => __DIR__ . '/../..' . '/models/User.php',
-        'UserController' => __DIR__ . '/../..' . '/controllers/UserController.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

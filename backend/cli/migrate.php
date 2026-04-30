@@ -7,17 +7,16 @@ if (php_sapi_name() !== 'cli') {
     die('Forbidden: This script can only be run from the command line.');
 }
 
-require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../core/Autoloader.php';
-Autoloader::register();
+require_once __DIR__ . '/../Config/config.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 echo "Running Migrations...\n";
 echo "=====================\n";
 
-require_once __DIR__ . '/../services/MigrationService.php';
+require_once __DIR__ . '/../Services/MigrationService.php';
 
 $force = in_array('--force', $argv, true);
-$service = new MigrationService();
+$service = new App\Services\MigrationService();
 $result = $service->runAllMigrations($force);
 
 if ($result['skipped']) {

@@ -1,11 +1,17 @@
 <?php
 
+namespace App\Services;
+
+use App\Models\Expense;
+use Exception;
+
+
 class ExpenseService {
     
     private Expense $expenseModel;
 
-    public function __construct() {
-        $this->expenseModel = new Expense();
+    public function __construct(Expense $expenseModel) {
+        $this->expenseModel = $expenseModel;
     }
 
     public function createExpense(array $data, array $authUser): int {

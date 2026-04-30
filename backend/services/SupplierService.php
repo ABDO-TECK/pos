@@ -1,11 +1,17 @@
 <?php
 
+namespace App\Services;
+
+use App\Models\Supplier;
+use Exception;
+
+
 class SupplierService {
     
     private Supplier $supplierModel;
 
-    public function __construct() {
-        $this->supplierModel = new Supplier();
+    public function __construct(Supplier $supplierModel) {
+        $this->supplierModel = $supplierModel;
     }
 
     public function addPayment(int $supplierId, array $data, array $authUser): array {

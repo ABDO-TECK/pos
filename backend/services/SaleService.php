@@ -1,5 +1,17 @@
 <?php
 
+namespace App\Services;
+
+use App\Config\Database;
+use App\Controllers\SaleController;
+use App\Helpers\Logger;
+use App\Models\Customer;
+use App\Models\Invoice;
+use App\Models\Product;
+use PDO;
+use Throwable;
+
+
 /**
  * SaleService — منطق الأعمال لعمليات البيع.
  *
@@ -13,11 +25,11 @@ class SaleService
     private Customer $customerModel;
     private PDO      $db;
 
-    public function __construct()
+    public function __construct(Invoice $invoiceModel, Product $productModel, Customer $customerModel)
     {
-        $this->invoiceModel  = new Invoice();
-        $this->productModel  = new Product();
-        $this->customerModel = new Customer();
+        $this->invoiceModel  = $invoiceModel;
+        $this->productModel  = $productModel;
+        $this->customerModel = $customerModel;
         $this->db            = Database::getInstance();
     }
 
@@ -249,10 +261,9 @@ class SaleService
      */
     public function getLowStockAlerts(array $enrichedItems): array
     {
-        return array_values(array_filter(
-            array_map(fn($i) => $this->productModel->findById($i['product_id']), $enrichedItems),
-            fn($p) => $p && $p['quantity'] <= $p['low_stock_threshold']
-        ));
+        if (empty($enrichedItems)) return [];
+        $productIds = array_unique(array_column($enrichedItems, 'product_id'));
+        return $this->productModel->getLowStockByProductIds($productIds);
     }
 
     // ── Delete invoice ──────────────────────────────────────

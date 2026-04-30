@@ -1,13 +1,24 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Core\ValidationException;
+use App\Helpers\Response;
+use App\Helpers\AuditLog;
+use App\Models\Product;
+use App\Requests\ProductRequest;
+use App\Services\ProductService;
+
+
 class ProductController extends Controller {
 
     private ProductService $productService;
     private Product        $productModel;
 
-    public function __construct() {
-        $this->productService = new ProductService();
-        $this->productModel   = $this->productService->getProductModel();
+    public function __construct(ProductService $productService) {
+        $this->productService = $productService;
+        $this->productModel   = $productService->getProductModel();
     }
 
     public function index() {
@@ -23,9 +34,9 @@ class ProductController extends Controller {
 
         // إذا كانت النتيجة paginated (تحتوي data + pagination)
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
+            return Response::cacheable($result['data'], 30, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::success($result);
+            return Response::cacheable($result, 30);
         }
     }
 
@@ -45,42 +56,39 @@ class ProductController extends Controller {
     }
 
     public function store() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'name'  => 'required',
-            'price' => 'required|numeric',
-        ]);
-        if ($errors) {
-            return Response::error($this->productValidationMessage($errors), 422, $errors);
-        }
+        try {
+            $request = new ProductRequest($this->getBody());
+            $data = $request->validated();
+            
+            $result = $this->productService->createProduct($data);
 
-        $result = $this->productService->createProduct($data);
-
-        if (!$result['ok']) {
-            return Response::error($result['error'], $result['code']);
+            if (!$result['ok']) {
+                return Response::error($result['error'], $result['code']);
+            }
+            return Response::success($result['product'], 'Product created', 201);
+        } catch (ValidationException $e) {
+            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors());
         }
-        return Response::success($result['product'], 'Product created', 201);
     }
 
     public function update(string $id) {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'name'  => 'required',
-            'price' => 'required|numeric',
-        ]);
-        if ($errors) {
-            return Response::error($this->productValidationMessage($errors), 422, $errors);
-        }
+        try {
+            $request = new ProductRequest($this->getBody());
+            $data = $request->validated();
 
-        $result = $this->productService->updateProduct((int) $id, $data);
+            $result = $this->productService->updateProduct((int) $id, $data);
 
-        if (!$result['ok']) {
-            $code = $result['code'] ?? 500;
-            return $code === 404
-                ? Response::notFound($result['error'])
-                : Response::error($result['error'], $code);
+            if (!$result['ok']) {
+                $code = $result['code'] ?? 500;
+                return $code === 404
+                    ? Response::notFound($result['error'])
+                    : Response::error($result['error'], $code);
+            }
+            AuditLog::log('update_product', 'product', (int)$id, null, $data);
+            return Response::success($result['product'], 'Product updated');
+        } catch (ValidationException $e) {
+            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors());
         }
-        return Response::success($result['product'], 'Product updated');
     }
 
     /** رسالة عربية بدل "Validation failed" + أسماء حقول إنجليزية */
@@ -111,6 +119,7 @@ class ProductController extends Controller {
                 ? Response::notFound($result['error'])
                 : Response::error($result['error'], $code);
         }
+        AuditLog::log('delete_product', 'product', (int)$id);
         return Response::success(null, 'Product deleted');
     }
 }

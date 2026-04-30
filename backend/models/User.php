@@ -1,10 +1,16 @@
 <?php
 
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
 class User {
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     public function findByEmail(string $email): ?array {
@@ -14,7 +20,7 @@ class User {
     }
 
     public function findById(int $id): ?array {
-        $stmt = $this->db->prepare('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?');
+        $stmt = $this->db->prepare('SELECT id, name, email, role, is_active, force_password_change, created_at FROM users WHERE id = ?');
         $stmt->execute([$id]);
         return $stmt->fetch() ?: null;
     }
@@ -32,8 +38,13 @@ class User {
         $stmt->execute([$token]);
     }
 
+    public function extendToken(string $token, string $expiresAt): void {
+        $stmt = $this->db->prepare('UPDATE tokens SET expires_at = ? WHERE token = ?');
+        $stmt->execute([$expiresAt, $token]);
+    }
+
     public function all(array $filters = []): array {
-        $sql = 'SELECT id, name, email, role, is_active, created_at FROM users ORDER BY id DESC';
+        $sql = 'SELECT id, name, email, role, is_active, force_password_change, created_at FROM users ORDER BY id DESC';
         
         if (!empty($filters['page']) && !empty($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
@@ -42,8 +53,12 @@ class User {
             
             $total = $this->db->query("SELECT COUNT(*) FROM users")->fetchColumn();
             
-            $sql .= " LIMIT $limit OFFSET $offset";
-            $data = $this->db->query($sql)->fetchAll();
+            $sql .= " LIMIT :pag_limit OFFSET :pag_offset";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
+            $data = $stmt->fetchAll();
             
             return [
                 'data'       => $data,
@@ -83,6 +98,7 @@ class User {
         ];
         if (!empty($data['password'])) {
             $fields[] = 'password = :password';
+            $fields[] = 'force_password_change = 0';
             $params['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
         }
         $sql = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id';

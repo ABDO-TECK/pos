@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     role ENUM('admin','cashier') NOT NULL DEFAULT 'cashier',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    force_password_change TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -260,9 +261,9 @@ CREATE TABLE IF NOT EXISTS supplier_ledger (
 -- ============================================================
 
 -- Default admin user (password: admin123)
-INSERT INTO users (name, email, password, role) VALUES
-('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin'),
-('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier');
+INSERT INTO users (name, email, password, role, force_password_change) VALUES
+('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
+('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
 
 -- Default categories
 INSERT INTO categories (name) VALUES

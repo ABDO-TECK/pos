@@ -1,5 +1,17 @@
 <?php
 
+namespace App\Services;
+
+use App\Config\Database;
+use App\Controllers\ProductController;
+use App\Helpers\Logger;
+use App\Models\Product;
+use App\Repositories\ProductRepository;
+use Exception;
+use PDOException;
+use Throwable;
+
+
 /**
  * ProductService — منطق الأعمال لإدارة المنتجات.
  *
@@ -8,11 +20,11 @@
  */
 class ProductService
 {
-    private Product $productModel;
+    private ProductRepository $productRepo;
 
-    public function __construct()
+    public function __construct(ProductRepository $productRepo)
     {
-        $this->productModel = new Product();
+        $this->productRepo = $productRepo;
     }
 
     // ── Create product ──────────────────────────────────────
@@ -35,19 +47,18 @@ class ProductService
         if (!empty($data['box_barcode'])) {
             $extrasToCheck[] = $data['box_barcode'];
         }
-        $this->productModel->assertBarcodesAvailable(null, $main, $extrasToCheck);
-
         $db = Database::getInstance();
         $db->beginTransaction();
         try {
+            $this->productRepo->assertBarcodesAvailable(null, $main, $extrasToCheck);
             $data['barcode'] = $main;
-            $id = $this->productModel->create($data);
+            $id = $this->productRepo->create($data);
 
             if ($isAutoBarcode) {
-                $this->productModel->updateMainBarcode($id, (string) $id);
+                $this->productRepo->updateMainBarcode($id, (string) $id);
             }
 
-            $this->productModel->syncAdditionalBarcodes($id, $extras);
+            $this->productRepo->syncAdditionalBarcodes($id, $extras);
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -55,10 +66,13 @@ class ProductService
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
             }
+            if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
+                return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
+            }
             return ['ok' => false, 'error' => 'Failed to create product', 'code' => 500];
         }
 
-        return ['ok' => true, 'product' => $this->productModel->findById($id)];
+        return ['ok' => true, 'product' => $this->productRepo->findById($id)];
     }
 
     // ── Update product ──────────────────────────────────────
@@ -70,7 +84,7 @@ class ProductService
      */
     public function updateProduct(int $id, array $data): array
     {
-        $product = $this->productModel->findById($id);
+        $product = $this->productRepo->findById($id);
         if (!$product) {
             return ['ok' => false, 'error' => 'Product not found', 'code' => 404];
         }
@@ -85,14 +99,13 @@ class ProductService
         if (!empty($data['box_barcode'])) {
             $extrasToCheck[] = $data['box_barcode'];
         }
-        $this->productModel->assertBarcodesAvailable($id, $main, $extrasToCheck);
-
         $db = Database::getInstance();
         $db->beginTransaction();
         try {
+            $this->productRepo->assertBarcodesAvailable($id, $main, $extrasToCheck);
             $data['barcode'] = $main;
-            $this->productModel->update($id, $data);
-            $this->productModel->syncAdditionalBarcodes($id, $extras);
+            $this->productRepo->update($id, $data);
+            $this->productRepo->syncAdditionalBarcodes($id, $extras);
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -100,10 +113,13 @@ class ProductService
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
             }
+            if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
+                return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
+            }
             return ['ok' => false, 'error' => 'Failed to update product', 'code' => 500];
         }
 
-        return ['ok' => true, 'product' => $this->productModel->findById($id)];
+        return ['ok' => true, 'product' => $this->productRepo->findById($id)];
     }
 
     // ── Delete product ──────────────────────────────────────
@@ -115,12 +131,12 @@ class ProductService
      */
     public function deleteProduct(int $id): array
     {
-        $product = $this->productModel->findById($id);
+        $product = $this->productRepo->findById($id);
         if (!$product) {
             return ['ok' => false, 'error' => 'Product not found', 'code' => 404];
         }
 
-        $refs = $this->productModel->referenceCounts($id);
+        $refs = $this->productRepo->referenceCounts($id);
         if ($refs['invoice_items'] > 0 || $refs['purchases'] > 0) {
             $parts = [];
             if ($refs['invoice_items'] > 0) {
@@ -139,7 +155,7 @@ class ProductService
         }
 
         try {
-            $this->productModel->delete($id);
+            $this->productRepo->delete($id);
         } catch (PDOException $e) {
             if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
                 return ['ok' => false, 'error' => 'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.', 'code' => 409];
@@ -158,13 +174,13 @@ class ProductService
      */
     public function getLowStockProducts(): array
     {
-        return $this->productModel->getLowStock();
+        return $this->productRepo->getLowStock();
     }
 
     // ── Accessor ────────────────────────────────────────────
 
     public function getProductModel(): Product
     {
-        return $this->productModel;
+        return $this->productRepo->getModel();
     }
 }

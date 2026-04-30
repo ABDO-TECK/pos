@@ -1,0 +1,398 @@
+// @ts-nocheck
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Eye, X, Printer, Trash2, ShoppingCart } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { getSales, getSale, deleteSale } from '../api/endpoints'
+import { formatCurrency, formatDate, formatNumber } from '../utils/formatters'
+import { browserPrint, buildReceiptHTML } from '../utils/receiptBuilder'
+import useSettingsStore from '../store/settingsStore'
+import useAuthStore from '../store/authStore'
+import useCartStore from '../store/cartStore'
+import useQZPrinter from '../hooks/useQZPrinter'
+import { QZStatusBar, QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
+import Pagination from '../components/Pagination'
+import { useConfirmStore } from '../store/confirmStore'
+
+const METHOD_LABELS = {
+  cash:          'نقدي',
+  card:          'بطاقة',
+  vodafone_cash: 'فودافون كاش',
+  instapay:      'انستاباي',
+  other_wallet:  'محفظة أخرى',
+  credit:        'آجل',
+}
+
+export default function Sales() {
+  const [sales, setSales]       = useState([])
+  const [loading, setLoading]   = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [detailLoading, setDL]  = useState(false)
+  const [deleting, setDeleting]  = useState(false)
+  const [filters, setFilters]   = useState({ date: '', month: '', year: '' })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages]   = useState(1)
+  const searchTimer             = useRef(null)
+  const currentYear             = new Date().getFullYear()
+  const yearOptions             = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i)
+  const settings                = useSettingsStore()
+  const navigate                = useNavigate()
+  const user                    = useAuthStore((s) => s.user)
+  const mergeInvoiceLines       = useCartStore((s) => s.mergeInvoiceLines)
+  const { confirm }             = useConfirmStore()
+  const isAdmin                 = user?.role === 'admin'
+  const qz = useQZPrinter()
+
+  const load = async (f = filters, p = 1) => {
+    setLoading(true)
+    try {
+      const params: any = { page: p, limit: 15 }
+      if (f.date)  params.date  = f.date
+      if (f.month) params.month = f.month
+      if (f.year)  params.year  = f.year
+      const res = await getSales(params)
+      setSales(res.data.data ?? [])
+      
+      const pg = res.data.pagination
+      if (pg) {
+        setTotalPages(pg.last_page || pg.pages || 1)
+        setCurrentPage(pg.current_page || pg.page || 1)
+      } else {
+        setTotalPages(1)
+        setCurrentPage(1)
+      }
+    } catch {
+      toast.error('فشل تحميل المبيعات')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load(filters, 1)
+    return () => clearTimeout(searchTimer.current)
+  }, [])
+
+  const handleFilter = (key, val) => {
+    const next = { ...filters, [key]: val }
+    setFilters(next)
+    setCurrentPage(1)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => load(next, 1), 400)
+  }
+
+  const clearFilters = () => {
+    const cleared = { date: '', month: '', year: '' }
+    setFilters(cleared)
+    setCurrentPage(1)
+    load(cleared, 1)
+  }
+
+  const openDetail = async (id) => {
+    setDL(true)
+    try {
+      const res = await getSale(id)
+      setSelected(res.data.data)
+    } catch {
+      toast.error('فشل تحميل تفاصيل الفاتورة')
+    } finally {
+      setDL(false)
+    }
+  }
+
+  const handleReturnToCart = () => {
+    const items = selected?.items ?? []
+    if (!items.length) {
+      toast.error('لا توجد أصناف في الفاتورة')
+      return
+    }
+    mergeInvoiceLines(items, selected.id, selected.customer_id)
+    toast.success('تمت إضافة أصناف الفاتورة إلى السلة — انتقل إلى نقطة البيع')
+    setSelected(null)
+    navigate('/')
+  }
+
+  const handleDeleteInvoice = async () => {
+    if (!selected?.id) return
+    if (!(await confirm('سيتم حذف الفاتورة نهائياً من السجل وإرجاع كميات المنتجات إلى المخزون. هل أنت متأكد؟'))) return
+    setDeleting(true)
+    try {
+      await deleteSale(selected.id)
+      toast.success('تم حذف الفاتورة')
+      setSelected(null)
+      load(filters, currentPage)
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <h1 style={{ fontSize: '1.3rem', fontWeight: 700 }}>سجل المبيعات</h1>
+
+      {/* Filters */}
+      <div className="card" style={{ padding: '1rem' }}>
+        <div className="filter-bar">
+          <div className="form-group">
+            <label style={labelSt}>تاريخ محدد</label>
+            <input type="date" className="input" value={filters.date} onChange={e => handleFilter('date', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label style={labelSt}>الشهر</label>
+            <select className="input" value={filters.month} onChange={e => handleFilter('month', e.target.value)}>
+              <option value="">كل الأشهر</option>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label style={labelSt}>السنة</label>
+            <select className="input" value={filters.year} onChange={e => handleFilter('year', e.target.value)}>
+              <option value="">كل السنوات</option>
+              {yearOptions.map(y => <option key={y} value={y}>{formatNumber(y)}</option>)}
+            </select>
+          </div>
+          <button onClick={clearFilters} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>مسح الفلاتر</button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card">
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center' }}><span className="spinner" /></div>
+        ) : sales.length === 0 ? (
+          <div className="empty-state">لا توجد مبيعات</div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th># الفاتورة</th>
+                  <th className="hide-mobile">الكاشير</th>
+                  <th>الإجمالي</th>
+                  <th className="hide-mobile">طريقة الدفع</th>
+                  <th className="hide-mobile">التاريخ</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.map(s => (
+                  <tr key={s.id}>
+                    <td>
+                      <span style={{ color: 'var(--text-muted)' }}>#{formatNumber(s.id)}</span>
+                      <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginTop: '0.2rem' }}>
+                        {formatDate(s.created_at)}
+                        {s.cashier_name ? ` · ${s.cashier_name}` : ''}
+                      </div>
+                    </td>
+                    <td className="hide-mobile">{s.cashier_name ?? '—'}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--primary-d)' }}>
+                      {formatCurrency(s.total)}
+                      <div className="show-mobile" style={{ marginTop: '0.2rem' }}>
+                        <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem' }}>
+                          {METHOD_LABELS[s.payment_method] ?? s.payment_method}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="hide-mobile">
+                      <span className="badge badge-blue">
+                        {METHOD_LABELS[s.payment_method] ?? s.payment_method}
+                      </span>
+                    </td>
+                    <td className="hide-mobile" style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDate(s.created_at)}</td>
+                    <td>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => openDetail(s.id)}
+                        style={{ gap: '0.3rem' }}
+                      >
+                        <Eye size={14}/> عرض
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pagination 
+              current={currentPage} 
+              total={totalPages} 
+              onPage={(p) => load(filters, p)} 
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      {(selected || detailLoading) && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setSelected(null)}>
+          <div className="modal" style={{ maxWidth: '600px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                {selected ? `فاتورة #${formatNumber(selected.id)}` : 'جاري التحميل…'}
+              </h2>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                {selected && (
+                  <QZPrintButton
+                    multiSize={true}
+                    qzReady={qz.qzReady}
+                    printing={qz.printing}
+                    onQZPrint={async (paperSize) => {
+                      const inv = { ...selected, items: (selected.items ?? []).map(i => ({ ...i, product_name: i.product_name ?? i.name })) }
+                      const html = buildReceiptHTML(inv, parseFloat(selected.change_due) || 0, settings, paperSize)
+                      const r = await qz.qzPrint(html)
+                      if (r.ok) toast.success(`تمت الطباعة بنجاح (${paperSize})`)
+                      else if (r.error) toast.error('فشل الطباعة: ' + r.error)
+                    }}
+                    onPickPrinter={() => qz.setShowPrinterPicker(true)}
+                    onBrowserPrint={(paperSize) => browserPrint(
+                      { ...selected, items: (selected.items ?? []).map(i => ({ ...i, product_name: i.product_name ?? i.name })) },
+                      parseFloat(selected.change_due) || 0,
+                      settings,
+                      paperSize
+                    )}
+                  />
+                )}
+                <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
+              </div>
+            </div>
+
+            {detailLoading && (
+              <div style={{ padding: '2rem', textAlign: 'center' }}><span className="spinner" /></div>
+            )}
+
+            {selected && (
+              <>
+                {/* Invoice meta */}
+                <div className="resp-2col" style={{ marginBottom: '1rem' }}>
+                  <InfoCard label="الكاشير"      value={selected.cashier_name ?? '—'} />
+                  <InfoCard label="طريقة الدفع"  value={METHOD_LABELS[selected.payment_method] ?? selected.payment_method} />
+                  <InfoCard label="التاريخ"       value={formatDate(selected.created_at)} />
+                  <InfoCard label="المبلغ المدفوع" value={formatCurrency(selected.amount_paid)} />
+                </div>
+
+                {/* Items table */}
+                <div className="table-wrapper" style={{ marginBottom: '1rem' }}>
+                  <table style={{ fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr>
+                        <th>المنتج</th>
+                        <th>الكمية</th>
+                        <th>السعر</th>
+                        <th>الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selected.items ?? []).map((item, idx) => {
+                        const qty = parseFloat(item.quantity)
+                        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
+                        const qtyDisplay = isByWeight ? `${qty.toFixed(3)} كجم` : formatNumber(item.quantity)
+                        return (
+                        <tr key={idx}>
+                          <td>{item.product_name ?? item.name}{isByWeight ? ' ⚖️' : ''}</td>
+                          <td>{qtyDisplay}</td>
+                          <td>{formatCurrency(item.price)}</td>
+                          <td style={{ fontWeight: 600 }}>{formatCurrency(item.price * qty)}</td>
+                        </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Totals */}
+                <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '1rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <TotalRow label="المجموع الجزئي" value={formatCurrency(selected.subtotal)} />
+                  {parseFloat(selected.discount) > 0 && (
+                    <TotalRow label="الخصم" value={`- ${formatCurrency(selected.discount)}`} danger />
+                  )}
+                  {parseFloat(selected.tax) > 0 && (
+                    <TotalRow label="الضريبة" value={formatCurrency(selected.tax)} />
+                  )}
+                  <div style={{ borderTop: '2px solid var(--border)', margin: '0.3rem 0' }} />
+                  <TotalRow label="الإجمالي" value={formatCurrency(selected.total)} bold green />
+                  {parseFloat(selected.change_due) > 0 && (
+                    <TotalRow label="الباقي" value={formatCurrency(selected.change_due)} />
+                  )}
+                  {selected.payment_method === 'credit' && (
+                    <TotalRow label="المدفوع (عربون)" value={formatCurrency(selected.amount_paid)} />
+                  )}
+                  {selected.payment_method === 'credit' && parseFloat(selected.amount_due) > 0 && (
+                    <TotalRow label="المتبقي على الذمة" value={formatCurrency(selected.amount_due)} danger bold />
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                    onClick={handleReturnToCart}
+                  >
+                    <ShoppingCart size={16} />
+                    إرجاع المنتجات للسلة
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      style={{ flex: '1 1 160px', justifyContent: 'center' }}
+                      onClick={handleDeleteInvoice}
+                      disabled={deleting}
+                    >
+                      {deleting ? <span className="spinner" /> : <Trash2 size={16} />}
+                      حذف الفاتورة
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {qz.showPrinterPicker && (
+        <QZPrinterPicker
+          printers={qz.printers}
+          selectedPrinter={qz.selectedPrinter}
+          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onClose={() => qz.setShowPrinterPicker(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function InfoCard({ label, value }) {
+  return (
+    <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem' }}>
+      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.15rem' }}>{label}</p>
+      <p style={{ fontWeight: 600 }}>{value}</p>
+    </div>
+  )
+}
+
+function TotalRow({ label, value, bold, green, danger }: { label: React.ReactNode, value: React.ReactNode, bold?: boolean, green?: boolean, danger?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{
+        fontWeight: bold ? 700 : 500,
+        color: green ? 'var(--primary-d)' : danger ? 'var(--danger)' : 'var(--text)',
+        fontSize: bold ? '1rem' : undefined,
+      }}>{value}</span>
+    </div>
+  )
+}
+
+const labelSt = {
+  display: 'block',
+  fontSize: '0.8rem',
+  fontWeight: 600,
+  color: 'var(--text-muted)',
+  marginBottom: '0.3rem',
+}

@@ -1,5 +1,10 @@
 <?php
 
+namespace App\Middleware;
+
+use App\Helpers\Response;
+
+
 class CsrfMiddleware {
     
     /** Routes that don't require CSRF verification (pre-auth) */

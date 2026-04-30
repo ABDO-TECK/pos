@@ -17,7 +17,8 @@
  */
 
 // Load .env so QZ_PRIVATE_KEY_PATH is available
-require_once __DIR__ . '/helpers/EnvLoader.php';
+require_once __DIR__ . '/Helpers/EnvLoader.php';
+use App\Helpers\EnvLoader;
 EnvLoader::load(__DIR__ . '/.env');
 
 // Allow CORS for credentials

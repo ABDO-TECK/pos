@@ -1,60 +1,39 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Config\Database;
+use App\Core\Container;
+use App\Core\Controller;
+use App\Helpers\Cache;
+use App\Helpers\Response;
+use App\Services\BackupService;
+use App\Services\MigrationService;
+use PDO;
+use mysqli;
+
+
 class BackupController extends Controller {
 
-    private PDO $db;
+    private BackupService $backupService;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(PDO $db, BackupService $backupService) {
+        $this->db = $db;
+        $this->backupService = $backupService;
     }
 
     public function download() {
-        $tables = $this->db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
-
-        $sql  = "-- POS Database Backup\n";
-        $sql .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
-        $sql .= "-- Host: " . DB_HOST . " | Database: " . DB_NAME . "\n\n";
-        $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
-
-        foreach ($tables as $table) {
-            // Skip internal tables
-            if (in_array($table, ['settings'])) {
-                // include settings in backup
-            }
-
-            // Table structure
-            $createStmt = $this->db->query("SHOW CREATE TABLE `$table`")->fetch();
-            $sql .= "-- Table: $table\n";
-            $sql .= "DROP TABLE IF EXISTS `$table`;\n";
-            $sql .= $createStmt['Create Table'] . ";\n\n";
-
-            // Table data
-            $rows = $this->db->query("SELECT * FROM `$table`")->fetchAll();
-            if (!empty($rows)) {
-                $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
-                $sql .= "INSERT INTO `$table` ($columns) VALUES\n";
-                $values = [];
-                foreach ($rows as $row) {
-                    $escaped = array_map(function ($v) {
-                        if ($v === null) return 'NULL';
-                        return $this->db->quote((string)$v);
-                    }, array_values($row));
-                    $values[] = '(' . implode(', ', $escaped) . ')';
-                }
-                $sql .= implode(",\n", $values) . ";\n\n";
-            }
-        }
-
-        $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
-
         $filename = 'pos_backup_' . date('Y-m-d_H-i-s') . '.sql';
 
-        // Override Content-Type for file download
+        // Set headers for streaming download
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Content-Length: ' . strlen($sql));
         header('Cache-Control: no-cache');
-        echo $sql;
+        
+        // Disable output buffering to stream directly
+        if (ob_get_level()) ob_end_clean();
+
+        $this->backupService->streamBackup();
         exit;
     }
 
@@ -63,6 +42,10 @@ class BackupController extends Controller {
      * POST multipart: الحقل sql_file
      */
     public function restore() {
+        if (!defined('ALLOW_WEB_RESTORE') || !ALLOW_WEB_RESTORE) {
+            return Response::error('استعادة النسخة الاحتياطية من الويب معطلة لأسباب أمنية. يرجى استخدام سطر الأوامر (CLI).', 403);
+        }
+
         if (empty($_FILES['sql_file']) || (int) ($_FILES['sql_file']['error'] ?? 0) !== UPLOAD_ERR_OK) {
             return Response::error('لم يتم رفع الملف أو فشل الرفع', 400);
         }
@@ -131,9 +114,28 @@ class BackupController extends Controller {
         // ---------------------------------------------------------
         // الاستعادة الذكية: ترقية النسخة القديمة لتطابق الكود الحديث
         // ---------------------------------------------------------
-        require_once __DIR__ . '/../services/MigrationService.php';
-        $migrationService = new MigrationService();
-        $migrationResult = $migrationService->runAllMigrations();
+        // 1. مسح سجل الهجرات القديم لأن ملف الاستعادة قد يحتوي على سجلات
+        //    تقول "تم تنفيذ الهجرة" رغم أن الأعمدة/الجداول غير موجودة فعلياً.
+        $freshDb = Database::getInstance();
+        try {
+            $freshDb->exec('DELETE FROM schema_versions');
+        } catch (\Throwable $e) {
+            // الجدول قد لا يكون موجوداً — سيُنشأ في الهجرات
+        }
+
+        // 2. حذف ملف flag الـ Smart Skip لإجبار إعادة فحص الهجرات
+        $flagFile = realpath(__DIR__ . '/../storage/migrations_hash.flag');
+        if ($flagFile && is_file($flagFile)) {
+            @unlink($flagFile);
+        }
+
+        // 3. تشغيل جميع الهجرات بـ force=true لضمان تطبيقها
+        //    (الهجرات آمنة: تتجاهل أخطاء "عمود/جدول موجود مسبقاً")
+        Database::resetInstance();
+        require_once __DIR__ . '/../core/Container.php';
+        $container = new Container();
+        $migrationService = $container->get(MigrationService::class);
+        $migrationResult = $migrationService->runAllMigrations(true);
 
         $msg = 'تمت استعادة قاعدة البيانات بنجاح';
         if ($migrationResult['executed'] > 0) {

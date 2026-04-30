@@ -19,7 +19,7 @@ const useSettingsStore = create<SettingsState>((set) => ({
   fetchSettings: async () => {
     try {
       const res = await getSettings()
-      const s = res.data.data
+      const s = res.data.data as any
       set({
         storeName:  s.store_name  ?? 'سوبر ماركت',
         taxEnabled: s.tax_enabled === '1' || s.tax_enabled === true,

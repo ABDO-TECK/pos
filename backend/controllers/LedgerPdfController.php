@@ -1,5 +1,14 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Config\Database;
+use App\Core\Controller;
+use App\Models\Customer;
+use App\Models\Supplier;
+use PDO;
+
+
 /**
  * LedgerPdfController
  * Generates server-side PDF for Customer/Supplier account statements using mPDF.
@@ -11,9 +20,13 @@ require_once __DIR__ . '/../vendor/autoload.php';
 class LedgerPdfController extends Controller {
 
     private PDO $db;
+    private Customer $customerModel;
+    private Supplier $supplierModel;
 
-    public function __construct() {
+    public function __construct(Customer $customerModel, Supplier $supplierModel) {
         $this->db = Database::getInstance();
+        $this->customerModel = $customerModel;
+        $this->supplierModel = $supplierModel;
     }
 
     /* ── helpers ─────────────────────────────────────────────── */
@@ -163,8 +176,7 @@ class LedgerPdfController extends Controller {
      *═══════════════════════════════════════════════════════════ */
 
     public function customerPdf(string $id) {
-        $cModel = new Customer();
-        $data   = $cModel->getLedger((int)$id);
+        $data   = $this->customerModel->getLedger((int)$id);
 
         if (!$data['customer']) {
             http_response_code(404);
@@ -214,8 +226,7 @@ class LedgerPdfController extends Controller {
      *═══════════════════════════════════════════════════════════ */
 
     public function supplierPdf(string $id) {
-        $sModel = new Supplier();
-        $data   = $sModel->getLedger((int)$id);
+        $data   = $this->supplierModel->getLedger((int)$id);
 
         if (!$data['supplier']) {
             http_response_code(404);

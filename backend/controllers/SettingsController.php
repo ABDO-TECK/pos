@@ -1,36 +1,19 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Cache;
+use App\Helpers\Response;
+use PDO;
+
+
 class SettingsController extends Controller {
 
     private PDO $db;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
-        $this->ensureTable();
-    }
-
-    /** Create the settings table + default rows if they don't exist yet. */
-    private function ensureTable() {
-        $this->db->exec(
-            'CREATE TABLE IF NOT EXISTS settings (
-                `key`       VARCHAR(100) NOT NULL PRIMARY KEY,
-                `value`     TEXT         NULL,
-                updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
-        );
-
-        $defaults = [
-            'store_name'  => 'سوبر ماركت',
-            'tax_enabled' => '0',
-            'tax_rate'    => '15',
-        ];
-
-        $stmt = $this->db->prepare(
-            'INSERT IGNORE INTO settings (`key`, `value`) VALUES (:key, :value)'
-        );
-        foreach ($defaults as $key => $value) {
-            $stmt->execute(['key' => $key, 'value' => $value]);
-        }
+    public function __construct(PDO $db) {
+        $this->db = $db;
     }
 
     private function all() {

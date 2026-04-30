@@ -1,11 +1,24 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Helpers\Logger;
+use App\Helpers\AuditLog;
+use App\Models\Invoice;
+use App\Services\AuthService;
+use App\Services\SaleService;
+
+
 class SaleController extends Controller {
 
     private SaleService $saleService;
+    private AuthService $authService;
 
-    public function __construct() {
-        $this->saleService = new SaleService();
+    public function __construct(SaleService $saleService, AuthService $authService) {
+        $this->saleService = $saleService;
+        $this->authService = $authService;
     }
 
     public function index() {
@@ -57,7 +70,7 @@ class SaleController extends Controller {
         $totals   = $this->saleService->calculateTotals($enrichedItems, $discount, $data);
 
         // 3. تنفيذ عملية البيع
-        $auth   = $_SERVER['AUTH_USER'];
+        $auth   = $this->authService->user();
         $result = $this->saleService->processSale($enrichedItems, $totals, $data, $auth);
 
         if (!$result['ok']) {
@@ -105,6 +118,8 @@ class SaleController extends Controller {
                 ? Response::notFound($result['error'])
                 : Response::serverError($result['error']);
         }
+
+        AuditLog::log('delete_invoice', 'invoice', (int)$id);
 
         return Response::success(null, 'Invoice deleted');
     }

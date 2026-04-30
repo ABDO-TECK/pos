@@ -2,19 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Core\Autoloader;
+use App\Core\Container;
+use App\Core\Router;
+use App\Core\ValidationException;
+use App\Helpers\Response;
+use App\Helpers\Logger;
+use App\Middleware\RateLimiter;
+use App\Config\ErrorCodes;
+
 // ── Config (loads .env via EnvLoader) ─────────────────────────
-require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/Config/config.php';
 
-// ── Autoloader ────────────────────────────────────────────────
-// يُحمّل الكلاسات تلقائيًا من: config, core, controllers,
-// models, middleware, helpers — بدون require_once يدوي.
-require_once __DIR__ . '/core/Autoloader.php';
-Autoloader::register();
-
-// ── Composer Autoloader (for mPDF) ────────────────────────────
-if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-    require_once __DIR__ . '/vendor/autoload.php';
+// ── Composer Autoloader ───────────────────────────────────────
+if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
+    die("Composer dependencies not installed. Please run 'composer install'.");
 }
+require_once __DIR__ . '/vendor/autoload.php';
 
 // ── CORS ──────────────────────────────────────────────────────
 $allowedOrigins = [

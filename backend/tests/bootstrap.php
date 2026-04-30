@@ -1,7 +1,6 @@
 <?php
 
-require_once __DIR__ . '/../core/Autoloader.php';
-Autoloader::register();
+require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../Config/config.php';
 
-// Define a testing mode constant
-define('APP_ENV', 'testing');
+// Testing environment is initialized

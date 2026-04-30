@@ -1,11 +1,21 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Models\User;
+use App\Services\AuthService;
+
+
 class AuthController extends Controller {
 
     private User $userModel;
+    private AuthService $authService;
 
-    public function __construct() {
-        $this->userModel = new User();
+    public function __construct(User $userModel, AuthService $authService) {
+        $this->userModel = $userModel;
+        $this->authService = $authService;
     }
 
     public function login() {
@@ -44,6 +54,7 @@ class AuthController extends Controller {
                 'name'  => $user['name'],
                 'email' => $user['email'],
                 'role'  => $user['role'],
+                'force_password_change' => $user['force_password_change'] ?? 0,
             ],
         ], 'Login successful');
     }
@@ -79,7 +90,7 @@ class AuthController extends Controller {
     }
 
     public function me() {
-        $auth = $_SERVER['AUTH_USER'];
+        $auth = $this->authService->user();
         $user = $this->userModel->findById($auth['id']);
         return Response::success($user);
     }

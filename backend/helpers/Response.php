@@ -1,5 +1,8 @@
 <?php
 
+namespace App\Helpers;
+
+
 class Response {
 
     public static function json(mixed $data, int $status = 200): array {
@@ -20,14 +23,27 @@ class Response {
         return self::json($body, $status);
     }
 
-    public static function cacheable(mixed $data = null, int $ttl = 60, ?string $etag = null): array {
-        $response = self::success($data);
-        $response['headers'] = [
-            'Cache-Control' => "public, max-age={$ttl}",
-        ];
-        if ($etag !== null) {
-            $response['headers']['ETag'] = 'W/"' . $etag . '"';
+    public static function cacheable(mixed $data = null, int $ttl = 60, ?string $etag = null, array $extra = []): array {
+        if ($etag === null) {
+            $etag = md5(json_encode($data));
         }
+
+        $ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
+        $ifNoneMatch = trim($ifNoneMatch, '"W/ ');
+
+        $headers = [
+            'Cache-Control' => "public, max-age={$ttl}",
+            'ETag'          => 'W/"' . $etag . '"'
+        ];
+
+        if ($ifNoneMatch !== '' && $ifNoneMatch === $etag) {
+            $response = self::json(null, 304);
+            $response['headers'] = $headers;
+            return $response;
+        }
+
+        $response = self::success($data, 'success', 200, $extra);
+        $response['headers'] = $headers;
         return $response;
     }
 

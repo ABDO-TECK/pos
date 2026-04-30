@@ -1,5 +1,8 @@
 <?php
 
+namespace App\Helpers;
+
+
 /**
  * Logger — نظام تسجيل أحداث بمستويات متعددة.
  *

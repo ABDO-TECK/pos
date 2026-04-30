@@ -1,6 +1,19 @@
 <?php
 
+namespace App\Middleware;
+
+use App\Config\Database;
+use App\Helpers\Response;
+use App\Models\User;
+use App\Services\AuthService;
+
+
 class AuthMiddleware {
+    private AuthService $authService;
+
+    public function __construct(AuthService $authService) {
+        $this->authService = $authService;
+    }
 
     public function handle(callable $next): mixed {
         $token = $this->extractToken();
@@ -11,7 +24,7 @@ class AuthMiddleware {
 
         $db   = Database::getInstance();
         $stmt = $db->prepare(
-            'SELECT t.user_id, t.expires_at, u.role, u.is_active, u.name, u.email
+            'SELECT t.user_id, t.expires_at, u.role, u.is_active, u.name, u.email, u.force_password_change
              FROM tokens t
              JOIN users u ON u.id = t.user_id
              WHERE t.token = ?'
@@ -27,17 +40,46 @@ class AuthMiddleware {
             return Response::unauthorized('Account is disabled');
         }
 
-        if ($row['expires_at'] && strtotime($row['expires_at']) < time()) {
+        if (!empty($row['force_password_change'])) {
+            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+            $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
+            // Allow user to update themselves or logout — match any URI prefix variation
+            $userId = $row['user_id'];
+            $isUpdatingSelf = ($requestMethod === 'PUT' && preg_match('#/users/' . $userId . '($|\?)#', $requestUri));
+            $isLoggingOut = ($requestMethod === 'POST' && strpos($requestUri, '/logout') !== false);
+            
+            if (!$isUpdatingSelf && !$isLoggingOut) {
+                return Response::error('يجب تغيير كلمة المرور الافتراضية أولاً', 403, ['force_password_change' => true]);
+            }
+        }
+
+        $expiresAtTime = strtotime($row['expires_at']);
+        if ($row['expires_at'] && $expiresAtTime < time()) {
             return Response::unauthorized('Token expired');
         }
 
+        if ($expiresAtTime - time() < (TOKEN_LIFETIME / 2)) {
+            $userModel = new User($db);
+            $newExpiry = time() + TOKEN_LIFETIME;
+            $userModel->extendToken($token, date('Y-m-d H:i:s', $newExpiry));
+            
+            setcookie('pos_token', $token, [
+                'expires'  => $newExpiry,
+                'path'     => '/',
+                'domain'   => '',
+                'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+        }
+
         // Store auth user in request context
-        $_SERVER['AUTH_USER'] = [
+        $this->authService->setUser([
             'id'    => $row['user_id'],
             'name'  => $row['name'],
             'email' => $row['email'],
             'role'  => $row['role'],
-        ];
+        ]);
 
         return $next();
     }

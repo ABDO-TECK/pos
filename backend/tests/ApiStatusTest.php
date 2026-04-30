@@ -1,6 +1,8 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
+use App\Services\CustomerService;
+use App\Models\Customer;
 
 class ApiStatusTest extends TestCase {
     
@@ -11,7 +13,7 @@ class ApiStatusTest extends TestCase {
     }
 
     public function testCustomerServiceInstantiation() {
-        $service = new CustomerService();
+        $service = new CustomerService($this->createMock(Customer::class));
         $this->assertInstanceOf(CustomerService::class, $service);
     }
 }

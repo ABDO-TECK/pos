@@ -1,13 +1,27 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Helpers\Response;
+use App\Models\Expense;
+use App\Models\Invoice;
+use App\Models\Product;
+use App\Models\Supplier;
+
+
 class ReportController extends Controller {
 
     private Invoice $invoiceModel;
     private Expense $expenseModel;
+    private Product $productModel;
+    private Supplier $supplierModel;
 
-    public function __construct() {
-        $this->invoiceModel = new Invoice();
-        $this->expenseModel = new Expense();
+    public function __construct(Invoice $invoiceModel, Expense $expenseModel, Product $productModel, Supplier $supplierModel) {
+        $this->invoiceModel = $invoiceModel;
+        $this->expenseModel = $expenseModel;
+        $this->productModel = $productModel;
+        $this->supplierModel = $supplierModel;
     }
 
     public function daily() {
@@ -62,63 +76,12 @@ class ReportController extends Controller {
     }
 
     public function profitReport() {
-        $db    = Database::getInstance();
         $month = (int)$this->getParam('month', date('n'));
         $year  = (int)$this->getParam('year', date('Y'));
 
-        // تكلفة وربح من unit_cost المخزن لكل بند (لحظة البيع) — وليس products.cost الحالي
-        $profitRow = $db->prepare(
-            'SELECT
-                COALESCE(SUM(ii.price * ii.quantity), 0)                      AS total_revenue,
-                COALESCE(SUM(ii.unit_cost * ii.quantity), 0)                  AS total_cost,
-                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)      AS total_profit
-             FROM invoice_items ii
-             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?'
-        );
-        $profitRow->execute([$month, $year]);
-        $totals = $profitRow->fetch();
-
-        // أفضل المنتجات ربحاً (مجمّع حسب المنتج)
-        $topProfit = $db->prepare(
-            'SELECT
-                p.id,
-                p.name,
-                MAX(p.price) AS price,
-                SUM(ii.quantity) AS total_sold,
-                SUM(ii.price * ii.quantity) AS revenue,
-                SUM(ii.unit_cost * ii.quantity) AS cost,
-                SUM((ii.price - ii.unit_cost) * ii.quantity) AS profit,
-                ROUND(
-                    CASE WHEN SUM(ii.price * ii.quantity) > 0
-                    THEN 100 * SUM((ii.price - ii.unit_cost) * ii.quantity) / SUM(ii.price * ii.quantity)
-                    ELSE 0 END,
-                    2
-                ) AS margin_pct
-             FROM invoice_items ii
-             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             JOIN products p   ON p.id  = ii.product_id
-             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?
-             GROUP BY p.id, p.name
-             ORDER BY profit DESC
-             LIMIT 20'
-        );
-        $topProfit->execute([$month, $year]);
-
-        // تفصيل يومي
-        $dailyBreakdown = $db->prepare(
-            'SELECT
-                DATE(inv.created_at) AS date,
-                COALESCE(SUM(ii.price * ii.quantity), 0) AS revenue,
-                COALESCE(SUM(ii.unit_cost * ii.quantity), 0) AS cost,
-                COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0) AS profit
-             FROM invoice_items ii
-             JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE MONTH(inv.created_at) = ? AND YEAR(inv.created_at) = ?
-             GROUP BY DATE(inv.created_at)
-             ORDER BY date ASC'
-        );
-        $dailyBreakdown->execute([$month, $year]);
+        $totals = $this->invoiceModel->getProfitReportTotals($month, $year);
+        $topProfit = $this->invoiceModel->getTopProfitProducts($month, $year, 20);
+        $dailyBreakdown = $this->invoiceModel->getDailyProfitBreakdown($month, $year);
 
         $revenue = (float)$totals['total_revenue'];
         $cost    = (float)$totals['total_cost'];
@@ -136,29 +99,19 @@ class ReportController extends Controller {
             'total_expenses' => $expenses,
             'net_profit'     => $netProfit,
             'profit_margin'  => $margin,
-            'top_products'   => $topProfit->fetchAll(),
-            'daily_breakdown'=> $dailyBreakdown->fetchAll(),
+            'top_products'   => $topProfit,
+            'daily_breakdown'=> $dailyBreakdown,
         ]);
     }
 
     public function summary() {
-        $db = Database::getInstance();
-
-        $todayRevenue = $db->query(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
-        )->fetchColumn();
-
-        $monthRevenue = $db->query(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) AND status="completed"'
-        )->fetchColumn();
-
-        $totalProducts = $db->query('SELECT COUNT(*) FROM products')->fetchColumn();
-        $lowStockCount = $db->query('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold')->fetchColumn();
-        $totalSuppliers = $db->query('SELECT COUNT(*) FROM suppliers')->fetchColumn();
-
-        $todayInvoices = $db->query(
-            'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
-        )->fetchColumn();
+        $todayRevenue   = $this->invoiceModel->getTodayRevenue();
+        $monthRevenue   = $this->invoiceModel->getMonthRevenue();
+        $todayInvoices  = $this->invoiceModel->getTodayInvoicesCount();
+        
+        $totalProducts  = $this->productModel->getTotalProductsCount();
+        $lowStockCount  = $this->productModel->getLowStockProductsCount();
+        $totalSuppliers = $this->supplierModel->getTotalSuppliersCount();
 
         $monthProfit = $this->invoiceModel->getTotalProfitForMonth((int)date('n'), (int)date('Y'));
         $todayProfit = $this->invoiceModel->getTotalProfitForDate(date('Y-m-d'));
@@ -168,7 +121,7 @@ class ReportController extends Controller {
         $todayExpenses = $this->expenseModel->getTotalExpensesForDate(date('Y-m-d'));
         $monthExpenses = $this->expenseModel->getTotalExpensesForMonth((int)date('n'), (int)date('Y'));
 
-        return Response::success([
+        return Response::cacheable([
             'today_revenue'  => (float)$todayRevenue,
             'month_revenue'  => (float)$monthRevenue,
             'today_cost'     => $todayCost,
@@ -183,7 +136,7 @@ class ReportController extends Controller {
             'total_products' => (int)$totalProducts,
             'low_stock_count'=> (int)$lowStockCount,
             'total_suppliers'=> (int)$totalSuppliers,
-        ]);
+        ], 120);
     }
 }
 
