@@ -52,10 +52,10 @@ class SaleController extends Controller {
             'items'          => 'required',
             'payment_method' => 'required',
         ]);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
 
         if (empty($data['items']) || !is_array($data['items'])) {
-            return Response::error('Cart cannot be empty', 400);
+            return Response::error('السلة فارغة', 400);
         }
 
         // 1. إثراء والتحقق من البنود
@@ -94,7 +94,7 @@ class SaleController extends Controller {
     public function updateStatus(string $id) {
         $data = $this->getBody();
         if (empty($data['status']) || !in_array($data['status'], ['completed', 'reserved', 'cancelled'])) {
-            return Response::error('Invalid status', 400);
+            return Response::error('حالة غير صالحة', 400);
         }
 
         $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);

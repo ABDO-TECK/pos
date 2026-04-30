@@ -15,7 +15,7 @@ class Customer {
 
     /** جميع العملاء مع رصيدهم الحالي — مع دعم pagination اختياري */
     public function all(array $filters = []): array {
-        $where  = ['1=1'];
+        $where  = ['c.deleted_at IS NULL'];
         $params = [];
 
         if (!empty($filters['search'])) {
@@ -127,7 +127,7 @@ class Customer {
     }
 
     public function delete(int $id): void {
-        $this->db->prepare('DELETE FROM customers WHERE id = ?')->execute([$id]);
+        $this->db->prepare('UPDATE customers SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
     }
 
     /**

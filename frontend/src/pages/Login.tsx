@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Store, Eye, EyeOff, Moon, Sun } from 'lucide-react'
@@ -7,8 +7,7 @@ import useThemeStore from '../store/themeStore'
 import toast from 'react-hot-toast'
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@pos.com')
-  const [password, setPassword] = useState('password')
+  const [form, setForm] = useState({ email: 'admin@pos.com', password: 'password' })
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const { login, isAuthenticated, _hasHydrated } = useAuthStore()
@@ -23,14 +22,14 @@ export default function Login() {
     }
   }, [_hasHydrated, isAuthenticated])
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     try {
-      await login(email, password)
+      await login(form.email, form.password)
       toast.success('مرحبًا بك!')
       navigate('/')
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.message || 'بيانات غير صحيحة')
     } finally {
       setLoading(false)
@@ -60,7 +59,7 @@ export default function Login() {
             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>البريد الإلكتروني</label>
             <input
               type="email" className="input" required
-              value={email} onChange={(e) => setEmail(e.target.value)}
+              value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="admin@pos.com"
             />
           </div>
@@ -70,7 +69,7 @@ export default function Login() {
             <div style={{ position: 'relative' }}>
               <input
                 type={showPass ? 'text' : 'password'} className="input" required
-                value={password} onChange={(e) => setPassword(e.target.value)}
+                value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder="••••••••"
                 style={{ paddingLeft: '2.5rem' }}
               />

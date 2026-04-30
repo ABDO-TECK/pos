@@ -24,7 +24,9 @@ class Category {
             $limit = max(1, (int)$filters['limit']);
             $offset = ($page - 1) * $limit;
             
-            $total = $this->db->query("SELECT COUNT(*) FROM {$this->table}")->fetchColumn();
+            $countStmt = $this->db->prepare("SELECT COUNT(*) FROM {$this->table}");
+            $countStmt->execute();
+            $total = $countStmt->fetchColumn();
             
             $sql .= " LIMIT :pag_limit OFFSET :pag_offset";
             $stmt = $this->db->prepare($sql);
@@ -45,7 +47,9 @@ class Category {
         }
 
         // إرجاع كل البيانات بدون صفحات
-        $data = $this->db->query($sql)->fetchAll();
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+        $data = $stmt->fetchAll();
         return ['data' => $data];
     }
 

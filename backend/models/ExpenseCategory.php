@@ -17,7 +17,9 @@ class ExpenseCategory
 
     public function getAll(): array
     {
-        return $this->db->query('SELECT * FROM expense_categories ORDER BY name ASC')->fetchAll();
+        $stmt = $this->db->prepare('SELECT * FROM expense_categories ORDER BY name ASC');
+        $stmt->execute();
+        return $stmt->fetchAll();
     }
 
     public function findById(int $id): ?array

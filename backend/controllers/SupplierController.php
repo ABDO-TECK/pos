@@ -41,9 +41,9 @@ class SupplierController extends Controller {
         $result = $this->supplierModel->all($filters);
 
         if (isset($result['pagination'])) {
-            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         } else {
-            return Response::cacheable($result, 120);
+            return Response::success($result);
         }
     }
 
@@ -65,7 +65,7 @@ class SupplierController extends Controller {
             $supplier = $this->supplierModel->findById($id);
             return Response::success($supplier, 'Supplier created', 201);
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
         }
     }
 
@@ -81,7 +81,7 @@ class SupplierController extends Controller {
             $this->supplierModel->update((int)$id, $data);
             return Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
         }
     }
 
@@ -101,7 +101,7 @@ class SupplierController extends Controller {
             'quantity'    => 'required|numeric',
             'cost'        => 'required|numeric',
         ]);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
 
         $product = $this->productModel->findById((int)$data['product_id']);
         if (!$product) return Response::notFound('Product not found');

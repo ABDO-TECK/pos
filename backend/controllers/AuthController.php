@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Helpers\Response;
 use App\Models\User;
 use App\Services\AuthService;
+use App\Middleware\LoginRateLimiter;
 
 
 class AuthController extends Controller {
@@ -19,6 +20,9 @@ class AuthController extends Controller {
     }
 
     public function login() {
+        // حماية من Brute Force: 5 محاولات/دقيقة لكل IP
+        (new LoginRateLimiter())->check();
+
         $data   = $this->getBody();
         $errors = $this->validate($data, [
             'email'    => 'required|email',
@@ -26,13 +30,13 @@ class AuthController extends Controller {
         ]);
 
         if ($errors) {
-            return Response::error('Validation failed', 422, $errors);
+            return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
         }
 
         $user = $this->userModel->findByEmail($data['email']);
 
         if (!$user || !password_verify($data['password'], $user['password'])) {
-            return Response::unauthorized('Invalid email or password');
+            return Response::unauthorized('البريد الإلكتروني أو كلمة المرور غير صحيحة');
         }
 
         $token = $this->userModel->createToken($user['id']);

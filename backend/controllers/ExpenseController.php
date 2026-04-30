@@ -125,7 +125,7 @@ class ExpenseController extends Controller
             $request = new ExpenseRequest($this->getBody());
             $data = $request->validated();
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
         }
 
         $user = $this->authService->user() ?? null;
@@ -151,7 +151,7 @@ class ExpenseController extends Controller
             $request = new ExpenseRequest($this->getBody());
             $data = $request->validated();
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
         }
 
         try {

@@ -35,9 +35,9 @@ class CustomerController extends Controller {
 
         // إذا أُرجع pagination — إرسال مع metadata
         if (isset($result['pagination'])) {
-            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         } else {
-            return Response::cacheable($result, 120);
+            return Response::success($result);
         }
     }
 

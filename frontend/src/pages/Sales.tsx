@@ -13,6 +13,8 @@ import useQZPrinter from '../hooks/useQZPrinter'
 import { QZStatusBar, QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
 import Pagination from '../components/Pagination'
 import { useConfirmStore } from '../store/confirmStore'
+import InfoCard from '../components/common/InfoCard'
+import TotalRow from '../components/common/TotalRow'
 
 const METHOD_LABELS = {
   cash:          'نقدي',
@@ -363,28 +365,6 @@ export default function Sales() {
           onClose={() => qz.setShowPrinterPicker(false)}
         />
       )}
-    </div>
-  )
-}
-
-function InfoCard({ label, value }) {
-  return (
-    <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem' }}>
-      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.15rem' }}>{label}</p>
-      <p style={{ fontWeight: 600 }}>{value}</p>
-    </div>
-  )
-}
-
-function TotalRow({ label, value, bold, green, danger }: { label: React.ReactNode, value: React.ReactNode, bold?: boolean, green?: boolean, danger?: boolean }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{
-        fontWeight: bold ? 700 : 500,
-        color: green ? 'var(--primary-d)' : danger ? 'var(--danger)' : 'var(--text)',
-        fontSize: bold ? '1rem' : undefined,
-      }}>{value}</span>
     </div>
   )
 }

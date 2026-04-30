@@ -15,7 +15,7 @@ class Supplier {
 
     /** جميع الموردين مع رصيدهم — مع دعم pagination اختياري */
     public function all(array $filters = []): array {
-        $where  = ['1=1'];
+        $where  = ['s.deleted_at IS NULL'];
         $params = [];
 
         if (!empty($filters['search'])) {
@@ -123,7 +123,7 @@ class Supplier {
     }
 
     public function delete(int $id): void {
-        $this->db->prepare('DELETE FROM suppliers WHERE id = ?')->execute([$id]);
+        $this->db->prepare('UPDATE suppliers SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
     }
 
     // ── Purchase Invoices ───────────────────────────────────────
@@ -430,6 +430,8 @@ class Supplier {
     }
 
     public function getTotalSuppliersCount(): int {
-        return (int) $this->db->query('SELECT COUNT(*) FROM suppliers')->fetchColumn();
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM suppliers');
+        $stmt->execute();
+        return (int) $stmt->fetchColumn();
     }
 }

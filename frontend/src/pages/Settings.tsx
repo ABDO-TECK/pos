@@ -6,10 +6,20 @@ import { updateSettings, downloadBackup, restoreBackup, applyUpdate } from '../a
 import useSettingsStore from '../store/settingsStore'
 import useUpdateStore from '../store/updateStore'
 import { useConfirmStore } from '../store/confirmStore'
+import SectionTitle from '../components/common/SectionTitle'
+import Toggle from '../components/common/Toggle'
 
 export default function Settings() {
   const { storeName, taxEnabled, taxRate, fetchSettings, setSettings } = useSettingsStore()
   const { confirm } = useConfirmStore()
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    color: 'var(--text)',
+    marginBottom: '0.4rem',
+  }
 
   const [form, setForm]       = useState({ store_name: '', tax_enabled: '0', tax_rate: '15' })
   const [saving, setSaving]   = useState(false)
@@ -365,48 +375,4 @@ export default function Settings() {
   )
 }
 
-function SectionTitle({ icon, label }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: 'var(--primary-d)', fontSize: '0.95rem' }}>
-      {icon} {label}
-    </div>
-  )
-}
 
-function Toggle({ checked, onChange }) {
-  return (
-    <button
-      type="button"
-      onClick={onChange}
-      style={{
-        position: 'relative',
-        width: '44px', height: '24px',
-        borderRadius: '9999px',
-        border: 'none',
-        background: checked ? 'var(--primary)' : 'var(--border)',
-        cursor: 'pointer',
-        transition: 'background .2s',
-        flexShrink: 0,
-      }}
-    >
-      <span style={{
-        position: 'absolute',
-        top: '3px',
-        left: checked ? '23px' : '3px',
-        width: '18px', height: '18px',
-        borderRadius: '50%',
-        background: '#fff',
-        boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-        transition: 'left .2s',
-      }} />
-    </button>
-  )
-}
-
-const labelStyle = {
-  display: 'block',
-  fontSize: '0.88rem',
-  fontWeight: 600,
-  color: 'var(--text)',
-  marginBottom: '0.4rem',
-}

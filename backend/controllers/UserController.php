@@ -39,7 +39,7 @@ class UserController extends Controller {
             'email'    => 'required|email',
             'password' => 'required|min:6',
         ]);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
 
         $id   = $this->userModel->create($data);
         $user = $this->userModel->findById($id);
@@ -52,7 +52,7 @@ class UserController extends Controller {
             'name'  => 'required',
             'email' => 'required|email',
         ]);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
 
         $this->userModel->update((int)$id, $data);
         return Response::success($this->userModel->findById((int)$id), 'User updated');
@@ -61,7 +61,7 @@ class UserController extends Controller {
     public function destroy(string $id) {
         $auth = $this->authService->user();
         if ((int)$id === $auth['id']) {
-            return Response::error('Cannot delete yourself', 400);
+            return Response::error('لا يمكنك حذف حسابك الخاص', 400);
         }
         $this->userModel->delete((int)$id);
         return Response::success(null, 'User deleted');

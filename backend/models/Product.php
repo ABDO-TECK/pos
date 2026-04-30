@@ -21,7 +21,7 @@ class Product {
      * إذا أُرسل page، تُرجع مصفوفة { data, pagination }.
      */
     public function all(array $filters = []): array {
-        $where  = ['1=1'];
+        $where  = ['p.deleted_at IS NULL'];
         $params = [];
 
         if (!empty($filters['search'])) {
@@ -296,7 +296,7 @@ class Product {
     }
 
     public function delete(int $id): void {
-        $this->db->prepare('DELETE FROM products WHERE id = ?')->execute([$id]);
+        $this->db->prepare('UPDATE products SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
     }
 
     public function decrementQuantity(int $id, float $qty): void {
@@ -308,13 +308,15 @@ class Product {
     }
 
     public function getLowStock(): array {
-        $rows = $this->db->query(
+        $stmt = $this->db->prepare(
             'SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
              WHERE p.quantity <= p.low_stock_threshold
              ORDER BY p.quantity ASC'
-        )->fetchAll();
+        );
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
         $this->attachAdditionalBarcodes($rows);
         return $rows;
     }
@@ -333,10 +335,14 @@ class Product {
     }
 
     public function getTotalProductsCount(): int {
-        return (int) $this->db->query('SELECT COUNT(*) FROM products')->fetchColumn();
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products');
+        $stmt->execute();
+        return (int) $stmt->fetchColumn();
     }
 
     public function getLowStockProductsCount(): int {
-        return (int) $this->db->query('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold')->fetchColumn();
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold');
+        $stmt->execute();
+        return (int) $stmt->fetchColumn();
     }
 }

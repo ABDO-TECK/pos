@@ -51,7 +51,9 @@ class User {
             $limit = max(1, (int)$filters['limit']);
             $offset = ($page - 1) * $limit;
             
-            $total = $this->db->query("SELECT COUNT(*) FROM users")->fetchColumn();
+            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM users');
+            $countStmt->execute();
+            $total = $countStmt->fetchColumn();
             
             $sql .= " LIMIT :pag_limit OFFSET :pag_offset";
             $stmt = $this->db->prepare($sql);
@@ -71,7 +73,9 @@ class User {
             ];
         }
 
-        return ['data' => $this->db->query($sql)->fetchAll()];
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+        return ['data' => $stmt->fetchAll()];
     }
 
     public function create(array $data): int {

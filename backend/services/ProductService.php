@@ -69,7 +69,7 @@ class ProductService
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'Failed to create product', 'code' => 500];
+            return ['ok' => false, 'error' => 'فشل إنشاء المنتج', 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -86,7 +86,7 @@ class ProductService
     {
         $product = $this->productRepo->findById($id);
         if (!$product) {
-            return ['ok' => false, 'error' => 'Product not found', 'code' => 404];
+            return ['ok' => false, 'error' => 'المنتج غير موجود', 'code' => 404];
         }
 
         $main = trim($data['barcode'] ?? '');
@@ -116,7 +116,7 @@ class ProductService
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'Failed to update product', 'code' => 500];
+            return ['ok' => false, 'error' => 'فشل تحديث المنتج', 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -133,7 +133,7 @@ class ProductService
     {
         $product = $this->productRepo->findById($id);
         if (!$product) {
-            return ['ok' => false, 'error' => 'Product not found', 'code' => 404];
+            return ['ok' => false, 'error' => 'المنتج غير موجود', 'code' => 404];
         }
 
         $refs = $this->productRepo->referenceCounts($id);
@@ -161,7 +161,7 @@ class ProductService
                 return ['ok' => false, 'error' => 'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.', 'code' => 409];
             }
             Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
-            return ['ok' => false, 'error' => 'Failed to delete product', 'code' => 500];
+            return ['ok' => false, 'error' => 'فشل حذف المنتج', 'code' => 500];
         }
 
         return ['ok' => true];

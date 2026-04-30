@@ -27,19 +27,19 @@ class InventoryController extends Controller {
     }
 
     public function lowStock() {
-        return Response::cacheable($this->productModel->getLowStock(), 60);
+        return Response::success($this->productModel->getLowStock());
     }
 
     public function adjust(string $id) {
         $data   = $this->getBody();
         $errors = $this->validate($data, ['quantity' => 'required|numeric']);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
 
         $product = $this->productModel->findById((int)$id);
         if (!$product) return Response::notFound('Product not found');
 
         $newQty = (int)$data['quantity'];
-        if ($newQty < 0) return Response::error('Quantity cannot be negative', 400);
+        if ($newQty < 0) return Response::error('الكمية لا يمكن أن تكون سالبة', 400);
 
         $db   = Database::getInstance();
         $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');

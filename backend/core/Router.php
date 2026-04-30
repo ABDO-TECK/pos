@@ -61,6 +61,7 @@ class Router {
                 // Inject global middlewares
                 array_unshift($middlewares, CsrfMiddleware::class);
                 array_unshift($middlewares, \App\Middleware\TimingMiddleware::class);
+                array_unshift($middlewares, \App\Middleware\HttpsMiddleware::class);
 
                 $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
                     $controller = $this->container->get($controllerClass);

@@ -15,6 +15,7 @@ use mysqli;
 
 class BackupController extends Controller {
 
+    private PDO $db;
     private BackupService $backupService;
 
     public function __construct(PDO $db, BackupService $backupService) {
@@ -82,6 +83,10 @@ class BackupController extends Controller {
             return Response::error('الملف يحتوي على أوامر غير مسموحة', 400);
         }
 
+        // ── استخدام mysqli بدلاً من PDO ──
+        // السبب: PDO لا يدعم multi_query() اللازمة لتنفيذ ملف SQL كامل
+        // يحتوي عدة أوامر (DROP TABLE, CREATE TABLE, INSERT) دفعة واحدة.
+        // هذا هو الاستخدام الوحيد لـ mysqli في المشروع بالكامل.
         $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
         if ($mysqli->connect_errno) {
             return Response::serverError('فشل الاتصال بقاعدة البيانات: ' . $mysqli->connect_error);

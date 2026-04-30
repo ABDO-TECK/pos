@@ -7,8 +7,15 @@ use App\Models\Product;
 /**
  * ProductRepository — طبقة وسيطة بين ProductService و Product Model.
  *
- * كل الدوال هنا تُمرر الاستدعاء للـ Model مباشرة.
- * الفائدة: عند الاختبار، يمكن عمل Mock لهذا الكلاس بدل الـ Model.
+ * ⚠️  ملاحظة معمارية:
+ * هذا هو الـ Repository الوحيد في المشروع حالياً. بقية الـ Models
+ * (Invoice, Supplier, Customer, ...) تُستخدم مباشرة من الـ Controllers/Services
+ * بدون Repository وسيط.
+ *
+ * تم الإبقاء على هذا الكلاس لأن ProductService يعتمد عليه
+ * ولأنه يُسهّل عمل Mock أثناء الاختبارات.
+ *
+ * عند التوسع مستقبلاً: إما أنشئ Repository لكل Model أو أزل هذا النمط كلياً.
  */
 class ProductRepository
 {
@@ -64,10 +71,7 @@ class ProductRepository
         $this->model->syncAdditionalBarcodes($id, $barcodes);
     }
 
-    public function hasReferences(int $id): bool
-    {
-        return $this->model->hasReferences($id);
-    }
+
 
     public function referenceCounts(int $id): array
     {

@@ -41,10 +41,12 @@ CREATE TABLE IF NOT EXISTS products (
     category_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
     CONSTRAINT fk_product_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
     INDEX idx_barcode (barcode),
     INDEX idx_name (name),
-    INDEX idx_category (category_id)
+    INDEX idx_category (category_id),
+    INDEX idx_products_deleted (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Extra barcodes for the same product (primary remains products.barcode)
@@ -127,7 +129,9 @@ CREATE TABLE IF NOT EXISTS customers (
     address TEXT NULL,
     initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لعميل قديم له دين مسبق',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_name (name)
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_name (name),
+    INDEX idx_customers_deleted (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -147,11 +151,13 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'المتبقي على ذمة العميل بعد خصم العربون',
     status VARCHAR(20) NOT NULL DEFAULT 'completed',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
     CONSTRAINT fk_invoice_user     FOREIGN KEY (user_id)     REFERENCES users(id),
     CONSTRAINT fk_invoice_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
     INDEX idx_created_at (created_at),
     INDEX idx_user       (user_id),
-    INDEX idx_customer   (customer_id)
+    INDEX idx_customer   (customer_id),
+    INDEX idx_invoices_deleted (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -181,7 +187,9 @@ CREATE TABLE IF NOT EXISTS suppliers (
     email VARCHAR(150) NULL,
     address TEXT NULL,
     initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لمورد قديم له دين مسبق',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_suppliers_deleted (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -257,10 +265,29 @@ CREATE TABLE IF NOT EXISTS supplier_ledger (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- Audit Logs (سجل المراجعة)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT            NULL,
+    action      VARCHAR(50)    NOT NULL COMMENT 'مثال: delete_invoice, update_stock, update_price',
+    entity_type VARCHAR(50)    NOT NULL COMMENT 'مثال: invoice, product, inventory',
+    entity_id   INT            NULL     COMMENT 'ID العنصر المتأثر',
+    old_value   JSON           NULL     COMMENT 'القيمة قبل التعديل',
+    new_value   JSON           NULL     COMMENT 'القيمة بعد التعديل',
+    ip_address  VARCHAR(45)    NULL,
+    created_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_user   (user_id),
+    INDEX idx_audit_entity (entity_type, entity_id),
+    INDEX idx_audit_action (action),
+    INDEX idx_audit_date   (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Seed Data
 -- ============================================================
 
--- Default admin user (password: admin123)
+-- Default admin user (password: password)
 INSERT INTO users (name, email, password, role, force_password_change) VALUES
 ('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
 ('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
@@ -291,3 +318,26 @@ INSERT INTO products (name, barcode, price, cost, quantity, low_stock_threshold,
 INSERT INTO suppliers (name, phone, email) VALUES
 ('مورد المواد الغذائية', '0501234567', 'supplier1@example.com'),
 ('شركة المشروبات', '0509876543', 'drinks@example.com');
+
+-- Default settings
+INSERT IGNORE INTO settings (`key`, `value`) VALUES
+('store_name', 'سوبر ماركت'),
+('tax_enabled', '0'),
+('tax_rate', '15');
+
+-- ============================================================
+-- Mark all existing migrations as executed
+-- (يمنع إعادة تشغيل الـ migrations على قاعدة بيانات جديدة)
+-- ============================================================
+INSERT IGNORE INTO schema_versions (version) VALUES
+('002_update_invoice_status.sql'),
+('003_add_product_box_columns.sql'),
+('004_add_product_units_per_box.sql'),
+('005_add_invoice_amount_due.sql'),
+('006_add_invoice_items_unit_cost.sql'),
+('007_create_missing_tables.sql'),
+('008_add_expenses_indexes.sql'),
+('009_add_default_settings.sql'),
+('010_add_force_password_change.sql'),
+('011_create_audit_logs.sql'),
+('012_add_soft_delete.sql');

@@ -24,13 +24,15 @@ class UpdateController extends Controller {
     private GitService $gitService;
     private FrontendBuildService $buildService;
     private BackupService $backupService;
+    private AuthService $authService;
 
-    public function __construct(GitService $gitService, FrontendBuildService $buildService, BackupService $backupService) {
+    public function __construct(GitService $gitService, FrontendBuildService $buildService, BackupService $backupService, AuthService $authService) {
         $this->rootDir          = realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2);
         $this->localVersionFile = $this->rootDir . DIRECTORY_SEPARATOR . 'version.json';
         $this->gitService       = $gitService;
         $this->buildService     = $buildService;
         $this->backupService    = $backupService;
+        $this->authService      = $authService;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -123,7 +125,7 @@ class UpdateController extends Controller {
             return Response::error('التحديث التلقائي معطل. الرجاء تفعيله من ملف .env (ENABLE_AUTO_UPDATE=true)', 403);
         }
 
-        $user = AuthService::user();
+        $user = $this->authService->user();
         if (!$user || $user['role'] !== 'admin') {
             return Response::error('صلاحيات غير كافية لإجراء التحديث.', 403);
         }

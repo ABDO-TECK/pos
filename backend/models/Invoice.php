@@ -384,20 +384,26 @@ class Invoice {
     }
 
     public function getTodayRevenue(): float {
-        return (float) $this->db->query(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
-        )->fetchColumn();
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at) = CURDATE() AND status = ?'
+        );
+        $stmt->execute(['completed']);
+        return (float) $stmt->fetchColumn();
     }
 
     public function getMonthRevenue(): float {
-        return (float) $this->db->query(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) AND status="completed"'
-        )->fetchColumn();
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) AND status = ?'
+        );
+        $stmt->execute(['completed']);
+        return (float) $stmt->fetchColumn();
     }
 
     public function getTodayInvoicesCount(): int {
-        return (int) $this->db->query(
-            'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status="completed"'
-        )->fetchColumn();
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status = ?'
+        );
+        $stmt->execute(['completed']);
+        return (int) $stmt->fetchColumn();
     }
 }
