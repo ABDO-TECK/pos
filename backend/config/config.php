@@ -8,7 +8,8 @@ use App\Helpers\EnvLoader;
 // ── تحميل ملف البيئة (.env) ───────────────────────────────────
 require_once __DIR__ . '/../Helpers/EnvLoader.php';
 EnvLoader::load(__DIR__ . '/../.env');
-EnvLoader::validate(['DB_HOST', 'DB_NAME', 'DB_USER']);
+// ملاحظة: لا حاجة لـ validate() — جميع المتغيرات لها قيم افتراضية أدناه.
+// إذا لم يوجد .env، يعمل النظام بالإعدادات الافتراضية (مناسب لـ XAMPP).
 
 // ── Database ──────────────────────────────────────────────────
 define('DB_HOST',    EnvLoader::get('DB_HOST', 'localhost'));

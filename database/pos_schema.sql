@@ -340,4 +340,5 @@ INSERT IGNORE INTO schema_versions (version) VALUES
 ('009_add_default_settings.sql'),
 ('010_add_force_password_change.sql'),
 ('011_create_audit_logs.sql'),
-('012_add_soft_delete.sql');
+('012_add_soft_delete.sql'),
+('013_ensure_schema_completeness.sql');
