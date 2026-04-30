@@ -108,7 +108,7 @@ export default function Sales() {
       toast.error('لا توجد أصناف في الفاتورة')
       return
     }
-    mergeInvoiceLines(items, selected.id, selected.customer_id)
+    mergeInvoiceLines(items, selected.id, selected.customer_id, parseFloat(selected.amount_paid) || 0)
     toast.success('تمت إضافة أصناف الفاتورة إلى السلة — انتقل إلى نقطة البيع')
     setSelected(null)
     navigate('/')

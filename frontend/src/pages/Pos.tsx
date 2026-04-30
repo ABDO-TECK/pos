@@ -204,7 +204,7 @@ export default function POS() {
         <ReservedInvoicesModal 
           onClose={() => setShowReserved(false)} 
           onResumeSale={(inv: any) => {
-            useCartStore.getState().mergeInvoiceLines(inv.items, inv.id, inv.customer_id)
+            useCartStore.getState().mergeInvoiceLines(inv.items, inv.id, inv.customer_id, parseFloat(inv.amount_paid) || 0)
             setShowReserved(false)
           }} 
         />

@@ -18,7 +18,7 @@ const PAYMENT_METHODS = [
 ]
 
 export default function PaymentModal({ onClose, onSuccess }) {
-  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId, rebillingCustomerId } = useCartStore()
+  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId, rebillingCustomerId, rebillingAmountPaid } = useCartStore()
   const { taxEnabled, taxRate } = useSettingsStore()
 
   const [loading, setLoading]                 = useState(false)
@@ -41,12 +41,13 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const computedTaxable  = computedSubtotal - clampedDiscount
   const computedTax      = roundCurrency(computedTaxable * rate)
   const computedTotal    = roundCurrency(computedTaxable + computedTax)
-  const computedChange   = Math.max(0, localAmountPaid - computedTotal)
-  const amountDue        = isCreditSale ? Math.max(0, computedTotal - deposit) : 0
+  const computedChange   = Math.max(0, localAmountPaid - (computedTotal - rebillingAmountPaid))
+  const remainingToPay   = roundCurrency(Math.max(0, computedTotal - rebillingAmountPaid))
+  const amountDue        = isCreditSale ? Math.max(0, computedTotal - deposit - rebillingAmountPaid) : 0
 
   const currentMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod) ?? PAYMENT_METHODS[0]
 
-  useEffect(() => { setLocalAmountPaid(computedTotal) }, [computedTotal])
+  useEffect(() => { setLocalAmountPaid(remainingToPay) }, [remainingToPay])
 
   const [showCustomer, setShowCustomer] = useState(!!rebillingCustomerId)
   const isCustomerNeeded = isCreditSale || showCustomer
@@ -67,7 +68,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const handleCheckout = async (status = 'completed') => {
     if (items.length === 0) return
 
-    if (currentMethod.cashInput && localAmountPaid < computedTotal) {
+    if (currentMethod.cashInput && localAmountPaid < remainingToPay) {
       toast.error('المبلغ المدفوع أقل من الإجمالي')
       return
     }
@@ -90,7 +91,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
     setDiscount(clampedDiscount)
     const finalAmountPaid = status === 'reserved' 
       ? (isCreditSale ? deposit : 0) 
-      : (isCreditSale ? deposit : (currentMethod.cashInput ? localAmountPaid : computedTotal))
+      : (isCreditSale ? (deposit + rebillingAmountPaid) : (currentMethod.cashInput ? (localAmountPaid + rebillingAmountPaid) : computedTotal))
     
     setAmountPaid(finalAmountPaid)
 
@@ -157,6 +158,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
           {taxEnabled && <Row label={`ضريبة (${formatPercent(taxRate)})`} value={formatCurrency(computedTax)} />}
           <div style={{ borderTop: '2px solid var(--border)', margin: '0.5rem 0' }} />
           <Row label="الإجمالي" value={formatCurrency(computedTotal)} bold />
+          {rebillingAmountPaid > 0 && <Row label="مدفوع مسبقاً (عربون)" value={`- ${formatCurrency(rebillingAmountPaid)}`} color="var(--primary)" />}
+          {rebillingAmountPaid > 0 && <Row label="المتبقي للدفع" value={formatCurrency(remainingToPay)} bold color="var(--danger)" />}
           {isCreditSale && deposit > 0 && <Row label="عربون" value={`- ${formatCurrency(deposit)}`} />}
           {isCreditSale && <Row label="المتبقي آجلاً" value={formatCurrency(amountDue)} bold color={amountDue > 0 ? 'var(--danger)' : 'var(--primary)'} />}
         </div>
@@ -297,7 +300,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
             {rebillingInvoiceId ? 'حفظ التعديل — '
               : isCreditSale ? 'تأكيد الآجل — '
               : 'تأكيد البيع — '}
-            {formatCurrency(computedTotal)}
+            {formatCurrency(remainingToPay)}
           </button>
           
           <button className="btn btn-warning btn-lg"

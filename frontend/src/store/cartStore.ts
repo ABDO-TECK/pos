@@ -19,6 +19,7 @@ interface CartState {
   amountPaid: number;
   rebillingInvoiceId: number | null;
   rebillingCustomerId: number | null;
+  rebillingAmountPaid: number;
   subtotal: number;
   itemCount: number;
 
@@ -30,7 +31,7 @@ interface CartState {
   setPaymentMethod: (method: string) => void;
   setAmountPaid: (amount: number) => void;
   clearCart: () => void;
-  mergeInvoiceLines: (lines: any[], invoiceId?: number | null, customerId?: number | null) => void;
+  mergeInvoiceLines: (lines: any[], invoiceId?: number | null, customerId?: number | null, amountPaid?: number) => void;
 }
 
 const useCartStore = create<CartState>((set, get) => ({
@@ -40,6 +41,7 @@ const useCartStore = create<CartState>((set, get) => ({
   amountPaid: 0,
   rebillingInvoiceId: null,
   rebillingCustomerId: null,
+  rebillingAmountPaid: 0,
 
   addItem: (product: { id: number; name: string; barcode?: string; price: string | number; units_per_box?: string | number; sell_by_weight?: string | number; scanned_as_box?: boolean; [key: string]: unknown }) => {
     const items = get().items
@@ -100,9 +102,9 @@ const useCartStore = create<CartState>((set, get) => ({
   setAmountPaid: (amount: number) => set({ amountPaid: parseFloat(amount.toString()) || 0 }),
 
   clearCart: () =>
-    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null, rebillingCustomerId: null }),
+    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null, rebillingCustomerId: null, rebillingAmountPaid: 0 }),
 
-  mergeInvoiceLines: (lines: Array<{ product_id?: number; price?: string | number; quantity?: string | number; product_name?: string; name?: string; barcode?: string }>, invoiceId: number | null = null, customerId: number | null = null) => {
+  mergeInvoiceLines: (lines: Array<{ product_id?: number; price?: string | number; quantity?: string | number; product_name?: string; name?: string; barcode?: string }>, invoiceId: number | null = null, customerId: number | null = null, amountPaid: number = 0) => {
     if (!lines?.length) return
     set((state) => {
       let items = [...state.items]
@@ -135,6 +137,7 @@ const useCartStore = create<CartState>((set, get) => ({
         items,
         rebillingInvoiceId: Number.isFinite(rid) && (rid as number) > 0 ? rid : state.rebillingInvoiceId,
         rebillingCustomerId: Number.isFinite(cid) && (cid as number) > 0 ? cid : state.rebillingCustomerId,
+        rebillingAmountPaid: amountPaid > 0 ? amountPaid : state.rebillingAmountPaid,
       }
     })
   },
