@@ -128,21 +128,37 @@ export default function Settings() {
 
   const [updateLogs, setUpdateLogs]       = useState([])
 
-  const handleApplyUpdate = async () => {
-    if (!(await confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)'))) return
+  const handleApplyUpdate = async (force = false) => {
+    if (!force) {
+      if (!(await confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)'))) return
+    }
     
     setApplyingUpdate(true)
     setUpdateLogs([])
     try {
-      const res = await applyUpdate()
+      const res = await applyUpdate(force)
       const logs = (res.data?.data as any)?.logs || []
       setUpdateLogs(logs)
       toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
       setTimeout(() => window.location.reload(), 3000)
     } catch (err: any) {
+      const status = err.response?.status
       const msg = err.response?.data?.message || 'فشل تطبيق التحديث.'
       const logs = (err.response?.data?.errors as any)?.logs || (err.response?.data?.data as any)?.logs || []
       setUpdateLogs(logs)
+
+      // عند وجود تعديلات محلية (409): عرض خيار إجبار التحديث
+      if (status === 409 && !force) {
+        setApplyingUpdate(false)
+        const forceConfirm = await confirm(
+          'توجد تعديلات محلية في بعض ملفات النظام. سيتم استبدالها بالنسخة الأصلية من التحديث. هل تريد المتابعة؟'
+        )
+        if (forceConfirm) {
+          handleApplyUpdate(true)
+        }
+        return
+      }
+
       toast.error(msg)
       if (Array.isArray(logs) && logs.length) {
         console.error('سجل التحديث:', logs)

@@ -226,14 +226,34 @@ class UpdateController extends Controller {
         $force = isset($body['force']) && filter_var($body['force'], FILTER_VALIDATE_BOOLEAN);
 
         [$statusOut, $statusCode] = $this->gitService->runGit(['status', '--porcelain']);
-        $hasLocalChanges = !empty(array_filter($statusOut, fn($l) => trim($l) !== ''));
+        // تصفية الملفات غير المهمة (مخرجات البناء، ملفات مؤقتة، ملفات غير متتبعة)
+        $ignoredPatterns = [
+            'frontend/dist/',
+            'frontend/node_modules/',
+            'backend/storage/',
+            'backend/cache/',
+            'backend/logs/',
+            'backend/vendor/',
+            '.env',
+        ];
+        $significantChanges = array_filter($statusOut, function($line) use ($ignoredPatterns) {
+            $line = trim($line);
+            if ($line === '') return false;
+            // الملفات غير المتتبعة (untracked) ليست مهمة — git reset لا يمسها
+            if (str_starts_with($line, '??')) return false;
+            foreach ($ignoredPatterns as $pattern) {
+                if (str_contains($line, $pattern)) return false;
+            }
+            return true;
+        });
+        $hasLocalChanges = !empty($significantChanges);
 
         if ($hasLocalChanges && !$force) {
             $output[] = '⚠️ توجد تعديلات محلية.';
             return Response::error(
                 'يوجد تعديلات محلية في ملفات النظام. إذا قمت بالتحديث، سيتم استبدال هذه التعديلات. هل أنت متأكد من رغبتك في المتابعة ومسح التعديلات المحلية؟',
                 409,
-                ['logs' => $output, 'local_changes' => $statusOut]
+                ['logs' => $output, 'local_changes' => $significantChanges]
             );
         }
 

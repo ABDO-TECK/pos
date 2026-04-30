@@ -62,7 +62,7 @@ export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiRespon
 
 // Updates
 export const checkUpdate = () => api.get<ApiResponse<UpdateCheckResult>>('/update/check')
-export const applyUpdate = () => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', null, { timeout: 300_000 })
+export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', force ? { force: true } : null, { timeout: 300_000 })
 
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
