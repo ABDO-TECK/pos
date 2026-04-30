@@ -82,11 +82,19 @@ class Validator {
                     $errors[$field][] = "{$field} يجب أن يكون مصفوفة";
                 }
 
-                // date (Y-m-d)
+                // date (Y-m-d أو Y-m-d\TH:i أو Y-m-d H:i:s)
                 elseif ($r === 'date') {
-                    $d = \DateTime::createFromFormat('Y-m-d', (string)$value);
-                    if (!$d || $d->format('Y-m-d') !== (string)$value) {
-                        $errors[$field][] = "{$field} يجب أن يكون تاريخاً صالحاً (Y-m-d)";
+                    $val = (string)$value;
+                    $valid = false;
+                    foreach (['Y-m-d', 'Y-m-d\TH:i', 'Y-m-d\TH:i:s', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $fmt) {
+                        $d = \DateTime::createFromFormat($fmt, $val);
+                        if ($d && $d->format($fmt) === $val) {
+                            $valid = true;
+                            break;
+                        }
+                    }
+                    if (!$valid) {
+                        $errors[$field][] = "{$field} يجب أن يكون تاريخاً صالحاً";
                     }
                 }
 
