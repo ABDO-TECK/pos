@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron');
 const path = require('path');
 const { startPHP, stopPHP } = require('./services/php-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
@@ -24,6 +24,8 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  ipcMain.handle('get-version', () => app.getVersion());
+
   // 1. شاشة تحميل (Splash)
   const splash = new BrowserWindow({
     width: 400, height: 300,
@@ -86,10 +88,14 @@ app.whenReady().then(async () => {
 });
 
 function createTray() {
+  const { shell } = require('electron');
   const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'فتح النظام', click: () => mainWindow.show() },
+    { label: 'إدارة قاعدة البيانات', click: () => {
+      shell.openExternal(`http://127.0.0.1:${phpPort}/adminer-local.php?server=127.0.0.1%3A${mysqlPort}&username=root&db=pos_db`);
+    }},
     { type: 'separator' },
     { label: 'إغلاق', click: () => { forceQuit = true; app.quit(); } }
   ]));

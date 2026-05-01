@@ -45,10 +45,18 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       const res = await checkUpdate()
       const data = res.data.data as UpdateData
+      
+      let localVersion = data.current_version;
+      // @ts-ignore
+      if (window.electronAPI && window.electronAPI.getVersion) {
+        // @ts-ignore
+        localVersion = await window.electronAPI.getVersion();
+      }
+
       set({
         hasUpdate: data.has_update,
         latestVersion: data.latest_version,
-        currentVersion: data.current_version,
+        currentVersion: localVersion,
         changelog: data.changelog || [],
         lastChecked: now,
       })
@@ -64,14 +72,22 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       const res = await checkUpdate()
       const data = res.data.data as UpdateData
+      
+      let localVersion = data.current_version;
+      // @ts-ignore
+      if (window.electronAPI && window.electronAPI.getVersion) {
+        // @ts-ignore
+        localVersion = await window.electronAPI.getVersion();
+      }
+
       set({
         hasUpdate: data.has_update,
         latestVersion: data.latest_version,
-        currentVersion: data.current_version,
+        currentVersion: localVersion,
         changelog: data.changelog || [],
         lastChecked: Date.now(),
       })
-      return data
+      return { ...data, current_version: localVersion }
     } finally {
       set({ isChecking: false })
     }

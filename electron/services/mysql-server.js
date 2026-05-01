@@ -43,6 +43,7 @@ function startMySQL(port) {
 
 async function initDatabase(port) {
   const { mysqlPath } = getMysqlPaths();
+  const { getBackendDir } = require('../utils/paths');
   const schemaFile = path.join(__dirname, '..', '..', 'database', 'pos_schema.sql');
   try {
     // إنشاء قاعدة البيانات إذا لم تكن موجودة
@@ -57,9 +58,36 @@ async function initDatabase(port) {
       // أول تشغيل — تحميل الـ schema
       execSync(`"${mysqlPath}" -u root --port=${port} pos_db < "${schemaFile}"`,
         { windowsHide: true, shell: true });
+    } else {
+      // إصلاح الجداول التالفة ("doesn't exist in engine")
+      repairCorruptedTables(mysqlPath, port);
     }
   } catch (e) {
     console.error('[MySQL Init]', e.message);
+  }
+}
+
+function repairCorruptedTables(mysqlPath, port) {
+  try {
+    // نتحقق من جدول واحد رئيسي (users) بدلاً من 14 جدول لتسريع التشغيل
+    execSync(
+      `"${mysqlPath}" -u root --port=${port} pos_db -e "SELECT id FROM users LIMIT 1" 2>&1`,
+      { encoding: 'utf-8', windowsHide: true }
+    );
+  } catch (err) {
+    if (err.message && err.message.includes("doesn't exist in engine")) {
+      console.log(`[MySQL Repair] Database corruption detected. Repairing schema...`);
+      // إجبار إعادة تحميل الهيكل لتنظيف الجداول التالفة
+      const schemaFile = path.join(__dirname, '..', '..', 'database', 'pos_schema.sql');
+      try {
+        // Drop database and recreate to start fresh, since InnoDB corruption is hard to fix per-table
+        execSync(`"${mysqlPath}" -u root --port=${port} -e "DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db;"`, { windowsHide: true });
+        execSync(`"${mysqlPath}" -u root --port=${port} pos_db < "${schemaFile}"`, { windowsHide: true, shell: true });
+        console.log('[MySQL Repair] Schema reloaded successfully');
+      } catch (e) {
+        console.error('[MySQL Repair] Schema reload failed:', e.message);
+      }
+    }
   }
 }
 

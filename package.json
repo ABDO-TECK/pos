@@ -1,6 +1,6 @@
 {
   "name": "pos-desktop",
-  "version": "1.1.24",
+  "version": "1.1.25",
   "description": "POS Desktop Application",
   "author": "POS Developer",
   "main": "electron/main.js",
@@ -32,6 +32,7 @@
       "backend/**/*",
       "frontend/dist/**/*",
       "database/**/*",
+      "version.json",
       "!backend/tests/**",
       "!**/.git/**"
     ],

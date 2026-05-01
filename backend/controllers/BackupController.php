@@ -87,11 +87,16 @@ class BackupController extends Controller {
         // السبب: PDO لا يدعم multi_query() اللازمة لتنفيذ ملف SQL كامل
         // يحتوي عدة أوامر (DROP TABLE, CREATE TABLE, INSERT) دفعة واحدة.
         // هذا هو الاستخدام الوحيد لـ mysqli في المشروع بالكامل.
-        $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+        $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
         if ($mysqli->connect_errno) {
             return Response::serverError('فشل الاتصال بقاعدة البيانات: ' . $mysqli->connect_error);
         }
         $mysqli->set_charset('utf8mb4');
+
+        // تعطيل الوضع الصارم لتجنب أخطاء "Data truncated" عند الاستعادة
+        // من نسخ قديمة (مثلاً: ENUM vs VARCHAR). المهاجرات ستصحح الفروقات لاحقاً.
+        $mysqli->query("SET sql_mode=''");
+        $mysqli->query("SET FOREIGN_KEY_CHECKS=0");
 
         if (!$mysqli->multi_query($content)) {
             $err = $mysqli->error;

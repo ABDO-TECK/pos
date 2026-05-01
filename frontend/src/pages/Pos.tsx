@@ -81,7 +81,7 @@ export default function POS() {
           <div style={{ flex: 1 }}>
             <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
           </div>
-          <button className="btn btn-warning" onClick={() => setShowReserved(true)}>
+          <button className="btn btn-ghost" onClick={() => setShowReserved(true)}>
              الفواتير المحجوزة 🕒
           </button>
         </div>
