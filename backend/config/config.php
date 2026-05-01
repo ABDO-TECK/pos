@@ -17,6 +17,7 @@ define('DB_NAME',    EnvLoader::get('DB_NAME', 'pos_db'));
 define('DB_USER',    EnvLoader::get('DB_USER', 'root'));
 define('DB_PASS',    EnvLoader::get('DB_PASS', ''));
 define('DB_CHARSET', EnvLoader::get('DB_CHARSET', 'utf8mb4'));
+define('DB_PORT',    EnvLoader::get('DB_PORT', '3306'));
 
 // ── Application ───────────────────────────────────────────────
 define('APP_ENV',   EnvLoader::get('APP_ENV', 'development'));

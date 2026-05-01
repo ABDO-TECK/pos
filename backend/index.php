@@ -27,6 +27,8 @@ $allowedOrigins = [
     'http://127.0.0.1:5173',
     'https://localhost:5173',
     'https://127.0.0.1:5173',
+    'file://',
+    'app://.',
 ];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
@@ -39,11 +41,23 @@ if (!$originAllowed && APP_DEBUG && $origin !== '') {
     }
 }
 
+// السماح بطلبات بدون Origin (Electron file:// protocol)
+if ($origin === '' && php_sapi_name() === 'cli-server') {
+    $originAllowed = true;
+}
+
 if ($originAllowed) {
-    header("Access-Control-Allow-Origin: $origin");
+    // If origin is empty, we don't have a specific origin to reflect.
+    // However, some fetch calls might require an exact match or * won't work with credentials.
+    // We can use '*' if no origin is provided, but since credentials might be true, we should be careful.
+    if ($origin !== '') {
+        header("Access-Control-Allow-Origin: $origin");
+    } else {
+        header("Access-Control-Allow-Origin: *");
+    }
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-XSRF-TOKEN');
 header('Access-Control-Allow-Credentials: true');
 header('Content-Type: application/json; charset=UTF-8');
 

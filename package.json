@@ -1,0 +1,61 @@
+{
+  "name": "pos-desktop",
+  "version": "1.1.24",
+  "description": "POS Desktop Application",
+  "author": "POS Developer",
+  "main": "electron/main.js",
+  "scripts": {
+    "electron:dev": "electron .",
+    "electron:build": "electron-builder --win --publish never",
+    "electron:publish": "electron-builder --win --publish always",
+    "frontend:build": "cd frontend && npm run build"
+  },
+  "build": {
+    "appId": "com.abdoteck.pos",
+    "productName": "POS System",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "electron/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "POS System"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "database/**/*",
+      "!backend/tests/**",
+      "!**/.git/**"
+    ],
+    "extraResources": [
+      {
+        "from": "portable",
+        "to": "portable",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": false,
+    "publish": {
+      "provider": "github",
+      "owner": "ABDO-TECK",
+      "repo": "pos"
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^25.1.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.8"
+  }
+}

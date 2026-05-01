@@ -41,3 +41,12 @@ desktop.ini
 *.swp
 *.swo
 
+# ── Electron / Desktop Build ────────────────────────────
+node_modules/
+package-lock.json
+out/
+dist-electron/
+portable/
+forge.config.js
+convert_icon.js
+create_ico.js
