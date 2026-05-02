@@ -55,8 +55,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
   return (
     <aside className="sidebar-panel">
 
+      {/* Safe area for Electron Window Controls (X, Maximize, Minimize) */}
+      <div className="drag-region" style={{ height: '36px', width: '100%' }} />
+
       {/* Logo row */}
-      <div className="sidebar-header">
+      <div className="sidebar-header" style={{ paddingTop: '0.5rem', minHeight: '60px' }}>
         <Store size={24} color="#22c55e" style={{ flexShrink: 0 }} />
         <span className="sidebar-logo-text" style={{ color: '#fff', fontWeight: 700, fontSize: '1rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {storeName || 'نظام الكاشير'}

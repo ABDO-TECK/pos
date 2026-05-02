@@ -37,17 +37,17 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page drag-region">
       <button
         type="button"
-        className="login-theme-toggle"
+        className="login-theme-toggle no-drag"
         onClick={toggleTheme}
         aria-label={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
         title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
       >
         {themeMode === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
       </button>
-      <div className="card" style={{ width: '380px', padding: '2rem', maxWidth: 'calc(100vw - 2rem)' }}>
+      <div className="card no-drag" style={{ width: '380px', padding: '2rem', maxWidth: 'calc(100vw - 2rem)' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <Store size={40} color="var(--primary)" style={{ margin: '0 auto 0.75rem' }} />
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>نظام الكاشير</h1>

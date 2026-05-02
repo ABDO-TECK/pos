@@ -40,6 +40,10 @@ export const saveProductsToIDB = async (products: Array<Product>): Promise<void>
   const tx = db.transaction(['products', 'cache_meta'], 'readwrite')
   const store = tx.objectStore('products')
   const meta  = tx.objectStore('cache_meta')
+  
+  // مسح المنتجات القديمة قبل حفظ الجديدة لمنع تداخل البيانات أو البيانات المحذوفة
+  await store.clear()
+  
   // حفظ المنتجات
   for (const p of products) {
     store.put(p)
@@ -70,6 +74,10 @@ export const saveCustomersToIDB = async (customers: Array<Customer>): Promise<vo
   const tx = db.transaction(['customers', 'cache_meta'], 'readwrite')
   const store = tx.objectStore('customers')
   const meta  = tx.objectStore('cache_meta')
+  
+  // مسح العملاء القدامى
+  await store.clear()
+
   for (const c of customers) {
     store.put(c)
   }
@@ -130,5 +138,15 @@ export const updatePendingSaleStatus = async (
     sale.lastAttempt = new Date().toISOString()
     await db.put('pending_sales', sale)
   }
+}
+
+/** مسح الكاش بالكامل (يستخدم عند تسجيل الخروج أو إعادة ضبط التطبيق) */
+export const clearAllCache = async (): Promise<void> => {
+  const db = await getDB()
+  const tx = db.transaction(['products', 'customers', 'cache_meta'], 'readwrite')
+  await tx.objectStore('products').clear()
+  await tx.objectStore('customers').clear()
+  await tx.objectStore('cache_meta').clear()
+  await tx.done
 }
 

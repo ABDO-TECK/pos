@@ -8,6 +8,19 @@ let mysqlProcess = null;
 function startMySQL(port) {
   return new Promise((resolve, reject) => {
     const { mysqldPath, dataDir, baseDir } = getMysqlPaths();
+    const fs = require('fs');
+
+    // تهيئة قاعدة البيانات إذا لم تكن موجودة في مسار الـ userData
+    if (!fs.existsSync(dataDir) || fs.readdirSync(dataDir).length === 0) {
+      console.log('[MySQL] Initializing new database directory at:', dataDir);
+      try {
+        if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+        const installDbPath = path.join(baseDir, 'bin', 'mysql_install_db.exe');
+        execSync(`"${installDbPath}" --datadir="${dataDir}"`, { windowsHide: true });
+      } catch (err) {
+        console.error('[MySQL Init Error]', err.message);
+      }
+    }
 
     mysqlProcess = spawn(mysqldPath, [
       `--port=${port}`,
@@ -46,8 +59,8 @@ async function initDatabase(port) {
   const { getBackendDir } = require('../utils/paths');
   const schemaFile = path.join(__dirname, '..', '..', 'database', 'pos_schema.sql');
   try {
-    // إنشاء قاعدة البيانات إذا لم تكن موجودة
-    execSync(`"${mysqlPath}" -u root --port=${port} -e "CREATE DATABASE IF NOT EXISTS pos_db"`,
+    // إنشاء قاعدة البيانات إذا لم تكن موجودة مع دعم اللغة العربية
+    execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 -e "CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"`,
       { windowsHide: true });
     // فحص إذا الجداول موجودة
     const result = execSync(
@@ -55,8 +68,8 @@ async function initDatabase(port) {
       { encoding: 'utf-8', windowsHide: true }
     );
     if (!result.includes('users')) {
-      // أول تشغيل — تحميل الـ schema
-      execSync(`"${mysqlPath}" -u root --port=${port} pos_db < "${schemaFile}"`,
+      // أول تشغيل — تحميل الـ schema مع فرض ترميز utf8mb4
+      execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 pos_db < "${schemaFile}"`,
         { windowsHide: true, shell: true });
     } else {
       // إصلاح الجداول التالفة ("doesn't exist in engine")

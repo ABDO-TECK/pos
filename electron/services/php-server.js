@@ -23,7 +23,7 @@ function startPHP(port, mysqlPort) {
     };
 
     phpProcess = spawn(phpBin, [
-      '-S', `127.0.0.1:${port}`,
+      '-S', `0.0.0.0:${port}`,
       '-t', backendDir,
       routerFile
     ], { env, windowsHide: true });

@@ -292,32 +292,7 @@ INSERT INTO users (name, email, password, role, force_password_change) VALUES
 ('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
 ('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
 
--- Default categories
-INSERT INTO categories (name) VALUES
-('مواد غذائية'),
-('مشروبات'),
-('منظفات'),
-('خضروات وفواكه'),
-('ألبان وأجبان'),
-('لحوم ودواجن'),
-('مخبوزات'),
-('أخرى');
 
--- Sample products
-INSERT INTO products (name, barcode, price, cost, quantity, low_stock_threshold, category_id) VALUES
-('أرز بسمتي 1كغ', '6281234567890', 5.50, 4.00, 100, 10, 1),
-('زيت ذرة 1لتر', '6282345678901', 8.75, 6.50, 50, 5, 1),
-('سكر أبيض 1كغ', '6283456789012', 3.25, 2.50, 80, 10, 1),
-('مياه معدنية 1.5لتر', '6284567890123', 1.50, 1.00, 200, 20, 2),
-('عصير برتقال 1لتر', '6285678901234', 4.25, 3.00, 60, 5, 2),
-('مسحوق غسيل 2كغ', '6286789012345', 12.00, 9.00, 30, 5, 3),
-('حليب طازج 1لتر', '6287890123456', 2.75, 2.00, 40, 10, 5),
-('جبنة بيضاء 500غ', '6288901234567', 6.50, 5.00, 25, 5, 5);
-
--- Sample supplier
-INSERT INTO suppliers (name, phone, email) VALUES
-('مورد المواد الغذائية', '0501234567', 'supplier1@example.com'),
-('شركة المشروبات', '0509876543', 'drinks@example.com');
 
 -- Default settings
 INSERT IGNORE INTO settings (`key`, `value`) VALUES

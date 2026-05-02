@@ -24,15 +24,15 @@ export default function Layout({ children }: LayoutProps) {
     <div className="app-layout">
 
       {/* ── Mobile top header ── */}
-      <header className="mobile-header">
-        <button className="mh-btn" onClick={() => setOpen(true)} aria-label="القائمة">
+      <header className="mobile-header drag-region" style={{ paddingRight: '140px' }}>
+        <button className="mh-btn no-drag" onClick={() => setOpen(true)} aria-label="القائمة">
           <Menu size={22} />
         </button>
         <Store size={20} color="#22c55e" />
         <span className="mh-title">{storeName || 'نظام الكاشير'}</span>
         <button
           type="button"
-          className="mh-btn"
+          className="mh-btn no-drag"
           onClick={toggleTheme}
           aria-label={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
           title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}

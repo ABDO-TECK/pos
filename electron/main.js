@@ -3,6 +3,7 @@ const path = require('path');
 const { startPHP, stopPHP } = require('./services/php-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
+const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -46,12 +47,19 @@ app.whenReady().then(async () => {
       `document.getElementById('status').textContent = 'جاري تشغيل الخادم...'`
     );
     await startPHP(phpPort, mysqlPort);
+    await startHttpsProxy(phpPort, 8443);
 
     // 4. فتح النافذة الرئيسية
     mainWindow = new BrowserWindow({
       width: 1280, height: 800,
       minWidth: 1024, minHeight: 600,
       icon: path.join(__dirname, 'assets', 'icon.png'),
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#1a1d2e', // Matches the sidebar/header background color
+        symbolColor: '#f3f4f6', // Light gray icons
+        height: 36 // Matches standard title bar height
+      },
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -62,6 +70,29 @@ app.whenReady().then(async () => {
     // تحميل الـ frontend عبر PHP server (يقدّم API + Frontend معاً)
     mainWindow.loadURL(`http://127.0.0.1:${phpPort}`);
     mainWindow.setMenu(null); // إخفاء القائمة العلوية
+    mainWindow.maximize(); // تكبير الشاشة بالكامل
+
+    // تمكين الـ Zoom وتحديث الصفحة
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // تحديث الصفحة عن طريق F5 أو Ctrl+R
+      if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
+        event.preventDefault();
+        mainWindow.webContents.reload();
+      }
+
+      // التقريب والإبعاد عن طريق Ctrl + / Ctrl - / Ctrl 0
+      if (input.control && ['+', '=', '-', '0'].includes(input.key)) {
+        event.preventDefault();
+        const currentZoom = mainWindow.webContents.getZoomFactor();
+        if (input.key === '+' || input.key === '=') {
+          mainWindow.webContents.setZoomFactor(currentZoom + 0.1);
+        } else if (input.key === '-') {
+          mainWindow.webContents.setZoomFactor(currentZoom - 0.1);
+        } else if (input.key === '0') {
+          mainWindow.webContents.setZoomFactor(1.0);
+        }
+      }
+    });
 
     splash.close();
 
@@ -105,6 +136,7 @@ function createTray() {
 let forceQuit = false;
 app.on('before-quit', async () => {
   forceQuit = true;
+  stopHttpsProxy();
   stopPHP();
   await stopMySQL();
 });

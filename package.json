@@ -1,6 +1,6 @@
 {
   "name": "pos-desktop",
-  "version": "1.1.25",
+  "version": "1.1.26",
   "description": "POS Desktop Application",
   "author": "POS Developer",
   "main": "electron/main.js",
@@ -31,10 +31,15 @@
       "electron/**/*",
       "backend/**/*",
       "frontend/dist/**/*",
+      "frontend/public/**/*",
       "database/**/*",
       "version.json",
       "!backend/tests/**",
-      "!**/.git/**"
+      "!**/.git/**",
+      "!frontend/public/digital-certificate.txt",
+      "!frontend/dist/digital-certificate.txt",
+      "!backend/storage/private-key.pem",
+      "!electron/assets/ssl/**"
     ],
     "extraResources": [
       {
@@ -57,6 +62,7 @@
     "electron-builder": "^25.1.0"
   },
   "dependencies": {
-    "electron-updater": "^6.1.8"
+    "electron-updater": "^6.1.8",
+    "node-forge": "^1.4.0"
   }
 }

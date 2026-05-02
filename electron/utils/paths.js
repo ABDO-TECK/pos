@@ -35,10 +35,13 @@ function getMysqlPaths() {
   const portableMysqld = path.join(portableDir, 'mysql', 'bin', 'mysqld.exe');
 
   if (fs.existsSync(portableMysqld)) {
+    const userDataPath = app.getPath('userData');
+    const dbDataPath = path.join(userDataPath, 'mysql_data');
+
     return {
       mysqldPath: portableMysqld,
       mysqlPath: path.join(portableDir, 'mysql', 'bin', 'mysql.exe'),
-      dataDir: path.join(portableDir, 'mysql', 'data'),
+      dataDir: dbDataPath,
       baseDir: path.join(portableDir, 'mysql'),
     };
   }

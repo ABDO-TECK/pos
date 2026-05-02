@@ -43,6 +43,15 @@ const useAuthStore = create<AuthState>()(
       logout: async () => {
         try { await logoutApi() } catch {}
         localStorage.removeItem('pos_token')
+        
+        // Clear IndexedDB cache to prevent ghost offline data
+        try {
+          const { clearAllCache } = await import('../utils/idb')
+          await clearAllCache()
+        } catch (e) {
+          console.error('Failed to clear IDB cache on logout', e)
+        }
+
         set({ user: null, token: null, isAuthenticated: false })
       },
 

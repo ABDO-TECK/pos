@@ -1,4 +1,4 @@
-﻿.app-layout {
+.app-layout {
   display: flex;
   height: 100vh; /* fallback */
   height: 100dvh;
@@ -65,12 +65,20 @@
 }
 
 .sidebar-header {
-  padding: 1.25rem 1rem;
+  padding: 2.2rem 1rem 1.25rem 1rem; /* Added top padding to clear window controls */
   display: flex;
   align-items: center;
   gap: 0.6rem;
   border-bottom: 1px solid #2d3147;
-  min-height: 60px;
+  min-height: 80px;
+}
+
+/* Electron window drag utilities */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-nav {
