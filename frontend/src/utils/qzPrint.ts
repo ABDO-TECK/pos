@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * qzPrint.js — QZ Tray integration for the POS React app
  *
@@ -37,11 +36,10 @@ function getQZ() {
 
 function getCfg() {
     const base = window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }
-    // QZ Tray دائماً يعمل على جهاز العميل (صاحب الطابعة)، وليس على السيرفر.
-    // المتصفح يجب أن يتصل دائماً بـ localhost — بغض النظر عن عنوان السيرفر.
+    // QZ Tray يعمل على السيرفر المحلي (جهاز الكاشير الرئيسي).
+    // لذلك نعتمد على الإعدادات القادمة من qz-config.js لكي يتمكن الهاتف من الطباعة عبر الـ IP.
     return {
         ...base,
-        host: 'localhost',
     }
 }
 
@@ -105,20 +103,19 @@ let _connecting = null  // in-flight promise guard
  * رسالة تعليمات واضحة عند فشل الاتصال من جهاز خارجي.
  * السبب الأكثر شيوعاً: المتصفح لم يقبل شهادة QZ Tray بعد.
  */
-function buildQZError() {
+function buildQZError(host: string) {
     return {
         message: [
             'لا يمكن الاتصال بـ QZ Tray على هذا الجهاز.',
             '',
             'للطباعة من هذا الجهاز يجب:',
-            '1. تثبيت QZ Tray على هذا الجهاز (qz.io/download)',
-            '2. تشغيله قبل فتح النظام',
-            '3. قبول شهادة الأمان — افتح في المتصفح:',
-            '   https://localhost:8181',
-            '   ثم Advanced → Proceed',
-            '4. ارجع لهذه الصفحة وأعد المحاولة',
+            '1. التأكد من تشغيل QZ Tray على السيرفر (جهاز الكاشير).',
+            '2. قبول شهادة الأمان — افتح هذا الرابط في المتصفح:',
+            `   https://${host}:8181`,
+            '   ثم اضغط Advanced → Proceed',
+            '3. ارجع لهذه الصفحة وأعد المحاولة',
         ].join('\n'),
-        certUrl: 'https://localhost:8181',
+        certUrl: `https://${host}:8181`,
     }
 }
 
@@ -135,21 +132,21 @@ export async function connectQZ() {
     ensureSecurity()
 
     const connectOpts = {
-        host:      'localhost',   // QZ Tray دائماً على نفس جهاز المتصفح
+        host:      cfg.host,   // Use the dynamic host configured in qz-config.js (e.g. server IP)
         port:      cfg.port ?? { secure: [8181, 8282, 8383, 8484], insecure: [8182, 8283, 8384, 8485] },
         keepAlive: cfg.keepAlive ?? 60,
         retries:   cfg.retries ?? 2,
         delay:     cfg.delay ?? 0,
     }
 
-    console.info(`[QZ] Connecting to QZ Tray on localhost ports=${JSON.stringify(connectOpts.port)}`)
+    console.info(`[QZ] Connecting to QZ Tray on ${cfg.host} ports=${JSON.stringify(connectOpts.port)}`)
 
     _connecting = qz.websocket
         .connect(connectOpts)
         .then(() => { _connecting = null; return true })
         .catch(err => {
             _connecting = null
-            const info = buildQZError()
+            const info = buildQZError(cfg.host)
             console.error(`[QZ] ${info.message}`)
             const qzErr: any = new Error(info.message)
             qzErr.certUrl = info.certUrl

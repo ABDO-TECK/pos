@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, X, Search, ChevronDown, Camera } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
@@ -77,7 +76,7 @@ function Label({ children }) {
 export function CategoryCombobox({ categories, value, onChange }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const rootRef = useRef(null)
+  const rootRef = useRef<any>(null)
 
   useEffect(() => {
     const close = (e) => {
@@ -194,8 +193,8 @@ export function CategoryCombobox({ categories, value, onChange }) {
 
 /* ── Product Form ── */
 export default function ProductForm({ form, setForm, categories, modalKey, allProducts = [], editingProductId = null }) {
-  const [barcodeCameraRow, setBarcodeCameraRow] = useState(null)
-  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState(null)
+  const [barcodeCameraRow, setBarcodeCameraRow] = useState<any>(null)
+  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState<any>(null)
 
   const openBarcodeCamera = async (target) => {
     try {

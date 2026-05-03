@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
 import {
   UserPlus, Search, ChevronRight, X, Trash2, Edit2,
@@ -28,20 +27,20 @@ const emptyForm = { name: '', phone: '', address: '', initial_balance: '', balan
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Customers() {
-  const [customers, setCustomers]       = useState([])
+  const [customers, setCustomers]       = useState<any[]>([])
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
   const { user } = useAuthStore()
   const { confirm } = useConfirmStore()
 
   // كشف الحساب
-  const [ledgerData, setLedgerData]     = useState(null)   // { customer, entries, balance }
+  const [ledgerData, setLedgerData]     = useState<any>(null)   // { customer, entries, balance }
   const [ledgerLoading, setLedgerLoading] = useState(false)
 
   // modal العميل (إضافة / تعديل)
-  const [modal, setModal]               = useState(null)   // 'create' | 'edit'
+  const [modal, setModal]               = useState<any>(null)   // 'create' | 'edit'
   const [form, setForm]                 = useState(emptyForm)
-  const [editId, setEditId]             = useState(null)
+  const [editId, setEditId]             = useState<any>(null)
   const [saving, setSaving]             = useState(false)
 
   // modal الدفعة
@@ -52,7 +51,7 @@ export default function Customers() {
   const [payLoading, setPayLoading]     = useState(false)
 
   // modal التعديل للقيد
-  const [editEntryModal, setEditEntryModal] = useState(null)
+  const [editEntryModal, setEditEntryModal] = useState<any>(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
@@ -128,7 +127,7 @@ export default function Customers() {
       }
       setModal(null)
       load()
-    } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ') }
     finally { setSaving(false) }
   }
 
@@ -140,7 +139,7 @@ export default function Customers() {
       toast.success('تم الحذف')
       if (ledgerData?.customer?.id === c.id) setLedgerData(null)
       load()
-    } catch (err) { toast.error(err.response?.data?.message || 'فشل الحذف') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'فشل الحذف') }
   }
 
   // ── payment ──
@@ -157,7 +156,7 @@ export default function Customers() {
       setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
       load() // تحديث رصيد البطاقة
-    } catch (err) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
     finally { setPayLoading(false) }
   }
 

@@ -12,6 +12,7 @@ import ForcePasswordChangeModal from './components/common/ForcePasswordChangeMod
 /**
  * Retry wrapper for lazy imports — handles transient network/SSL failures.
  * Retries up to `maxRetries` times with exponential delay before reloading the page.
+ * Uses a counter to prevent infinite reload loops (max 1 reload per session).
  */
 function lazyRetry(importFn, maxRetries = 2) {
   return lazy(() => {
@@ -23,8 +24,10 @@ function lazyRetry(importFn, maxRetries = 2) {
           )
         }
         // All retries failed — force a full page reload (clears stale chunks)
-        if (!sessionStorage.getItem('chunk_reload')) {
-          sessionStorage.setItem('chunk_reload', '1')
+        // but only once to prevent infinite loops
+        const reloadCount = parseInt(sessionStorage.getItem('chunk_reload_count') || '0', 10)
+        if (reloadCount < 1) {
+          sessionStorage.setItem('chunk_reload_count', String(reloadCount + 1))
           window.location.reload()
         }
         throw err

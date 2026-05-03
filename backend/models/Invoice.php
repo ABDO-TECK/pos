@@ -46,6 +46,20 @@ class Invoice {
             $params['status'] = 'completed';
         }
 
+        // ── Search (بحث برقم الفاتورة أو اسم منتج) ──
+        if (!empty($filters['search'])) {
+            $searchTerm = trim($filters['search']);
+            // إذا كان رقمًا صرفًا، ابحث بمعرف الفاتورة
+            if (ctype_digit($searchTerm)) {
+                $where[] = 'i.id = :search_id';
+                $params['search_id'] = (int)$searchTerm;
+            } else {
+                // ابحث باسم المنتج داخل بنود الفاتورة
+                $where[] = 'i.id IN (SELECT ii.invoice_id FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE p.name LIKE :search_name)';
+                $params['search_name'] = '%' . $searchTerm . '%';
+            }
+        }
+
         $whereClause = implode(' AND ', $where);
 
         // ── Pagination (اختياري) ──

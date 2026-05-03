@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -59,7 +60,24 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        cleanupOutdatedCaches: true
+        cleanupOutdatedCaches: true,
+        // Don't cache navigation requests — let them always go to network
+        // This prevents the SW from serving stale HTML that causes refresh loops
+        navigateFallback: null,
+        // Exclude API calls and PHP endpoints from SW interception
+        navigateFallbackDenylist: [/^\/api\//, /\.php$/],
+        runtimeCaching: [
+          {
+            // API calls: always network-first
+            urlPattern: /^.*\/api\/.*/,
+            handler: 'NetworkOnly',
+          },
+          {
+            // PHP endpoints (sign-message, adminer, etc.)
+            urlPattern: /\.php/,
+            handler: 'NetworkOnly',
+          },
+        ],
       }
     })
   ],

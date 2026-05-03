@@ -6,9 +6,9 @@ import SupplierAccounts from './suppliers/SupplierAccounts'
 
 export default function Suppliers() {
   const [tab, setTab] = useState(0)
-  const [receiveCart, setReceiveCart] = useState([])
+  const [receiveCart, setReceiveCart] = useState<any[]>([])
   const [receiveSupplierId, setReceiveSupplierId] = useState('')
-  const [receiveInvoiceId, setReceiveInvoiceId] = useState(null)
+  const [receiveInvoiceId, setReceiveInvoiceId] = useState<any>(null)
 
   return (
     <div className="sup-root">

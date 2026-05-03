@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import { AlertTriangle, Warehouse, Search, Pencil, X } from 'lucide-react'
 import { getInventory, getLowStock, adjustInventory } from '../api/endpoints'
@@ -6,13 +5,13 @@ import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 
 export default function Inventory() {
-  const [products, setProducts] = useState([])
-  const [lowStock, setLowStock] = useState([])
+  const [products, setProducts] = useState<any[]>([])
+  const [lowStock, setLowStock] = useState<any[]>([])
   const [search, setSearch]     = useState('')
   const [loading, setLoading]   = useState(false)
-  const [editModal, setEditModal] = useState(null)
+  const [editModal, setEditModal] = useState<any>(null)
   const [newQty, setNewQty]     = useState(0)
-  const searchTimer             = useRef(null)
+  const searchTimer             = useRef<any>(null)
 
   const searchRef = useRef('')
 
@@ -51,7 +50,7 @@ export default function Inventory() {
       toast.success('تم تحديث الكمية')
       setEditModal(null)
       load(search)
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.message || 'حدث خطأ')
     }
   }

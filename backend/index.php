@@ -80,7 +80,7 @@ set_exception_handler(function (Throwable $e) {
         return;
     }
 
-    $message = APP_DEBUG ? $e->getMessage() : 'Internal server error';
+    $message = (APP_DEBUG && APP_ENV !== 'production') ? $e->getMessage() : 'Internal server error';
     Logger::critical($e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
     $resp = Response::serverError($message);
     http_response_code(500);

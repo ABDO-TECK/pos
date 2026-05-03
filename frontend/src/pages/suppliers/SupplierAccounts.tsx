@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Edit2, Search, X, Package } from 'lucide-react'
 import useSettingsStore from '../../store/settingsStore'
@@ -23,12 +22,12 @@ const fmtLedgerDate = (s) => {
 }
 
 export default function SupplierAccounts() {
-  const [suppliers, setSuppliers]       = useState([])
+  const [suppliers, setSuppliers]       = useState<any[]>([])
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
 
   // كشف الحساب
-  const [ledgerData, setLedgerData]     = useState(null)
+  const [ledgerData, setLedgerData]     = useState<any>(null)
   const [ledgerLoading, setLedgerLoading] = useState(false)
 
   // modal الدفعة
@@ -39,7 +38,7 @@ export default function SupplierAccounts() {
   const [payLoading, setPayLoading]     = useState(false)
 
   // modal التعديل للقيد
-  const [editEntryModal, setEditEntryModal] = useState(null)
+  const [editEntryModal, setEditEntryModal] = useState<any>(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
@@ -90,7 +89,7 @@ export default function SupplierAccounts() {
       setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
       load()
-    } catch (err) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
     finally { setPayLoading(false) }
   }
 

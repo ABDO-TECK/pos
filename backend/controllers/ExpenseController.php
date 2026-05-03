@@ -64,7 +64,7 @@ class ExpenseController extends Controller
             return Response::error('اسم التصنيف مطلوب', 400);
         }
         if (!$this->categoryModel->findById($id)) {
-            return Response::error('التصنيف غير موجود', 404);
+            return Response::notFound('التصنيف غير موجود');
         }
         try {
             $this->categoryModel->update($id, $data);
@@ -82,7 +82,7 @@ class ExpenseController extends Controller
     {
         $id = (int)$id;
         if (!$this->categoryModel->findById($id)) {
-            return Response::error('التصنيف غير موجود', 404);
+            return Response::notFound('التصنيف غير موجود');
         }
         try {
             $this->categoryModel->delete($id);
@@ -170,7 +170,7 @@ class ExpenseController extends Controller
     {
         $id = (int)$id;
         if (!$this->expenseModel->findById($id)) {
-            return Response::error('المصروف غير موجود', 404);
+            return Response::notFound('المصروف غير موجود');
         }
         try {
             $this->expenseModel->delete($id);

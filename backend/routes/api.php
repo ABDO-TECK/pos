@@ -18,6 +18,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ClientLogController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\AdminMiddleware;
+use App\Middleware\LoginRateLimiter;
 
 
 // â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

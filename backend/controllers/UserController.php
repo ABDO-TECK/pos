@@ -26,9 +26,9 @@ class UserController extends Controller {
         $result = $this->userModel->all($filters);
 
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::cacheable($result['data'], 300, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::success($result['data']);
+            return Response::cacheable($result['data'] ?? $result, 300);
         }
     }
 

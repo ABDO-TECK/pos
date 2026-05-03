@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo, useEffect } from 'react'
 import { Pencil, Trash2, Search, X, SlidersHorizontal, AlertTriangle, Warehouse, Camera } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
@@ -50,7 +49,7 @@ export default function ProductsTab({
   const [stockFilter, setStockFilter]   = useState('all')
   const [sortKey, setSortKey]           = useState('name_asc')
   const [searchCameraOpen, setSearchCameraOpen] = useState(false)
-  const [SearchScannerLazy, setSearchScannerLazy] = useState(null)
+  const [SearchScannerLazy, setSearchScannerLazy] = useState<any>(null)
   
   const [currentPage, setCurrentPage] = useState(1)
 

@@ -186,6 +186,18 @@ class Supplier {
             $params['year']   = $filters['year'];
         }
 
+        // ── Search (بحث برقم الفاتورة أو اسم منتج) ──
+        if (!empty($filters['search'])) {
+            $searchTerm = trim($filters['search']);
+            if (ctype_digit($searchTerm)) {
+                $where[] = 'pi.id = :search_id';
+                $params['search_id'] = (int)$searchTerm;
+            } else {
+                $where[] = 'pi.id IN (SELECT p.purchase_invoice_id FROM purchases p JOIN products pr ON pr.id = p.product_id WHERE pr.name LIKE :search_name)';
+                $params['search_name'] = '%' . $searchTerm . '%';
+            }
+        }
+
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
@@ -310,6 +322,22 @@ class Supplier {
             $params['date_to']  = $filters['date_to'];
         }
 
+        $hasPagination = false;
+        if (isset($filters['page']) && isset($filters['limit'])) {
+            $page  = max(1, (int)$filters['page']);
+            $limit = max(1, (int)$filters['limit']);
+            $offset = ($page - 1) * $limit;
+            $hasPagination = true;
+
+            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM purchases pu WHERE ' . implode(' AND ', $where));
+            $countStmt->execute($params);
+            $total = (int) $countStmt->fetchColumn();
+
+            $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
+        } else {
+            $limitStr = "LIMIT 500";
+        }
+
         $stmt = $this->db->prepare(
             'SELECT pu.*, s.name AS supplier_name, p.name AS product_name, p.barcode AS product_barcode
              FROM purchases pu
@@ -317,9 +345,29 @@ class Supplier {
              JOIN products p ON p.id = pu.product_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY pu.created_at DESC
-             LIMIT 500'
+             ' . $limitStr
         );
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        if ($hasPagination) {
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        }
+        $stmt->execute();
+
+        if ($hasPagination) {
+            return [
+                'data' => $stmt->fetchAll(),
+                'pagination' => [
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'pages' => (int) ceil($total / $limit)
+                ]
+            ];
+        }
+
         return $stmt->fetchAll();
     }
 

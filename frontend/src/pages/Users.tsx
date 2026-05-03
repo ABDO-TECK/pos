@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { getUsers, createUser, updateUser, deleteUser } from '../api/endpoints'
@@ -11,10 +10,10 @@ import { useConfirmStore } from '../store/confirmStore'
 const emptyForm = { name: '', email: '', password: '', role: 'cashier', is_active: 1 }
 
 export default function Users() {
-  const [users, setUsers] = useState([])
-  const [modal, setModal] = useState(null)
+  const [users, setUsers] = useState<any[]>([])
+  const [modal, setModal] = useState<any>(null)
   const [form, setForm] = useState(emptyForm)
-  const [editId, setEditId] = useState(null)
+  const [editId, setEditId] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const { user: me, setUser } = useAuthStore()
   const { confirm } = useConfirmStore()
@@ -40,7 +39,7 @@ export default function Users() {
       else { await createUser(form as any); toast.success('تم إنشاء الحساب') }
       setModal(null)
       load()
-    } catch (err) { toast.error(err.response?.data?.message || 'خطأ') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'خطأ') }
     finally { setSaving(false) }
   }
 

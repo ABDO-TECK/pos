@@ -60,8 +60,6 @@ class CustomerController extends Controller {
             return Response::success($this->model->findById($id), 'تم إضافة العميل', 201);
         } catch (ValidationException $e) {
             return Response::error('Validation failed', 422, $e->getErrors());
-        } catch (Throwable $e) {
-            return Response::serverError($e->getMessage());
         }
     }
 

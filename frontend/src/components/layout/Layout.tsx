@@ -24,7 +24,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="app-layout">
 
       {/* ── Mobile top header ── */}
-      <header className="mobile-header drag-region" style={{ paddingRight: '140px' }}>
+      <header className="mobile-header drag-region">
         <button className="mh-btn no-drag" onClick={() => setOpen(true)} aria-label="القائمة">
           <Menu size={22} />
         </button>

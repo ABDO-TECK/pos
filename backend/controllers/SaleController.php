@@ -29,6 +29,7 @@ class SaleController extends Controller {
             'page'   => $this->getParam('page'),
             'limit'  => $this->getParam('limit'),
             'status' => $this->getParam('status'),
+            'search' => $this->getParam('search'),
         ];
 
         $result = $this->saleService->getInvoiceModel()->all($filters);

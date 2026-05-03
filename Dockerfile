@@ -82,6 +82,9 @@ WORKDIR /var/www/html
 # نسخ الباك إند (من مرحلة البناء)
 COPY --from=backend-builder /build/ ./backend/
 
+# حذف Adminer من صورة الإنتاج — لا حاجة لأداة إدارة قواعد البيانات
+RUN rm -f ./backend/adminer.php ./backend/adminer-local.php
+
 # نسخ الفرونت إند المبني (من مرحلة البناء)
 COPY --from=frontend-builder /build/dist/ ./frontend-dist/
 

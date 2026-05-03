@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,10 +6,10 @@ import { formatCurrency } from '../../utils/formatters'
 import { useConfirmStore } from '../../store/confirmStore'
 
 export default function ManageSuppliers() {
-  const [suppliers, setSuppliers] = useState([])
+  const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading]     = useState(false)
   const [showForm, setShowForm]   = useState(false)
-  const [editing, setEditing]     = useState(null)
+  const [editing, setEditing]     = useState<any>(null)
   const [form, setForm]           = useState({ name: '', phone: '', email: '', address: '', initial_balance: '', balance_direction: 'debit' })
   const { confirm }               = useConfirmStore()
 

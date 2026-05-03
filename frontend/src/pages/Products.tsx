@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Plus, X, Tag } from 'lucide-react'
 import {
@@ -48,20 +47,20 @@ export default function Products() {
   const [tab, setTab] = useState('products')
 
   // ── Products ──
-  const [allProducts, setAllProducts]       = useState([])
+  const [allProducts, setAllProducts]       = useState<any[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [productModal, setProductModal]     = useState(null)
+  const [productModal, setProductModal]     = useState<any>(null)
   const [productForm, setProductForm]       = useState(emptyProduct)
-  const [editProductId, setEditProductId]   = useState(null)
+  const [editProductId, setEditProductId]   = useState<any>(null)
   const [savingProduct, setSavingProduct]   = useState(false)
-  const [lowStock, setLowStock]             = useState([])
+  const [lowStock, setLowStock]             = useState<any[]>([])
 
   // ── Categories ──
-  const [categories, setCategories]             = useState([])
+  const [categories, setCategories]             = useState<any[]>([])
   const [loadingCategories, setLoadingCategories] = useState(false)
-  const [categoryModal, setCategoryModal]       = useState(null)
+  const [categoryModal, setCategoryModal]       = useState<any>(null)
   const [categoryForm, setCategoryForm]         = useState({ name: '' })
-  const [editCategoryId, setEditCategoryId]     = useState(null)
+  const [editCategoryId, setEditCategoryId]     = useState<any>(null)
   const [savingCategory, setSavingCategory]     = useState(false)
   const { confirm }                             = useConfirmStore()
 
@@ -128,7 +127,7 @@ export default function Products() {
       setProductModal(null)
       loadProducts()
       useProductStore.getState().invalidateCache()
-    } catch (err) { toast.error(formatProductApiError(err)) }
+    } catch (err: any) { toast.error(formatProductApiError(err)) }
     finally { setSavingProduct(false) }
   }
 
@@ -140,7 +139,7 @@ export default function Products() {
       loadProducts()
       useProductStore.getState().invalidateCache()
     }
-    catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
+    catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
   // ── Category actions ──
@@ -154,14 +153,14 @@ export default function Products() {
       if (categoryModal === 'create') { await createCategory(categoryForm); toast.success('تم إضافة الفئة') }
       else { await updateCategory(editCategoryId, categoryForm); toast.success('تم تحديث الفئة') }
       setCategoryModal(null); loadCategories()
-    } catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ') }
+    } catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ') }
     finally { setSavingCategory(false) }
   }
 
   const handleDeleteCategory = async (id, name) => {
     if (!(await confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`))) return
     try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
-    catch (err) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
+    catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
   }
 
   return (

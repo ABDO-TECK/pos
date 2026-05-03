@@ -34,9 +34,9 @@ class ProductController extends Controller {
 
         // إذا كانت النتيجة paginated (تحتوي data + pagination)
         if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::success($result);
+            return Response::cacheable($result, 120);
         }
     }
 

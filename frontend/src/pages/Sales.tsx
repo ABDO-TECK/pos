@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, X, Printer, Trash2, ShoppingCart } from 'lucide-react'
@@ -26,15 +25,15 @@ const METHOD_LABELS = {
 }
 
 export default function Sales() {
-  const [sales, setSales]       = useState([])
+  const [sales, setSales]       = useState<any[]>([])
   const [loading, setLoading]   = useState(false)
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState<any>(null)
   const [detailLoading, setDL]  = useState(false)
   const [deleting, setDeleting]  = useState(false)
-  const [filters, setFilters]   = useState({ date: '', month: '', year: '' })
+  const [filters, setFilters]   = useState({ date: '', month: '', year: '', search: '' })
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages]   = useState(1)
-  const searchTimer             = useRef(null)
+  const searchTimer             = useRef<any>(null)
   const currentYear             = new Date().getFullYear()
   const yearOptions             = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i)
   const settings                = useSettingsStore()
@@ -49,16 +48,17 @@ export default function Sales() {
     setLoading(true)
     try {
       const params: any = { page: p, limit: 15 }
-      if (f.date)  params.date  = f.date
-      if (f.month) params.month = f.month
-      if (f.year)  params.year  = f.year
+      if (f.date)   params.date   = f.date
+      if (f.month)  params.month  = f.month
+      if (f.year)   params.year   = f.year
+      if (f.search) params.search = f.search
       const res = await getSales(params)
       setSales(res.data.data ?? [])
       
       const pg = res.data.pagination
       if (pg) {
-        setTotalPages(pg.last_page || pg.pages || 1)
-        setCurrentPage(pg.current_page || pg.page || 1)
+        setTotalPages(pg.pages || 1)
+        setCurrentPage(pg.page || 1)
       } else {
         setTotalPages(1)
         setCurrentPage(1)
@@ -84,7 +84,7 @@ export default function Sales() {
   }
 
   const clearFilters = () => {
-    const cleared = { date: '', month: '', year: '' }
+    const cleared = { date: '', month: '', year: '', search: '' }
     setFilters(cleared)
     setCurrentPage(1)
     load(cleared, 1)
@@ -123,7 +123,7 @@ export default function Sales() {
       toast.success('تم حذف الفاتورة')
       setSelected(null)
       load(filters, currentPage)
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
     } finally {
       setDeleting(false)
@@ -137,29 +137,21 @@ export default function Sales() {
       {/* Filters */}
       <div className="card" style={{ padding: '1rem' }}>
         <div className="filter-bar">
+          <div className="form-group" style={{ flex: '1 1 220px' }}>
+            <label style={labelSt}>بحث</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="رقم فاتورة أو اسم منتج…"
+              value={filters.search}
+              onChange={e => handleFilter('search', e.target.value)}
+            />
+          </div>
           <div className="form-group">
             <label style={labelSt}>تاريخ محدد</label>
             <input type="date" className="input" value={filters.date} onChange={e => handleFilter('date', e.target.value)} />
           </div>
-          <div className="form-group">
-            <label style={labelSt}>الشهر</label>
-            <select className="input" value={filters.month} onChange={e => handleFilter('month', e.target.value)}>
-              <option value="">كل الأشهر</option>
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  {new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label style={labelSt}>السنة</label>
-            <select className="input" value={filters.year} onChange={e => handleFilter('year', e.target.value)}>
-              <option value="">كل السنوات</option>
-              {yearOptions.map(y => <option key={y} value={y}>{formatNumber(y)}</option>)}
-            </select>
-          </div>
-          <button onClick={clearFilters} className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-end' }}>مسح الفلاتر</button>
+          <button onClick={clearFilters} className="btn btn-ghost" style={{ alignSelf: 'flex-end', height: '42px', padding: '0 1.5rem' }}>مسح الفلاتر</button>
         </div>
       </div>
 

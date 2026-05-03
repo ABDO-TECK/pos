@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
@@ -50,7 +49,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     onClose?.()
   }
 
-  const visibleItems = navItems.filter(item => item.roles.includes(user?.role))
+  const visibleItems = navItems.filter(item => user?.role && item.roles.includes(user.role))
 
   return (
     <aside className="sidebar-panel">

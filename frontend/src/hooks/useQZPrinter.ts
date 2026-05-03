@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * useQZPrinter — Reusable React hook for QZ Tray printer management.
  * Provides connection status, printer selection, and a print helper.
@@ -17,11 +16,11 @@ import {
 
 export default function useQZPrinter() {
     const [qzStatus,          setQzStatus]          = useState('idle')
-    const [printers,          setPrinters]           = useState([])
+    const [printers,          setPrinters]           = useState<any[]>([])
     const [selectedPrinter,   setSelectedPrinter]    = useState(getSavedPrinter() ?? '')
     const [showPrinterPicker, setShowPrinterPicker]  = useState(false)
     const [printing,          setPrinting]           = useState(false)
-    const [remoteError,       setRemoteError]        = useState(null) // { message, certUrl }
+    const [remoteError,       setRemoteError]        = useState<any>(null) // { message, certUrl }
 
     const loadPrinters = useCallback(async () => {
         try {
@@ -74,7 +73,7 @@ export default function useQZPrinter() {
         try {
             await printHTML(html, selectedPrinter)
             return { ok: true }
-        } catch (err) {
+        } catch (err: any) {
             return { ok: false, error: err.message ?? 'فشل الطباعة' }
         } finally {
             setPrinting(false)
@@ -88,7 +87,7 @@ export default function useQZPrinter() {
         try {
             await printPDFBase64(base64, selectedPrinter)
             return { ok: true }
-        } catch (err) {
+        } catch (err: any) {
             return { ok: false, error: err.message ?? 'فشل الطباعة' }
         } finally {
             setPrinting(false)

@@ -50,6 +50,14 @@ tags:
     description: فحص صحة النظام
   - name: ClientLog
     description: تسجيل أخطاء الواجهة الأمامية
+  - name: Categories
+    description: إدارة تصنيفات المنتجات
+  - name: Expenses
+    description: إدارة المصروفات وتصنيفاتها
+  - name: Backup
+    description: النسخ الاحتياطي والاستعادة
+  - name: Updates
+    description: تحديثات النظام
 
 # ══════════════════════════════════════════════════════════════════
 #  PATHS
@@ -761,6 +769,506 @@ paths:
         '200':
           description: تم استلام اللوج
 
+
+  # ── Categories ──────────────────────────────────────────────────
+  /categories:
+    get:
+      tags: [Categories]
+      summary: قائمة التصنيفات
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: قائمة التصنيفات
+    post:
+      tags: [Categories]
+      summary: إضافة تصنيف
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: تم إنشاء التصنيف
+  /categories/{id}:
+    put:
+      tags: [Categories]
+      summary: تحديث تصنيف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: تم تحديث التصنيف
+    delete:
+      tags: [Categories]
+      summary: حذف تصنيف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف التصنيف
+
+  # ── Suppliers Extended ──────────────────────────────────────────
+  /suppliers/{id}:
+    get:
+      tags: [Suppliers]
+      summary: تفاصيل مورد
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تفاصيل المورد
+    put:
+      tags: [Suppliers]
+      summary: تحديث مورد
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Supplier'
+      responses:
+        '200':
+          description: تم تحديث المورد
+    delete:
+      tags: [Suppliers]
+      summary: حذف مورد
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف المورد
+
+  /suppliers/{id}/pdf:
+    get:
+      tags: [Suppliers]
+      summary: كشف حساب PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: ملف PDF
+
+  /suppliers/{id}/payment:
+    post:
+      tags: [Suppliers]
+      summary: إضافة دفعة
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                description:
+                  type: string
+      responses:
+        '200':
+          description: تم تسجيل الدفعة
+
+  /suppliers/ledger/{entryId}:
+    put:
+      tags: [Suppliers]
+      summary: تعديل قيد
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, amount]
+              properties:
+                type:
+                  type: string
+                amount:
+                  type: number
+                description:
+                  type: string
+      responses:
+        '200':
+          description: تم تعديل القيد
+
+  /purchase-invoices:
+    get:
+      tags: [Suppliers]
+      summary: فواتير المشتريات
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: قائمة ফواتير المشتريات
+
+  /purchase-invoices/{id}:
+    get:
+      tags: [Suppliers]
+      summary: تفاصيل فاتورة شراء
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تفاصيل الفاتورة
+    delete:
+      tags: [Suppliers]
+      summary: حذف فاتورة شراء
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف الفاتورة
+
+  /purchases/bulk:
+    post:
+      tags: [Suppliers]
+      summary: شراء بالجملة
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: تم إنشاء الشراء
+
+  # ── Customers Extended ──────────────────────────────────────────
+  /customers/{id}:
+    get:
+      tags: [Customers]
+      summary: تفاصيل عميل
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تفاصيل العميل
+
+  /customers/{id}/payment:
+    post:
+      tags: [Customers]
+      summary: إضافة دفعة عميل
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                description:
+                  type: string
+      responses:
+        '200':
+          description: تم تسجيل الدفعة
+
+  /customers/ledger/{entryId}:
+    put:
+      tags: [Customers]
+      summary: تعديل قيد عميل
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, amount]
+              properties:
+                type:
+                  type: string
+                amount:
+                  type: number
+                description:
+                  type: string
+      responses:
+        '200':
+          description: تم تعديل القيد
+
+  /customers/{id}/pdf:
+    get:
+      tags: [Customers]
+      summary: كشف حساب PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: ملف PDF
+
+  # ── Expense Categories ──────────────────────────────────────────
+  /expense-categories:
+    get:
+      tags: [Expenses]
+      summary: تصنيفات المصروفات
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: قائمة تصنيفات المصروفات
+    post:
+      tags: [Expenses]
+      summary: إضافة تصنيف مصروف
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: تم إنشاء التصنيف
+
+  /expense-categories/{id}:
+    put:
+      tags: [Expenses]
+      summary: تحديث تصنيف مصروف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: تم تحديث التصنيف
+    delete:
+      tags: [Expenses]
+      summary: حذف تصنيف مصروف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف التصنيف
+
+  # ── Expenses ────────────────────────────────────────────────────
+  /expenses:
+    get:
+      tags: [Expenses]
+      summary: قائمة المصروفات
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: قائمة المصروفات
+    post:
+      tags: [Expenses]
+      summary: إضافة مصروف
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, amount]
+              properties:
+                category_id:
+                  type: integer
+                amount:
+                  type: number
+                notes:
+                  type: string
+                expense_date:
+                  type: string
+                  format: date
+      responses:
+        '201':
+          description: تم إنشاء المصروف
+
+  /expenses/{id}:
+    put:
+      tags: [Expenses]
+      summary: تحديث مصروف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, amount]
+              properties:
+                category_id:
+                  type: integer
+                amount:
+                  type: number
+                notes:
+                  type: string
+                expense_date:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: تم تحديث المصروف
+    delete:
+      tags: [Expenses]
+      summary: حذف مصروف
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف المصروف
+
+  # ── Backup ──────────────────────────────────────────────────────
+  /backup:
+    get:
+      tags: [Backup]
+      summary: تنزيل النسخة الاحتياطية
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ملف النسخة الاحتياطية
+
+  /backup/restore:
+    post:
+      tags: [Backup]
+      summary: استعادة نسخة احتياطية
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                backup_file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: تم استعادة النسخة بنجاح
+
+  # ── Updates ─────────────────────────────────────────────────────
+  /update/check:
+    get:
+      tags: [Updates]
+      summary: التحقق من التحديثات
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: حالة التحديث
+
+  /update/apply:
+    post:
+      tags: [Updates]
+      summary: تطبيق التحديث
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: تم تطبيق التحديث
+
+  /update/changelog:
+    get:
+      tags: [Updates]
+      summary: سجل التغييرات
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: سجل التغييرات
+
 # ══════════════════════════════════════════════════════════════════
 #  COMPONENTS
 # ══════════════════════════════════════════════════════════════════
@@ -827,14 +1335,93 @@ components:
     Pagination:
       type: object
       properties:
-        current_page:
+        page:
           type: integer
-        per_page:
+        limit:
           type: integer
         total:
           type: integer
-        total_pages:
+        pages:
           type: integer
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        initial_balance:
+          type: number
+        balance:
+          type: number
+        total_debit:
+          type: number
+        total_credit:
+          type: number
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        balance:
+          type: number
+
+    Expense:
+      type: object
+      properties:
+        id:
+          type: integer
+        category_id:
+          type: integer
+        category_name:
+          type: string
+        user_id:
+          type: integer
+        user_name:
+          type: string
+        amount:
+          type: number
+        notes:
+          type: string
+          nullable: true
+        expense_date:
+          type: string
+          format: date
+
+    ExpenseCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
 
     AuthUser:
       type: object

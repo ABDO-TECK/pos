@@ -2,6 +2,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 
 let proxyServer = null;
 
@@ -60,14 +61,47 @@ function startHttpsProxy(phpPort, httpsPort) {
       };
 
       proxyServer = https.createServer(options, (req, res) => {
+        // Fix: Preserve the original Host header from the client,
+        // and forward the request to the PHP backend with the correct host.
+        // This prevents cookie domain mismatches that cause refresh loops.
+        const headers = { ...req.headers };
+        // Tell PHP the real origin so cookies/CORS work correctly
+        headers['x-forwarded-proto'] = 'https';
+        headers['x-forwarded-port'] = String(httpsPort);
+        // Keep original Host header so PHP sees the correct domain
+
         const proxyReq = http.request({
           hostname: '127.0.0.1',
           port: phpPort,
           path: req.url,
           method: req.method,
-          headers: req.headers
+          headers: headers
         }, (proxyRes) => {
-          res.writeHead(proxyRes.statusCode, proxyRes.headers);
+          // Fix Set-Cookie headers: remove Secure flag (PHP may add it
+          // because it sees HTTPS, but the self-signed cert isn't trusted)
+          // and ensure SameSite=None for cross-port cookies
+          const responseHeaders = { ...proxyRes.headers };
+          if (responseHeaders['set-cookie']) {
+            responseHeaders['set-cookie'] = (Array.isArray(responseHeaders['set-cookie'])
+              ? responseHeaders['set-cookie']
+              : [responseHeaders['set-cookie']]
+            ).map(cookie => {
+              // Remove Secure flag that PHP might add since we're behind HTTPS proxy
+              // but the cert is self-signed / not trusted by mobile browsers
+              let c = cookie;
+              // Ensure SameSite=None so cookies work cross-port
+              if (!/samesite/i.test(c)) {
+                c = c + '; SameSite=None';
+              }
+              // Ensure Secure flag is present when SameSite=None (required by browsers)
+              if (/samesite=none/i.test(c) && !/;\s*secure/i.test(c)) {
+                c = c + '; Secure';
+              }
+              return c;
+            });
+          }
+
+          res.writeHead(proxyRes.statusCode, responseHeaders);
           proxyRes.pipe(res, { end: true });
         });
 
@@ -79,6 +113,23 @@ function startHttpsProxy(phpPort, httpsPort) {
           }
           res.end('Proxy error: ' + e.message);
         });
+      });
+
+      // WebSocket upgrade support — required for Service Worker & HMR
+      proxyServer.on('upgrade', (req, socket, head) => {
+        const proxySocket = net.connect(phpPort, '127.0.0.1', () => {
+          // Reconstruct the HTTP upgrade request
+          const reqLine = `${req.method} ${req.url} HTTP/1.1\r\n`;
+          const headers = Object.entries(req.headers)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('\r\n');
+          proxySocket.write(reqLine + headers + '\r\n\r\n');
+          if (head && head.length) proxySocket.write(head);
+          proxySocket.pipe(socket);
+          socket.pipe(proxySocket);
+        });
+        proxySocket.on('error', () => socket.end());
+        socket.on('error', () => proxySocket.end());
       });
 
       proxyServer.listen(httpsPort, '0.0.0.0', () => {

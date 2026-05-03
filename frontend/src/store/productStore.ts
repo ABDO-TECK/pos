@@ -63,7 +63,7 @@ const useProductStore = create<ProductState>((set, get) => ({
         })
       }
       return products
-    } catch (err) {
+    } catch (err: any) {
       // Fallback إلى IndexedDB عند فقد الشبكة
       try {
         const cached = await getProductsFromIDB()

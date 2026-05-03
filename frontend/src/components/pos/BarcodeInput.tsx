@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { Scan, Camera } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
@@ -31,8 +30,8 @@ const SCANNER_DEBOUNCE = 280
  * @param {boolean} [props.allowOutOfStock] — السماح بإضافة منتج نافد المخزون (للموردين)
  */
 export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: any, onAddProduct?: any, allowOutOfStock?: boolean }) {
-  const inputRef      = useRef(null)
-  const debounceTimer = useRef(null)
+  const inputRef      = useRef<any>(null)
+  const debounceTimer = useRef<any>(null)
   const lastTypeTime  = useRef(0)
   const typeCount     = useRef(0)
   const busyRef       = useRef(false)
@@ -40,14 +39,17 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
   const [value, setValue]     = useState('')
   const [loading, setLoading] = useState(false)
   const [showCameraScanner, setShowCameraScanner] = useState(false)
-  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState(null)
+  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState<any>(null)
 
   const addItem       = useCartStore((s) => s.addItem)
   const findByBarcode = useProductStore((s) => s.findByBarcode)
   const addFn         = onAddProduct ?? addItem
 
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+
   // إعادة التركيز عند النقر خارج حقول الإدخال (لا نسرق التركيز من مودال أو حقل آخر)
   useEffect(() => {
+    if (!isDesktop) return;
     const refocus = (e) => {
       const tag = e.target.tagName
       if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return
@@ -56,7 +58,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     inputRef.current?.focus()
     document.addEventListener('click', refocus)
     return () => document.removeEventListener('click', refocus)
-  }, [])
+  }, [isDesktop])
 
   const handleSearch = useCallback(async (barcode) => {
     const trimmed = barcode.trim()
@@ -74,7 +76,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     const snapshot = trimmed
 
     setLoading(true)
-    let product = null
+    let product: any = null
     try {
       product = await findByBarcode(trimmed)
     } finally {
@@ -105,7 +107,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
 
     requestAnimationFrame(() => {
       const el = inputRef.current
-      el?.focus()
+      if (isDesktop) el?.focus()
       const rest = (el?.value ?? '').trim()
       if (rest && rest !== snapshot) {
         clearTimeout(debounceTimer.current)
@@ -204,7 +206,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           autoComplete="off"
-          autoFocus
+          autoFocus={isDesktop}
           /* مهم: لا تستخدم disabled أثناء التحميل — في المتصفح يزيل التركيز ويقطع المسح المتكرر */
         />
       </div>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Printer, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -34,11 +33,11 @@ export default function Receipt({ invoice, change, onClose }) {
     const settings = { storeName, taxEnabled, taxRate }
 
     const [qzStatus,         setQzStatus]         = useState('idle')
-    const [printers,         setPrinters]         = useState([])
+    const [printers,         setPrinters]         = useState<any[]>([])
     const [selectedPrinter,  setSelectedPrinter]  = useState(getSavedPrinter() ?? '')
     const [showPrinterPicker,setShowPrinterPicker] = useState(false)
     const [printing,         setPrinting]         = useState(false)
-    const [remoteError,      setRemoteError]      = useState(null)
+    const [remoteError,      setRemoteError]      = useState<any>(null)
 
     useEffect(() => {
         if (!isQZAvailable()) { setQzStatus('unavailable'); return }
@@ -85,7 +84,7 @@ export default function Receipt({ invoice, change, onClose }) {
         try {
             await printInvoice(invoice, change, settings, selectedPrinter, paperSize)
             toast.success(`تمت الطباعة بنجاح (${paperSize})`)
-        } catch (err) {
+        } catch (err: any) {
             toast.error('فشل الطباعة: ' + (err.message ?? ''))
         } finally {
             setPrinting(false)

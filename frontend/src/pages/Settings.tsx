@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import { Save, Download, Upload, Store, Percent, Database, RefreshCw, CloudDownload, List } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -25,7 +24,7 @@ export default function Settings() {
   const [saving, setSaving]   = useState(false)
   const [backing, setBacking] = useState(false)
   const [restoring, setRestoring] = useState(false)
-  const restoreInputRef = useRef(null)
+  const restoreInputRef = useRef<any>(null)
 
   // Update State
   const [applyingUpdate, setApplyingUpdate] = useState(false)
@@ -105,7 +104,7 @@ export default function Settings() {
         tax_enabled: s.taxEnabled ? '1' : '0',
         tax_rate: String(s.taxRate),
       })
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.message || 'فشلت الاستعادة')
     } finally {
       setRestoring(false)
@@ -126,7 +125,7 @@ export default function Settings() {
     }
   }
 
-  const [updateLogs, setUpdateLogs]       = useState([])
+  const [updateLogs, setUpdateLogs]       = useState<any[]>([])
 
   const handleApplyUpdate = async (force = false) => {
     if (!force) {

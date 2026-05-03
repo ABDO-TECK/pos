@@ -46,7 +46,7 @@ export const syncPendingSales = async () => {
         await deletePendingSale(localId)
         console.log(`[OfflineSync] Sale ${String(localId)} synced and removed.`)
         syncedCount++
-      } catch (err) {
+      } catch (err: any) {
         const errType = classifyError(err)
         const errMsg = (err as Error).message || 'Unknown error'
 

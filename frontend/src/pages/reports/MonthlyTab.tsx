@@ -27,7 +27,7 @@ export default function MonthlyTab() {
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <select className="input" style={{ maxWidth: '150px' }} value={month} onChange={(e) => setMonth(parseInt(e.target.value))}>
           {Array.from({ length: 12 }, (_, i) => (
-            <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('ar-SA', { month: 'long' })}</option>
+            <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}</option>
           ))}
         </select>
         <input type="number" className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value))} />

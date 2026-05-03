@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { X, CreditCard, Banknote, CheckCircle2, Smartphone, Wallet, Clock, UserPlus, ChevronDown } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
@@ -26,7 +25,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const [localAmountPaid, setLocalAmountPaid] = useState(0)
 
   // ── آجل states ──────────────────────────────────────────────
-  const [customers, setCustomers]         = useState([])
+  const [customers, setCustomers]         = useState<any[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
   const [customerMode, setCustomerMode]   = useState('existing') // 'existing' | 'new'
   const [selectedCustomerId, setSelectedCustomerId] = useState(rebillingCustomerId ? String(rebillingCustomerId) : '')
@@ -127,7 +126,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
         )
       }
       onSuccess(invoice, isCreditSale ? 0 : computedChange)
-    } catch (err) {
+    } catch (err: any) {
       if (!navigator.onLine) {
         await savePendingSale(salePayload)
         toast('لا يوجد إنترنت — تم حفظ العملية للمزامنة لاحقًا', { icon: '📴', duration: 5000 })

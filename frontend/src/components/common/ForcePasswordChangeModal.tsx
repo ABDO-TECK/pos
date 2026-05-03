@@ -36,7 +36,7 @@ export default function ForcePasswordChangeModal() {
       sessionStorage.removeItem('fpc_reload')
       toast.success('تم تغيير كلمة المرور بنجاح')
       setUser({ ...user, force_password_change: 0 })
-    } catch (err) {
+    } catch (err: any) {
       // Error handled by axios interceptor
     } finally {
       setLoading(false)

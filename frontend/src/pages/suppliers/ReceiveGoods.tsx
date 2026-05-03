@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Trash2, ShoppingCart, Check, Package } from 'lucide-react'
 import BarcodeInput from '../../components/pos/BarcodeInput'
@@ -12,8 +11,8 @@ import ReceiveGoodsCartLine from './components/ReceiveGoodsCartLine'
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
 export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }) {
-  const [suppliers, setSuppliers]     = useState([])
-  const [allProducts, setAllProducts] = useState([])
+  const [suppliers, setSuppliers]     = useState<any[]>([])
+  const [allProducts, setAllProducts] = useState<any[]>([])
   const [search, setSearch]           = useState('')
   const [loading, setLoading]         = useState(false)
   const [confirming, setConfirming]   = useState(false)
@@ -125,7 +124,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       setPaymentType('cash')
       setDeposit(0)
       setMobileTab('products')
-    } catch (err) {
+    } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
     } finally {
       setConfirming(false)

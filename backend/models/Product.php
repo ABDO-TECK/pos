@@ -307,17 +307,51 @@ class Product {
         $this->db->prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?')->execute([$qty, $id]);
     }
 
-    public function getLowStock(): array {
+    public function getLowStock(array $filters = []): array {
+        $hasPagination = false;
+        if (isset($filters['page']) && isset($filters['limit'])) {
+            $page  = max(1, (int)$filters['page']);
+            $limit = max(1, (int)$filters['limit']);
+            $offset = ($page - 1) * $limit;
+            $hasPagination = true;
+
+            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM products p WHERE p.quantity <= p.low_stock_threshold');
+            $countStmt->execute();
+            $total = (int) $countStmt->fetchColumn();
+
+            $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
+        } else {
+            $limitStr = "";
+        }
+
         $stmt = $this->db->prepare(
             'SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
              WHERE p.quantity <= p.low_stock_threshold
-             ORDER BY p.quantity ASC'
+             ORDER BY p.quantity ASC
+             ' . $limitStr
         );
+        if ($hasPagination) {
+            $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll();
         $this->attachAdditionalBarcodes($rows);
+
+        if ($hasPagination) {
+            return [
+                'data' => $rows,
+                'pagination' => [
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'pages' => (int) ceil($total / $limit)
+                ]
+            ];
+        }
+
         return $rows;
     }
 

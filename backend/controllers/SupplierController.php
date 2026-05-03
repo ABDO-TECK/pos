@@ -134,6 +134,7 @@ class SupplierController extends Controller {
             'year'        => $this->getParam('year'),
             'page'        => $this->getParam('page'),
             'limit'       => $this->getParam('limit'),
+            'search'      => $this->getParam('search'),
         ];
         
         $result = $this->supplierModel->getPurchaseInvoices($filters);
@@ -173,8 +174,14 @@ class SupplierController extends Controller {
             'supplier_id' => $this->getParam('supplier_id'),
             'date_from'   => $this->getParam('date_from'),
             'date_to'     => $this->getParam('date_to'),
+            'page'        => $this->getParam('page'),
+            'limit'       => $this->getParam('limit'),
         ];
-        return Response::success($this->supplierModel->getPurchases($filters));
+        $result = $this->supplierModel->getPurchases($filters);
+        if (isset($result['pagination'])) {
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
+        }
+        return Response::success($result);
     }
 
     /** Bulk purchase — creates a purchase invoice + items */

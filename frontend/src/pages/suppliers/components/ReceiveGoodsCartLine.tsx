@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from 'react'
 import { Plus, Minus, Trash2, Package } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../../utils/formatters'

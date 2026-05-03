@@ -22,12 +22,19 @@ class InventoryController extends Controller {
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
         ];
+        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
+        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+
         $products = $this->productModel->all($filters);
-        return Response::success($products);
+        return Response::cacheable($products, 60);
     }
 
     public function lowStock() {
-        return Response::success($this->productModel->getLowStock());
+        $filters = [];
+        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
+        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+
+        return Response::cacheable($this->productModel->getLowStock($filters), 60);
     }
 
     public function adjust(string $id) {

@@ -6,7 +6,7 @@ namespace App\Middleware;
  * LoginRateLimiter — حماية من Brute Force لصفحة الدخول.
  *
  * حد أقصى: 5 محاولات / دقيقة لكل IP.
- * يستخدم نفس آلية RateLimiter لكن بمجلد تخزين منفصل وحد أصغر.
+ * يدعم الاستخدام كـ Middleware (عبر handle) أو مباشرةً (عبر check).
  */
 class LoginRateLimiter
 {
@@ -23,6 +23,16 @@ class LoginRateLimiter
         if (!is_dir($this->storageDir)) {
             @mkdir($this->storageDir, 0755, true);
         }
+    }
+
+    /**
+     * Middleware interface — يُستخدم من Router.
+     * يفحص الحد ثم يمرر التنفيذ للـ handler التالي.
+     */
+    public function handle(callable $next): mixed
+    {
+        $this->check();
+        return $next();
     }
 
     /**

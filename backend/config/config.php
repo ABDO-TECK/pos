@@ -21,7 +21,8 @@ define('DB_PORT',    EnvLoader::get('DB_PORT', '3306'));
 
 // ── Application ───────────────────────────────────────────────
 define('APP_ENV',   EnvLoader::get('APP_ENV', 'development'));
-define('APP_DEBUG', EnvLoader::getBool('APP_DEBUG', true));
+// في الإنتاج: APP_DEBUG يكون false دائماً حتى لو ضُبط true بالخطأ في .env
+define('APP_DEBUG', APP_ENV === 'production' ? false : EnvLoader::getBool('APP_DEBUG', true));
 
 // ── Auth ──────────────────────────────────────────────────────
 define('TOKEN_LIFETIME', EnvLoader::getInt('TOKEN_LIFETIME', 60 * 60 * 24 * 7));

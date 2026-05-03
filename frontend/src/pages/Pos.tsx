@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 export default function POS() {
   const [showPayment, setShowPayment] = useState(false)
   const [showReserved, setShowReserved] = useState(false)
-  const [invoice, setInvoice]         = useState(null)
+  const [invoice, setInvoice]         = useState<any>(null)
   const [change, setChange]           = useState(0)
   const [mobileTab, setMobileTab]     = useState('products') // 'products' | 'cart'
   const [productSearch, setProductSearch] = useState('')
@@ -129,7 +129,7 @@ export default function POS() {
           <div style={{ flex: 1 }}>
             <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
           </div>
-          <button className="btn btn-warning btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات">
+          <button className="btn btn-ghost btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات">
              🕒
           </button>
         </div>

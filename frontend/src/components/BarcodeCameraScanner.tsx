@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserMultiFormatReader, BrowserCodeReader } from '@zxing/browser'
@@ -113,11 +112,11 @@ const SCAN_SUCCESS_DELAY = 300
  * بدلاً من ذلك ننشئ حلقة مسح يدوية تتحكم بكل شيء بنفسها.
  */
 export default function BarcodeCameraScanner({ onResult, onClose }) {
-  const videoRef = useRef(null)
+  const videoRef = useRef<any>(null)
   const onResultRef = useRef(onResult)
   onResultRef.current = onResult
 
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<any>(null)
   const [starting, setStarting] = useState(true)
 
   useEffect(() => {
@@ -203,7 +202,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
           }
           // نجاح لكن بدون نص — نحاول مرة أخرى
           scanTimer = setTimeout(loop, SCAN_SUCCESS_DELAY)
-        } catch (err) {
+        } catch (err: any) {
           if (isBenignScanError(err)) {
             // لم يُعثر على باركود في هذا الإطار — عادي، نحاول مرة أخرى
             scanTimer = setTimeout(loop, SCAN_INTERVAL)
