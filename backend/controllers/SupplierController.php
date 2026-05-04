@@ -163,7 +163,7 @@ class SupplierController extends Controller {
                 : Response::serverError($result['error']);
         }
 
-        AuditLog::log('delete_purchase_invoice', 'purchase_invoice', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_purchase_invoice', 'purchase_invoice', (int)$id);
 
         return Response::success(null, 'Purchase invoice deleted and stock restored');
     }

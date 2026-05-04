@@ -56,13 +56,28 @@ export default function PaymentModal({ onClose, onSuccess }) {
     if (!isCustomerNeeded) return
     setCustomersLoading(true)
     getCustomers()
-      .then(r => { const d = r.data.data; setCustomers(Array.isArray(d) ? d : (d?.data ?? [])) })
+      .then((r: any) => { const d = r.data.data; setCustomers(Array.isArray(d) ? d : (d?.data ?? [])) })
       .catch(() => toast.error('فشل تحميل العملاء'))
       .finally(() => setCustomersLoading(false))
   }, [isCustomerNeeded])
 
   // إعادة ضبط deposit عند التغيير
   useEffect(() => { if (!isCreditSale) setDeposit(0) }, [isCreditSale])
+
+  // Enter shortcut for checkout
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !loading) {
+        // Prevent default double triggering if a button is focused
+        if (e.target instanceof HTMLElement && e.target.tagName !== 'BUTTON') {
+          e.preventDefault()
+          handleCheckout('completed')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  })
 
   const handleCheckout = async (status = 'completed') => {
     if (items.length === 0) return
@@ -73,8 +88,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
     }
 
     // التحقق من بيانات العميل (مطلوب في الآجل، واختياري في الكاش)
-    let customerId  = null
-    let newCustomer = null
+    let customerId: number | null = null
+    let newCustomer: any = null
     if (isCustomerNeeded) {
       if (customerMode === 'existing') {
         if (!selectedCustomerId && isCreditSale) { toast.error('اختر عميلاً أو أنشئ جديداً'); return }
@@ -120,8 +135,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
               : 'تمت عملية البيع بنجاح! 🎉',
         { duration: 3000 }
       )
-      if (low_stock_alerts?.length > 0) {
-        low_stock_alerts.forEach(p =>
+      if (low_stock_alerts && low_stock_alerts.length > 0) {
+        low_stock_alerts.forEach((p: any) =>
           toast(`تحذير: ${p.name} — كمية منخفضة (${formatNumber(p.quantity)})`, { icon: '⚠️', duration: 5000 })
         )
       }
@@ -300,6 +315,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
               : isCreditSale ? 'تأكيد الآجل — '
               : 'تأكيد البيع — '}
             {formatCurrency(remainingToPay)}
+            <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>Enter</kbd>
           </button>
           
           <button className="btn btn-warning btn-lg"

@@ -14,7 +14,11 @@ export function CartHeader({ items, clearCart, itemCount }: any) {
       {items.length > 0 && (
         <button
           className="btn btn-ghost btn-sm"
-          onClick={() => { clearCart(); toast('تم مسح السلة') }}
+          onClick={() => { 
+            clearCart(); 
+            toast('تم مسح السلة');
+            setTimeout(() => document.getElementById('main-barcode-input')?.focus(), 10);
+          }}
           style={{ color: 'var(--danger)' }}
         >
           <Trash2 size={14} /> مسح

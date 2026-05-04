@@ -52,7 +52,7 @@ class InventoryController extends Controller {
         $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');
         $stmt->execute([$newQty, $id]);
 
-        AuditLog::log('adjust_inventory', 'product', (int)$id, null, $data);
+        AuditLog::log($this->authService->id(), 'adjust_inventory', 'product', (int)$id, null, $data);
 
         return Response::success($this->productModel->findById((int)$id), 'Inventory adjusted');
     }

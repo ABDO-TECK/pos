@@ -38,10 +38,10 @@ class Category {
             return [
                 'data'       => $data,
                 'pagination' => [
-                    'total'        => (int) $total,
-                    'per_page'     => $limit,
-                    'current_page' => $page,
-                    'last_page'    => ceil($total / $limit)
+                    'page'  => $page,
+                    'limit' => $limit,
+                    'total' => (int) $total,
+                    'pages' => (int) ceil($total / $limit),
                 ]
             ];
         }

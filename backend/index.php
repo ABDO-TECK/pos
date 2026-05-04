@@ -29,12 +29,13 @@ $allowedOrigins = [
     'https://127.0.0.1:5173',
     'file://',
     'app://.',
+    FRONTEND_URL,
 ];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
 $originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
-// في وضع التطوير: السماح بأصل Vite من IP الشبكة المحلية (HTTP/HTTPS) للهاتف والكمبيوتر
-if (!$originAllowed && APP_DEBUG && $origin !== '') {
+// السماح بأصل Vite من IP الشبكة المحلية (HTTP/HTTPS) للهاتف والكمبيوتر دائماً في هذا النظام
+if (!$originAllowed && $origin !== '') {
     $lanOrigin = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
     if (preg_match($lanOrigin, $origin) === 1) {
         $originAllowed = true;
@@ -46,16 +47,13 @@ if ($origin === '' && php_sapi_name() === 'cli-server') {
     $originAllowed = true;
 }
 
-if ($originAllowed) {
-    // If origin is empty, we don't have a specific origin to reflect.
-    // However, some fetch calls might require an exact match or * won't work with credentials.
-    // We can use '*' if no origin is provided, but since credentials might be true, we should be careful.
-    if ($origin !== '') {
-        header("Access-Control-Allow-Origin: $origin");
-    } else {
-        header("Access-Control-Allow-Origin: *");
-    }
+if ($originAllowed && $origin !== '') {
+    header("Access-Control-Allow-Origin: $origin");
+    header('Vary: Origin');
 }
+// ملاحظة: إذا لم يوجد Origin header (مثل Electron file://)
+// لا نرسل Access-Control-Allow-Origin نهائياً — المتصفح سيسمح بالطلب
+// لأن طلبات same-origin وطلبات بدون Origin لا تحتاج CORS header.
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-XSRF-TOKEN');
 header('Access-Control-Allow-Credentials: true');

@@ -25,6 +25,11 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers['X-XSRF-TOKEN'] = xsrf
   }
   
+  // Add a cache-buster to prevent aggressive 301 redirects caching by the browser
+  if (config.url) {
+    config.url += (config.url.includes('?') ? '&' : '?') + '_cb=' + Date.now()
+  }
+
   return config
 })
 
@@ -40,8 +45,9 @@ api.interceptors.response.use(
     }
 
     // Handle 403 force_password_change — update the auth store silently
-    const data = err.response?.data as any;
-    if (err.response?.status === 403 && data?.errors?.force_password_change) {
+    const data = err.response?.data as Record<string, unknown> | undefined;
+    const errors = data?.errors as Record<string, unknown> | undefined;
+    if (err.response?.status === 403 && errors?.force_password_change) {
       try {
         const raw = localStorage.getItem('pos_auth')
         if (raw) {
@@ -61,12 +67,13 @@ api.interceptors.response.use(
     }
 
     // Skip global toast if explicitly requested via custom config
-    if (err.config && (err.config as any).hideGlobalError) {
+    if (err.config && (err.config as unknown as Record<string, unknown>).hideGlobalError) {
       return Promise.reject(err)
     }
 
     // Extract error message
-    const message = data?.message || data?.error || 'حدث خطأ في الاتصال بالخادم';
+    const errData = err.response?.data as Record<string, unknown> | undefined;
+    const message = (errData?.message as string) || (errData?.error as string) || 'حدث خطأ في الاتصال بالخادم';
 
     // Handle Validation Errors (422) specifically
     if (err.response?.status === 422 && data?.errors) {

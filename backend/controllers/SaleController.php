@@ -120,7 +120,7 @@ class SaleController extends Controller {
                 : Response::serverError($result['error']);
         }
 
-        AuditLog::log('delete_invoice', 'invoice', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_invoice', 'invoice', (int)$id);
 
         return Response::success(null, 'Invoice deleted');
     }

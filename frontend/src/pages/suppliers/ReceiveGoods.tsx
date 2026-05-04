@@ -32,11 +32,11 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
 
   useEffect(() => {
     const fetchAll = (isInitial = false) => {
-      getSuppliers().then(r => { const d = r.data.data; setSuppliers(Array.isArray(d) ? d : (d?.data ?? [])) }).catch(() => {})
+      getSuppliers().then(r => { const d = r.data.data as any; setSuppliers(Array.isArray(d) ? d : (d?.data ?? [])) }).catch(() => {})
       if (isInitial) setLoading(true)
       getProducts({ limit: 9999 })
         .then((r) => {
-          const raw = r.data.data; const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
+          const raw = r.data.data as any; const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
           setAllProducts(list)
           useProductStore.getState().setProducts(list)
         })
@@ -131,6 +131,22 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     }
   }
 
+  // F12 Shortcut to confirm receive goods
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F12') {
+        e.preventDefault()
+        if (cart.length > 0 && supplierId && !confirming) {
+          handleConfirm()
+        } else if (!supplierId && cart.length > 0) {
+          toast.error('يرجى اختيار مورد لإتمام العملية')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [cart, supplierId, confirming, paymentType, deposit, invoiceId])
+
   /* ── Panels ── */
   const ProductsPanel = (
     <div className="card sup-products-panel">
@@ -161,7 +177,12 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           {cart.length > 0 && (
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => { setCart([]); if(setInvoiceId) setInvoiceId(null); toast('تم مسح السلة') }}
+              onClick={() => { 
+                setCart([]); 
+                if(setInvoiceId) setInvoiceId(null); 
+                toast('تم مسح السلة');
+                setTimeout(() => document.getElementById('main-barcode-input')?.focus(), 10);
+              }}
               style={{ color: 'var(--danger)' }}
             >
               <Trash2 size={14} /> مسح الكل
@@ -222,6 +243,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           }}>
           {confirming ? <span className="spinner" /> : <Check size={18} />}
           {invoiceId ? 'تحديث الفاتورة' : paymentType === 'credit' ? 'تأكيد استلام آجل' : 'تأكيد الاستلام'}{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
+          <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>F12</kbd>
         </button>
       </div>
     </div>

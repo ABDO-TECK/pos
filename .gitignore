@@ -11,6 +11,7 @@ certs/*-key.pem
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # ── Frontend ────────────────────────────────────────────
 frontend/node_modules/

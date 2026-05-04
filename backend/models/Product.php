@@ -152,13 +152,18 @@ class Product {
     }
 
     public function findOwnerProductIdByBarcode(string $barcode): ?int {
-        $stmt = $this->db->prepare('SELECT id FROM products WHERE barcode = ? OR box_barcode = ? LIMIT 1');
+        $stmt = $this->db->prepare('SELECT id FROM products WHERE (barcode = ? OR box_barcode = ?) AND deleted_at IS NULL LIMIT 1');
         $stmt->execute([$barcode, $barcode]);
         $id = $stmt->fetchColumn();
         if ($id !== false && $id !== null) {
             return (int) $id;
         }
-        $stmt = $this->db->prepare('SELECT product_id FROM product_barcodes WHERE barcode = ? LIMIT 1');
+        // فحص الباركودات الإضافية — مع استثناء المنتجات المحذوفة
+        $stmt = $this->db->prepare(
+            'SELECT pb.product_id FROM product_barcodes pb
+             INNER JOIN products p ON p.id = pb.product_id AND p.deleted_at IS NULL
+             WHERE pb.barcode = ? LIMIT 1'
+        );
         $stmt->execute([$barcode]);
         $pid = $stmt->fetchColumn();
         return ($pid !== false && $pid !== null) ? (int) $pid : null;
@@ -296,7 +301,19 @@ class Product {
     }
 
     public function delete(int $id): void {
-        $this->db->prepare('UPDATE products SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
+        // تفريغ الباركودات عند الحذف الناعم حتى يمكن إعادة استخدامها لمنتجات جديدة.
+        // نحفظ الباركود القديم في الاسم كمرجع.
+        $stmt = $this->db->prepare('SELECT barcode FROM products WHERE id = ?');
+        $stmt->execute([$id]);
+        $oldBarcode = $stmt->fetchColumn();
+
+        $deletedBarcode = '__deleted_' . $id . '_' . time();
+        $this->db->prepare(
+            'UPDATE products SET deleted_at = NOW(), barcode = ?, box_barcode = NULL WHERE id = ?'
+        )->execute([$deletedBarcode, $id]);
+
+        // حذف الباركودات الإضافية من جدول product_barcodes
+        $this->db->prepare('DELETE FROM product_barcodes WHERE product_id = ?')->execute([$id]);
     }
 
     public function decrementQuantity(int $id, float $qty): void {

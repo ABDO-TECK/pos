@@ -1,7 +1,2 @@
-@import './styles/global.css';
-@import './styles/layout.css';
-@import './styles/sidebar.css';
-@import './styles/responsive.css';
-@import './styles/components.css';
-@import './styles/pages.css';
-
+/* تم نقل جميع الأنماط إلى styles/_index.css */
+@import './styles/_index.css';

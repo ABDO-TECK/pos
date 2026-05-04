@@ -12,8 +12,10 @@ class HttpsMiddleware
 {
     public function handle(callable $next): mixed
     {
-        // تخطي في وضع التطوير
-        if (!defined('APP_ENV') || APP_ENV !== 'production') {
+        $forceHttps = \App\Helpers\EnvLoader::getBool('FORCE_HTTPS', false);
+
+        // تخطي إذا لم يتم تفعيل فرض HTTPS
+        if (!$forceHttps) {
             return $next();
         }
 

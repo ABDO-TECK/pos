@@ -48,7 +48,7 @@ class AuthController extends Controller {
             'domain'   => '',
             'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
             'httponly' => true,
-            'samesite' => (APP_ENV === 'production') ? 'Strict' : 'Lax',
+            'samesite' => \App\Helpers\EnvLoader::getBool('SECURE_COOKIES', false) ? 'Strict' : 'Lax',
         ]);
 
         return Response::success([
@@ -75,7 +75,7 @@ class AuthController extends Controller {
             'domain'   => '',
             'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
             'httponly' => true,
-            'samesite' => (APP_ENV === 'production') ? 'Strict' : 'Lax',
+            'samesite' => \App\Helpers\EnvLoader::getBool('SECURE_COOKIES', false) ? 'Strict' : 'Lax',
         ]);
         return Response::success(null, 'Logged out successfully');
     }

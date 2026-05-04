@@ -131,31 +131,62 @@ class MigrationService {
         $content = file_get_contents($path);
         if (empty(trim($content))) return true; // ملف فارغ، يعتبر منفذ بنجاح
 
-        try {
-            $this->db->setAttribute(PDO::ATTR_EMULATE_PREPARES, true);
-            $stmt = $this->db->prepare($content);
-            $stmt->execute();
+        // ── تقسيم الملف إلى أوامر فردية ──
+        // بدلاً من إرسال كل الأوامر دفعة واحدة (والتوقف عند أول خطأ)،
+        // ننفّذ كل أمر على حدة حتى لا تمنع أخطاء "عمود/جدول موجود"
+        // بقية الأوامر المهمة من التنفيذ.
+        $statements = $this->splitSqlStatements($content);
 
-            do {
-                // Loop through all rowsets to ensure all statements are executed and catch any errors
-            } while ($stmt->nextRowset());
-            
-        } catch (PDOException $e) {
-            $errorInfo = $e->errorInfo ?? [];
-            $errno = $errorInfo[1] ?? $e->getCode();
-            
-            // 1060: Duplicate column name, 1061: Duplicate key name, 1050: Table already exists
-            if (in_array($errno, [1060, 1061, 1050])) {
-                // Ignore and treat as success
-            } else {
-                if (class_exists('Logger')) Logger::error("Migration failed: $file", ['error' => $e->getMessage()]);
+        foreach ($statements as $sql) {
+            $sql = trim($sql);
+            if ($sql === '') continue;
+
+            try {
+                $this->db->exec($sql);
+            } catch (PDOException $e) {
+                $errorInfo = $e->errorInfo ?? [];
+                $errno = $errorInfo[1] ?? $e->getCode();
+
+                // 1060: Duplicate column, 1061: Duplicate key, 1050: Table exists, 1068: Multiple primary key
+                $ignorable = [1060, 1061, 1050, 1068];
+                if (in_array((int) $errno, $ignorable, true)) {
+                    // خطأ متوقع ومتجاهل — نستمر بالأمر التالي
+                    continue;
+                }
+
+                Logger::error("Migration failed: $file", [
+                    'error' => $e->getMessage(),
+                    'sql'   => mb_substr($sql, 0, 300),
+                ]);
                 return false;
             }
-        } finally {
-            $this->db->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         }
 
-        Database::resetInstance(); // إعادة تهيئة اتصال PDO الأساسي لتحديث الهيكل
+        Database::resetInstance();
         return true;
+    }
+
+    /**
+     * تقسيم محتوى SQL إلى أوامر فردية بتقسيم على الفاصلة المنقوطة.
+     * يتجاهل الأسطر الفارغة والتعليقات.
+     *
+     * @return string[]
+     */
+    private function splitSqlStatements(string $content): array {
+        // إزالة التعليقات السطرية (-- ...)
+        $content = preg_replace('/--.*$/m', '', $content);
+
+        // تقسيم على الفاصلة المنقوطة
+        $parts = explode(';', $content);
+
+        $statements = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $statements[] = $part;
+            }
+        }
+
+        return $statements;
     }
 }

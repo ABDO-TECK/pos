@@ -2,8 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './store/themeStore'
 import App from './App'
+import './i18n'
 // @ts-ignore
-import './index.css'
+import './styles/_index.css'
 import { initOfflineSync } from './utils/offlineSync.js'
 import { logError, flushNow } from './utils/clientLogger'
 

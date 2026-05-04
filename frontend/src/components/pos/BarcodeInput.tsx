@@ -198,6 +198,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
           />
         )}
         <input
+          id="main-barcode-input"
           ref={inputRef}
           className="input input-lg"
           style={{ paddingRight: '2.8rem', paddingLeft: loading ? '2.8rem' : '1rem' }}

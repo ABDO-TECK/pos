@@ -46,14 +46,14 @@ class ProductRepository
         return $this->model->create($data);
     }
 
-    public function update(int $id, array $data): bool
+    public function update(int $id, array $data): void
     {
-        return $this->model->update($id, $data);
+        $this->model->update($id, $data);
     }
 
-    public function delete(int $id): bool
+    public function delete(int $id): void
     {
-        return $this->model->delete($id);
+        $this->model->delete($id);
     }
 
     public function assertBarcodesAvailable(?int $excludeId, string $main, array $extras): void

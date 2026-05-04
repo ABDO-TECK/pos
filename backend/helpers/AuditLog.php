@@ -18,6 +18,7 @@ class AuditLog
      * @param mixed      $newValue   القيمة الجديدة (سيتم تحويلها إلى JSON)
      */
     public static function log(
+        ?int   $userId,
         string $action,
         string $entityType,
         ?int   $entityId = null,
@@ -26,7 +27,6 @@ class AuditLog
     ): void {
         try {
             $db   = Database::getInstance();
-            $user = AuthService::user();
 
             $stmt = $db->prepare(
                 'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
@@ -34,7 +34,7 @@ class AuditLog
             );
 
             $stmt->execute([
-                'user_id'     => $user['id'] ?? null,
+                'user_id'     => $userId,
                 'action'      => $action,
                 'entity_type' => $entityType,
                 'entity_id'   => $entityId,

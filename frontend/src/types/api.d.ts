@@ -146,9 +146,12 @@ declare global {
 
   interface BulkPurchasePayload {
     supplier_id: number;
-    items: { product_id: number; quantity: number; unit_cost: number }[];
+    items: { product_id: number; quantity: number; unit_cost: number; update_cost?: boolean }[];
     notes?: string;
     payment_amount?: number;
+    payment_type?: string;
+    deposit?: number;
+    replace_invoice_id?: number | null;
   }
 
   // ── Reports ───────────────────────────────────────────────────
@@ -207,14 +210,14 @@ declare global {
     latest_version: string;
     has_update: boolean;
     released_at: string | null;
-    changelog: any[];
+    changelog: { version: string; date: string; changes: string[] }[];
     requires_npm_install: boolean;
   }
 
   interface UpdateApplyResult {
     message: string;
     latest_version: string;
-    changelog: any[];
+    changelog: { version: string; date: string; changes: string[] }[];
     logs: string[];
   }
 

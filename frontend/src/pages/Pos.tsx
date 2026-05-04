@@ -55,6 +55,18 @@ export default function POS() {
     return () => clearInterval(intervalId)
   }, [])
 
+  // F12 Shortcut for checkout
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F12') {
+        e.preventDefault()
+        if (items.length > 0) setShowPayment(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [items])
+
   const handleSuccess = (inv: any, ch: number) => {
     setInvoice(inv)
     setChange(ch)
@@ -117,6 +129,7 @@ export default function POS() {
             >
               <CreditCard size={20} />
               إتمام البيع — {formatCurrency(total)}
+              <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>F12</kbd>
             </button>
           </div>
         </div>
@@ -168,6 +181,7 @@ export default function POS() {
               >
                 <CreditCard size={18} />
                 إتمام البيع — {formatCurrency(total)}
+                <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>F12</kbd>
               </button>
             </div>
           )}

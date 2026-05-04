@@ -84,7 +84,7 @@ class ProductController extends Controller {
                     ? Response::notFound($result['error'])
                     : Response::error($result['error'], $code);
             }
-            AuditLog::log('update_product', 'product', (int)$id, null, $data);
+            AuditLog::log($this->authService->id(), 'update_product', 'product', (int)$id, null, $data);
             return Response::success($result['product'], 'Product updated');
         } catch (ValidationException $e) {
             return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors());
@@ -119,7 +119,7 @@ class ProductController extends Controller {
                 ? Response::notFound($result['error'])
                 : Response::error($result['error'], $code);
         }
-        AuditLog::log('delete_product', 'product', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_product', 'product', (int)$id);
         return Response::success(null, 'Product deleted');
     }
 }

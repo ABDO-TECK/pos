@@ -11,20 +11,55 @@ namespace App\Helpers;
  */
 class Cache {
     private static string $dir = __DIR__ . '/../storage/cache/';
+    private static ?\Redis $redis = null;
+    private static bool $redisChecked = false;
+
+    private static function getRedis(): ?\Redis {
+        if (self::$redisChecked) return self::$redis;
+        self::$redisChecked = true;
+
+        $host = EnvLoader::get('REDIS_HOST', '');
+        if ($host === '' || !class_exists('Redis')) return null;
+
+        try {
+            $r = new \Redis();
+            $r->connect($host, (int) EnvLoader::get('REDIS_PORT', '6379'), 2.0);
+            $pass = EnvLoader::get('REDIS_PASSWORD', '');
+            if ($pass !== '') $r->auth($pass);
+            $r->setOption(\Redis::OPT_PREFIX, 'pos:');
+            self::$redis = $r;
+        } catch (\Throwable $e) {
+            Logger::warning('Redis connection failed, falling back', ['error' => $e->getMessage()]);
+            self::$redis = null;
+        }
+        return self::$redis;
+    }
 
     public static function init(): void {
-        if (!function_exists('apcu_fetch') && !is_dir(self::$dir)) {
+        if (!function_exists('apcu_fetch') && self::getRedis() === null && !is_dir(self::$dir)) {
             @mkdir(self::$dir, 0755, true);
         }
     }
 
     public static function get(string $key): mixed {
+        // 1. Redis
+        $redis = self::getRedis();
+        if ($redis) {
+            try {
+                $val = $redis->get($key);
+                if ($val !== false) return json_decode($val, true);
+                return null;
+            } catch (\Throwable $e) { /* fallthrough */ }
+        }
+
+        // 2. APCu
         if (function_exists('apcu_fetch')) {
             $success = false;
             $data = apcu_fetch('pos_cache_' . $key, $success);
             if ($success) return $data;
         }
 
+        // 3. File
         self::init();
         $file = self::path($key);
         if (!file_exists($file)) return null;
@@ -34,7 +69,6 @@ class Cache {
 
         $data = json_decode($content, true);
         if (!is_array($data) || !isset($data['expires'], $data['value'])) {
-            // ملف كاش تالف — حذفه
             @unlink($file);
             return null;
         }
@@ -48,11 +82,22 @@ class Cache {
     }
 
     public static function set(string $key, mixed $value, int $ttl = 60): void {
+        // 1. Redis
+        $redis = self::getRedis();
+        if ($redis) {
+            try {
+                $redis->setex($key, $ttl, json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                return;
+            } catch (\Throwable $e) { /* fallthrough */ }
+        }
+
+        // 2. APCu
         if (function_exists('apcu_store')) {
             apcu_store('pos_cache_' . $key, $value, $ttl);
             return;
         }
 
+        // 3. File
         self::init();
         $payload = json_encode([
             'value'   => $value,
@@ -63,17 +108,17 @@ class Cache {
     }
 
     public static function forget(string $key): void {
-        if (function_exists('apcu_delete')) {
-            apcu_delete('pos_cache_' . $key);
-        }
+        $redis = self::getRedis();
+        if ($redis) { try { $redis->del($key); } catch (\Throwable $e) {} }
+        if (function_exists('apcu_delete')) apcu_delete('pos_cache_' . $key);
         $file = self::path($key);
         if (file_exists($file)) @unlink($file);
     }
 
     public static function flush(): void {
-        if (function_exists('apcu_clear_cache')) {
-            apcu_clear_cache();
-        }
+        $redis = self::getRedis();
+        if ($redis) { try { $redis->flushDB(); } catch (\Throwable $e) {} }
+        if (function_exists('apcu_clear_cache')) apcu_clear_cache();
         self::init();
         array_map('unlink', glob(self::$dir . '*.cache') ?: []);
     }

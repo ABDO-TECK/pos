@@ -12,10 +12,12 @@ services:
       - DB_HOST=db
       - DB_NAME=pos_db
       - DB_USER=root
-      - DB_PASS=secret
+      - DB_PASS=${DB_PASS:-secret}
       - APP_ENV=production
       - APP_DEBUG=false
-      - FRONTEND_URL=http://localhost:8000
+      - FORCE_HTTPS=${FORCE_HTTPS:-false}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8000}
     depends_on:
       db:
         condition: service_healthy
@@ -34,13 +36,13 @@ services:
       - "3307:3306"
     environment:
       - MYSQL_DATABASE=pos_db
-      - MYSQL_ROOT_PASSWORD=secret
+      - MYSQL_ROOT_PASSWORD=${DB_PASS:-secret}
     volumes:
       - db_data:/var/lib/mysql
       - ./database/pos_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-secret}"]
       interval: 10s
       timeout: 5s
       retries: 5

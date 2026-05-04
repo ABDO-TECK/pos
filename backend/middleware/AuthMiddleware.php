@@ -69,7 +69,7 @@ class AuthMiddleware {
                 'domain'   => '',
                 'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
                 'httponly' => true,
-                'samesite' => (APP_ENV === 'production') ? 'Strict' : 'Lax',
+                'samesite' => \App\Helpers\EnvLoader::getBool('SECURE_COOKIES', false) ? 'Strict' : 'Lax',
             ]);
         }
 
