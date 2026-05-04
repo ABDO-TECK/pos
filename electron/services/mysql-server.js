@@ -56,8 +56,8 @@ function startMySQL(port) {
 
 async function initDatabase(port) {
   const { mysqlPath } = getMysqlPaths();
-  const { getBackendDir } = require('../utils/paths');
-  const schemaFile = path.join(__dirname, '..', '..', 'database', 'pos_schema.sql');
+  const { getBackendDir, getDatabaseDir } = require('../utils/paths');
+  const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
   try {
     // إنشاء قاعدة البيانات إذا لم تكن موجودة مع دعم اللغة العربية
     execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 -e "CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"`,
@@ -91,7 +91,8 @@ function repairCorruptedTables(mysqlPath, port) {
     if (err.message && err.message.includes("doesn't exist in engine")) {
       console.log(`[MySQL Repair] Database corruption detected. Repairing schema...`);
       // إجبار إعادة تحميل الهيكل لتنظيف الجداول التالفة
-      const schemaFile = path.join(__dirname, '..', '..', 'database', 'pos_schema.sql');
+      const { getDatabaseDir } = require('../utils/paths');
+      const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
       try {
         // Drop database and recreate to start fresh, since InnoDB corruption is hard to fix per-table
         execSync(`"${mysqlPath}" -u root --port=${port} -e "DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db;"`, { windowsHide: true });

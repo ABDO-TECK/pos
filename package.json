@@ -54,7 +54,9 @@
     "asarUnpack": [
       "backend/**/*",
       "database/**/*",
-      "version.json"
+      "version.json",
+      "frontend/dist/**/*",
+      "frontend/public/**/*"
     ],
     "publish": {
       "provider": "github",

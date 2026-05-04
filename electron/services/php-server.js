@@ -37,10 +37,9 @@ function startPHP(port, mysqlPort) {
     const check = setInterval(() => {
       attempts++;
       http.get(`http://127.0.0.1:${port}/`, (res) => {
-        if (res.statusCode === 200) {
-          clearInterval(check);
-          resolve();
-        }
+        // Any response means the server is up and listening
+        clearInterval(check);
+        resolve();
       }).on('error', () => {
         if (attempts > 50) {
           clearInterval(check);

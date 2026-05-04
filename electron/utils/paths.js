@@ -16,9 +16,16 @@ function getPortableDir() {
 
 function getBackendDir() {
   if (isPackaged()) {
-    return path.join(app.getAppPath(), 'backend');
+    return path.join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'backend');
   }
   return path.join(__dirname, '..', '..', 'backend');
+}
+
+function getDatabaseDir() {
+  if (isPackaged()) {
+    return path.join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'database');
+  }
+  return path.join(__dirname, '..', '..', 'database');
 }
 
 function getPhpPath() {
@@ -55,4 +62,4 @@ function getMysqlPaths() {
   };
 }
 
-module.exports = { getPhpPath, getMysqlPaths, isPackaged, getPortableDir, getBackendDir };
+module.exports = { getPhpPath, getMysqlPaths, isPackaged, getPortableDir, getBackendDir, getDatabaseDir };
