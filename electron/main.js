@@ -4,6 +4,8 @@ const { startPHP, stopPHP } = require('./services/php-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
 const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
+const { startQZTray, stopQZTray } = require('./services/qz-tray');
+const { ensureQZCerts, getQZCertificate, signQZMessage } = require('./services/qz-certs');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -26,6 +28,8 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   ipcMain.handle('get-version', () => app.getVersion());
+  ipcMain.handle('qz-get-cert', () => getQZCertificate());
+  ipcMain.handle('qz-sign', (_event, data) => signQZMessage(data));
 
   // 1. شاشة تحميل (Splash)
   const splash = new BrowserWindow({
@@ -48,6 +52,19 @@ app.whenReady().then(async () => {
     );
     await startPHP(phpPort, mysqlPort);
     await startHttpsProxy(phpPort, 8443);
+
+    // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
+    splash.webContents.executeJavaScript(
+      `document.getElementById('status').textContent = 'جاري تشغيل خدمة الطباعة...'`
+    );
+    const { getQZTrayPath } = require('./utils/paths');
+    try {
+      const qzTrayDir = require('path').dirname(getQZTrayPath());
+      ensureQZCerts(qzTrayDir);
+    } catch (err) {
+      console.warn('[QZ Certs] Skipped cert generation:', err.message);
+    }
+    await startQZTray();
 
     // 4. فتح النافذة الرئيسية
     mainWindow = new BrowserWindow({
@@ -137,6 +154,7 @@ let forceQuit = false;
 app.on('before-quit', async () => {
   forceQuit = true;
   stopHttpsProxy();
+  stopQZTray();
   stopPHP();
   await stopMySQL();
 });

@@ -62,4 +62,31 @@ function getMysqlPaths() {
   };
 }
 
-module.exports = { getPhpPath, getMysqlPaths, isPackaged, getPortableDir, getBackendDir, getDatabaseDir };
+function getJavaPath() {
+  // 1. المسار المدمج (portable/java)
+  const portableJava = path.join(getPortableDir(), 'java', 'bin', 'java.exe');
+  if (fs.existsSync(portableJava)) return portableJava;
+
+  // 2. Fallback: Java مثبت على النظام
+  const systemJava = 'java';
+  try {
+    require('child_process').execSync(`"${systemJava}" -version`, { windowsHide: true, stdio: 'pipe' });
+    return systemJava;
+  } catch { /* not found */ }
+
+  throw new Error('Java not found. Install JRE in portable/java/');
+}
+
+function getQZTrayPath() {
+  // 1. المسار المدمج (portable/qz-tray)
+  const portableQZ = path.join(getPortableDir(), 'qz-tray', 'qz-tray.jar');
+  if (fs.existsSync(portableQZ)) return portableQZ;
+
+  // 2. Fallback: مجلد tray في التطوير
+  const devQZ = path.join(__dirname, '..', '..', 'tray', 'out', 'dist', 'qz-tray.jar');
+  if (fs.existsSync(devQZ)) return devQZ;
+
+  throw new Error('qz-tray.jar not found. Build it with: cd tray && ant distribute');
+}
+
+module.exports = { getPhpPath, getMysqlPaths, isPackaged, getPortableDir, getBackendDir, getDatabaseDir, getJavaPath, getQZTrayPath };

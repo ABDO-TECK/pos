@@ -13,20 +13,6 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     INDEX idx_pinv_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-DROP PROCEDURE IF EXISTS AddPurchaseInvoiceId;
-DELIMITER //
-CREATE PROCEDURE AddPurchaseInvoiceId()
-BEGIN
-    IF NOT EXISTS (
-        SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchases' AND COLUMN_NAME = 'purchase_invoice_id'
-    ) THEN
-        ALTER TABLE purchases ADD COLUMN purchase_invoice_id INT NULL AFTER id;
-        ALTER TABLE purchases ADD CONSTRAINT fk_purchase_pinv FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL;
-        ALTER TABLE purchases ADD INDEX idx_purchase_invoice (purchase_invoice_id);
-    END IF;
-END //
-DELIMITER ;
-
-CALL AddPurchaseInvoiceId();
-DROP PROCEDURE AddPurchaseInvoiceId;
+ALTER TABLE purchases ADD COLUMN purchase_invoice_id INT NULL AFTER id;
+ALTER TABLE purchases ADD CONSTRAINT fk_purchase_pinv FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL;
+ALTER TABLE purchases ADD INDEX idx_purchase_invoice (purchase_invoice_id);

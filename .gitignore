@@ -51,3 +51,13 @@ portable/
 forge.config.js
 convert_icon.js
 create_ico.js
+
+# QZ Tray bundled runtime
+portable/java/
+portable/qz-tray/
+tray/out/
+
+
+# -- QZ Tray bundled runtime & source --------------------
+build-tools/
+tray/

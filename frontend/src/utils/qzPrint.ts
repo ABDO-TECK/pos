@@ -22,6 +22,11 @@ declare global {
   interface Window {
     qz: any;
     QZ_CONFIG?: { host?: string, signUrl?: string, certUrl?: string, port?: any, keepAlive?: number, retries?: number, delay?: number };
+    electronAPI?: {
+      getQZCert?: () => Promise<string | null>;
+      signQZMessage?: (data: string) => Promise<string | null>;
+      [key: string]: any;
+    };
   }
 }
 
@@ -32,6 +37,13 @@ function getQZ() {
         throw new Error('مكتبة QZ Tray غير محملة. تأكد من تشغيل QZ Tray على جهازك.')
     }
     return window.qz
+}
+
+/** هل نحن داخل Electron؟ */
+function isElectron(): boolean {
+    return typeof window !== 'undefined'
+        && typeof window.electronAPI !== 'undefined'
+        && typeof window.electronAPI.getQZCert === 'function'
 }
 
 function getCfg() {
@@ -48,49 +60,55 @@ function getCfg() {
 let _securitySet = false
 
 function ensureSecurity() {
-    // Always re-apply security callbacks — QZ Tray resets them after disconnect
     const qz  = getQZ()
     const cfg = getCfg()
 
-    // Certificate: try to load file; fall back to unsigned (anonymous) mode
-    qz.security.setCertificatePromise((resolve, reject) => {
-        fetch(cfg.certUrl, { cache: 'no-store', headers: { 'Content-Type': 'text/plain' } })
-            .then(r => {
-                if (r.ok) {
-                    r.text().then(resolve)
-                } else {
-                    console.warn('[QZ] digital-certificate.txt not found — using unsigned mode')
-                    resolve() // anonymous / unsigned
-                }
-            })
-            .catch(() => {
-                console.warn('[QZ] Could not fetch certificate — using unsigned mode')
-                resolve() // anonymous / unsigned
-            })
-    })
-
-    qz.security.setSignatureAlgorithm('SHA512')
-
-    qz.security.setSignaturePromise(toSign => (resolve, reject) => {
-        fetch(`${cfg.signUrl}?request=${encodeURIComponent(toSign)}`, {
-            cache: 'no-store',
-            credentials: 'include',
-            headers: { 'Content-Type': 'text/plain' },
+    if (isElectron()) {
+        // ═══ Electron Mode: الشهادة والتوقيع عبر IPC ═══
+        qz.security.setCertificatePromise((resolve: any, _reject: any) => {
+            window.electronAPI!.getQZCert!()
+                .then((cert: string | null) => {
+                    if (cert) { resolve(cert) }
+                    else {
+                        console.warn('[QZ] No certificate from Electron — using unsigned mode')
+                        resolve()
+                    }
+                })
+                .catch(() => { resolve() })
         })
-            .then(r => {
-                if (r.ok) {
-                    r.text().then(t => {
-                        resolve(t || undefined)
-                    })
-                } else {
-                    console.warn('[QZ] sign-message endpoint returned', r.status, '— using unsigned mode')
-                    resolve()
-                }
+
+        qz.security.setSignatureAlgorithm('SHA512')
+
+        qz.security.setSignaturePromise((toSign: string) => (resolve: any, _reject: any) => {
+            window.electronAPI!.signQZMessage!(toSign)
+                .then((sig: string | null) => { resolve(sig || undefined) })
+                .catch(() => { resolve() })
+        })
+    } else {
+        // ═══ Browser Mode: الطريقة القديمة (fetch) — Fallback للمتصفح العادي ═══
+        qz.security.setCertificatePromise((resolve: any, _reject: any) => {
+            fetch(cfg.certUrl!, { cache: 'no-store', headers: { 'Content-Type': 'text/plain' } })
+                .then((r: Response) => {
+                    if (r.ok) { r.text().then(resolve) }
+                    else { console.warn('[QZ] digital-certificate.txt not found — unsigned mode'); resolve() }
+                })
+                .catch(() => { console.warn('[QZ] Could not fetch certificate — unsigned mode'); resolve() })
+        })
+
+        qz.security.setSignatureAlgorithm('SHA512')
+
+        qz.security.setSignaturePromise((toSign: string) => (resolve: any, _reject: any) => {
+            fetch(`${cfg.signUrl}?request=${encodeURIComponent(toSign)}`, {
+                cache: 'no-store', credentials: 'include',
+                headers: { 'Content-Type': 'text/plain' },
             })
-            .catch(() => {
-                resolve()
-            })
-    })
+                .then((r: Response) => {
+                    if (r.ok) { r.text().then((t: string) => { resolve(t || undefined) }) }
+                    else { console.warn('[QZ] sign-message returned', r.status, '— unsigned mode'); resolve() }
+                })
+                .catch(() => { resolve() })
+        })
+    }
 
     _securitySet = true
 }
@@ -146,7 +164,7 @@ export async function connectQZ() {
         .then(() => { _connecting = null; return true })
         .catch(err => {
             _connecting = null
-            const info = buildQZError(cfg.host)
+            const info = buildQZError(cfg.host ?? 'localhost')
             console.error(`[QZ] ${info.message}`)
             const qzErr: any = new Error(info.message)
             qzErr.certUrl = info.certUrl
