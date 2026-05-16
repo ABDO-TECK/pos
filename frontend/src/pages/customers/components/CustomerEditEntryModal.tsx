@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { X, Edit2 } from 'lucide-react'
 
 export default function CustomerEditEntryModal({

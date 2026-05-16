@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const crypto = require('crypto');
+const sudo = require('sudo-prompt');
 
 const CERTS_DIR_NAME = 'qz-certs';
 
@@ -22,15 +23,20 @@ function getCertsDir() {
  *
  * @param {string} qzTrayDir - مسار مجلد qz-tray (portable/qz-tray أو المبني)
  */
-function ensureQZCerts(qzTrayDir) {
+async function ensureQZCerts(qzTrayDir, javaPath) {
   const certsDir = getCertsDir();
   const certPath = path.join(certsDir, 'digital-certificate.pem');
   const keyPath  = path.join(certsDir, 'private-key.pem');
+  const flagPath = path.join(certsDir, 'ssl-installed.flag');
 
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-    console.log('[QZ Certs] Certificates already exist');
-    // تأكد أن override.crt محدّث
+    console.log('[QZ Certs] Certificates already exist for message signing');
     _copyOverrideCert(certPath, qzTrayDir);
+    
+    if (!fs.existsSync(flagPath)) {
+      console.log('[QZ Certs] WSS SSL not installed silently. Installing now via QZ Tray certgen...');
+      await installSSLcertSilently(qzTrayDir, javaPath, flagPath);
+    }
     return;
   }
 
@@ -50,7 +56,7 @@ function ensureQZCerts(qzTrayDir) {
   cert.validity.notAfter.setFullYear(cert.validity.notAfter.getFullYear() + 20);
 
   const attrs = [
-    { name: 'commonName',    value: 'POS System' },
+    { name: 'commonName',    value: 'localhost' },
     { name: 'countryName',   value: 'US' },
     { shortName: 'ST',       value: 'NY' },
     { name: 'localityName',  value: 'Canastota' },
@@ -66,6 +72,7 @@ function ensureQZCerts(qzTrayDir) {
     { name: 'basicConstraints', cA: true, critical: true, pathLenConstraint: 1 },
     { name: 'keyUsage', keyCertSign: true, critical: true },
     { name: 'subjectKeyIdentifier' },
+    { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }, { type: 7, ip: '127.0.0.1' }] }
   ]);
 
   // 3. توقيع الشهادة بمفتاحها الخاص (self-signed)
@@ -82,6 +89,41 @@ function ensureQZCerts(qzTrayDir) {
 
   // 5. نسخ الشهادة كـ override.crt
   _copyOverrideCert(certPath, qzTrayDir);
+  
+  // 6. تشغيل التثبيت الصامت لشهادات الـ SSL الخاصة بـ QZ Tray
+  await installSSLcertSilently(qzTrayDir, javaPath, flagPath);
+}
+
+/**
+ * دالة التثبيت الصامت باستخدام صلاحيات المسؤول لتشغيل أمر certgen الخاص بـ QZ Tray
+ */
+function installSSLcertSilently(qzTrayDir, javaPath, flagPath) {
+  return new Promise((resolve) => {
+    // بناء المسارات
+    const javaWinPath = javaPath.replace(/\//g, '\\');
+    const qzTrayJarPath = path.join(qzTrayDir, 'qz-tray.jar').replace(/\//g, '\\');
+    
+    // تشغيل QZ Tray كمسؤول لتوليد وتثبيت الشهادة بصمت، ثم التأكيد بإضافتها للنظام كـ Enterprise Root
+    // ثم استخدام icacls لمنح صلاحيات القراءة والكتابة لجميع المستخدمين على مجلدات QZ لتجنب AccessDeniedException
+    const qzWinDir = qzTrayDir.replace(/\//g, '\\');
+    const command = `"${javaWinPath}" -jar "${qzTrayJarPath}" certgen --host localhost && certutil -addstore -enterprise -f root "C:\\ProgramData\\qz\\ssl\\root-ca.crt" && icacls "C:\\ProgramData\\qz" /grant "*S-1-1-0:(OI)(CI)F" /T && icacls "${qzWinDir}" /grant "*S-1-1-0:(OI)(CI)F" /T`;
+    
+    const options = {
+      name: 'POS System Installer'
+    };
+
+    console.log('[QZ Certs] Requesting elevation for QZ Tray silent SSL install...');
+    sudo.exec(command, options, (error, stdout, stderr) => {
+      if (error) {
+        console.error('[QZ Certs] Failed to install SSL silently (User might have cancelled UAC):', error.message);
+        resolve(false);
+      } else {
+        console.log('[QZ Certs] SSL cert installed silently successfully.');
+        fs.writeFileSync(flagPath, 'installed', 'utf-8');
+        resolve(true);
+      }
+    });
+  });
 }
 
 /**

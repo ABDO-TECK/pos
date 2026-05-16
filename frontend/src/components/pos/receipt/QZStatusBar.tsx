@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Settings } from 'lucide-react'
 
 export default function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }) {

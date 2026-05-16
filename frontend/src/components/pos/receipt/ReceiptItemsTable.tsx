@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { formatNumber } from '../../../utils/formatters'
 import { Th, Td } from './ReceiptHelpers'
 

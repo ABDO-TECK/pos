@@ -34,15 +34,13 @@ const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         try { await getCsrfCookie() } catch(e) {}
         const res = await loginApi({ email, password })
-        const { token, user } = res.data.data as any
-        localStorage.removeItem('pos_token') // Clear old ones if migrating
+        const { user } = res.data.data as unknown as { user: User }
         set({ user, token: null, isAuthenticated: true })
         return user
       },
 
       logout: async () => {
-        try { await logoutApi() } catch {}
-        localStorage.removeItem('pos_token')
+        try { await logoutApi() } catch (err) { }
         
         // Clear IndexedDB cache to prevent ghost offline data
         try {

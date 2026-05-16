@@ -24,7 +24,7 @@ class AuthMiddleware {
 
         $db   = Database::getInstance();
         $stmt = $db->prepare(
-            'SELECT t.user_id, t.expires_at, u.role, u.is_active, u.name, u.email, u.force_password_change
+            'SELECT t.user_id, t.expires_at, u.role, u.is_active, u.name, u.email, u.force_password_change, u.branch_id
              FROM tokens t
              JOIN users u ON u.id = t.user_id
              WHERE t.token = ?'
@@ -58,20 +58,7 @@ class AuthMiddleware {
             return Response::unauthorized('Token expired');
         }
 
-        if ($expiresAtTime - time() < (TOKEN_LIFETIME / 2)) {
-            $userModel = new User($db);
-            $newExpiry = time() + TOKEN_LIFETIME;
-            $userModel->extendToken($token, date('Y-m-d H:i:s', $newExpiry));
-            
-            setcookie('pos_token', $token, [
-                'expires'  => $newExpiry,
-                'path'     => '/',
-                'domain'   => '',
-                'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
-                'httponly' => true,
-                'samesite' => \App\Helpers\EnvLoader::getBool('SECURE_COOKIES', false) ? 'Strict' : 'Lax',
-            ]);
-        }
+
 
         // Store auth user in request context
         $this->authService->setUser([
@@ -79,7 +66,9 @@ class AuthMiddleware {
             'name'  => $row['name'],
             'email' => $row['email'],
             'role'  => $row['role'],
+            'branch_id' => $row['branch_id'],
         ]);
+        $this->authService->setBranchId((int) ($row['branch_id'] ?? 1));
 
         return $next();
     }

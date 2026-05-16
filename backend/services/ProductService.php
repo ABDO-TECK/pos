@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Config\Database;
-use App\Controllers\ProductController;
 use App\Helpers\Logger;
 use App\Models\Product;
+use App\Models\PriceHistory;
 use App\Repositories\ProductRepository;
 use Exception;
 use PDOException;
@@ -21,10 +21,12 @@ use Throwable;
 class ProductService
 {
     private ProductRepository $productRepo;
+    private PriceHistory $priceHistory;
 
-    public function __construct(ProductRepository $productRepo)
+    public function __construct(ProductRepository $productRepo, PriceHistory $priceHistory)
     {
         $this->productRepo = $productRepo;
+        $this->priceHistory = $priceHistory;
     }
 
     // ── Create product ──────────────────────────────────────
@@ -105,6 +107,12 @@ class ProductService
             $this->productRepo->assertBarcodesAvailable($id, $main, $extrasToCheck);
             $data['barcode'] = $main;
             $this->productRepo->update($id, $data);
+            
+            // تسجيل تغيير السعر (إن وُجد)
+            // ملاحظة: نحتاج جلب الـ AuthService للحصول على user_id لو أمكن، 
+            // لكن للتبسيط، الـ userId اختياري حالياً، سنمرر null حتى نُمرره من الـ Controller مستقبلاً
+            $this->priceHistory->record($id, $product, $data, null);
+            
             $this->productRepo->syncAdditionalBarcodes($id, $extras);
             $db->commit();
         } catch (Throwable $e) {

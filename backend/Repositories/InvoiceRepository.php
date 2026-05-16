@@ -3,8 +3,9 @@
 namespace App\Repositories;
 
 use App\Models\Invoice;
+use App\Contracts\RepositoryInterface;
 
-class InvoiceRepository
+class InvoiceRepository implements RepositoryInterface
 {
     private Invoice $model;
 

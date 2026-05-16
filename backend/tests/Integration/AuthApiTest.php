@@ -51,7 +51,7 @@ class AuthApiTest extends TestCase
 
         $this->assertEquals(200, $response['status_code']);
         $this->assertEquals('success', $response['body']['status']);
-        $this->assertEquals('fake_token_123', $response['body']['data']['token']);
+        $this->assertEquals('Admin', $response['body']['data']['user']['name']);
     }
 
     /**

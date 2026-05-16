@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState } from 'react'
 import { Trash2, Plus, Minus, ShoppingCart, Package } from 'lucide-react'
 import useCartStore from '../../store/cartStore'

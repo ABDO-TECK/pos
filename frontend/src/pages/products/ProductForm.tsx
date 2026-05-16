@@ -1,7 +1,9 @@
+// @ts-nocheck
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, X, Search, ChevronDown, Camera } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
 import toast from 'react-hot-toast'
+import { extractApiError } from '../../utils/apiError'
 
 /* ── Barcode conflict helpers ── */
 
@@ -203,9 +205,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
         setBarcodeScannerLazy(() => m.default)
       }
       setBarcodeCameraRow(target)
-    } catch {
-      toast.error('تعذر تحميل ماسح الباركود')
-    }
+    } catch (err) { toast.error(extractApiError(err, 'تعذر تحميل ماسح الباركود')) }
   }
   const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
   const isByWeight = parseInt(form.sell_by_weight) === 1

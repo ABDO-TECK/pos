@@ -13,7 +13,7 @@ interface FetchParams {
   search?: string;
   category_id?: number | string;
   low_stock?: boolean;
-  [key: string]: any;
+  [key: string]: string | number | boolean | undefined;
 }
 
 interface ProductState {
@@ -23,7 +23,7 @@ interface ProductState {
   lastFetched: number | null;
   fetchProducts: (params?: FetchParams, forceRefresh?: boolean) => Promise<Product[]>;
   fetchCategories: () => Promise<void>;
-  findByBarcode: (barcode: string) => Promise<Product | null>;
+  findByBarcode: (barcode: string) => Promise<(Product & { scanned_as_box?: boolean }) | null>;
   setProducts: (products: Product[]) => void;
   invalidateCache: () => void;
 }
@@ -63,7 +63,7 @@ const useProductStore = create<ProductState>((set, get) => ({
         })
       }
       return products
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Fallback إلى IndexedDB عند فقد الشبكة
       try {
         const cached = await getProductsFromIDB()
@@ -72,8 +72,7 @@ const useProductStore = create<ProductState>((set, get) => ({
           console.info('[ProductStore] Loaded from offline cache:', cached.length, 'products')
           return cached
         }
-      } catch {
-        // IDB أيضاً فشلت
+      } catch (err) { // IDB أيضاً فشلت
       }
       set({ loading: false })
       throw err
@@ -81,8 +80,10 @@ const useProductStore = create<ProductState>((set, get) => ({
   },
 
   fetchCategories: async () => {
-    const res = await getCategories()
-    set({ categories: res.data.data as Category[] })
+    const res = await getCategories({ limit: 999 })
+    const raw = res.data.data
+    const list: Category[] = Array.isArray(raw) ? (raw as Category[]) : ((raw as { data?: Category[] })?.data ?? [])
+    set({ categories: list })
   },
 
   findByBarcode: async (barcode) => {
@@ -99,16 +100,15 @@ const useProductStore = create<ProductState>((set, get) => ({
       p.barcode === t || String(p.box_barcode) === t || (p.additional_barcodes || []).includes(t)
     
     const found = get().products.find(match)
-    if (found) return checkBox(found) as any
+    if (found) return checkBox(found)
     
     const idbResult = await getProductByBarcodeFromIDB(t)
-    if (idbResult) return checkBox(idbResult) as any
+    if (idbResult) return checkBox(idbResult)
     
     try {
       const res = await getProductByBarcode(t)
-      return checkBox(res.data.data ?? null) as any
-    } catch {
-      return null
+      return checkBox((res.data.data as Product) ?? null)
+    } catch (err) { return null
     }
   },
 

@@ -102,6 +102,10 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('recharts')) return 'charts'
+          if (id.includes('react-router')) return 'router'
+          if (id.includes('@zxing')) return 'barcode'
+          if (id.includes('react-hot-toast')) return 'toast'
+          if (id.includes('axios')) return 'http'
           if (id.includes('zustand')) return 'store'
           if (id.includes('node_modules')) return 'vendor'
         },

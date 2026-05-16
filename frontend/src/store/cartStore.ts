@@ -12,6 +12,26 @@ export interface CartItem {
   scanned_as_box?: boolean;
 }
 
+export interface AddItemProduct {
+  id: number;
+  name: string;
+  barcode?: string;
+  price: string | number;
+  units_per_box?: string | number;
+  sell_by_weight?: string | number;
+  scanned_as_box?: boolean;
+  [key: string]: unknown;
+}
+
+export interface MergeInvoiceLine {
+  product_id?: number;
+  price?: string | number;
+  quantity?: string | number;
+  product_name?: string;
+  name?: string;
+  barcode?: string;
+}
+
 interface CartState {
   items: CartItem[];
   discount: number;
@@ -23,7 +43,7 @@ interface CartState {
   subtotal: number;
   itemCount: number;
 
-  addItem: (product: any) => void;
+  addItem: (product: AddItemProduct) => void;
   removeItem: (id: number) => void;
   updateQuantity: (id: number, qty: number) => void;
   updatePrice: (id: number, newPrice: number) => void;
@@ -31,7 +51,7 @@ interface CartState {
   setPaymentMethod: (method: string) => void;
   setAmountPaid: (amount: number) => void;
   clearCart: () => void;
-  mergeInvoiceLines: (lines: any[], invoiceId?: number | null, customerId?: number | null, amountPaid?: number) => void;
+  mergeInvoiceLines: (lines: MergeInvoiceLine[], invoiceId?: number | null, customerId?: number | null, amountPaid?: number) => void;
 }
 
 const useCartStore = create<CartState>((set, get) => ({
@@ -43,7 +63,7 @@ const useCartStore = create<CartState>((set, get) => ({
   rebillingCustomerId: null,
   rebillingAmountPaid: 0,
 
-  addItem: (product: { id: number; name: string; barcode?: string; price: string | number; units_per_box?: string | number; sell_by_weight?: string | number; scanned_as_box?: boolean; [key: string]: unknown }) => {
+  addItem: (product: AddItemProduct) => {
     const items = get().items
     const price = parseFloat(String(product.price)) || 0
     const unitsPerBox = Math.max(1, parseInt(String(product.units_per_box)) || 1)
@@ -104,7 +124,7 @@ const useCartStore = create<CartState>((set, get) => ({
   clearCart: () =>
     set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null, rebillingCustomerId: null, rebillingAmountPaid: 0 }),
 
-  mergeInvoiceLines: (lines: Array<{ product_id?: number; price?: string | number; quantity?: string | number; product_name?: string; name?: string; barcode?: string }>, invoiceId: number | null = null, customerId: number | null = null, amountPaid: number = 0) => {
+  mergeInvoiceLines: (lines: MergeInvoiceLine[], invoiceId: number | null = null, customerId: number | null = null, amountPaid: number = 0) => {
     if (!lines?.length) return
     set((state) => {
       let items = [...state.items]

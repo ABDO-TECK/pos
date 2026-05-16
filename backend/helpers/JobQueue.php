@@ -87,9 +87,36 @@ class JobQueue
     private static function resolveHandler(string $jobName): callable
     {
         $handlers = [
-            // أضف handlers هنا مستقبلاً:
-            // 'generate_report' => fn($p) => (new ReportService)->generate($p),
-            // 'send_notification' => fn($p) => Notifier::send($p),
+            'backup_database' => function (array $p) {
+                $service = new \App\Services\BackupService();
+                $service->createBackup();
+            },
+            'cleanup_old_logs' => function (array $p) {
+                $dir = __DIR__ . '/../logs/';
+                $days = $p['days'] ?? 30;
+                $cutoff = strtotime("-{$days} days");
+                foreach (glob($dir . '*.log') as $file) {
+                    if (filemtime($file) < $cutoff) {
+                        @unlink($file);
+                    }
+                }
+            },
+            'cleanup_old_jobs' => function (array $p) {
+                $db = \App\Config\Database::getInstance();
+                $days = $p['days'] ?? 7;
+                $db->prepare(
+                    "DELETE FROM job_queue WHERE status IN ('completed','failed') AND created_at < NOW() - INTERVAL ? DAY"
+                )->execute([$days]);
+            },
+            'send_low_stock_alert' => function (array $p) {
+                $productId = $p['product_id'] ?? 0;
+                $quantity  = $p['quantity'] ?? 0;
+                $name      = $p['name'] ?? 'Unknown';
+                Logger::warning("Low stock alert: {$name} (ID: {$productId}) — {$quantity} remaining");
+            },
+            'log_audit_event' => function (array $p) {
+                Logger::info('Audit: ' . ($p['action'] ?? 'unknown'), $p);
+            },
         ];
 
         if (!isset($handlers[$jobName])) {

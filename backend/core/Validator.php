@@ -121,6 +121,14 @@ class Validator {
                         $errors[$field][] = "{$field} يجب ألا يتجاوز {$maxVal}";
                     }
                 }
+
+                // strong_password
+                elseif ($r === 'strong_password') {
+                    $weak = ['password', '123456', '12345678', 'qwerty', 'abc123', 'password1', 'admin', 'letmein', 'welcome', '111111', '000000'];
+                    if (in_array(strtolower((string)$value), $weak, true)) {
+                        $errors[$field][] = 'كلمة المرور ضعيفة جداً. اختر كلمة مرور أقوى.';
+                    }
+                }
             }
         }
         return $errors;

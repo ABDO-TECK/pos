@@ -7,8 +7,8 @@ use App\Core\ValidationException;
 use App\Helpers\Cache;
 use App\Helpers\Logger;
 use App\Helpers\Response;
-use App\Models\Expense;
-use App\Models\ExpenseCategory;
+use App\Repositories\ExpenseRepository;
+use App\Repositories\ExpenseCategoryRepository;
 use App\Requests\ExpenseRequest;
 use App\Services\AuthService;
 use App\Services\ExpenseService;
@@ -18,15 +18,15 @@ use Throwable;
 
 class ExpenseController extends Controller
 {
-    private Expense $expenseModel;
-    private ExpenseCategory $categoryModel;
+    private ExpenseRepository $expenseRepo;
+    private ExpenseCategoryRepository $categoryRepo;
     private ExpenseService $expenseService;
     private AuthService $authService;
 
-    public function __construct(Expense $expenseModel, ExpenseCategory $categoryModel, ExpenseService $expenseService, AuthService $authService)
+    public function __construct(ExpenseRepository $expenseRepo, ExpenseCategoryRepository $categoryRepo, ExpenseService $expenseService, AuthService $authService)
     {
-        $this->expenseModel = $expenseModel;
-        $this->categoryModel = $categoryModel;
+        $this->expenseRepo = $expenseRepo;
+        $this->categoryRepo = $categoryRepo;
         $this->expenseService = $expenseService;
         $this->authService = $authService;
     }
@@ -35,7 +35,7 @@ class ExpenseController extends Controller
 
     public function getCategories(): array
     {
-        return Response::cacheable($this->categoryModel->getAll(), 300); // Cache for 5 minutes
+        return Response::cacheable($this->categoryRepo->getAll(), 300); // Cache for 5 minutes
     }
 
     public function createCategory(): array
@@ -45,8 +45,10 @@ class ExpenseController extends Controller
             return Response::error('اسم التصنيف مطلوب', 400);
         }
         try {
-            $id = $this->categoryModel->create($data);
-            return Response::success($this->categoryModel->findById($id));
+            return $this->withTransaction(function () use ($data) {
+                $id = $this->categoryRepo->create($data);
+                return Response::success($this->categoryRepo->findById($id));
+            });
         } catch (Throwable $e) {
             Logger::error('Failed to create expense category', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && $e->getCode() === '23000') {
@@ -63,12 +65,14 @@ class ExpenseController extends Controller
         if (empty($data['name'])) {
             return Response::error('اسم التصنيف مطلوب', 400);
         }
-        if (!$this->categoryModel->findById($id)) {
+        if (!$this->categoryRepo->findById($id)) {
             return Response::notFound('التصنيف غير موجود');
         }
         try {
-            $this->categoryModel->update($id, $data);
-            return Response::success($this->categoryModel->findById($id));
+            return $this->withTransaction(function () use ($id, $data) {
+                $this->categoryRepo->update($id, $data);
+                return Response::success($this->categoryRepo->findById($id));
+            });
         } catch (Throwable $e) {
             Logger::error('Failed to update expense category', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && $e->getCode() === '23000') {
@@ -81,12 +85,14 @@ class ExpenseController extends Controller
     public function deleteCategory(string $id): array
     {
         $id = (int)$id;
-        if (!$this->categoryModel->findById($id)) {
+        if (!$this->categoryRepo->findById($id)) {
             return Response::notFound('التصنيف غير موجود');
         }
         try {
-            $this->categoryModel->delete($id);
-            return Response::success(['message' => 'تم الحذف بنجاح']);
+            return $this->withTransaction(function () use ($id) {
+                $this->categoryRepo->delete($id);
+                return Response::success(['message' => 'تم الحذف بنجاح']);
+            });
         } catch (Throwable $e) {
             Logger::error('Failed to delete expense category', ['error' => $e->getMessage()]);
             if ($e instanceof PDOException && $e->getCode() === '23000') {
@@ -108,10 +114,9 @@ class ExpenseController extends Controller
         }
         if ($this->getParam('category_id')) $filters['category_id'] = $this->getParam('category_id');
 
-        if ($this->getParam('page')) $filters['page'] = $this->getParam('page');
-        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
-        $result = $this->expenseModel->getAll($filters);
+        $result = $this->expenseRepo->getAll($filters);
 
         if (isset($result['pagination'])) {
             return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
@@ -134,8 +139,10 @@ class ExpenseController extends Controller
         }
 
         try {
-            $id = $this->expenseService->createExpense($data, $user);
-            return Response::success($this->expenseModel->findById($id));
+            return $this->withTransaction(function () use ($data, $user) {
+                $id = $this->expenseService->createExpense($data, $user);
+                return Response::success($this->expenseRepo->findById($id));
+            });
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);
@@ -155,8 +162,10 @@ class ExpenseController extends Controller
         }
 
         try {
-            $this->expenseService->updateExpense($id, $data);
-            return Response::success($this->expenseModel->findById($id));
+            return $this->withTransaction(function () use ($id, $data) {
+                $this->expenseService->updateExpense($id, $data);
+                return Response::success($this->expenseRepo->findById($id));
+            });
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);
@@ -169,12 +178,14 @@ class ExpenseController extends Controller
     public function deleteExpense(string $id): array
     {
         $id = (int)$id;
-        if (!$this->expenseModel->findById($id)) {
+        if (!$this->expenseRepo->findById($id)) {
             return Response::notFound('المصروف غير موجود');
         }
         try {
-            $this->expenseModel->delete($id);
-            return Response::success(['message' => 'تم حذف المصروف بنجاح']);
+            return $this->withTransaction(function () use ($id) {
+                $this->expenseRepo->delete($id);
+                return Response::success(['message' => 'تم حذف المصروف بنجاح']);
+            });
         } catch (Throwable $e) {
             Logger::error('Failed to delete expense', ['error' => $e->getMessage()]);
             return Response::error('حدث خطأ أثناء الحذف', 500);

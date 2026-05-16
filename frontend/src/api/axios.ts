@@ -14,34 +14,54 @@ function getCookie(name: string): string | null {
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('pos_token')
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  
   // Attach XSRF-TOKEN header for CSRF protection
   const xsrf = getCookie('XSRF-TOKEN')
   if (xsrf && config.headers) {
     config.headers['X-XSRF-TOKEN'] = xsrf
   }
-  
-  // Add a cache-buster to prevent aggressive 301 redirects caching by the browser
-  if (config.url) {
-    config.url += (config.url.includes('?') ? '&' : '?') + '_cb=' + Date.now()
-  }
 
   return config
 })
 
+let isRefreshing = false
+let failedQueue: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
+
+function processQueue(error: unknown) {
+  failedQueue.forEach(p => error ? p.reject(error) : p.resolve(undefined))
+  failedQueue = []
+}
+
 api.interceptors.response.use(
   (res: AxiosResponse) => res,
-  (err: AxiosError) => {
-    // Only force logout on 401 if we're NOT on the login endpoint itself
-    if (err.response?.status === 401 && !err.config?.url?.includes('/login')) {
-      localStorage.removeItem('pos_token')
-      localStorage.removeItem('pos_auth')
-      window.location.href = '/login'
-      return Promise.reject(err)
+  async (err: AxiosError) => {
+    const originalRequest = err.config as InternalAxiosRequestConfig & { _retry?: boolean }
+
+    // Try refresh on 401 (except login and refresh endpoints)
+    if (err.response?.status === 401
+        && !originalRequest?.url?.includes('/login')
+        && !originalRequest?.url?.includes('/refresh')
+        && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject })
+        }).then(() => api(originalRequest))
+      }
+
+      originalRequest._retry = true
+      isRefreshing = true
+
+      try {
+        await api.post('/refresh')
+        processQueue(null)
+        return api(originalRequest)
+      } catch (refreshErr) {
+        processQueue(refreshErr)
+        localStorage.removeItem('pos_auth')
+        window.location.href = '/login'
+        return Promise.reject(refreshErr)
+      } finally {
+        isRefreshing = false
+      }
     }
 
     // Handle 403 force_password_change — update the auth store silently
@@ -62,7 +82,7 @@ api.interceptors.response.use(
             }
           }
         }
-      } catch {}
+      } catch (err) { }
       return Promise.reject(err)
     }
 

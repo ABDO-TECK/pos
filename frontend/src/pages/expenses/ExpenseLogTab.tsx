@@ -22,7 +22,7 @@ export default function ExpenseLogTab() {
   const loadExpenses = async () => {
     setLoading(true)
     try {
-      const params: any = {}
+      const params: Record<string, string | number> = {}
       if (filters.date) params.date = filters.date
       if (filters.month) { params.month = filters.month; params.year = filters.year }
       if (filters.category_id) params.category_id = filters.category_id
@@ -38,8 +38,7 @@ export default function ExpenseLogTab() {
     try {
       const res = await api.get('/expense-categories')
       setCategories(res.data.data ?? [])
-    } catch {
-      // ignore
+    } catch (err) { // ignore
     }
   }
 
@@ -67,8 +66,7 @@ export default function ExpenseLogTab() {
       }
       setShowModal(false)
       loadExpenses()
-    } catch {
-      // error handled globally
+    } catch (err) { // error handled globally
     }
   }
 
@@ -77,8 +75,7 @@ export default function ExpenseLogTab() {
     try {
       await api.delete(`/expenses/${id}`)
       loadExpenses()
-    } catch {
-      // error handled globally
+    } catch (err) { // error handled globally
     }
   }
 

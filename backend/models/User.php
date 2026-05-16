@@ -43,6 +43,32 @@ class User {
         $stmt->execute([$expiresAt, $token]);
     }
 
+    public function createRefreshToken(int $userId): string {
+        $token = bin2hex(random_bytes(64));
+        $expiresAt = date('Y-m-d H:i:s', time() + REFRESH_TOKEN_LIFETIME);
+        $stmt = $this->db->prepare('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)');
+        $stmt->execute([$userId, $token, $expiresAt]);
+        return $token;
+    }
+
+    public function findRefreshToken(string $token): ?array {
+        $stmt = $this->db->prepare(
+            'SELECT rt.*, u.is_active FROM refresh_tokens rt
+             JOIN users u ON u.id = rt.user_id
+             WHERE rt.token = ? AND rt.expires_at > NOW()'
+        );
+        $stmt->execute([$token]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public function deleteRefreshToken(string $token): void {
+        $this->db->prepare('DELETE FROM refresh_tokens WHERE token = ?')->execute([$token]);
+    }
+
+    public function deleteAllRefreshTokens(int $userId): void {
+        $this->db->prepare('DELETE FROM refresh_tokens WHERE user_id = ?')->execute([$userId]);
+    }
+
     public function all(array $filters = []): array {
         $sql = 'SELECT id, name, email, role, is_active, force_password_change, created_at FROM users ORDER BY id DESC';
         
@@ -80,31 +106,42 @@ class User {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO users (name, email, password, role) VALUES (:name, :email, :password, :role)'
+            'INSERT INTO users (name, email, password, role, force_password_change) VALUES (:name, :email, :password, :role, :force_pw)'
         );
         $stmt->execute([
             'name'     => $data['name'],
             'email'    => $data['email'],
             'password' => password_hash($data['password'], PASSWORD_DEFAULT),
             'role'     => $data['role'] ?? 'cashier',
+            'force_pw' => 1,
         ]);
         return (int) $this->db->lastInsertId();
     }
 
     public function update(int $id, array $data): void {
-        $fields = ['name = :name', 'email = :email', 'role = :role', 'is_active = :is_active'];
+        $fields = ['name = :name', 'email = :email'];
         $params = [
-            'name'      => $data['name'],
-            'email'     => $data['email'],
-            'role'      => $data['role'],
-            'is_active' => $data['is_active'] ?? 1,
-            'id'        => $id,
+            'name'  => $data['name'],
+            'email' => $data['email'],
+            'id'    => $id,
         ];
+
+        if (array_key_exists('role', $data)) {
+            $fields[] = 'role = :role';
+            $params['role'] = $data['role'];
+        }
+
+        if (array_key_exists('is_active', $data)) {
+            $fields[] = 'is_active = :is_active';
+            $params['is_active'] = $data['is_active'];
+        }
+
         if (!empty($data['password'])) {
             $fields[] = 'password = :password';
             $fields[] = 'force_password_change = 0';
             $params['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
         }
+
         $sql = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id';
         $this->db->prepare($sql)->execute($params);
     }

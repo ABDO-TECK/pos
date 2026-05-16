@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Product;
+use App\Repositories\CachedRepository;
 
 /**
  * ProductRepository — طبقة وسيطة بين ProductService و Product Model.
@@ -17,7 +18,9 @@ use App\Models\Product;
  *
  * عند التوسع مستقبلاً: إما أنشئ Repository لكل Model أو أزل هذا النمط كلياً.
  */
-class ProductRepository
+use App\Contracts\RepositoryInterface;
+
+class ProductRepository implements RepositoryInterface
 {
     private Product $model;
 
@@ -28,7 +31,12 @@ class ProductRepository
 
     public function all(array $filters = []): array
     {
-        return $this->model->all($filters);
+        return CachedRepository::wrap(
+            'products',
+            fn() => $this->model->all($filters),
+            300,
+            json_encode($filters)
+        );
     }
 
     public function findById(int $id): ?array
@@ -43,17 +51,21 @@ class ProductRepository
 
     public function create(array $data): int
     {
-        return $this->model->create($data);
+        $id = $this->model->create($data);
+        \App\Helpers\EventDispatcher::dispatch('product.created', ['id' => $id]);
+        return $id;
     }
 
     public function update(int $id, array $data): void
     {
         $this->model->update($id, $data);
+        \App\Helpers\EventDispatcher::dispatch('product.updated', ['id' => $id]);
     }
 
     public function delete(int $id): void
     {
         $this->model->delete($id);
+        \App\Helpers\EventDispatcher::dispatch('product.deleted', ['id' => $id]);
     }
 
     public function assertBarcodesAvailable(?int $excludeId, string $main, array $extras): void

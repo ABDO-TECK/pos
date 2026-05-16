@@ -123,8 +123,35 @@ class Cache {
         array_map('unlink', glob(self::$dir . '*.cache') ?: []);
     }
 
+    // ══ Tag-based Cache ══════════════════════════════════════
+
+    /** حفظ مع tags — كل tag هو مجموعة مفاتيح يمكن مسحها دفعة واحدة */
+    public static function setWithTags(string $key, mixed $value, int $ttl, array $tags): void
+    {
+        self::set($key, $value, $ttl);
+        foreach ($tags as $tag) {
+            $tagKey = 'tag_keys_' . $tag;
+            $existing = self::get($tagKey) ?? [];
+            if (!in_array($key, $existing, true)) {
+                $existing[] = $key;
+            }
+            // حفظ قائمة المفاتيح بـ TTL طويل (ساعة)
+            self::set($tagKey, $existing, 3600);
+        }
+    }
+
+    /** مسح كل المفاتيح المرتبطة بـ tag معين */
+    public static function forgetTag(string $tag): void
+    {
+        $tagKey = 'tag_keys_' . $tag;
+        $keys = self::get($tagKey) ?? [];
+        foreach ($keys as $k) {
+            self::forget($k);
+        }
+        self::forget($tagKey);
+    }
+
     private static function path(string $key): string {
         return self::$dir . md5($key) . '.cache';
     }
 }
-

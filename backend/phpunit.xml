@@ -3,8 +3,16 @@
          colors="true"
          stopOnFailure="false">
     <testsuites>
-        <testsuite name="Backend Test Suite">
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="Root">
             <directory>tests</directory>
+            <exclude>tests/Unit</exclude>
+            <exclude>tests/Integration</exclude>
         </testsuite>
     </testsuites>
 </phpunit>

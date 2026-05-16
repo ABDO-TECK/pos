@@ -15,8 +15,9 @@ services:
       - DB_PASS=${DB_PASS:-secret}
       - APP_ENV=production
       - APP_DEBUG=false
-      - FORCE_HTTPS=${FORCE_HTTPS:-false}
-      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - DB_PERSISTENT=true
+      - FORCE_HTTPS=${FORCE_HTTPS:-true}
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8000}
     depends_on:
       db:

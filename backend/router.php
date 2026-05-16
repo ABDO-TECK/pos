@@ -19,14 +19,38 @@ if (
 
 $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
 
+// ── 0.1 حماية الملفات الحساسة (.env, .git, logs, storage) ──────
+// حظر أي طلب مباشر لملفات البيئة أو الملفات الحساسة
+if (preg_match('#(\.env|\.git|/logs/|/storage/|\.phpunit|composer\.(json|lock|phar))#i', $uri)) {
+    http_response_code(403);
+    echo '403 Forbidden';
+    return true;
+}
+
 // ── 0.5 حماية Adminer من الوصول عبر PHP built-in server ────────
 // في الإنتاج: ممنوع تماماً | في التطوير: فقط من 127.0.0.1
 if (preg_match('#/adminer#i', $uri)) {
-    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'development';
+    // قراءة APP_ENV: نحاول من $_ENV أولاً، ثم getenv، وأخيراً من ملف .env مباشرة
+    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: null;
+    if ($appEnv === null || $appEnv === false || $appEnv === '') {
+        // قراءة APP_ENV من ملف .env يدوياً كخط دفاع أخير
+        $envFile = __DIR__ . '/.env';
+        if (file_exists($envFile)) {
+            $envContent = file_get_contents($envFile);
+            if (preg_match('/^APP_ENV\s*=\s*(.+)$/m', $envContent, $m)) {
+                $appEnv = trim($m[1], " \t\n\r\"'");
+            }
+        }
+        $appEnv = $appEnv ?: 'development';
+    }
+
     $remoteIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+    // حظر في الإنتاج أو من أي IP غير محلي
     if ($appEnv === 'production' || !in_array($remoteIp, ['127.0.0.1', '::1'], true)) {
         http_response_code(403);
-        echo '403 Forbidden';
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo '403 Forbidden — Adminer is not available.';
         return true;
     }
 }

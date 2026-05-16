@@ -39,8 +39,7 @@ export default function ExpenseCategoriesTab() {
       }
       setShowModal(false)
       loadCategories()
-    } catch {
-      // error handled globally
+    } catch (err) { // error handled globally
     }
   }
 
@@ -49,8 +48,7 @@ export default function ExpenseCategoriesTab() {
     try {
       await api.delete(`/expense-categories/${id}`)
       loadCategories()
-    } catch {
-      // error handled globally
+    } catch (err) { // error handled globally
     }
   }
 

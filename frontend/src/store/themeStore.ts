@@ -14,8 +14,7 @@ function applyTheme(mode: ThemeMode) {
   }
   try {
     localStorage.setItem(STORAGE_KEY, mode)
-  } catch {
-    /* ignore */
+  } catch (err) {  /* ignore */
   }
 }
 
@@ -25,8 +24,8 @@ function runWithThemeTransition(updateDom: () => void) {
     return
   }
   const root = document.documentElement
-  if (typeof (document as any).startViewTransition === 'function') {
-    (document as any).startViewTransition(() => {
+  if (typeof document.startViewTransition === 'function') {
+    document.startViewTransition(() => {
       updateDom()
     })
     return
@@ -44,8 +43,7 @@ function getStoredTheme(): ThemeMode {
   try {
     const s = localStorage.getItem(STORAGE_KEY)
     if (s === 'dark' || s === 'light') return s as ThemeMode
-  } catch {
-    /* ignore */
+  } catch (err) {  /* ignore */
   }
   return 'light'
 }

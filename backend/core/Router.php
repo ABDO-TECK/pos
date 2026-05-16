@@ -9,6 +9,7 @@ use App\Middleware\CsrfMiddleware;
 class Router {
     private array $routes = [];
     private Container $container;
+    private string $apiVersion = 'v1';
 
     public function __construct(?Container $container = null) {
         $this->container = $container ?? new Container();
@@ -49,8 +50,17 @@ class Router {
         }
 
         // ── API Versioning ────────────────────────────────────────
-        // دعم /api/v1/... → /api/... (backward-compatible)
-        // يسمح باستخدام /api/v1/products أو /api/products بنفس النتيجة
+        // يستخرج رقم النسخة من المسار (مثل: /api/v1/products → v1)
+        // - v1: يُوجَّه إلى routes/api.php (الافتراضي)
+        // - v2+: مستقبلاً يمكن إضافة ملف routes/api_v2.php
+        // نحتفظ برقم النسخة كـ header في الـ response
+        $apiVersion = 'v1'; // الإصدار الافتراضي
+        if (preg_match('#^/api/(v(\d+))/#', $uri, $vMatch)) {
+            $apiVersion = $vMatch[1];
+            $this->apiVersion = $apiVersion;
+        }
+        // حالياً كل النسخ توجَّه لنفس الـ routes (v1 فقط)
+        // عند إضافة v2: أضف شرط هنا لتحميل ملف routes مختلف
         $uri = preg_replace('#^/api/v\d+/#', '/api/', $uri);
 
         foreach ($this->routes as $route) {
@@ -61,7 +71,11 @@ class Router {
                 // Inject global middlewares
                 array_unshift($middlewares, CsrfMiddleware::class);
                 array_unshift($middlewares, \App\Middleware\TimingMiddleware::class);
+                array_unshift($middlewares, \App\Middleware\CompressionMiddleware::class);
                 array_unshift($middlewares, \App\Middleware\HttpsMiddleware::class);
+                array_unshift($middlewares, \App\Middleware\DeleteRateLimiter::class);
+                array_unshift($middlewares, \App\Middleware\WriteRateLimiter::class);
+                array_unshift($middlewares, \App\Middleware\ReadRateLimiter::class);
 
                 $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
                     $controller = $this->container->get($controllerClass);
@@ -78,6 +92,7 @@ class Router {
     private function sendResponse(mixed $response): void {
         if (is_array($response) && isset($response['status_code'])) {
             http_response_code($response['status_code']);
+            header('X-API-Version: ' . $this->apiVersion);
             
             if ($response['status_code'] !== 304) {
                 header('Content-Type: application/json; charset=utf-8');
@@ -89,8 +104,12 @@ class Router {
                 }
             }
             
-            if ($response['status_code'] !== 304 && isset($response['body'])) {
-                echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($response['status_code'] !== 304) {
+                if (isset($response['compressed_body'])) {
+                    echo $response['compressed_body'];
+                } elseif (isset($response['body'])) {
+                    echo json_encode($response['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
             }
         } else if (is_string($response)) {
             echo $response;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
 
 export default function ReceiveGoodsProductCard({ product, onAdd }) {

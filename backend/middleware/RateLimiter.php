@@ -9,7 +9,7 @@ use Throwable;
 /**
  * Rate Limiter Middleware — حماية API من الطلبات المفرطة
  *
- * يستخدم ملفات مؤقتة مع قفل ذري (flock) لتتبع الطلبات لكل IP —
+ * يستخدم SQLite كطبقة تخزين (Fallback) بعد APCu —
  * آمن للطلبات المتزامنة (Concurrent-safe).
  *
  * الحد الافتراضي: 120 طلب/دقيقة (مناسب لنظام POS سريع الاستخدام).
@@ -18,31 +18,26 @@ class RateLimiter
 {
     private int    $maxRequests;
     private int    $windowSeconds;
-    private string $storageDir;
 
-    public function __construct(int $maxRequests = 120, int $windowSeconds = 60)
+    public function __construct(int $maxRequests = 200, int $windowSeconds = 60)
     {
         $this->maxRequests   = $maxRequests;
         $this->windowSeconds = $windowSeconds;
-        $this->storageDir    = __DIR__ . '/../storage/rate_limit';
-
-        if (!is_dir($this->storageDir)) {
-            @mkdir($this->storageDir, 0755, true);
-        }
     }
 
     /**
      * فحص الحد — يُستدعى عند كل طلب API.
      * إذا تجاوز العميل الحد المسموح، يُرسل 429 ويخرج.
      */
-    public function check(): void
+    public function check(string $prefix = 'rate_limit', ?int $userId = null): void
     {
         $ip   = $this->getClientIp();
+        $identifier = $userId ? "user_{$userId}" : "ip_{$ip}";
         $now  = time();
 
         // ── 1. استخدام APCu في حال توفره (أداء أعلى بكثير) ──
         if (function_exists('apcu_inc')) {
-            $key = 'rate_limit_' . md5($ip) . '_' . floor($now / $this->windowSeconds);
+            $key = $prefix . '_' . md5($identifier) . '_' . floor($now / $this->windowSeconds);
             $success = false;
             $count = apcu_inc($key, 1, $success);
             
@@ -65,91 +60,79 @@ class RateLimiter
             return;
         }
 
-        // ── 2. التراجع (Fallback) لنظام الملفات في حال غياب APCu ──
-        $file = $this->storageDir . '/' . md5($ip) . '.json';
+        // ── 2. التراجع (Fallback) لـ SQLite في حال غياب APCu ──
+        $key = $prefix . '_' . md5($identifier);
+        $windowKey = $key . '_' . floor($now / $this->windowSeconds);
 
-        // ── قراءة + تحديث ذري (atomic read-modify-write) ─────
-        $handle = @fopen($file, 'c+');
-        if ($handle === false) {
-            // فشل فتح الملف — نسمح بالمرور (fail open) بدلاً من حظر المستخدم
-            return;
-        }
-
-        // قفل حصري — ينتظر حتى يتحرر القفل من طلب آخر
-        if (!flock($handle, LOCK_EX)) {
-            fclose($handle);
-            return;
-        }
+        $db = $this->getSQLiteDB();
+        if (!$db) return; // fail open
 
         try {
-            // قراءة المحتوى الحالي
-            $content = stream_get_contents($handle);
-            $data    = ($content !== '' && $content !== false)
-                ? json_decode($content, true)
-                : null;
-
-            if (!is_array($data) || !isset($data['timestamps'])) {
-                $data = ['timestamps' => []];
+            // تنظيف السجلات المنتهية (مرة كل 100 طلب تقريباً)
+            if (random_int(1, 100) === 1) {
+                $db->exec("DELETE FROM rate_limits WHERE expires_at < " . $now);
             }
 
-            // تنظيف الطلبات القديمة خارج النافذة الزمنية
-            $windowStart = $now - $this->windowSeconds;
-            $data['timestamps'] = array_values(
-                array_filter($data['timestamps'], fn($ts) => $ts >= $windowStart)
-            );
+            // جلب أو إنشاء السجل
+            $stmt = $db->prepare("SELECT request_count FROM rate_limits WHERE key_name = :key");
+            $stmt->execute([':key' => $windowKey]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-            // فحص الحد
-            if (count($data['timestamps']) >= $this->maxRequests) {
-                $oldestInWindow = min($data['timestamps']);
-                $retryAfter     = ($oldestInWindow + $this->windowSeconds) - $now;
-                $retryAfter     = max(1, $retryAfter);
-
-                // كتابة البيانات بدون إضافة الطلب الحالي
-                $this->writeAndUnlock($handle, $file, $data);
-
-                header("Retry-After: $retryAfter");
-                http_response_code(429);
-                echo json_encode([
-                    'status'      => 'error',
-                    'message'     => 'تم تجاوز الحد المسموح من الطلبات. يرجى الانتظار.',
-                    'retry_after' => $retryAfter,
-                ], JSON_UNESCAPED_UNICODE);
-                exit;
+            if ($row) {
+                $count = (int)$row['request_count'];
+                if ($count >= $this->maxRequests) {
+                    $retryAfter = max(1, $this->windowSeconds - ($now % $this->windowSeconds));
+                    header("Retry-After: $retryAfter");
+                    http_response_code(429);
+                    echo json_encode([
+                        'status'      => 'error',
+                        'message'     => 'تم تجاوز الحد المسموح من الطلبات. يرجى الانتظار.',
+                        'retry_after' => $retryAfter,
+                    ], JSON_UNESCAPED_UNICODE);
+                    exit;
+                }
+                $db->prepare("UPDATE rate_limits SET request_count = request_count + 1 WHERE key_name = :key")
+                   ->execute([':key' => $windowKey]);
+            } else {
+                $expiresAt = $now + $this->windowSeconds + 10;
+                $db->prepare("INSERT OR IGNORE INTO rate_limits (key_name, request_count, expires_at) VALUES (:key, 1, :exp)")
+                   ->execute([':key' => $windowKey, ':exp' => $expiresAt]);
             }
-
-            // تسجيل الطلب الحالي
-            $data['timestamps'][] = $now;
-
-            // الاحتفاظ فقط بآخر N+10 عنصر لمنع نمو الملف بلا حدود
-            $maxKeep = $this->maxRequests + 10;
-            if (count($data['timestamps']) > $maxKeep) {
-                $data['timestamps'] = array_slice($data['timestamps'], -$maxKeep);
-            }
-
-            $this->writeAndUnlock($handle, $file, $data);
-        } catch (Throwable $e) {
-            // فك القفل في حال حدوث خطأ
-            flock($handle, LOCK_UN);
-            fclose($handle);
-            // fail open — لا نحظر المستخدم بسبب خطأ داخلي
-            Logger::error('RateLimiter error', ['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            // fail open
+            Logger::error('RateLimiter SQLite error', ['error' => $e->getMessage()]);
         }
     }
 
     /**
-     * كتابة البيانات المحدّثة وتحرير القفل.
-     *
-     * @param resource $handle
+     * إنشاء/فتح قاعدة بيانات SQLite للـ Rate Limiting.
      */
-    private function writeAndUnlock($handle, string $file, array $data): void
+    private function getSQLiteDB(): ?\PDO
     {
-        // إعادة الكتابة من البداية
-        fseek($handle, 0);
-        ftruncate($handle, 0);
-        fwrite($handle, json_encode($data, JSON_UNESCAPED_UNICODE));
-        fflush($handle);
-        flock($handle, LOCK_UN);
-        fclose($handle);
+        static $db = null;
+        if ($db !== null) return $db;
+
+        try {
+            $dbPath = __DIR__ . '/../storage/rate_limit.sqlite';
+            $dir = dirname($dbPath);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0755, true);
+            }
+
+            $db = new \PDO('sqlite:' . $dbPath);
+            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $db->exec("CREATE TABLE IF NOT EXISTS rate_limits (
+                key_name TEXT PRIMARY KEY,
+                request_count INTEGER NOT NULL DEFAULT 1,
+                expires_at INTEGER NOT NULL
+            )");
+            // تفعيل WAL mode للأداء
+            $db->exec("PRAGMA journal_mode=WAL");
+            return $db;
+        } catch (\Throwable $e) {
+            Logger::error('RateLimiter: SQLite init failed', ['error' => $e->getMessage()]);
+            return null;
+        }
     }
 
     /**
@@ -178,13 +161,16 @@ class RateLimiter
      */
     public function cleanup(): void
     {
-        $files  = glob($this->storageDir . '/*.json') ?: [];
-        $expiry = time() - ($this->windowSeconds * 2);
+        $db = $this->getSQLiteDB();
+        if ($db) {
+            try {
+                $db->exec("DELETE FROM rate_limits WHERE expires_at < " . time());
+            } catch (\Throwable $e) {}
+        }
+        // تنظيف الملفات القديمة (فترة انتقالية)
+        $files = glob(__DIR__ . '/../storage/rate_limit/*.json') ?: [];
         foreach ($files as $file) {
-            if (filemtime($file) < $expiry) {
-                @unlink($file);
-            }
+            @unlink($file);
         }
     }
 }
-

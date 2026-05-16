@@ -8,16 +8,17 @@ import useSettingsStore from './store/settingsStore'
 import useThemeStore from './store/themeStore'
 import ConfirmModal from './components/common/ConfirmModal'
 import ForcePasswordChangeModal from './components/common/ForcePasswordChangeModal'
+import { useInventorySSE } from './hooks/useInventorySSE'
 
 /**
  * Retry wrapper for lazy imports — handles transient network/SSL failures.
  * Retries up to `maxRetries` times with exponential delay before reloading the page.
  * Uses a counter to prevent infinite reload loops (max 1 reload per session).
  */
-function lazyRetry(importFn, maxRetries = 2) {
+function lazyRetry(importFn: () => Promise<{ default: React.ComponentType<unknown> }>, maxRetries = 2) {
   return lazy(() => {
-    const attempt = (retriesLeft) =>
-      importFn().catch((err) => {
+    const attempt = (retriesLeft: number): Promise<{ default: React.ComponentType<unknown> }> =>
+      importFn().catch((err: unknown) => {
         if (retriesLeft > 0) {
           return new Promise((resolve) => setTimeout(resolve, 500)).then(() =>
             attempt(retriesLeft - 1)
@@ -47,6 +48,7 @@ const Sales     = lazyRetry(() => import('./pages/Sales'))
 const Settings  = lazyRetry(() => import('./pages/Settings'))
 const Customers = lazyRetry(() => import('./pages/Customers'))
 const Expenses  = lazyRetry(() => import('./pages/Expenses'))
+const Branches  = lazyRetry(() => import('./pages/Branches'))
 
 function PageLoader() {
   return (
@@ -56,7 +58,7 @@ function PageLoader() {
   )
 }
 
-function PrivateRoute({ children }) {
+function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user, _hasHydrated } = useAuthStore()
   if (!_hasHydrated) return <PageLoader />
   if (!isAuthenticated) return <Navigate to="/login" replace />
@@ -64,7 +66,7 @@ function PrivateRoute({ children }) {
   return children
 }
 
-function AdminRoute({ children }) {
+function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, _hasHydrated } = useAuthStore()
   if (!_hasHydrated) return <PageLoader />
   if (user?.force_password_change === 1) return <PageLoader />
@@ -80,7 +82,11 @@ function SettingsLoader() {
   return null
 }
 
-
+function SSELoader() {
+  const { isAuthenticated } = useAuthStore()
+  useInventorySSE(isAuthenticated)
+  return null
+}
 
 function AppShell() {
   const themeMode = useThemeStore((s) => s.mode)
@@ -99,6 +105,7 @@ function AppShell() {
       <ConfirmModal />
       <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
       <SettingsLoader />
+      {/* SSE disabled — WebSocket handles real-time updates */}
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -168,6 +175,14 @@ function AppShell() {
           <Route path="/customers" element={
             <PrivateRoute>
               <Layout><Customers /></Layout>
+            </PrivateRoute>
+          } />
+
+          <Route path="/branches" element={
+            <PrivateRoute>
+              <AdminRoute>
+                <Layout><Branches /></Layout>
+              </AdminRoute>
             </PrivateRoute>
           } />
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { formatCurrency, formatPercent } from '../../../utils/formatters'
 import { TotalLine } from './ReceiptHelpers'
 

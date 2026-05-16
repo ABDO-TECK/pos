@@ -4,9 +4,12 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\ValidationException;
+use App\Helpers\ErrorCodes;
+use App\Helpers\EventDispatcher;
 use App\Helpers\Response;
 use App\Helpers\AuditLog;
 use App\Models\Product;
+use App\Models\PriceHistory;
 use App\Requests\ProductRequest;
 use App\Services\ProductService;
 
@@ -26,8 +29,7 @@ class ProductController extends Controller {
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
             'low_stock'   => $this->getParam('low_stock'),
-            'page'        => $this->getParam('page'),
-            'limit'       => $this->getParam('limit'),
+            ...$this->getPaginationParams(),
         ];
 
         $result = $this->productModel->all($filters);
@@ -63,11 +65,11 @@ class ProductController extends Controller {
             $result = $this->productService->createProduct($data);
 
             if (!$result['ok']) {
-                return Response::error($result['error'], $result['code']);
+                return Response::error($result['error'], $result['code'], null, ErrorCodes::VALIDATION_FAILED);
             }
             return Response::success($result['product'], 'Product created', 201);
         } catch (ValidationException $e) {
-            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors());
+            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
         }
     }
 
@@ -81,13 +83,13 @@ class ProductController extends Controller {
             if (!$result['ok']) {
                 $code = $result['code'] ?? 500;
                 return $code === 404
-                    ? Response::notFound($result['error'])
-                    : Response::error($result['error'], $code);
+                    ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
+                    : Response::error($result['error'], $code, null, ErrorCodes::VALIDATION_FAILED);
             }
             AuditLog::log($this->authService->id(), 'update_product', 'product', (int)$id, null, $data);
             return Response::success($result['product'], 'Product updated');
         } catch (ValidationException $e) {
-            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors());
+            return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
         }
     }
 
@@ -110,14 +112,34 @@ class ProductController extends Controller {
         return $parts !== [] ? implode(' ', $parts) : 'تحقق من الحقول المطلوبة.';
     }
 
+    public function lowStock() {
+        return Response::cacheable($this->productService->getLowStockProducts(), 60);
+    }
+
+    /**
+     * GET /api/products/{id}/price-history
+     * سجل تغييرات أسعار المنتج
+     */
+    public function priceHistory(string $id) {
+        $product = $this->productModel->findById((int) $id);
+        if (!$product) {
+            return Response::notFound('المنتج غير موجود');
+        }
+
+        $db = \App\Config\Database::getInstance();
+        $history = (new PriceHistory($db))->getByProductId((int) $id);
+
+        return Response::success($history);
+    }
+
     public function destroy(string $id) {
         $result = $this->productService->deleteProduct((int) $id);
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
             return $code === 404
-                ? Response::notFound($result['error'])
-                : Response::error($result['error'], $code);
+                ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
+                : Response::error($result['error'], $code, null, ErrorCodes::PRODUCT_IN_USE);
         }
         AuditLog::log($this->authService->id(), 'delete_product', 'product', (int)$id);
         return Response::success(null, 'Product deleted');

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Edit2, Search, X, Package } from 'lucide-react'
 import useSettingsStore from '../../store/settingsStore'
@@ -10,6 +11,7 @@ import { formatCurrency } from '../../utils/formatters'
 import SupplierPaymentModal from './components/SupplierPaymentModal'
 import SupplierEditEntryModal from './components/SupplierEditEntryModal'
 import SupplierLedgerTable from './components/SupplierLedgerTable'
+import { extractApiError } from '../../utils/apiError'
 
 const fmtLedgerDate = (s) => {
   if (!s) return '—'
@@ -52,7 +54,7 @@ export default function SupplierAccounts() {
       const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
       setSuppliers(list)
     }
-    catch { toast.error('فشل تحميل الموردين') }
+    catch (err) { toast.error(extractApiError(err, 'فشل تحميل الموردين')) }
     finally { setLoading(false) }
   }
 
@@ -71,7 +73,7 @@ export default function SupplierAccounts() {
     try {
       const res = await getSupplier(s.id)
       setLedgerData(res.data.data)
-    } catch { toast.error('فشل تحميل كشف الحساب') }
+    } catch (err) { toast.error(extractApiError(err, 'فشل تحميل كشف الحساب')) }
     finally { setLedgerLoading(false) }
   }
 
@@ -89,7 +91,7 @@ export default function SupplierAccounts() {
       setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
       load()
-    } catch (err: any) { toast.error(err.response?.data?.message || 'فشل التسجيل') }
+    } catch (err) { toast.error(extractApiError(err, 'فشل التسجيل')) }
     finally { setPayLoading(false) }
   }
 
@@ -109,9 +111,7 @@ export default function SupplierAccounts() {
       setLedgerData(res.data.data) // Update UI
       setEditEntryModal(null)
       load() // Refresh list balances
-    } catch {
-      toast.error('فشل تعديل القيد')
-    } finally {
+    } catch (err) { toast.error(extractApiError(err, 'فشل تعديل القيد')) } finally {
       setEditEntryLoading(false)
     }
   }

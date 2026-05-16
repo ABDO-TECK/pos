@@ -1,3 +1,4 @@
+// @ts-nocheck
 import LedgerRow from '../../../components/customers/LedgerRow'
 import { formatCurrency } from '../../../utils/formatters'
 

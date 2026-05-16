@@ -3,8 +3,9 @@
 namespace App\Repositories;
 
 use App\Models\ExpenseCategory;
+use App\Contracts\RepositoryInterface;
 
-class ExpenseCategoryRepository
+class ExpenseCategoryRepository implements RepositoryInterface
 {
     private ExpenseCategory $model;
 

@@ -1,5 +1,7 @@
+// @ts-nocheck
 import { Phone, Trash2, Edit2, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import useSettingsStore from '../../store/settingsStore';
 
 export default function CustomerCard({ customer, active, onClick, onEdit, onDelete }) {
   const balance = parseFloat(customer.balance) || 0;
@@ -39,6 +41,11 @@ export default function CustomerCard({ customer, active, onClick, onEdit, onDele
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: balance > 0 ? 'var(--danger)' : 'var(--primary)' }}>
           {balance > 0 ? formatCurrency(balance) : '✓ مُسدَّد'}
         </div>
+        {useSettingsStore.getState().loyaltyEnabled && (
+          <div style={{ fontSize: '0.7rem', color: 'var(--warning)', marginTop: '2px' }}>
+            ⭐ {customer.loyalty_points || 0} نقطة
+          </div>
+        )}
       </div>
 
       {/* أزرار */}

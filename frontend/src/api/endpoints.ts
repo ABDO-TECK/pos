@@ -1,15 +1,17 @@
 import api from './axios'
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './constants'
 
 // Auth
 export const getCsrfCookie = () => api.get('/csrf-cookie')
 export const login = (data: Record<string, unknown>) => api.post<AuthResponse>('/login', data)
+export const refreshToken = () => api.post('/refresh')
 export const logout = () => api.post('/logout')
 export const getMe = () => api.get<ApiResponse<User>>('/user')
 
 export const getChangelog = () => api.get('/update/changelog')
 
 // Categories
-export const getCategories = (params?: Record<string, unknown>) => api.get<ApiResponse<Category[]>>('/categories', { params })
+export const getCategories = (params?: Record<string, unknown>) => api.get<ApiResponse<Category[]>>('/categories', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const createCategory = (data: Partial<Category>) => api.post<ApiResponse<Category>>('/categories', data)
 export const updateCategory = (id: number | string, data: Partial<Category>) => api.put<ApiResponse<Category>>(`/categories/${id}`, data)
 export const deleteCategory = (id: number | string) => api.delete<ApiResponse<null>>(`/categories/${id}`)
@@ -31,12 +33,12 @@ export const updateSaleStatus = (id: number | string, data: { status: string }) 
 export const deleteSale = (id: number | string) => api.delete<ApiResponse<null>>(`/sales/${id}`)
 
 // Inventory
-export const getInventory = (params?: Record<string, unknown>) => api.get<ApiResponse<Product[]>>('/inventory', { params })
-export const getLowStock = () => api.get<ApiResponse<Product[]>>('/inventory/low-stock')
+export const getInventory = (params?: Record<string, unknown>) => api.get<ApiResponse<Product[]>>('/inventory', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
+export const getLowStock = (params?: Record<string, unknown>) => api.get<ApiResponse<Product[]>>('/inventory/low-stock', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const adjustInventory = (id: number | string, data: { type: 'add' | 'subtract' | 'set'; quantity: number }) => api.put<ApiResponse<Product>>(`/inventory/${id}`, data)
 
 // Suppliers
-export const getSuppliers = (params?: Record<string, unknown>) => api.get<ApiResponse<Supplier[]>>('/suppliers', { params: { page: 1, limit: 50, ...params } })
+export const getSuppliers = (params?: Record<string, unknown>) => api.get<ApiResponse<Supplier[]>>('/suppliers', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const getSupplier = (id: number | string) => api.get<ApiResponse<Supplier>>(`/suppliers/${id}`)
 export const createSupplier = (data: Partial<Supplier>) => api.post<ApiResponse<Supplier>>('/suppliers', data)
 export const updateSupplier = (id: number | string, data: Partial<Supplier>) => api.put<ApiResponse<Supplier>>(`/suppliers/${id}`, data)
@@ -51,7 +53,7 @@ export const getTopProducts = (params?: Record<string, unknown>) => api.get<ApiR
 export const getReportSummary = () => api.get<ApiResponse<ReportSummary>>('/reports/summary')
 
 // Users
-export const getUsers = (params?: Record<string, unknown>) => api.get<ApiResponse<User[]>>('/users', { params: { page: 1, limit: 50, ...params } })
+export const getUsers = (params?: Record<string, unknown>) => api.get<ApiResponse<User[]>>('/users', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const createUser = (data: Partial<User>) => api.post<ApiResponse<User>>('/users', data)
 export const updateUser = (id: number | string, data: Partial<User>) => api.put<ApiResponse<User>>(`/users/${id}`, data)
 export const deleteUser = (id: number | string) => api.delete<ApiResponse<null>>(`/users/${id}`)
@@ -91,10 +93,14 @@ export const updateSupplierLedgerEntry = (entryId: number | string, data: Paymen
 export const getProfitReport = (params?: Record<string, unknown>) => api.get<ApiResponse<ProfitReport>>('/reports/profit', { params })
 
 // Customers
-export const getCustomers    = (params?: Record<string, unknown>)           => api.get<ApiResponse<Customer[]>>('/customers', { params: { page: 1, limit: 50, ...params } })
+export const getCustomers    = (params?: Record<string, unknown>)           => api.get<ApiResponse<Customer[]>>('/customers', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const getCustomer     = (id: number | string)         => api.get<ApiResponse<Customer>>(`/customers/${id}`)
 export const createCustomer  = (data: Partial<Customer>)       => api.post<ApiResponse<Customer>>('/customers', data)
 export const updateCustomer  = (id: number | string, data: Partial<Customer>)   => api.put<ApiResponse<Customer>>(`/customers/${id}`, data)
 export const deleteCustomer  = (id: number | string)         => api.delete<ApiResponse<null>>(`/customers/${id}`)
 export const addCustomerPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/customers/${id}/payment`, data)
 export const updateCustomerLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`, data)
+
+// Health Check
+export const getHealthCheck = () => api.get('/health')
+export const getHealthMetrics = () => api.get('/health/metrics')

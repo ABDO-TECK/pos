@@ -31,6 +31,9 @@ class Logger
     /** @var int عدد الأيام التي يُحتفظ بملفاتها */
     private static int $retainDays = 30;
 
+    /** @var int الحد الأقصى لحجم ملف اللوج (5 ميجابايت) */
+    private static int $maxFileSize = 5 * 1024 * 1024;
+
     /** @var string|null الحد الأدنى للتسجيل (null = تسجيل كل شيء) */
     private static ?string $minLevel = null;
 
@@ -80,7 +83,7 @@ class Logger
 
         $date     = date('Y-m-d');
         $time     = date('Y-m-d H:i:s');
-        $filePath = self::$logDir . "/pos-{$date}.log";
+        $filePath = self::resolveLogPath($date);
 
         // بناء السطر بتنسيق JSON (Structured Logging)
         $logData = [
@@ -130,6 +133,32 @@ class Logger
     // ── Maintenance ───────────────────────────────────────────────
 
     /**
+     * تحديد مسار ملف اللوج مع تدوير تلقائي عند تجاوز الحد.
+     * pos-2026-05-05.log → pos-2026-05-05.1.log → pos-2026-05-05.2.log ...
+     */
+    private static function resolveLogPath(string $date): string
+    {
+        $basePath = self::$logDir . "/pos-{$date}.log";
+
+        // إذا كان الملف أصغر من الحد، استخدمه مباشرة
+        if (!file_exists($basePath) || filesize($basePath) < self::$maxFileSize) {
+            return $basePath;
+        }
+
+        // ابحث عن أعلى رقم تدوير موجود
+        $rotationIndex = 1;
+        while (file_exists(self::$logDir . "/pos-{$date}.{$rotationIndex}.log")) {
+            $currentPath = self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
+            if (filesize($currentPath) < self::$maxFileSize) {
+                return $currentPath;
+            }
+            $rotationIndex++;
+        }
+
+        return self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
+    }
+
+    /**
      * حذف ملفات اللوج القديمة (أقدم من $retainDays يوم).
      * يمكن استدعاؤها دوريًا أو ضمن Migrations.
      */
@@ -137,7 +166,10 @@ class Logger
     {
         self::init();
         $deleted = 0;
-        $files   = glob(self::$logDir . '/pos-*.log') ?: [];
+        $files   = array_merge(
+            glob(self::$logDir . '/pos-*.log') ?: [],
+            glob(self::$logDir . '/pos-*.*.log') ?: []
+        );
         $cutoff  = time() - (self::$retainDays * 86400);
 
         foreach ($files as $file) {

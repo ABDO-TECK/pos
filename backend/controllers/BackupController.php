@@ -157,6 +157,15 @@ class BackupController extends Controller {
 
         return Response::success(null, $msg);
     }
+    /**
+     * POST /api/admin/backup/schedule
+     * جدولة نسخ احتياطي في الخلفية عبر Job Queue.
+     */
+    public function schedule(): array
+    {
+        \App\Helpers\JobQueue::dispatch('backup_database', [], 1);
+        return \App\Helpers\Response::success(null, 'تم جدولة النسخ الاحتياطي بنجاح');
+    }
 }
 
 

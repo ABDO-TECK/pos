@@ -44,14 +44,22 @@ class CustomerService {
 
         $type = $data['type'] === 'debit' ? 'debit' : 'credit';
 
-        $this->customerModel->addLedgerEntry([
-            'customer_id' => $customerId,
-            'type'        => $type,
-            'amount'      => $amount,
-            'description' => $data['description'] ?? 'دفعة نقدية',
-            'invoice_id'  => null,
-            'created_by'  => $authUser['id'],
-        ]);
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->customerModel->addLedgerEntry([
+                'customer_id' => $customerId,
+                'type'        => $type,
+                'amount'      => $amount,
+                'description' => $data['description'] ?? 'دفعة نقدية',
+                'invoice_id'  => null,
+                'created_by'  => $authUser['id'],
+            ]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('فشل تسجيل الدفعة', 500);
+        }
 
         return $this->customerModel->getLedger($customerId);
     }
@@ -72,11 +80,19 @@ class CustomerService {
             throw new Exception('نوع القيد غير صحيح', 422);
         }
 
-        $this->customerModel->updateLedgerEntry($entryId, [
-            'type'        => $type,
-            'amount'      => $amount,
-            'description' => $data['description'] ?? $entry['description'],
-        ]);
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->customerModel->updateLedgerEntry($entryId, [
+                'type'        => $type,
+                'amount'      => $amount,
+                'description' => $data['description'] ?? $entry['description'],
+            ]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('فشل تحديث القيد', 500);
+        }
 
         return $this->customerModel->getLedger((int)$entry['customer_id']);
     }

@@ -3,7 +3,27 @@ import { ShoppingCart, Trash2 } from 'lucide-react'
 import { formatCurrency, formatNumber, formatPercent } from '../../utils/formatters'
 import toast from 'react-hot-toast'
 
-export function CartHeader({ items, clearCart, itemCount }: any) {
+interface CartHeaderProps {
+  items: Array<{ product_id: number; quantity: number; price: number }>
+  clearCart: () => void
+  itemCount: number
+}
+
+interface CartTotalsProps {
+  items: Array<{ price: number; quantity: number }>
+  subtotal: number
+  tax: number
+  total: number
+  taxEnabled: boolean
+  taxRate: number
+}
+
+interface ProductCardProps {
+  product: { id: number; name: string; price: number; quantity: number; barcode: string; low_stock_threshold?: number; units_per_box?: number; sell_by_weight?: number }
+  onAdd: (e: React.MouseEvent<HTMLButtonElement>) => void
+}
+
+export function CartHeader({ items, clearCart, itemCount }: CartHeaderProps) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}>
@@ -42,7 +62,7 @@ export function TotalRow({ label, value, bold, green, muted }: { label: React.Re
   )
 }
 
-export function CartTotals({ items, subtotal, tax, total, taxEnabled, taxRate }: any) {
+export function CartTotals({ items, subtotal, tax, total, taxEnabled, taxRate }: CartTotalsProps) {
   if (!items.length) return null
   return (
     <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -55,10 +75,10 @@ export function CartTotals({ items, subtotal, tax, total, taxEnabled, taxRate }:
   )
 }
 
-export function ProductCard({ product, onAdd }: any) {
+export function ProductCard({ product, onAdd }: ProductCardProps) {
   const isOutOfStock = product.quantity <= 0
-  const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
-  const upb          = parseInt(product.units_per_box, 10) || 1
+  const isLowStock   = product.quantity <= (product.low_stock_threshold || 5) && product.quantity > 0
+  const upb          = Number(product.units_per_box) || 1
 
   return (
     <button
@@ -90,10 +110,10 @@ export function ProductCard({ product, onAdd }: any) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: 'auto', gap: '0.3rem', width: '100%' }}>
         <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {parseInt(product.sell_by_weight) === 1 && (
+          {Number(product.sell_by_weight) === 1 && (
             <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>⚖️ وزن</span>
           )}
-          {upb > 1 && parseInt(product.sell_by_weight) !== 1 && (
+          {upb > 1 && Number(product.sell_by_weight) !== 1 && (
             <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
               📦 {formatNumber(upb)}
             </span>

@@ -44,6 +44,51 @@ abstract class Controller {
     }
 
 
+    /**
+     * استخراج معاملات الترقيم (Pagination) من الطلب مع قيم افتراضية موحدة.
+     *
+     * @param int $defaultLimit الحد الافتراضي لعدد النتائج (20)
+     * @param int $maxLimit     الحد الأقصى المسموح (500)
+     * @return array{page: int|null, limit: int|null}
+     */
+    protected function getPaginationParams(int $defaultLimit = 20, int $maxLimit = 500): array
+    {
+        $page  = $this->getParam('page');
+        $limit = $this->getParam('limit');
+
+        // إرجاع null للسماح للموديلات بجلب جميع البيانات (مطلوب للـ Offline POS)
+        if ($page === null && $limit === null) {
+            return ['page' => null, 'limit' => null];
+        }
+
+        return [
+            'page'  => max(1, (int) ($page ?? 1)),
+            'limit' => max(1, min($maxLimit, (int) ($limit ?? $defaultLimit))),
+        ];
+    }
+
+    /**
+     * تنفيذ عملية داخل Database Transaction.
+     * إذا نجحت الدالة يُعمل commit، وإذا فشلت يُعمل rollback.
+     *
+     * @param callable $callback الدالة التي تحتوي على عمليات قاعدة البيانات
+     * @return mixed نتيجة الدالة
+     * @throws \Throwable يُعيد رمي الاستثناء بعد الـ rollback
+     */
+    protected function withTransaction(callable $callback): mixed
+    {
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $result = $callback($db);
+            $db->commit();
+            return $result;
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    }
+
     protected function sanitize(mixed $value): string {
         return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');
     }

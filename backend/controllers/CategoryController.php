@@ -4,53 +4,74 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\Response;
-use App\Models\Category;
+use App\Repositories\CategoryRepository;
+use App\Helpers\Cache;
 
 
 class CategoryController extends Controller {
 
-    private Category $categoryModel;
+    private CategoryRepository $categoryRepo;
 
-    public function __construct(Category $categoryModel) {
-        $this->categoryModel = $categoryModel;
+    public function __construct(CategoryRepository $categoryRepo) {
+        $this->categoryRepo = $categoryRepo;
     }
 
     public function index() {
         $filters = [];
-        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
-        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
-        $result = $this->categoryModel->all($filters);
+        // Cache only unfiltered requests
+        $cacheKey = empty($filters) ? 'categories_all' : null;
+        if ($cacheKey) {
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                if (isset($cached['pagination'])) {
+                    return Response::cacheable($cached['data'], 300, null, ['pagination' => $cached['pagination']]);
+                }
+                return Response::cacheable($cached, 300);
+            }
+        }
+
+        $result = $this->categoryRepo->all($filters);
 
         if (isset($result['pagination'])) {
-            $data = ['data' => $result['data'], 'pagination' => $result['pagination']];
-            return Response::cacheable($data, 300);
+            if ($cacheKey) Cache::set($cacheKey, $result, 300);
+            return Response::cacheable($result['data'], 300, null, ['pagination' => $result['pagination']]);
         } else {
-            return Response::cacheable($result['data'] ?? $result, 300);
+            $data = $result['data'] ?? $result;
+            if ($cacheKey) Cache::set($cacheKey, $data, 300);
+            return Response::cacheable($data, 300);
         }
     }
 
     public function store() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        $request = new \App\Requests\CategoryRequest($this->getBody());
+        $data = $request->validated();
 
-        $id = $this->categoryModel->create(['name' => $data['name']]);
-        return Response::success(['id' => $id, 'name' => $data['name']], 'Category created', 201);
+        return $this->withTransaction(function () use ($data) {
+            $id = $this->categoryRepo->create(['name' => $data['name']]);
+            \App\Helpers\EventDispatcher::dispatch('category.created', ['id' => $id]);
+            return Response::success(['id' => $id, 'name' => $data['name']], 'Category created', 201);
+        });
     }
 
     public function update(string $id) {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, ['name' => 'required']);
-        if ($errors) return Response::error('Validation failed', 422, $errors);
+        $request = new \App\Requests\CategoryRequest($this->getBody());
+        $data = $request->validated();
 
-        $this->categoryModel->update((int)$id, ['name' => $data['name']]);
-        return Response::success(['id' => (int)$id, 'name' => $data['name']], 'Category updated');
+        return $this->withTransaction(function () use ($id, $data) {
+            $this->categoryRepo->update((int)$id, ['name' => $data['name']]);
+            \App\Helpers\EventDispatcher::dispatch('category.updated', ['id' => (int)$id]);
+            return Response::success(['id' => (int)$id, 'name' => $data['name']], 'Category updated');
+        });
     }
 
     public function destroy(string $id) {
-        $this->categoryModel->delete((int)$id);
-        return Response::success(null, 'Category deleted');
+        return $this->withTransaction(function () use ($id) {
+            $this->categoryRepo->delete((int)$id);
+            \App\Helpers\EventDispatcher::dispatch('category.deleted', ['id' => (int)$id]);
+            return Response::success(null, 'Category deleted');
+        });
     }
 }
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Printer, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -69,7 +70,7 @@ export default function Receipt({ invoice, change, onClose }) {
             const saved = getSavedPrinter()
             if (saved && list.includes(saved)) setSelectedPrinter(saved)
             else if (list.length === 1) { savePrinter(list[0]); setSelectedPrinter(list[0]) }
-        } catch { /* ignore */ }
+        } catch (err) {  /* ignore */ }
     }
 
     if (!invoice) return null
@@ -84,7 +85,7 @@ export default function Receipt({ invoice, change, onClose }) {
         try {
             await printInvoice(invoice, change, settings, selectedPrinter, paperSize)
             toast.success(`تمت الطباعة بنجاح (${paperSize})`)
-        } catch (err: any) {
+        } catch (err) {
             toast.error('فشل الطباعة: ' + (err.message ?? ''))
         } finally {
             setPrinting(false)

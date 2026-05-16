@@ -35,8 +35,7 @@ async function flush() {
         // @ts-ignore - custom config to suppress global error toast
         hideGlobalError: true,
       })
-    } catch {
-      // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
+    } catch (err) { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
       console.warn('[clientLogger] Failed to send log entry:', entry.message)
     }
   }
@@ -118,4 +117,25 @@ export function logInfo(message: string, context?: Record<string, unknown>) {
  */
 export function flushNow() {
   flush()
+}
+
+// ── ضمان إرسال الأخطاء المتبقية عند إغلاق الصفحة ──────────
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (queue.length === 0) return
+
+    // استخدام sendBeacon لأنه يضمن الإرسال حتى أثناء إغلاق الصفحة
+    // (fetch/XMLHttpRequest قد يُلغيان عند الإغلاق)
+    const url = (api.defaults.baseURL || '') + '/client-log'
+    for (const entry of queue.splice(0, MAX_QUEUE)) {
+      try {
+        navigator.sendBeacon(
+          url,
+          new Blob([JSON.stringify(entry)], { type: 'application/json' }),
+        )
+      } catch {
+        // لا شيء يمكن فعله — الصفحة تُغلق
+      }
+    }
+  })
 }

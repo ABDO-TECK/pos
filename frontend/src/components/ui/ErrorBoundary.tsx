@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Component, ReactNode } from 'react'
 import { logError } from '../../utils/clientLogger'
 

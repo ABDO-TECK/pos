@@ -1,17 +1,16 @@
 /*
  * ══════════════════════════════════════════════════════
- *  ملاحظة معمارية حول هيكل CSS
+ *  Global CSS — متغيرات، ريسيت، خطوط
  * ══════════════════════════════════════════════════════
  *
- *  الملفات:
- *    - global.css      → متغيرات CSS العامة والريسيت
- *    - components.css   → أنماط المكونات (أزرار، بطاقات، جداول)
- *    - layout.css       → تخطيط الصفحة والشريط الجانبي
- *    - pages.css        → أنماط خاصة بالصفحات
+ *  BEM Naming Convention:
+ *  - Block:    .pos-card, .pos-btn, .pos-modal
+ *  - Element:  .pos-card__header, .pos-btn__icon
+ *  - Modifier: .pos-btn--primary, .pos-card--active
  *
- *  القرار: لم يتم استخدام CSS Modules أو Styled Components
- *  لأن المشروع صغير ولا توجد تعارضات أسماء حالياً.
- *  عند التوسع: يمكن الانتقال لـ CSS Modules دون كسر الكود الحالي.
+ *  القرار: نحتفظ بالأسماء الحالية (.btn, .card, .input)
+ *  لأنها مستخدمة في عشرات الملفات. يُفضّل استخدام BEM
+ *  فقط للمكونات الجديدة لتجنب كسر الكود.
  * ══════════════════════════════════════════════════════
  */
 /* Removed external font import for offline support. Using system fonts (Segoe UI on Windows handles Arabic natively). */

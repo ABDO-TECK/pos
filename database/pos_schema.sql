@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS products (
     low_stock_threshold INT NOT NULL DEFAULT 5,
     units_per_box INT NOT NULL DEFAULT 1 COMMENT 'عدد القطع في الصندوق الواحد — للبيع بالكرتون',
     category_id INT NULL,
+    branch_id INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_barcode (barcode),
     INDEX idx_name (name),
     INDEX idx_category (category_id),
-    INDEX idx_products_deleted (deleted_at)
+    INDEX idx_products_deleted (deleted_at),
+    INDEX idx_prod_low_stock (quantity, low_stock_threshold, deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Extra barcodes for the same product (primary remains products.barcode)
@@ -61,6 +63,18 @@ CREATE TABLE IF NOT EXISTS product_barcodes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- Branches (Multi-branch support)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS branches (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    address VARCHAR(255) NULL,
+    phone VARCHAR(20) NULL,
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Users
 -- ============================================================
 CREATE TABLE IF NOT EXISTS users (
@@ -71,8 +85,10 @@ CREATE TABLE IF NOT EXISTS users (
     role ENUM('admin','cashier') NOT NULL DEFAULT 'cashier',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     force_password_change TINYINT(1) NOT NULL DEFAULT 0,
+    branch_id INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_email (email)
+    INDEX idx_email (email),
+    CONSTRAINT fk_user_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -85,7 +101,21 @@ CREATE TABLE IF NOT EXISTS tokens (
     expires_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_token_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_token (token)
+    INDEX idx_token (token),
+    INDEX idx_token_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Refresh Tokens (for session renewal)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    token VARCHAR(128) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_refresh_token_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_refresh_token (token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -113,10 +143,13 @@ CREATE TABLE IF NOT EXISTS expenses (
     amount DECIMAL(10,2) NOT NULL,
     notes TEXT NULL,
     expense_date DATETIME NOT NULL,
+    branch_id INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_expense_category FOREIGN KEY (category_id) REFERENCES expense_categories(id) ON DELETE CASCADE,
-    CONSTRAINT fk_expense_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT fk_expense_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_exp_date (expense_date),
+    INDEX idx_exp_cat_date (category_id, expense_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -128,6 +161,7 @@ CREATE TABLE IF NOT EXISTS customers (
     phone VARCHAR(30) NULL,
     address TEXT NULL,
     initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لعميل قديم له دين مسبق',
+    loyalty_points INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
     INDEX idx_name (name),
@@ -150,6 +184,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     change_due DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     amount_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'المتبقي على ذمة العميل بعد خصم العربون',
     status VARCHAR(20) NOT NULL DEFAULT 'completed',
+    branch_id INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
     CONSTRAINT fk_invoice_user     FOREIGN KEY (user_id)     REFERENCES users(id),
@@ -157,7 +192,9 @@ CREATE TABLE IF NOT EXISTS invoices (
     INDEX idx_created_at (created_at),
     INDEX idx_user       (user_id),
     INDEX idx_customer   (customer_id),
-    INDEX idx_invoices_deleted (deleted_at)
+    INDEX idx_invoices_deleted (deleted_at),
+    INDEX idx_inv_date_status (created_at, status),
+    INDEX idx_inv_payment (payment_method)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -174,7 +211,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     CONSTRAINT fk_item_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
     CONSTRAINT fk_item_product FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_invoice (invoice_id),
-    INDEX idx_product (product_id)
+    INDEX idx_product (product_id),
+    INDEX idx_ii_product_invoice (product_id, invoice_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -201,6 +239,7 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     items_count INT NOT NULL DEFAULT 0,
     notes TEXT NULL,
+    branch_id INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_pinv_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
     INDEX idx_pinv_supplier (supplier_id),
@@ -225,7 +264,8 @@ CREATE TABLE IF NOT EXISTS purchases (
     CONSTRAINT fk_purchase_product FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_purchase_invoice (purchase_invoice_id),
     INDEX idx_supplier (supplier_id),
-    INDEX idx_created_at_purchase (created_at)
+    INDEX idx_created_at_purchase (created_at),
+    INDEX idx_pur_product (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -243,7 +283,8 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
     CONSTRAINT fk_ledger_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     CONSTRAINT fk_ledger_invoice  FOREIGN KEY (invoice_id)  REFERENCES invoices(id)  ON DELETE SET NULL,
     INDEX idx_customer_ledger (customer_id),
-    INDEX idx_ledger_created  (created_at)
+    INDEX idx_ledger_created  (created_at),
+    INDEX idx_cl_customer_type (customer_id, type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -261,7 +302,8 @@ CREATE TABLE IF NOT EXISTS supplier_ledger (
     CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
     CONSTRAINT fk_sledger_pinvoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
     INDEX idx_supplier_ledger (supplier_id),
-    INDEX idx_sledger_created (created_at)
+    INDEX idx_sledger_created (created_at),
+    INDEX idx_sl_supplier_type (supplier_id, type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -280,25 +322,96 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     INDEX idx_audit_user   (user_id),
     INDEX idx_audit_entity (entity_type, entity_id),
     INDEX idx_audit_action (action),
-    INDEX idx_audit_date   (created_at)
+    INDEX idx_audit_date   (created_at),
+    INDEX idx_audit_created_desc (created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Job Queue (نظام المهام الخلفية)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS job_queue (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    job_name     VARCHAR(100) NOT NULL,
+    payload      JSON DEFAULT NULL,
+    priority     TINYINT DEFAULT 0,
+    status       ENUM('pending','processing','completed','failed') DEFAULT 'pending',
+    attempts     TINYINT DEFAULT 0,
+    max_attempts TINYINT DEFAULT 3,
+    last_error   TEXT DEFAULT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_status_priority (status, priority DESC, id ASC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Inventory Events (أحداث المخزون — للتحديثات الحية SSE/WebSocket)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS inventory_events (
+    id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id INT UNSIGNED NOT NULL,
+    action     ENUM('sale','purchase','adjust','delete') NOT NULL,
+    quantity   INT NOT NULL COMMENT 'الكمية الجديدة بعد التغيير',
+    delta      INT NOT NULL DEFAULT 0 COMMENT 'مقدار التغيير (+ أو -)',
+    branch_id  INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_created (created_at),
+    INDEX idx_product (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Price History (تتبع تغييرات الأسعار)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS price_history (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT         NOT NULL,
+    old_price  DECIMAL(10,2) NOT NULL COMMENT 'سعر البيع القديم',
+    new_price  DECIMAL(10,2) NOT NULL COMMENT 'سعر البيع الجديد',
+    old_cost   DECIMAL(10,2) NOT NULL COMMENT 'التكلفة القديمة',
+    new_cost   DECIMAL(10,2) NOT NULL COMMENT 'التكلفة الجديدة',
+    changed_by INT         NULL      COMMENT 'معرف المستخدم الذي غيّر السعر',
+    created_at TIMESTAMP   NOT NULL  DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by)  REFERENCES users(id)   ON DELETE SET NULL,
+    INDEX idx_product_date (product_id, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Loyalty Transactions (نظام نقاط الولاء)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    invoice_id INT NULL,
+    points INT NOT NULL COMMENT 'موجب = اكتساب، سالب = استرداد',
+    type ENUM('earn', 'redeem', 'adjust') NOT NULL,
+    description VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_lt_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_lt_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL,
+    INDEX idx_lt_customer (customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
 -- Seed Data
 -- ============================================================
 
--- Default admin user (password: password)
+-- Default branch
+INSERT IGNORE INTO branches (id, name) VALUES (1, 'الفرع الرئيسي');
+
+-- Default admin user (password: password) — ⚠️ يجب تغييرها فوراً عند أول دخول
+-- force_password_change=1 يفرض تغيير كلمة المرور عند أول تسجيل دخول
 INSERT INTO users (name, email, password, role, force_password_change) VALUES
 ('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
 ('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
-
-
 
 -- Default settings
 INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('store_name', 'سوبر ماركت'),
 ('tax_enabled', '0'),
-('tax_rate', '15');
+('tax_rate', '15'),
+('loyalty_enabled', '0'),
+('loyalty_points_per_rial', '1'),
+('loyalty_rial_per_point', '0.01');
 
 -- ============================================================
 -- Mark all existing migrations as executed
@@ -316,4 +429,13 @@ INSERT IGNORE INTO schema_versions (version) VALUES
 ('010_add_force_password_change.sql'),
 ('011_create_audit_logs.sql'),
 ('012_add_soft_delete.sql'),
-('013_ensure_schema_completeness.sql');
+('013_ensure_schema_completeness.sql'),
+('014_create_job_queue.sql'),
+('015_add_purchase_invoices.sql'),
+('016_add_refresh_tokens.sql'),
+('017_create_inventory_events.sql'),
+('018_create_price_history.sql'),
+('019_add_performance_indexes.sql'),
+('020_create_loyalty_system.sql'),
+('021_multi_branch.sql'),
+('022_randomize_default_passwords.sql');

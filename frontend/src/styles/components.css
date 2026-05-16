@@ -1,4 +1,4 @@
-﻿.card {
+.card {
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -145,92 +145,4 @@ html[data-theme="dark"] .alert-warning {
 }
 @keyframes fadeIn  { from { opacity: 0; } }
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } }
-
-/* â”€â”€ QZ Printer Picker â”€â”€ */
-.qz-printer-item {
-  padding: 0.65rem 1rem;
-  text-align: right;
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.9rem;
-  font-weight: 400;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.qz-printer-item:hover {
-  background: var(--bg);
-  border-color: var(--primary);
-}
-.qz-printer-item.selected {
-  border-color: var(--primary);
-  background: rgba(34, 197, 94, 0.1);
-  font-weight: 700;
-  color: var(--primary-d);
-}
-html[data-theme="dark"] .qz-printer-item.selected {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--primary);
-}
-
-/* ── Payment / Modal buttons ───────────────────────────── */
-.pay-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  padding: 0.5rem 0.4rem;
-  border-radius: var(--radius);
-  font-weight: 600;
-  font-size: 0.82rem;
-  border: 2px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-.pay-btn:hover { background: var(--bg); }
-html[data-theme="dark"] .pay-btn:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
-
-.pay-btn.active-normal {
-  border-color: var(--primary);
-  background: rgba(34, 197, 94, 0.12);
-  color: var(--primary);
-}
-.pay-btn.active-credit {
-  border-color: var(--danger);
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--danger);
-}
-
-.cust-mode-btn {
-  flex: 1;
-  padding: 0.35rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.cust-mode-btn:hover { background: var(--bg); }
-html[data-theme="dark"] .cust-mode-btn:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
-
-.cust-mode-btn.active {
-  border-color: var(--danger);
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--danger);
-}
-
-.change-box-active { background: #dcfce7; color: #166534; }
-html[data-theme="dark"] .change-box-active { background: rgba(34,197,94,0.18); color: #86efac; }
-
 

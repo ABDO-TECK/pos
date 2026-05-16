@@ -3,8 +3,8 @@
 namespace Tests\Integration;
 
 use App\Controllers\SupplierController;
-use App\Models\Product;
-use App\Models\Supplier;
+use App\Repositories\ProductRepository;
+use App\Repositories\SupplierRepository;
 use App\Services\AuthService;
 use App\Services\InventoryService;
 use App\Services\SupplierService;
@@ -17,8 +17,8 @@ class SupplierControllerTest extends TestCase
      */
     public function testStoreSupplierSuccess()
     {
-        $supplierModelMock = $this->createMock(Supplier::class);
-        $productModelMock = $this->createMock(Product::class);
+        $supplierModelMock = $this->createMock(SupplierRepository::class);
+        $productModelMock = $this->createMock(ProductRepository::class);
         $inventoryServiceMock = $this->createMock(InventoryService::class);
         $supplierServiceMock = $this->createMock(SupplierService::class);
         $authServiceMock = $this->createMock(AuthService::class);
@@ -53,8 +53,8 @@ class SupplierControllerTest extends TestCase
      */
     public function testStoreSupplierValidationFails()
     {
-        $supplierModelMock = $this->createMock(Supplier::class);
-        $productModelMock = $this->createMock(Product::class);
+        $supplierModelMock = $this->createMock(SupplierRepository::class);
+        $productModelMock = $this->createMock(ProductRepository::class);
         $inventoryServiceMock = $this->createMock(InventoryService::class);
         $supplierServiceMock = $this->createMock(SupplierService::class);
         $authServiceMock = $this->createMock(AuthService::class);
@@ -79,8 +79,8 @@ class SupplierControllerTest extends TestCase
      */
     public function testDestroySupplierNotFound()
     {
-        $supplierModelMock = $this->createMock(Supplier::class);
-        $productModelMock = $this->createMock(Product::class);
+        $supplierModelMock = $this->createMock(SupplierRepository::class);
+        $productModelMock = $this->createMock(ProductRepository::class);
         $inventoryServiceMock = $this->createMock(InventoryService::class);
         $supplierServiceMock = $this->createMock(SupplierService::class);
         $authServiceMock = $this->createMock(AuthService::class);
@@ -102,8 +102,8 @@ class SupplierControllerTest extends TestCase
      */
     public function testAddPaymentSuccess()
     {
-        $supplierModelMock = $this->createMock(Supplier::class);
-        $productModelMock = $this->createMock(Product::class);
+        $supplierModelMock = $this->createMock(SupplierRepository::class);
+        $productModelMock = $this->createMock(ProductRepository::class);
         $inventoryServiceMock = $this->createMock(InventoryService::class);
         $supplierServiceMock = $this->createMock(SupplierService::class);
         $authServiceMock = $this->createMock(AuthService::class);

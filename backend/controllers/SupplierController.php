@@ -5,10 +5,11 @@ namespace App\Controllers;
 use App\Config\Database;
 use App\Core\Controller;
 use App\Core\ValidationException;
+use App\Helpers\ErrorCodes;
 use App\Helpers\Response;
 use App\Helpers\AuditLog;
-use App\Models\Product;
-use App\Models\Supplier;
+use App\Repositories\SupplierRepository;
+use App\Repositories\ProductRepository;
 use App\Requests\SupplierRequest;
 use App\Services\AuthService;
 use App\Services\InventoryService;
@@ -18,15 +19,15 @@ use Throwable;
 
 class SupplierController extends Controller {
 
-    private Supplier         $supplierModel;
-    private Product          $productModel;
+    private SupplierRepository $supplierRepo;
+    private ProductRepository  $productRepo;
     private InventoryService $inventoryService;
     private SupplierService  $supplierService;
     private AuthService      $authService;
 
-    public function __construct(Supplier $supplierModel, Product $productModel, InventoryService $inventoryService, SupplierService $supplierService, AuthService $authService) {
-        $this->supplierModel    = $supplierModel;
-        $this->productModel     = $productModel;
+    public function __construct(SupplierRepository $supplierRepo, ProductRepository $productRepo, InventoryService $inventoryService, SupplierService $supplierService, AuthService $authService) {
+        $this->supplierRepo     = $supplierRepo;
+        $this->productRepo      = $productRepo;
         $this->inventoryService = $inventoryService;
         $this->supplierService  = $supplierService;
         $this->authService      = $authService;
@@ -35,10 +36,9 @@ class SupplierController extends Controller {
     public function index() {
         $filters = [];
         if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
-        if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
-        if ($this->getParam('limit'))   $filters['limit']   = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
-        $result = $this->supplierModel->all($filters);
+        $result = $this->supplierRepo->all($filters);
 
         if (isset($result['pagination'])) {
             return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
@@ -48,7 +48,7 @@ class SupplierController extends Controller {
     }
 
     public function show(string $id) {
-        $data = $this->supplierModel->getLedger((int)$id);
+        $data = $this->supplierRepo->getLedger((int)$id);
         if (!$data['supplier']) {
             return Response::notFound('Supplier not found');
         }
@@ -61,11 +61,13 @@ class SupplierController extends Controller {
             $data = $request->validated();
 
             $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
-            $id       = $this->supplierModel->create($data);
-            $supplier = $this->supplierModel->findById($id);
-            return Response::success($supplier, 'Supplier created', 201);
+            return $this->withTransaction(function () use ($data) {
+                $id       = $this->supplierRepo->create($data);
+                $supplier = $this->supplierRepo->findById($id);
+                return Response::success($supplier, 'Supplier created', 201);
+            });
         } catch (ValidationException $e) {
-            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
         }
     }
 
@@ -74,22 +76,26 @@ class SupplierController extends Controller {
             $request = new SupplierRequest($this->getBody());
             $data = $request->validated();
 
-            $supplier = $this->supplierModel->findById((int)$id);
+            $supplier = $this->supplierRepo->findById((int)$id);
             if (!$supplier) return Response::notFound('Supplier not found');
 
             $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
-            $this->supplierModel->update((int)$id, $data);
-            return Response::success($this->supplierModel->findById((int)$id), 'Supplier updated');
+            return $this->withTransaction(function () use ($id, $data) {
+                $this->supplierRepo->update((int)$id, $data);
+                return Response::success($this->supplierRepo->findById((int)$id), 'Supplier updated');
+            });
         } catch (ValidationException $e) {
-            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors());
+            return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
         }
     }
 
     public function destroy(string $id) {
-        $supplier = $this->supplierModel->findById((int)$id);
+        $supplier = $this->supplierRepo->findById((int)$id);
         if (!$supplier) return Response::notFound('Supplier not found');
-        $this->supplierModel->delete((int)$id);
-        return Response::success(null, 'Supplier deleted');
+        return $this->withTransaction(function () use ($id) {
+            $this->supplierRepo->delete((int)$id);
+            return Response::success(null, 'Supplier deleted');
+        });
     }
 
     /** Single-item purchase (legacy) */
@@ -101,28 +107,25 @@ class SupplierController extends Controller {
             'quantity'    => 'required|numeric',
             'cost'        => 'required|numeric',
         ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors, ErrorCodes::VALIDATION_FAILED);
 
-        $product = $this->productModel->findById((int)$data['product_id']);
+        $product = $this->productRepo->findById((int)$data['product_id']);
         if (!$product) return Response::notFound('Product not found');
 
-        $supplier = $this->supplierModel->findById((int)$data['supplier_id']);
+        $supplier = $this->supplierRepo->findById((int)$data['supplier_id']);
         if (!$supplier) return Response::notFound('Supplier not found');
 
-        $db = Database::getInstance();
-        $db->beginTransaction();
         try {
-            $this->supplierModel->createPurchase($data);
-            $this->productModel->incrementQuantity((int)$data['product_id'], (int)$data['quantity']);
-            $db->commit();
+            return $this->withTransaction(function () use ($data) {
+                $this->supplierRepo->createPurchase($data);
+                $this->productRepo->getModel()->incrementQuantity((int)$data['product_id'], (int)$data['quantity']);
+                return Response::success([
+                    'product' => $this->productRepo->findById((int)$data['product_id']),
+                ], 'Purchase recorded and stock updated', 201);
+            });
         } catch (Throwable $e) {
-            $db->rollBack();
             return Response::serverError('Failed to record purchase');
         }
-
-        return Response::success([
-            'product' => $this->productModel->findById((int)$data['product_id']),
-        ], 'Purchase recorded and stock updated', 201);
     }
 
     /** List purchase invoices (like sales list) */
@@ -132,12 +135,11 @@ class SupplierController extends Controller {
             'date'        => $this->getParam('date'),
             'month'       => $this->getParam('month'),
             'year'        => $this->getParam('year'),
-            'page'        => $this->getParam('page'),
-            'limit'       => $this->getParam('limit'),
+            ...$this->getPaginationParams(),
             'search'      => $this->getParam('search'),
         ];
         
-        $result = $this->supplierModel->getPurchaseInvoices($filters);
+        $result = $this->supplierRepo->getPurchaseInvoices($filters);
         if (isset($result['pagination'])) {
             return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
         } else {
@@ -147,7 +149,7 @@ class SupplierController extends Controller {
 
     /** Get single purchase invoice detail (like sales detail) */
     public function purchaseInvoiceDetail(string $id) {
-        $invoice = $this->supplierModel->getPurchaseInvoice((int)$id);
+        $invoice = $this->supplierRepo->getPurchaseInvoice((int)$id);
         if (!$invoice) return Response::notFound('Purchase invoice not found');
         return Response::success($invoice);
     }
@@ -174,10 +176,9 @@ class SupplierController extends Controller {
             'supplier_id' => $this->getParam('supplier_id'),
             'date_from'   => $this->getParam('date_from'),
             'date_to'     => $this->getParam('date_to'),
-            'page'        => $this->getParam('page'),
-            'limit'       => $this->getParam('limit'),
+            ...$this->getPaginationParams(),
         ];
-        $result = $this->supplierModel->getPurchases($filters);
+        $result = $this->supplierRepo->getPurchases($filters);
         if (isset($result['pagination'])) {
             return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         }
@@ -193,8 +194,8 @@ class SupplierController extends Controller {
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
             return $code === 404
-                ? Response::notFound($result['error'])
-                : Response::error($result['error'], $code);
+                ? Response::notFound($result['error'], ErrorCodes::INVOICE_NOT_FOUND)
+                : Response::error($result['error'], $code, null, ErrorCodes::SERVER_ERROR);
         }
 
         $isUpdate = $result['is_update'] ?? false;
@@ -219,7 +220,7 @@ class SupplierController extends Controller {
             return Response::success($ledger, 'تم تسجيل الدفعة');
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
-            return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
+            return $code === 404 ? Response::notFound($e->getMessage(), ErrorCodes::SUPPLIER_NOT_FOUND) : Response::error($e->getMessage(), $code, null, ErrorCodes::INVALID_AMOUNT);
         }
     }
 
@@ -236,7 +237,7 @@ class SupplierController extends Controller {
             return Response::success($ledger, 'تم تحديث القيد');
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
-            return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
+            return $code === 404 ? Response::notFound($e->getMessage(), ErrorCodes::SUPPLIER_NOT_FOUND) : Response::error($e->getMessage(), $code, null, ErrorCodes::SERVER_ERROR);
         }
     }
 }

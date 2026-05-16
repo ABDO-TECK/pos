@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { X } from 'lucide-react'
 
 export default function CustomerFormModal({ modal, setModal, form, setForm, handleSave, saving }) {

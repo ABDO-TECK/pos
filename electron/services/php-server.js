@@ -20,6 +20,7 @@ function startPHP(port, mysqlPort) {
       DB_USER: 'root',
       DB_PASS: '',
       ENABLE_AUTO_UPDATE: 'true',
+      PHP_CLI_SERVER_WORKERS: '4', // تشغيل عدة عمليات PHP للتعامل مع الطلبات المتزامنة
     };
 
     phpProcess = spawn(phpBin, [

@@ -149,4 +149,70 @@ class SaleServiceTest extends TestCase
         $this->assertEquals(50, $totals['deposit']);
         $this->assertEquals(1, $totals['customer_id']);
     }
+
+    public function testEnrichItemsWithMultipleProducts()
+    {
+        $this->productMock->method('findById')
+            ->willReturnMap([
+                [1, ['id' => 1, 'price' => 10, 'cost' => 5]],
+                [2, ['id' => 2, 'price' => 20, 'cost' => 12]],
+            ]);
+
+        $items = [
+            ['product_id' => 1, 'quantity' => 2],
+            ['product_id' => 2, 'quantity' => 1],
+        ];
+
+        $result = $this->service->enrichItems($items);
+        $this->assertTrue($result['ok']);
+        $this->assertCount(2, $result['items']);
+        $this->assertEquals(10, $result['items'][0]['price']);
+        $this->assertEquals(20, $result['items'][1]['price']);
+    }
+
+    public function testEnrichItemsRejectsZeroQuantity()
+    {
+        $items = [['product_id' => 1, 'quantity' => 0]];
+        $result = $this->service->enrichItems($items);
+        $this->assertFalse($result['ok']);
+    }
+
+    public function testEnrichItemsRejectsNegativeQuantity()
+    {
+        $items = [['product_id' => 1, 'quantity' => -5]];
+        $result = $this->service->enrichItems($items);
+        $this->assertFalse($result['ok']);
+    }
+
+    public function testCalculateTotalsChangeDue()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
+
+        $items = [['price' => 50, 'quantity' => 1, 'unit_cost' => 30]];
+        $data = ['payment_method' => 'cash', 'amount_paid' => 100];
+        $totals = $service->calculateTotals($items, 0, $data);
+
+        $this->assertEquals(50, $totals['change_due']);
+    }
+
+    public function testCalculateTotalsWithDiscount()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
+
+        $items = [['price' => 100, 'quantity' => 2, 'unit_cost' => 50]];
+        $data = ['payment_method' => 'cash', 'amount_paid' => 180];
+        $totals = $service->calculateTotals($items, 20, $data);
+
+        $this->assertEquals(200, $totals['subtotal']);
+        $this->assertEquals(20, $totals['discount']);
+        $this->assertEquals(180, $totals['total']);
+    }
 }

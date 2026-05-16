@@ -137,6 +137,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
 
+  /refresh:
+    post:
+      tags: [Auth]
+      summary: تجديد رمز الوصول
+      description: يستخدم الـ refresh token cookie لتوليد access token جديد.
+      responses:
+        '200':
+          description: تم تجديد الرمز
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /user:
     get:
       tags: [Auth]
@@ -291,6 +306,20 @@ paths:
       responses:
         '200':
           description: تم حذف المنتج
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products/{id}/price-history:
+    get:
+      tags: [Products]
+      summary: سجل تغييرات الأسعار
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: سجل الأسعار
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1001,6 +1030,40 @@ paths:
       responses:
         '200':
           description: تفاصيل العميل
+    put:
+      tags: [Customers]
+      summary: تحديث عميل
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '200':
+          description: تم تحديث العميل
+    delete:
+      tags: [Customers]
+      summary: حذف عميل
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: تم حذف العميل
 
   /customers/{id}/payment:
     post:
@@ -1272,6 +1335,27 @@ paths:
 # ══════════════════════════════════════════════════════════════════
 #  COMPONENTS
 # ══════════════════════════════════════════════════════════════════
+  /sse/inventory:
+    get:
+      tags: [Inventory]
+      summary: تحديثات المخزون اللحظية (SSE)
+      description: اتصال Server-Sent Events لاستقبال تحديثات المخزون اللحظية.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: last_id
+          in: query
+          schema:
+            type: integer
+          description: آخر معرف حدث لاستئناف الاتصال
+      responses:
+        '200':
+          description: بث SSE مستمر
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
 components:
 
   securitySchemes:

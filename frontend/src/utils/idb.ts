@@ -118,6 +118,12 @@ export const getPendingSales = async (): Promise<Array<Record<string, unknown>>>
   return db.getAll('pending_sales')
 }
 
+/** جلب العمليات المتعارضة فقط */
+export const getConflictedSales = async (): Promise<Array<Record<string, unknown>>> => {
+  const all = await getPendingSales()
+  return all.filter(s => s.syncStatus === 'conflict' || s.syncStatus === 'permanent')
+}
+
 export const deletePendingSale = async (localId: IDBValidKey): Promise<void> => {
   const db = await getDB()
   return db.delete('pending_sales', localId)

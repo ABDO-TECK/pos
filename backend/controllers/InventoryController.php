@@ -22,8 +22,7 @@ class InventoryController extends Controller {
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
         ];
-        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
-        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
         $products = $this->productModel->all($filters);
         return Response::cacheable($products, 60);
@@ -31,16 +30,14 @@ class InventoryController extends Controller {
 
     public function lowStock() {
         $filters = [];
-        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
-        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
         return Response::cacheable($this->productModel->getLowStock($filters), 60);
     }
 
     public function adjust(string $id) {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, ['quantity' => 'required|numeric']);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
+        $request = new \App\Requests\InventoryAdjustRequest($this->getBody());
+        $data = $request->validated();
 
         $product = $this->productModel->findById((int)$id);
         if (!$product) return Response::notFound('Product not found');

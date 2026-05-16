@@ -4,15 +4,10 @@ import ar from './locales/ar.json'
 import en from './locales/en.json'
 
 i18n.use(initReactI18next).init({
-  resources: {
-    ar: { translation: ar },
-    en: { translation: en },
-  },
+  resources: { ar: { translation: ar }, en: { translation: en } },
   lng: 'ar', // اللغة الافتراضية
   fallbackLng: 'ar',
-  interpolation: {
-    escapeValue: false, // React يقوم بالحماية تلقائياً
-  },
+  interpolation: { escapeValue: false },
 })
 
 export default i18n

@@ -147,8 +147,8 @@ class MigrationService {
                 $errorInfo = $e->errorInfo ?? [];
                 $errno = $errorInfo[1] ?? $e->getCode();
 
-                // 1060: Duplicate column, 1061: Duplicate key, 1050: Table exists, 1068: Multiple primary key
-                $ignorable = [1060, 1061, 1050, 1068];
+                // 1060: Duplicate column, 1061: Duplicate key, 1050: Table exists, 1068: Multiple primary key, 1005: Can't create table (often duplicate foreign key)
+                $ignorable = [1060, 1061, 1050, 1068, 1005];
                 if (in_array((int) $errno, $ignorable, true)) {
                     // خطأ متوقع ومتجاهل — نستمر بالأمر التالي
                     continue;

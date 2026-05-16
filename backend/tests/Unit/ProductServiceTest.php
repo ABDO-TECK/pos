@@ -5,16 +5,19 @@ namespace Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use App\Services\ProductService;
 use App\Repositories\ProductRepository;
+use App\Models\PriceHistory;
 
 class ProductServiceTest extends TestCase
 {
     private ProductService $service;
     private ProductRepository $productRepoMock;
+    private PriceHistory $priceHistoryMock;
 
     protected function setUp(): void
     {
         $this->productRepoMock = $this->createMock(ProductRepository::class);
-        $this->service = new ProductService($this->productRepoMock);
+        $this->priceHistoryMock = $this->createMock(PriceHistory::class);
+        $this->service = new ProductService($this->productRepoMock, $this->priceHistoryMock);
     }
 
     public function testDeleteProductNotFound()

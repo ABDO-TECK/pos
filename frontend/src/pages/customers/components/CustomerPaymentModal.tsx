@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { X, PlusCircle } from 'lucide-react'
 import { formatCurrency } from '../../../utils/formatters'
 

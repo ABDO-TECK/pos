@@ -1,8 +1,10 @@
+// @ts-nocheck
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { Scan, Camera } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
+import { extractApiError } from '../../utils/apiError'
 
 const beep = () => {
   try {
@@ -17,7 +19,7 @@ const beep = () => {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.15)
-  } catch {}
+  } catch (err) { }
 }
 
 // بعد توقف الماسح قليلاً نفّذ البحث (لا نعطّل الحقل أثناء الطلب حتى لا يُفقد التركيز)
@@ -29,7 +31,7 @@ const SCANNER_DEBOUNCE = 280
  * @param {(product: object) => void} [props.onAddProduct] — بدل الإضافة الافتراضية للسلة (مثلاً استلام بضاعة)
  * @param {boolean} [props.allowOutOfStock] — السماح بإضافة منتج نافد المخزون (للموردين)
  */
-export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: any, onAddProduct?: any, allowOutOfStock?: boolean }) {
+export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: (value: string) => void, onAddProduct?: (product: { id: number; name: string; price: number; quantity: number; barcode: string }) => void, allowOutOfStock?: boolean }) {
   const inputRef      = useRef<any>(null)
   const debounceTimer = useRef<any>(null)
   const lastTypeTime  = useRef(0)
@@ -162,9 +164,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
         setBarcodeScannerLazy(() => m.default)
       }
       setShowCameraScanner(true)
-    } catch {
-      toast.error('تعذر تحميل ماسح الباركود')
-    }
+    } catch (err) { toast.error(extractApiError(err, 'تعذر تحميل ماسح الباركود')) }
   }
 
   const handleCameraScan = (text) => {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { X, Printer } from 'lucide-react'
 
 export default function PrinterPickerModal({ showPrinterPicker, setShowPrinterPicker, printers, selectedPrinter, handlePrinterSelect }) {

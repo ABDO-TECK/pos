@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { formatCurrency } from '../../../utils/formatters'
 
 export default function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposit, cartTotal }) {

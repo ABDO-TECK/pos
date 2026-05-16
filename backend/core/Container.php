@@ -11,6 +11,9 @@ use ReflectionClass;
 class Container {
     private array $instances = [];
 
+    /** @var array<string, string> ربط interface → implementation */
+    private array $bindings = [];
+
     public function get(string $class) {
         if ($class === 'PDO' || $class === \PDO::class) {
             return Database::getInstance();
@@ -19,10 +22,37 @@ class Container {
         if (isset($this->instances[$class])) {
             return $this->instances[$class];
         }
-        
-        $instance = $this->resolve($class);
+
+        // إذا كان هناك binding (مثلاً interface → class)، استخدم الـ concrete class
+        $resolveClass = $this->bindings[$class] ?? $class;
+
+        $instance = $this->resolve($resolveClass);
         $this->instances[$class] = $instance;
         return $instance;
+    }
+
+    /**
+     * ربط interface أو abstract class بـ implementation محددة.
+     *
+     * مثال:
+     *   $container->bind(RepositoryInterface::class, ProductRepository::class);
+     *
+     * بعدها عند طلب RepositoryInterface من أي controller، يتم حقن ProductRepository.
+     */
+    public function bind(string $abstract, string $concrete): void
+    {
+        $this->bindings[$abstract] = $concrete;
+    }
+
+    /**
+     * تسجيل instance جاهز (singleton).
+     *
+     * مثال:
+     *   $container->singleton(SomeService::class, new SomeService());
+     */
+    public function singleton(string $class, object $instance): void
+    {
+        $this->instances[$class] = $instance;
     }
 
     private function resolve(string $class) {

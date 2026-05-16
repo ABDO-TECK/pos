@@ -3,15 +3,17 @@
 namespace App\Services;
 
 use App\Models\Supplier;
+use App\Models\SupplierLedger;
 use Exception;
-
 
 class SupplierService {
     
     private Supplier $supplierModel;
+    private SupplierLedger $ledgerModel;
 
-    public function __construct(Supplier $supplierModel) {
+    public function __construct(Supplier $supplierModel, SupplierLedger $ledgerModel) {
         $this->supplierModel = $supplierModel;
+        $this->ledgerModel = $ledgerModel;
     }
 
     public function addPayment(int $supplierId, array $data, array $authUser): array {
@@ -27,20 +29,28 @@ class SupplierService {
 
         $type = $data['type'] === 'debit' ? 'debit' : 'credit';
 
-        $this->supplierModel->addLedgerEntry([
-            'supplier_id'         => $supplierId,
-            'type'                => $type,
-            'amount'              => $amount,
-            'description'         => $data['description'] ?? 'دفعة نقدية للمورد',
-            'purchase_invoice_id' => null,
-            'created_by'          => $authUser['id'],
-        ]);
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->ledgerModel->addLedgerEntry([
+                'supplier_id'         => $supplierId,
+                'type'                => $type,
+                'amount'              => $amount,
+                'description'         => $data['description'] ?? 'دفعة نقدية للمورد',
+                'purchase_invoice_id' => null,
+                'created_by'          => $authUser['id'],
+            ]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('فشل تسجيل الدفعة', 500);
+        }
 
-        return $this->supplierModel->getLedger($supplierId);
+        return $this->ledgerModel->getLedger($supplierId);
     }
 
     public function updateLedgerEntry(int $entryId, array $data): array {
-        $entry = $this->supplierModel->getLedgerEntry($entryId);
+        $entry = $this->ledgerModel->getLedgerEntry($entryId);
         if (!$entry) {
             throw new Exception('القيد غير موجود', 404);
         }
@@ -55,12 +65,20 @@ class SupplierService {
             throw new Exception('نوع القيد غير صحيح', 422);
         }
 
-        $this->supplierModel->updateLedgerEntry($entryId, [
-            'type'        => $type,
-            'amount'      => $amount,
-            'description' => $data['description'] ?? $entry['description'],
-        ]);
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->ledgerModel->updateLedgerEntry($entryId, [
+                'type'        => $type,
+                'amount'      => $amount,
+                'description' => $data['description'] ?? $entry['description'],
+            ]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('فشل تحديث القيد', 500);
+        }
 
-        return $this->supplierModel->getLedger((int)$entry['supplier_id']);
+        return $this->ledgerModel->getLedger((int)$entry['supplier_id']);
     }
 }

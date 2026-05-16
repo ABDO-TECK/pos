@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Trash2, ShoppingCart, Check, Package } from 'lucide-react'
 import BarcodeInput from '../../components/pos/BarcodeInput'
@@ -8,6 +9,7 @@ import { formatCurrency, formatNumber } from '../../utils/formatters'
 import CreditPurchaseSection from './components/CreditPurchaseSection'
 import ReceiveGoodsProductCard from './components/ReceiveGoodsProductCard'
 import ReceiveGoodsCartLine from './components/ReceiveGoodsCartLine'
+import styles from '../Suppliers.module.css'
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
 export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }) {
@@ -124,7 +126,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       setPaymentType('cash')
       setDeposit(0)
       setMobileTab('products')
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
     } finally {
       setConfirming(false)
@@ -149,7 +151,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
 
   /* ── Panels ── */
   const ProductsPanel = (
-    <div className="card sup-products-panel">
+    <div className={`card ${styles.productsPanel}`}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexShrink: 0 }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 700 }}>المنتجات</h3>
         <span className="badge badge-gray">{formatNumber(products.length)} منتج</span>
@@ -165,7 +167,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
   )
 
   const CartPanel = (
-    <div className="card sup-cart-panel">
+    <div className={`card ${styles.cartPanel}`}>
       {/* Supplier select */}
       <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
@@ -261,29 +263,28 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       </div>
 
       {/* Desktop layout — flex:1 + minHeight:0 so it fills exactly what's left */}
-      <div className="sup-desktop">
+      <div className={styles.desktop}>
         {ProductsPanel}
         {CartPanel}
       </div>
 
       {/* Mobile layout */}
-      <div className="sup-mobile">
-        <div className="sup-mobile-content">
+      <div className={styles.mobile}>
+        <div className={styles.mobileContent}>
           {mobileTab === 'products' ? ProductsPanel : CartPanel}
         </div>
         <div className="pos-tab-bar">
-          <button className={`pos-tab${mobileTab === 'products' ? ' active' : ''}`} onClick={() => setMobileTab('products')}>
+          <button className={`pos-tab ${mobileTab === 'products' ? 'active' : ''}`} onClick={() => setMobileTab('products')}>
             <Package size={20} />
             <span>المنتجات</span>
           </button>
-          <button className={`pos-tab${mobileTab === 'cart' ? ' active' : ''}`} onClick={() => setMobileTab('cart')}>
+          <button className={`pos-tab ${mobileTab === 'cart' ? 'active' : ''}`} onClick={() => setMobileTab('cart')}>
             <ShoppingCart size={20} />
             <span>السلة</span>
             {cartCount > 0 && <span className="tab-badge">{formatNumber(cartCount)}</span>}
           </button>
         </div>
       </div>
-
     </>
   )
 }

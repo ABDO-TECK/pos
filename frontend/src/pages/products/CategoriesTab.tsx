@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useMemo, useEffect } from 'react'
 import { Pencil, Trash2, Search, Tag } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'

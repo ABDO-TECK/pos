@@ -4,26 +4,25 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\Response;
-use App\Models\User;
+use App\Repositories\UserRepository;
 use App\Services\AuthService;
 
 
 class UserController extends Controller {
 
-    private User $userModel;
+    private UserRepository $userRepo;
     private AuthService $authService;
 
-    public function __construct(User $userModel, AuthService $authService) {
-        $this->userModel = $userModel;
+    public function __construct(UserRepository $userRepo, AuthService $authService) {
+        $this->userRepo = $userRepo;
         $this->authService = $authService;
     }
 
     public function index() {
         $filters = [];
-        if ($this->getParam('page'))  $filters['page']  = $this->getParam('page');
-        if ($this->getParam('limit')) $filters['limit'] = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
-        $result = $this->userModel->all($filters);
+        $result = $this->userRepo->all($filters);
 
         if (isset($result['pagination'])) {
             return Response::cacheable($result['data'], 300, null, ['pagination' => $result['pagination']]);
@@ -33,29 +32,34 @@ class UserController extends Controller {
     }
 
     public function store() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'name'     => 'required',
-            'email'    => 'required|email',
-            'password' => 'required|min:6',
-        ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
+        $request = new \App\Requests\UserStoreRequest($this->getBody());
+        $data = $request->validated();
 
-        $id   = $this->userModel->create($data);
-        $user = $this->userModel->findById($id);
-        return Response::success($user, 'User created', 201);
+        return $this->withTransaction(function () use ($data) {
+            $id   = $this->userRepo->create($data);
+            $user = $this->userRepo->findById($id);
+            return Response::success($user, 'User created', 201);
+        });
     }
 
     public function update(string $id) {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'name'  => 'required',
-            'email' => 'required|email',
-        ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
+        $auth = $this->authService->user();
+        if ($auth['role'] !== 'admin' && (int)$id !== $auth['id']) {
+            return Response::error('Access denied', 403);
+        }
 
-        $this->userModel->update((int)$id, $data);
-        return Response::success($this->userModel->findById((int)$id), 'User updated');
+        $request = new \App\Requests\UserUpdateRequest($this->getBody());
+        $data = $request->validated();
+
+        if ($auth['role'] !== 'admin') {
+            unset($data['role']);
+            unset($data['is_active']);
+        }
+
+        return $this->withTransaction(function () use ($id, $data) {
+            $this->userRepo->update((int)$id, $data);
+            return Response::success($this->userRepo->findById((int)$id), 'User updated');
+        });
     }
 
     public function destroy(string $id) {
@@ -63,8 +67,10 @@ class UserController extends Controller {
         if ((int)$id === $auth['id']) {
             return Response::error('لا يمكنك حذف حسابك الخاص', 400);
         }
-        $this->userModel->delete((int)$id);
-        return Response::success(null, 'User deleted');
+        return $this->withTransaction(function () use ($id) {
+            $this->userRepo->delete((int)$id);
+            return Response::success(null, 'User deleted');
+        });
     }
 }
 

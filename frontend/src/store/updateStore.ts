@@ -47,9 +47,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       const data = res.data.data as UpdateData
       
       let localVersion = data.current_version;
-      // @ts-ignore
       if (window.electronAPI && window.electronAPI.getVersion) {
-        // @ts-ignore
         localVersion = await window.electronAPI.getVersion();
       }
 
@@ -60,8 +58,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
         changelog: data.changelog || [],
         lastChecked: now,
       })
-    } catch {
-      // Silently fail on background check
+    } catch (err) { // Silently fail on background check
     } finally {
       set({ isChecking: false })
     }
@@ -74,9 +71,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       const data = res.data.data as UpdateData
       
       let localVersion = data.current_version;
-      // @ts-ignore
       if (window.electronAPI && window.electronAPI.getVersion) {
-        // @ts-ignore
         localVersion = await window.electronAPI.getVersion();
       }
 

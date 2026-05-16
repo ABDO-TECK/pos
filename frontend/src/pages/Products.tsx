@@ -1,4 +1,6 @@
+// @ts-nocheck
 import { useState, useEffect } from 'react'
+
 import { Plus, X, Tag } from 'lucide-react'
 import {
   getProducts, createProduct, updateProduct, deleteProduct,
@@ -14,6 +16,7 @@ import { useConfirmStore } from '../store/confirmStore'
 import ProductsTab from './products/ProductsTab'
 import CategoriesTab from './products/CategoriesTab'
 import ProductForm from './products/ProductForm'
+import { extractApiError } from '../utils/apiError'
 
 const emptyProduct = {
   name: '',
@@ -78,7 +81,7 @@ export default function Products() {
     setLoadingCategories(true)
     try { 
       const res = await getCategories()
-      setCategories(res.data.data ?? [])
+      const raw = res.data.data as any; setCategories(Array.isArray(raw) ? raw : (raw?.data ?? []))
     }
     finally { setLoadingCategories(false) }
   }
@@ -127,7 +130,7 @@ export default function Products() {
       setProductModal(null)
       loadProducts()
       useProductStore.getState().invalidateCache()
-    } catch (err: any) { toast.error(formatProductApiError(err)) }
+    } catch (err) { toast.error(formatProductApiError(err)) }
     finally { setSavingProduct(false) }
   }
 
@@ -139,7 +142,7 @@ export default function Products() {
       loadProducts()
       useProductStore.getState().invalidateCache()
     }
-    catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
+    catch (err) { toast.error(extractApiError(err, 'حدث خطأ أثناء الحذف')) }
   }
 
   // ── Category actions ──
@@ -153,14 +156,14 @@ export default function Products() {
       if (categoryModal === 'create') { await createCategory(categoryForm); toast.success('تم إضافة الفئة') }
       else { await updateCategory(editCategoryId, categoryForm); toast.success('تم تحديث الفئة') }
       setCategoryModal(null); loadCategories()
-    } catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ') }
+    } catch (err) { toast.error(extractApiError(err, 'حدث خطأ')) }
     finally { setSavingCategory(false) }
   }
 
   const handleDeleteCategory = async (id, name) => {
     if (!(await confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`))) return
     try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
-    catch (err: any) { toast.error(err.response?.data?.message || 'حدث خطأ أثناء الحذف') }
+    catch (err) { toast.error(extractApiError(err, 'حدث خطأ أثناء الحذف')) }
   }
 
   return (

@@ -2,105 +2,107 @@
 
 namespace App\Middleware;
 
+use App\Helpers\Logger;
+
 /**
  * LoginRateLimiter — حماية من Brute Force لصفحة الدخول.
- *
  * حد أقصى: 5 محاولات / دقيقة لكل IP.
  * يدعم الاستخدام كـ Middleware (عبر handle) أو مباشرةً (عبر check).
  */
 class LoginRateLimiter
 {
-    private int    $maxAttempts;
-    private int    $windowSeconds;
-    private string $storageDir;
+    private int $maxAttempts;
+    private int $windowSeconds;
 
     public function __construct(int $maxAttempts = 5, int $windowSeconds = 60)
     {
         $this->maxAttempts   = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
-        $this->storageDir    = __DIR__ . '/../storage/login_rate_limit';
-
-        if (!is_dir($this->storageDir)) {
-            @mkdir($this->storageDir, 0755, true);
-        }
     }
 
-    /**
-     * Middleware interface — يُستخدم من Router.
-     * يفحص الحد ثم يمرر التنفيذ للـ handler التالي.
-     */
     public function handle(callable $next): mixed
     {
         $this->check();
         return $next();
     }
 
-    /**
-     * فحص هل تجاوز الـ IP الحد المسموح.
-     * يُرجع true إذا مسموح، أو يُرسل 429 ويخرج إذا تجاوز الحد.
-     */
     public function check(): void
     {
-        $ip   = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $now  = time();
-        $file = $this->storageDir . '/' . md5($ip) . '.json';
+        $ip  = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $now = time();
 
-        $handle = @fopen($file, 'c+');
-        if ($handle === false) return;
-
-        if (!flock($handle, LOCK_EX)) {
-            fclose($handle);
+        // 1. APCu (أسرع)
+        if (function_exists('apcu_inc')) {
+            $key = 'login_rl_' . md5($ip) . '_' . floor($now / $this->windowSeconds);
+            $success = false;
+            $count = apcu_inc($key, 1, $success);
+            if (!$success) {
+                apcu_store($key, 1, $this->windowSeconds + 10);
+                $count = 1;
+            }
+            if ($count > $this->maxAttempts) {
+                $this->send429($now);
+            }
             return;
         }
 
+        // 2. SQLite fallback
+        $key = 'login_' . md5($ip) . '_' . floor($now / $this->windowSeconds);
+        $db = $this->getSQLiteDB();
+        if (!$db) return;
+
         try {
-            $content = stream_get_contents($handle);
-            $data    = ($content !== '' && $content !== false)
-                ? json_decode($content, true) : null;
+            $stmt = $db->prepare("SELECT request_count FROM rate_limits WHERE key_name = :key");
+            $stmt->execute([':key' => $key]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-            if (!is_array($data) || !isset($data['timestamps'])) {
-                $data = ['timestamps' => []];
+            if ($row) {
+                if ((int)$row['request_count'] >= $this->maxAttempts) {
+                    $this->send429($now);
+                }
+                $db->prepare("UPDATE rate_limits SET request_count = request_count + 1 WHERE key_name = :key")
+                   ->execute([':key' => $key]);
+            } else {
+                $db->prepare("INSERT OR IGNORE INTO rate_limits (key_name, request_count, expires_at) VALUES (:key, 1, :exp)")
+                   ->execute([':key' => $key, ':exp' => $now + $this->windowSeconds + 10]);
             }
-
-            // تنظيف المحاولات القديمة
-            $windowStart = $now - $this->windowSeconds;
-            $data['timestamps'] = array_values(
-                array_filter($data['timestamps'], fn($ts) => $ts >= $windowStart)
-            );
-
-            if (count($data['timestamps']) >= $this->maxAttempts) {
-                $retryAfter = max(1, $this->windowSeconds - ($now % $this->windowSeconds));
-                
-                // كتابة البيانات بدون إضافة المحاولة الحالية
-                fseek($handle, 0);
-                ftruncate($handle, 0);
-                fwrite($handle, json_encode($data, JSON_UNESCAPED_UNICODE));
-                fflush($handle);
-                flock($handle, LOCK_UN);
-                fclose($handle);
-
-                header("Retry-After: $retryAfter");
-                http_response_code(429);
-                echo json_encode([
-                    'status'      => 'error',
-                    'message'     => 'تم تجاوز الحد المسموح لمحاولات تسجيل الدخول. يرجى الانتظار.',
-                    'retry_after' => $retryAfter,
-                ], JSON_UNESCAPED_UNICODE);
-                exit;
-            }
-
-            // تسجيل المحاولة الحالية
-            $data['timestamps'][] = $now;
-
-            fseek($handle, 0);
-            ftruncate($handle, 0);
-            fwrite($handle, json_encode($data, JSON_UNESCAPED_UNICODE));
-            fflush($handle);
-            flock($handle, LOCK_UN);
-            fclose($handle);
         } catch (\Throwable $e) {
-            flock($handle, LOCK_UN);
-            fclose($handle);
+            // fail open
+        }
+    }
+
+    private function send429(int $now): void
+    {
+        $retryAfter = max(1, $this->windowSeconds - ($now % $this->windowSeconds));
+        header("Retry-After: $retryAfter");
+        http_response_code(429);
+        echo json_encode([
+            'status'      => 'error',
+            'message'     => 'تم تجاوز الحد المسموح لمحاولات تسجيل الدخول. يرجى الانتظار.',
+            'retry_after' => $retryAfter,
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    private function getSQLiteDB(): ?\PDO
+    {
+        static $db = null;
+        if ($db !== null) return $db;
+        try {
+            $dbPath = __DIR__ . '/../storage/rate_limit.sqlite';
+            $dir = dirname($dbPath);
+            if (!is_dir($dir)) @mkdir($dir, 0755, true);
+            $db = new \PDO('sqlite:' . $dbPath);
+            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $db->exec("CREATE TABLE IF NOT EXISTS rate_limits (
+                key_name TEXT PRIMARY KEY,
+                request_count INTEGER NOT NULL DEFAULT 1,
+                expires_at INTEGER NOT NULL
+            )");
+            $db->exec("PRAGMA journal_mode=WAL");
+            return $db;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 }

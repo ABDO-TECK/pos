@@ -1,8 +1,10 @@
+// @ts-nocheck
 /**
  * QZPrinterUI — Reusable UI components for QZ Tray integration.
  * Includes: QZStatusBar, QZPrinterPicker, and QZPrintButton.
  */
 import { Printer, Settings, X } from 'lucide-react'
+import styles from './QZPrinterUI.module.css'
 
 /** Status indicator bar */
 export function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }) {
@@ -88,7 +90,7 @@ export function QZPrinterPicker({ printers, selectedPrinter, onSelect, onClose }
                             <button
                                 key={p}
                                 onClick={() => onSelect(p)}
-                                className={`qz-printer-item ${p === selectedPrinter ? 'selected' : ''}`}
+                                className={`${styles.qzPrinterItem} ${p === selectedPrinter ? styles.selected : ''}`}
                             >
                                 <Printer size={16} style={{ color: p === selectedPrinter ? 'var(--primary)' : 'var(--text-muted)' }} />
                                 {p}

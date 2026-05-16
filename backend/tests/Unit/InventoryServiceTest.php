@@ -61,4 +61,52 @@ class InventoryServiceTest extends TestCase
         $this->assertFalse($result['ok']);
         $this->assertEquals(404, $result['code']);
     }
+
+    public function testBulkPurchaseRejectsInvalidItemData()
+    {
+        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Test']);
+
+        $data = [
+            'supplier_id' => 1,
+            'items' => [
+                ['product_id' => null, 'quantity' => 5, 'cost' => 10]
+            ]
+        ];
+        $authUser = ['id' => 1];
+
+        $result = $this->service->processBulkPurchase($data, $authUser);
+        $this->assertFalse($result['ok']);
+    }
+
+    public function testBulkPurchaseRejectsZeroQuantityItem()
+    {
+        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Test']);
+
+        $data = [
+            'supplier_id' => 1,
+            'items' => [
+                ['product_id' => 1, 'quantity' => 0, 'cost' => 10]
+            ]
+        ];
+        $authUser = ['id' => 1];
+
+        $result = $this->service->processBulkPurchase($data, $authUser);
+        $this->assertFalse($result['ok']);
+    }
+
+    public function testBulkPurchaseRejectsNegativeCost()
+    {
+        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Test']);
+
+        $data = [
+            'supplier_id' => 1,
+            'items' => [
+                ['product_id' => 1, 'quantity' => 5, 'cost' => -10]
+            ]
+        ];
+        $authUser = ['id' => 1];
+
+        $result = $this->service->processBulkPurchase($data, $authUser);
+        $this->assertFalse($result['ok']);
+    }
 }

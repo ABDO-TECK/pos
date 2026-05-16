@@ -71,7 +71,10 @@ RUN echo '<VirtualHost *:80>\n\
     </FilesMatch>\n\
     \n\
     Header always set X-Content-Type-Options "nosniff"\n\
-    Header always set X-Frame-Options "SAMEORIGIN"\n\
+    Header always set X-Frame-Options "DENY"\n\
+    Header always set X-XSS-Protection "1; mode=block"\n\
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"\n\
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"\n\
 </VirtualHost>' > /etc/apache2/sites-available/000-default.conf
 
 # إعداد PHP للإنتاج

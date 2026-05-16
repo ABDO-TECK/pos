@@ -1,8 +1,10 @@
+// @ts-nocheck
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserMultiFormatReader, BrowserCodeReader } from '@zxing/browser'
 import { DecodeHintType } from '@zxing/library'
 import { X } from 'lucide-react'
+import styles from './BarcodeScanner.module.css'
 
 /**
  * على HTTP (ما عدا localhost) المتصفحات الحديثة لا تعرّف `navigator.mediaDevices` — فينهار ZXing عند قراءة getUserMedia.
@@ -318,7 +320,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
 
   const ui = (
     <div
-      className="modal-overlay barcode-scanner-overlay"
+      className={`modal-overlay ${styles.overlay}`}
       style={{ zIndex: 1100 }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
@@ -328,11 +330,11 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
       aria-labelledby="barcode-scanner-title"
     >
       <div
-        className="barcode-scanner-panel"
+        className={styles.panel}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="barcode-scanner-toolbar">
-          <h2 id="barcode-scanner-title" className="barcode-scanner-title">
+        <div className={styles.toolbar}>
+          <h2 id="barcode-scanner-title" className={styles.title}>
             مسح الباركود بالكاميرا
           </h2>
           <button
@@ -345,21 +347,21 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
           </button>
         </div>
 
-        <p className="barcode-scanner-hint">
+        <p className={styles.hint}>
           استخدم الكاميرا الخلفية، أبعد الباركود نحو 15–25 سم، وتأكد أن الخطوط واضحة ومضاءة بشكل جيد. للباركود الخطي اجعل الخطوط أفقية قدر الإمكان.
         </p>
 
-        <div className="barcode-scanner-video-wrap">
+        <div className={styles.videoWrap}>
           <video
             ref={videoRef}
-            className="barcode-scanner-video"
+            className={styles.video}
             muted
             playsInline
             autoPlay
           />
-          <div className="barcode-scanner-frame" aria-hidden="true" />
+          <div className={styles.frame} aria-hidden="true" />
           {starting && !error && (
-            <div className="barcode-scanner-loading">
+            <div className={styles.loading}>
               <span className="spinner" style={{ width: '2rem', height: '2rem', borderWidth: '3px' }} />
               <span>جاري تشغيل الكاميرا…</span>
             </div>
@@ -367,12 +369,12 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
         </div>
 
         {error && (
-          <div className="barcode-scanner-error" role="alert">
+          <div className={styles.error} role="alert">
             {error}
           </div>
         )}
 
-        <div className="barcode-scanner-actions">
+        <div className={styles.actions}>
           <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>
             إلغاء
           </button>

@@ -20,54 +20,40 @@ if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
 }
 require_once __DIR__ . '/vendor/autoload.php';
 
-// ── CORS ──────────────────────────────────────────────────────
-$allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    'https://localhost:5173',
-    'https://127.0.0.1:5173',
-    'file://',
-    'app://.',
-    FRONTEND_URL,
-];
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+// ── Event System ──────────────────────────────────────────────
+\App\Helpers\CacheSubscriber::register();
 
-$originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
-// السماح بأصل Vite من IP الشبكة المحلية (HTTP/HTTPS) للهاتف والكمبيوتر دائماً في هذا النظام
-if (!$originAllowed && $origin !== '') {
-    $lanOrigin = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
-    if (preg_match($lanOrigin, $origin) === 1) {
-        $originAllowed = true;
+use App\Services\LoyaltyService;
+\App\Helpers\EventDispatcher::listen('sale.completed', function(array $data) {
+    if (!empty($data['customer_id']) && !empty($data['invoice_id'])) {
+        (new LoyaltyService())->earnPoints(
+            (int)$data['customer_id'],
+            (int)$data['invoice_id'],
+            (float)($data['total'] ?? 0)
+        );
     }
-}
+});
 
-// السماح بطلبات بدون Origin (Electron file:// protocol)
-if ($origin === '' && php_sapi_name() === 'cli-server') {
-    $originAllowed = true;
-}
+// ── CORS + Preflight ──────────────────────────────────────────
+(new \App\Middleware\CorsMiddleware())->handle(fn() => null);
 
-if ($originAllowed && $origin !== '') {
-    header("Access-Control-Allow-Origin: $origin");
-    header('Vary: Origin');
-}
-// ملاحظة: إذا لم يوجد Origin header (مثل Electron file://)
-// لا نرسل Access-Control-Allow-Origin نهائياً — المتصفح سيسمح بالطلب
-// لأن طلبات same-origin وطلبات بدون Origin لا تحتاج CORS header.
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-XSRF-TOKEN');
-header('Access-Control-Allow-Credentials: true');
 header('Content-Type: application/json; charset=UTF-8');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
+// ── Security Headers ──────────────────────────────────────────
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
 
 
 
-// ── Rate Limiting ── (120 طلب/دقيقة لكل IP)
-(new RateLimiter(120, 60))->check();
+// ── Rate Limiting ── (200 طلب / دقيقة per-IP كحد أقصى عام)
+// هذا الحد العام يعمل per-IP قبل المصادقة كخط دفاع أول.
+// بعد المصادقة، يتم تطبيق حدود أدق per-user عبر:
+//   - ReadRateLimiter:   200/دقيقة (GET)    — per-user أو per-IP
+//   - WriteRateLimiter:  60/دقيقة  (POST/PUT) — per-user أو per-IP
+//   - DeleteRateLimiter: 30/دقيقة  (DELETE)   — per-user أو per-IP
+(new RateLimiter(200, 60))->check();
 
 // ── Error handling ─────────────────────────────────────────────
 set_exception_handler(function (Throwable $e) {

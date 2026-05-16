@@ -17,35 +17,43 @@ class SettingsController extends Controller {
     }
 
     private function all() {
+        $cached = Cache::get('settings_all');
+        if ($cached !== null) return $cached;
+
         $rows     = $this->db->query('SELECT `key`, `value` FROM settings')->fetchAll();
         $settings = [];
         foreach ($rows as $row) {
             $settings[$row['key']] = $row['value'];
         }
+
+        Cache::set('settings_all', $settings, 300); // 5 minutes
         return $settings;
     }
 
     public function index() {
-        return Response::cacheable($this->all(), 300); // Cache for 5 minutes
+        return Response::cacheable($this->all(), 300);
     }
 
     public function update() {
         $data = $this->getBody();
+        $allowed = ['store_name', 'tax_enabled', 'tax_rate', 'loyalty_enabled', 'loyalty_points_per_rial', 'loyalty_rial_per_point'];
 
-        $allowed = ['store_name', 'tax_enabled', 'tax_rate'];
-        $stmt    = $this->db->prepare(
-            'INSERT INTO settings (`key`, `value`) VALUES (:k, :v)
-             ON DUPLICATE KEY UPDATE `value` = :v2'
-        );
+        return $this->withTransaction(function ($db) use ($data, $allowed) {
+            $stmt = $db->prepare(
+                'INSERT INTO settings (`key`, `value`) VALUES (:k, :v)
+                 ON DUPLICATE KEY UPDATE `value` = :v2'
+            );
 
-        foreach ($allowed as $key) {
-            if (array_key_exists($key, $data)) {
-                $val = (string)$data[$key];
-                $stmt->execute(['k' => $key, 'v' => $val, 'v2' => $val]);
+            foreach ($allowed as $key) {
+                if (array_key_exists($key, $data)) {
+                    $val = (string)$data[$key];
+                    $stmt->execute(['k' => $key, 'v' => $val, 'v2' => $val]);
+                }
             }
-        }
 
-        return Response::success($this->all(), 'Settings updated');
+            \App\Helpers\EventDispatcher::dispatch('settings.updated');
+            return Response::success($this->all(), 'Settings updated');
+        });
     }
 }
 

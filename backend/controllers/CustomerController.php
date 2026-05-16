@@ -5,7 +5,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\ValidationException;
 use App\Helpers\Response;
-use App\Models\Customer;
+use App\Repositories\CustomerRepository;
 use App\Requests\CustomerRequest;
 use App\Services\AuthService;
 use App\Services\CustomerService;
@@ -14,12 +14,12 @@ use Throwable;
 
 class CustomerController extends Controller {
 
-    private Customer $model;
+    private CustomerRepository $customerRepo;
     private CustomerService $service;
     private AuthService $authService;
 
-    public function __construct(Customer $model, CustomerService $service, AuthService $authService) {
-        $this->model = $model;
+    public function __construct(CustomerRepository $customerRepo, CustomerService $service, AuthService $authService) {
+        $this->customerRepo = $customerRepo;
         $this->service = $service;
         $this->authService = $authService;
     }
@@ -28,10 +28,9 @@ class CustomerController extends Controller {
     public function index() {
         $filters = [];
         if ($this->getParam('search'))  $filters['search']  = $this->getParam('search');
-        if ($this->getParam('page'))    $filters['page']    = $this->getParam('page');
-        if ($this->getParam('limit'))   $filters['limit']   = $this->getParam('limit');
+        $filters += $this->getPaginationParams();
 
-        $result = $this->model->all($filters);
+        $result = $this->customerRepo->all($filters);
 
         // إذا أُرجع pagination — إرسال مع metadata
         if (isset($result['pagination'])) {
@@ -43,7 +42,7 @@ class CustomerController extends Controller {
 
     /** GET /api/customers/{id} — بيانات العميل + كشف الحساب */
     public function show(string $id) {
-        $data = $this->model->getLedger((int)$id);
+        $data = $this->customerRepo->getLedger((int)$id);
         if (!$data['customer']) {
             return Response::notFound('العميل غير موجود');
         }
@@ -56,8 +55,10 @@ class CustomerController extends Controller {
             $request = new CustomerRequest($this->getBody());
             $data = $request->validated();
             
-            $id = $this->service->createCustomer($data);
-            return Response::success($this->model->findById($id), 'تم إضافة العميل', 201);
+            return $this->withTransaction(function () use ($data) {
+                $id = $this->service->createCustomer($data);
+                return Response::success($this->customerRepo->findById($id), 'تم إضافة العميل', 201);
+            });
         } catch (ValidationException $e) {
             return Response::error('Validation failed', 422, $e->getErrors());
         }
@@ -72,11 +73,13 @@ class CustomerController extends Controller {
             $data = $request->validated();
             
             $cid = (int)$id;
-            if (!$this->model->findById($cid)) {
+            if (!$this->customerRepo->findById($cid)) {
                 return Response::notFound('العميل غير موجود');
             }
-            $this->model->update($cid, $data);
-            return Response::success($this->model->findById($cid), 'تم تحديث العميل');
+            return $this->withTransaction(function () use ($cid, $data) {
+                $this->customerRepo->update($cid, $data);
+                return Response::success($this->customerRepo->findById($cid), 'تم تحديث العميل');
+            });
         } catch (ValidationException $e) {
             return Response::error('Validation failed', 422, $e->getErrors());
         }
@@ -85,11 +88,13 @@ class CustomerController extends Controller {
     /** DELETE /api/customers/{id} */
     public function destroy(string $id) {
         $cid = (int)$id;
-        if (!$this->model->findById($cid)) {
+        if (!$this->customerRepo->findById($cid)) {
             return Response::notFound('العميل غير موجود');
         }
-        $this->model->delete($cid);
-        return Response::success(null, 'تم حذف العميل');
+        return $this->withTransaction(function () use ($cid) {
+            $this->customerRepo->delete($cid);
+            return Response::success(null, 'تم حذف العميل');
+        });
     }
 
     /**

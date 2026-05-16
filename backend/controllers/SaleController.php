@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\Response;
+use App\Helpers\ErrorCodes;
 use App\Helpers\Logger;
 use App\Helpers\AuditLog;
 use App\Models\Invoice;
@@ -26,8 +27,7 @@ class SaleController extends Controller {
             'date'  => $this->getParam('date'),
             'month' => $this->getParam('month'),
             'year'  => $this->getParam('year'),
-            'page'   => $this->getParam('page'),
-            'limit'  => $this->getParam('limit'),
+            ...$this->getPaginationParams(),
             'status' => $this->getParam('status'),
             'search' => $this->getParam('search'),
         ];
@@ -53,16 +53,16 @@ class SaleController extends Controller {
             'items'          => 'required',
             'payment_method' => 'required',
         ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors);
+        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors, ErrorCodes::VALIDATION_FAILED);
 
         if (empty($data['items']) || !is_array($data['items'])) {
-            return Response::error('السلة فارغة', 400);
+            return Response::error('السلة فارغة', 400, null, ErrorCodes::EMPTY_CART);
         }
 
         // 1. إثراء والتحقق من البنود
         $enrichResult = $this->saleService->enrichItems($data['items']);
         if (!$enrichResult['ok']) {
-            return Response::error($enrichResult['error'], $enrichResult['code']);
+            return Response::error($enrichResult['error'], $enrichResult['code'], null, ErrorCodes::VALIDATION_FAILED);
         }
         $enrichedItems = $enrichResult['items'];
 
@@ -77,8 +77,8 @@ class SaleController extends Controller {
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
             return $code === 404
-                ? Response::notFound($result['error'])
-                : Response::error($result['error'], $code);
+                ? Response::notFound($result['error'], ErrorCodes::INVOICE_NOT_FOUND)
+                : Response::error($result['error'], $code, null, ErrorCodes::SERVER_ERROR);
         }
 
         // 4. جلب الفاتورة الناتجة + تنبيهات المخزون
@@ -95,7 +95,7 @@ class SaleController extends Controller {
     public function updateStatus(string $id) {
         $data = $this->getBody();
         if (empty($data['status']) || !in_array($data['status'], ['completed', 'reserved', 'cancelled'])) {
-            return Response::error('حالة غير صالحة', 400);
+            return Response::error('حالة غير صالحة', 400, null, ErrorCodes::VALIDATION_FAILED);
         }
 
         $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);

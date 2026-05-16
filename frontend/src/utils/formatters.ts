@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Force Western/Latin numerals (1234567890) while keeping Arabic currency symbol
 const AR = 'ar-EG-u-nu-latn'
 

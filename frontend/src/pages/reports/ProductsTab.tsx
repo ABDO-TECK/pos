@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getTopProducts } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
+import { DEFAULT_PAGE_SIZE } from '../../api/constants'
 
 export default function ProductsTab() {
   const [topProducts, setTopProducts] = useState<any[]>([])
@@ -8,7 +9,7 @@ export default function ProductsTab() {
 
   useEffect(() => {
     setLoading(true)
-    getTopProducts({ limit: 50 }).then((r) => {
+    getTopProducts({ limit: DEFAULT_PAGE_SIZE }).then((r) => {
       setTopProducts((r.data.data as any[]) ?? [])
       setLoading(false)
     })

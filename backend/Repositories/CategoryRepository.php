@@ -3,8 +3,9 @@
 namespace App\Repositories;
 
 use App\Models\Category;
+use App\Contracts\RepositoryInterface;
 
-class CategoryRepository
+class CategoryRepository implements RepositoryInterface
 {
     private Category $model;
 
@@ -23,14 +24,19 @@ class CategoryRepository
         return $this->model->create($data);
     }
 
-    public function update(int $id, array $data): bool
+    public function findById(int $id): ?array
     {
-        return $this->model->update($id, $data);
+        return $this->model->find($id);
     }
 
-    public function delete(int $id): bool
+    public function update(int $id, array $data): void
     {
-        return $this->model->delete($id);
+        $this->model->update($id, $data);
+    }
+
+    public function delete(int $id): void
+    {
+        $this->model->delete($id);
     }
 
     public function getModel(): Category

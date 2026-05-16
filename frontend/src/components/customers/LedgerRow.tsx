@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Edit2 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 

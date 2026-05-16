@@ -5,19 +5,19 @@ setlocal
 set "POS_ROOT=%~dp0"
 if "%POS_ROOT:~-1%"=="\" set "POS_ROOT=%POS_ROOT:~0,-1%"
 
-:: ═══════════════════════════════════════════════════════════════
-:: Frontend mode — change only the next line:
-::   start or dev  → Vite dev server (port 5173, same as npm start / npm run dev)
+:: â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+:: Frontend mode â€” change only the next line:
+::   start or dev  â†’ Vite dev server (port 5173, same as npm start / npm run dev)
 ::                   Opens https:// if certs\*-key.pem exists, else http://
-::   preview       → Production preview after build (port 4173, default HTTP)
+::   preview       â†’ Production preview after build (port 4173, default HTTP)
 :: Note: run "npm run build" at least once before using preview
-:: ═══════════════════════════════════════════════════════════════
+:: â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 set FRONTEND_MODE=start
 
 set LOG=%TEMP%\pos-launcher.log
 echo [%date% %time%] === POS Launcher started (FRONTEND_MODE=%FRONTEND_MODE%) === > "%LOG%"
 
-:: ── 1. Start Apache ──────────────────────────────────────────
+:: â”€â”€ 1. Start Apache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo [%date% %time%] Starting Apache... >> "%LOG%"
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if errorlevel 1 (
@@ -27,7 +27,7 @@ if errorlevel 1 (
     echo [%date% %time%] Apache already running. >> "%LOG%"
 )
 
-:: ── 2. Start MySQL ───────────────────────────────────────────
+:: â”€â”€ 2. Start MySQL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo [%date% %time%] Starting MySQL... >> "%LOG%"
 tasklist /FI "IMAGENAME eq mysqld.exe" 2>nul | find /I "mysqld.exe" >nul
 if errorlevel 1 (
@@ -37,10 +37,10 @@ if errorlevel 1 (
     echo [%date% %time%] MySQL already running. >> "%LOG%"
 )
 
-:: ── 3. Wait briefly for services ────────────────────────────
+:: â”€â”€ 3. Wait briefly for services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 timeout /t 2 /nobreak >nul
 
-:: ── Get Local IP Address ───────────────────────────────────────
+:: â”€â”€ Get Local IP Address â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 set "LOCAL_IP=localhost"
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /I "IPv4"') do (
     set "LOCAL_IP=%%a"
@@ -49,7 +49,7 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /I "IPv4"') do (
 :ip_found
 set "LOCAL_IP=%LOCAL_IP: =%"
 
-:: ── 4. Start frontend (npm) ──────────────────────────────────
+:: â”€â”€ 4. Start frontend (npm) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if /I "%FRONTEND_MODE%"=="preview" (
     set FRONTEND_PORT=4173
     set "FRONTEND_URL=http://%LOCAL_IP%:4173"
@@ -75,7 +75,7 @@ if errorlevel 1 (
     echo [%date% %time%] Frontend already listening on %FRONTEND_PORT%. >> "%LOG%"
 )
 
-:: ── 5. Wait for frontend ─────────────────────────────────────
+:: â”€â”€ 5. Wait for frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo [%date% %time%] Waiting for LISTENING on %FRONTEND_PORT%... >> "%LOG%"
 set /a tries=0
 :wait_loop
@@ -92,7 +92,7 @@ start chrome "%FRONTEND_URL%" || start "" "%FRONTEND_URL%"
 echo [%date% %time%] Done. >> "%LOG%"
 goto :eof
 
-:: ── Returns 0 if TCP port is LISTENING, 1 otherwise ───────────
+:: â”€â”€ Returns 0 if TCP port is LISTENING, 1 otherwise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 :port_listening
 set "_p=%~1"
 netstat -an 2>nul | find "LISTENING" | find ":%_p% " >nul

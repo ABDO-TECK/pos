@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron');
 const path = require('path');
 const { startPHP, stopPHP } = require('./services/php-server');
+const { startWebSocketServer, stopWebSocketServer } = require('./services/websocket-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
 const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
@@ -31,6 +32,41 @@ app.whenReady().then(async () => {
   ipcMain.handle('qz-get-cert', () => getQZCertificate());
   ipcMain.handle('qz-sign', (_event, data) => signQZMessage(data));
 
+  // ── Window Controls ──
+  ipcMain.handle('window-minimize', () => mainWindow?.minimize());
+  ipcMain.handle('window-maximize', () => {
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+  });
+  ipcMain.handle('window-close', () => mainWindow?.close());
+  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
+
+  // ── System Info ──
+  ipcMain.handle('get-system-info', () => ({
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version,
+    electronVersion: process.versions.electron,
+    memory: process.memoryUsage(),
+  }));
+
+  // ── File Operations ──
+  ipcMain.handle('show-save-dialog', async (_e, options) => {
+    const { dialog } = require('electron');
+    return dialog.showSaveDialog(mainWindow, options);
+  });
+  ipcMain.handle('save-file', async (_e, filePath, data) => {
+    const fs = require('fs');
+    fs.writeFileSync(filePath, data);
+    return true;
+  });
+
+  // ── Notifications ──
+  ipcMain.handle('show-notification', (_e, title, body) => {
+    const { Notification } = require('electron');
+    new Notification({ title, body }).show();
+  });
+
   // 1. شاشة تحميل (Splash)
   const splash = new BrowserWindow({
     width: 400, height: 300,
@@ -53,14 +89,24 @@ app.whenReady().then(async () => {
     await startPHP(phpPort, mysqlPort);
     await startHttpsProxy(phpPort, 8443);
 
+    // تشغيل خادم الـ WebSocket
+    startWebSocketServer();
+
+    // تشغيل job worker في الخلفية
+    const { spawn } = require('child_process');
+    const phpPath = require('./utils/paths').getPhpPath();
+    const workerPath = path.join(__dirname, '..', 'backend', 'cli', 'process-jobs.php');
+    const jobWorker = spawn(phpPath, [workerPath, '--daemon'], { stdio: 'ignore', detached: true });
+    jobWorker.unref();
+
     // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل خدمة الطباعة...'`
     );
-    const { getQZTrayPath } = require('./utils/paths');
     try {
+      const { getJavaPath, getQZTrayPath } = require('./utils/paths');
       const qzTrayDir = require('path').dirname(getQZTrayPath());
-      ensureQZCerts(qzTrayDir);
+      await ensureQZCerts(qzTrayDir, getJavaPath());
     } catch (err) {
       console.warn('[QZ Certs] Skipped cert generation:', err.message);
     }
@@ -155,6 +201,7 @@ app.on('before-quit', async () => {
   forceQuit = true;
   stopHttpsProxy();
   stopQZTray();
+  stopWebSocketServer();
   stopPHP();
   await stopMySQL();
 });

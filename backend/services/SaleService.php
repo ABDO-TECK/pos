@@ -36,10 +36,20 @@ class SaleService
     // ── Settings helper ───────────────────────────────────────
     public function getSettings(): array
     {
+        // استخدام Cache لتجنب استعلام DB في كل عملية بيع
+        $cached = \App\Helpers\Cache::get('settings_all');
+        if ($cached !== null && is_array($cached)) {
+            return $cached;
+        }
+
         try {
             $rows = $this->db->query('SELECT `key`, `value` FROM settings')->fetchAll();
             $s = [];
             foreach ($rows as $r) { $s[$r['key']] = $r['value']; }
+
+            // حفظ في الكاش لمدة 5 دقائق (300 ثانية)
+            \App\Helpers\Cache::set('settings_all', $s, 300);
+
             return $s;
         } catch (Throwable $e) {
             return ['tax_enabled' => '0', 'tax_rate' => '15'];
@@ -148,8 +158,11 @@ class SaleService
 
             if ($replaceInvoiceId > 0) {
                 // مرتجع / إعادة فوترة
+                $inventoryEvent = new \App\Models\InventoryEvent($this->db);
                 foreach ($existingInvoice['items'] as $old) {
                     $this->productModel->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
+                    $updatedProduct = $this->productModel->findById((int) $old['product_id']);
+                    $inventoryEvent->record((int) $old['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$old['quantity']);
                 }
                 
                 // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
@@ -208,12 +221,30 @@ class SaleService
             }
 
             // إضافة البنود وخصم المخزون
+            $inventoryEvent = new \App\Models\InventoryEvent($this->db);
             foreach ($enrichedItems as $item) {
                 $this->invoiceModel->addItem($invoiceId, $item);
                 $this->productModel->decrementQuantity($item['product_id'], $item['quantity']);
+                $updatedProduct = $this->productModel->findById($item['product_id']);
+                $inventoryEvent->record($item['product_id'], 'sale', (int)$updatedProduct['quantity'], -$item['quantity']);
             }
 
             $this->db->commit();
+
+            // إضافة نقاط الولاء تلقائياً بعد البيع الناجح
+            if ($customerId !== null && $replaceInvoiceId === 0) {
+                try {
+                    $loyalty = new \App\Services\LoyaltyService();
+                    $loyalty->earnPoints($customerId, $invoiceId, $totals['total']);
+                } catch (\Throwable $loyaltyError) {
+                    // لا نُفشل عملية البيع بسبب خطأ في نظام الولاء
+                    \App\Helpers\Logger::warning('فشل إضافة نقاط الولاء', [
+                        'customer_id' => $customerId,
+                        'invoice_id'  => $invoiceId,
+                        'error'       => $loyaltyError->getMessage(),
+                    ]);
+                }
+            }
         } catch (Throwable $e) {
             $this->db->rollBack();
             Logger::error('فشل إنشاء عملية بيع', ['error' => $e->getMessage()]);
@@ -282,8 +313,11 @@ class SaleService
 
         $this->db->beginTransaction();
         try {
+            $inventoryEvent = new \App\Models\InventoryEvent($this->db);
             foreach ($invoice['items'] as $item) {
                 $this->productModel->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
+                $updatedProduct = $this->productModel->findById((int) $item['product_id']);
+                $inventoryEvent->record((int) $item['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$item['quantity']);
             }
             // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
             $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);

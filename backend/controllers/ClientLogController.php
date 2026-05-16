@@ -68,4 +68,44 @@ class ClientLogController extends Controller
 
         return Response::success(null, 'Log received');
     }
+
+    /**
+     * GET /api/admin/client-logs
+     * جلب السجلات لعرضها في لوحة التحكم
+     */
+    public function index()
+    {
+        $limit = (int)($_GET['limit'] ?? 100);
+        $level = strtolower($_GET['level'] ?? 'all');
+        $logDir = __DIR__ . '/../../logs';
+        
+        $logs = [];
+        $files = glob($logDir . '/client-*.log');
+        rsort($files); // أحدث الملفات أولاً
+
+        foreach ($files as $file) {
+            $lines = file($file);
+            if ($lines === false) continue;
+            
+            $lines = array_reverse($lines); // الأحدث أولاً
+            foreach ($lines as $line) {
+                if (preg_match('/\[(.*?)\] \[(.*?)\] (.*?) (\{.*\})/', $line, $matches)) {
+                    $logLevel = strtolower($matches[2]);
+                    if ($level !== 'all' && strpos($logLevel, $level) === false) continue;
+
+                    $logs[] = [
+                        'id' => md5($line),
+                        'created_at' => $matches[1],
+                        'level' => $matches[2],
+                        'message' => $matches[3],
+                        'context' => $matches[4],
+                    ];
+
+                    if (count($logs) >= $limit) break 2;
+                }
+            }
+        }
+
+        return Response::success($logs);
+    }
 }

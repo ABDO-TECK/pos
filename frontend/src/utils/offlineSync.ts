@@ -8,7 +8,7 @@ const MAX_RETRIES = 3
 /** تحديد نوع الخطأ لمعرفة هل نعيد المحاولة أم لا */
 const classifyError = (err: unknown): 'retry' | 'conflict' | 'permanent' => {
   if (!err || typeof err !== 'object') return 'retry'
-  const status = (err as any)?.response?.status
+  const status = (err as { response?: { status?: number } })?.response?.status
   // 409 = conflict, 422 = validation error, 404 = not found
   if (status === 409 || status === 422 || status === 404) return 'conflict'
   // 400 = bad request — لن تنجح أبداً
@@ -46,7 +46,7 @@ export const syncPendingSales = async () => {
         await deletePendingSale(localId)
         console.log(`[OfflineSync] Sale ${String(localId)} synced and removed.`)
         syncedCount++
-      } catch (err: any) {
+      } catch (err) {
         const errType = classifyError(err)
         const errMsg = (err as Error).message || 'Unknown error'
 
