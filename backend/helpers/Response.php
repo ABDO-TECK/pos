@@ -2,7 +2,6 @@
 
 namespace App\Helpers;
 
-
 class Response {
 
     public static function json(mixed $data, int $status = 200): array {
