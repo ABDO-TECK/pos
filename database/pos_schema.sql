@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_name (name),
     INDEX idx_category (category_id),
     INDEX idx_products_deleted (deleted_at),
+    INDEX idx_prod_deleted (deleted_at),
     INDEX idx_prod_low_stock (quantity, low_stock_threshold, deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -212,7 +213,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     CONSTRAINT fk_item_product FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_invoice (invoice_id),
     INDEX idx_product (product_id),
-    INDEX idx_ii_product_invoice (product_id, invoice_id)
+    INDEX idx_ii_product_invoice (product_id, invoice_id),
+    INDEX idx_ii_product_qty (product_id, quantity)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -392,6 +394,23 @@ CREATE TABLE IF NOT EXISTS loyalty_transactions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
+-- RBAC (نظام الصلاحيات والأدوار)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS permissions (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL UNIQUE COMMENT 'مثل: products.create, invoices.delete',
+    description VARCHAR(255) DEFAULT '',
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role       VARCHAR(20)  NOT NULL COMMENT 'admin, cashier, manager...',
+    permission_id INT       NOT NULL,
+    PRIMARY KEY (role, permission_id),
+    FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- Seed Data
 -- ============================================================
 
@@ -412,6 +431,58 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('loyalty_enabled', '0'),
 ('loyalty_points_per_rial', '1'),
 ('loyalty_rial_per_point', '0.01');
+
+-- إدخال الصلاحيات الأساسية
+INSERT IGNORE INTO permissions (name, description) VALUES
+('products.view',    'عرض المنتجات'),
+('products.create',  'إضافة منتجات'),
+('products.update',  'تعديل المنتجات'),
+('products.delete',  'حذف المنتجات'),
+('invoices.view',    'عرض الفواتير'),
+('invoices.create',  'إنشاء فواتير'),
+('invoices.delete',  'حذف فواتير'),
+('reports.view',     'عرض التقارير'),
+('settings.view',    'عرض الإعدادات'),
+('settings.update',  'تعديل الإعدادات'),
+('users.manage',     'إدارة المستخدمين'),
+('backup.manage',    'إدارة النسخ الاحتياطية'),
+('audit.view',       'عرض سجلات التدقيق'),
+('suppliers.view',       'عرض الموردين'),
+('suppliers.create',     'إضافة موردين'),
+('suppliers.update',     'تعديل موردين'),
+('suppliers.delete',     'حذف موردين'),
+('purchases.view',       'عرض المشتريات'),
+('purchases.create',     'تسجيل مشتريات'),
+('purchases.delete',     'حذف فاتورة مشتريات'),
+('customers.view',       'عرض العملاء'),
+('customers.create',     'إضافة عملاء'),
+('customers.update',     'تعديل عملاء'),
+('customers.delete',     'حذف عملاء'),
+('customers.payment',    'تسجيل دفعات العملاء'),
+('expenses.view',        'عرض المصروفات'),
+('expenses.create',      'إضافة مصروفات'),
+('expenses.update',      'تعديل مصروفات'),
+('expenses.delete',      'حذف مصروفات'),
+('inventory.view',       'عرض المخزون'),
+('inventory.adjust',     'تعديل المخزون'),
+('branches.view',        'عرض الفروع'),
+('branches.create',      'إضافة فروع'),
+('branches.update',      'تعديل فروع');
+
+-- ربط الصلاحيات بالأدوار الافتراضية
+-- Admin: كل الصلاحيات
+INSERT IGNORE INTO role_permissions (role, permission_id)
+SELECT 'admin', id FROM permissions;
+
+-- Cashier: صلاحيات محدودة
+INSERT IGNORE INTO role_permissions (role, permission_id)
+SELECT 'cashier', id FROM permissions
+WHERE name IN (
+    'products.view', 'invoices.view', 'invoices.create', 'reports.view', 'settings.view',
+    'customers.view', 'customers.create', 'customers.update', 'customers.payment',
+    'suppliers.view', 'purchases.view', 'expenses.view', 'expenses.create',
+    'inventory.view', 'branches.view'
+);
 
 -- ============================================================
 -- Mark all existing migrations as executed
@@ -438,4 +509,7 @@ INSERT IGNORE INTO schema_versions (version) VALUES
 ('019_add_performance_indexes.sql'),
 ('020_create_loyalty_system.sql'),
 ('021_multi_branch.sql'),
-('022_randomize_default_passwords.sql');
+('022_randomize_default_passwords.sql'),
+('023_review_indexes.sql'),
+('024_create_rbac_tables.sql'),
+('025_add_missing_permissions.sql');
