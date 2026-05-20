@@ -9,7 +9,7 @@ use App\Core\ValidationException;
 use App\Helpers\Response;
 use App\Helpers\Logger;
 use App\Middleware\RateLimiter;
-use App\Config\ErrorCodes;
+use App\Helpers\ErrorCodes;
 
 // ── Config (loads .env via EnvLoader) ─────────────────────────
 require_once __DIR__ . '/Config/config.php';
