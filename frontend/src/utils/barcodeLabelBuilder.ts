@@ -15,7 +15,7 @@ export function buildLabelHTML(products: LabelProduct[], copies: number = 1): st
       <div class="label">
         <div class="label-name">${p.name}</div>
         <svg class="barcode" data-barcode="${p.barcode}"></svg>
-        <div class="label-price">${p.price.toFixed(2)} ر.س</div>
+        <div class="label-price">${p.price.toFixed(2)} ج.م</div>
       </div>
     `)
   )

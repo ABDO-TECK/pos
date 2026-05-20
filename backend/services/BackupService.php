@@ -3,11 +3,12 @@
 namespace App\Services;
 
 use App\Config\Database;
+use App\Contracts\BackupServiceInterface;
 use PDO;
 use RuntimeException;
 
 
-class BackupService {
+class BackupService implements BackupServiceInterface {
     private PDO $db;
 
     public function __construct(PDO $db) {

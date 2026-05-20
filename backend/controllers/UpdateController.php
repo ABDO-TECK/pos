@@ -18,73 +18,18 @@ use Throwable;
 
 class UpdateController extends Controller {
 
-    private string $repoUrl = 'https://api.github.com/repos/ABDO-TECK/pos/contents/version.json?ref=main';
-    private string $localVersionFile;
-    private string $rootDir;
     private GitService $gitService;
     private FrontendBuildService $buildService;
     private BackupService $backupService;
     private AuthService $authService;
+    private \App\Services\UpdateService $updateService;
 
-    public function __construct(GitService $gitService, FrontendBuildService $buildService, BackupService $backupService, AuthService $authService) {
-        $this->rootDir          = realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2);
-        $this->localVersionFile = $this->rootDir . DIRECTORY_SEPARATOR . 'version.json';
+    public function __construct(GitService $gitService, FrontendBuildService $buildService, BackupService $backupService, AuthService $authService, \App\Services\UpdateService $updateService) {
         $this->gitService       = $gitService;
         $this->buildService     = $buildService;
         $this->backupService    = $backupService;
         $this->authService      = $authService;
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    //  Version helpers
-    // ══════════════════════════════════════════════════════════════
-
-    private function getLocalVersion() {
-        if (!file_exists($this->localVersionFile)) {
-            return ['version' => '0.0.0', 'released_at' => null, 'changelog' => []];
-        }
-        $content = @file_get_contents($this->localVersionFile);
-        $data    = $content ? json_decode($content, true) : null;
-        return is_array($data) ? $data : ['version' => '0.0.0', 'released_at' => null, 'changelog' => []];
-    }
-
-    private function fetchRemoteVersion(): ?array {
-        $certPath = __DIR__ . '/../certs/cacert.pem';
-
-        $ch = curl_init();
-        $curlOptions = [
-            CURLOPT_URL            => $this->repoUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_HTTPHEADER     => [
-                'Accept: application/vnd.github.v3.raw',
-                'Cache-Control: no-cache',
-            ],
-        ];
-
-        if (file_exists($certPath)) {
-            $curlOptions[CURLOPT_CAINFO] = $certPath;
-        }
-
-        curl_setopt_array($ch, $curlOptions);
-        $result   = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
-
-        if ($httpCode === 200 && $result) {
-            $data = json_decode($result, true);
-            return is_array($data) ? $data : null;
-        }
-
-        Logger::warning('fetchRemoteVersion failed', [
-            'http_code' => $httpCode,
-            'curl_err'  => $curlErr,
-        ]);
-        return null;
+        $this->updateService    = $updateService;
     }
 
 
@@ -93,30 +38,16 @@ class UpdateController extends Controller {
     // ══════════════════════════════════════════════════════════════
 
     public function check() {
-        $local  = $this->getLocalVersion();
-        $remote = $this->fetchRemoteVersion();
-
-        if (!$remote) {
-            return Response::error(
-                'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت وأن ملف version.json موجود على GitHub.',
-                502
-            );
+        $result = $this->updateService->checkForUpdate();
+        if (!$result['ok']) {
+            return Response::error($result['error'], 502);
         }
-
-        $hasUpdate = version_compare($remote['version'], $local['version'], '>');
-
-        return Response::success([
-            'current_version'      => $local['version'],
-            'latest_version'       => $remote['version'],
-            'has_update'           => $hasUpdate,
-            'released_at'          => $remote['released_at'] ?? null,
-            'changelog'            => $remote['changelog'] ?? [],
-            'requires_npm_install' => $remote['requires_npm_install'] ?? false,
-        ]);
+        unset($result['ok']);
+        return Response::success($result);
     }
 
     public function changelog() {
-        $remote = $this->fetchRemoteVersion();
+        $remote = $this->updateService->fetchRemoteVersion();
         return Response::success($remote['changelog'] ?? []);
     }
 
@@ -142,7 +73,7 @@ class UpdateController extends Controller {
         $output[] = '💾 إنشاء نسخة احتياطية من قاعدة البيانات...';
         $t0 = microtime(true);
         try {
-            $backupDir = $this->rootDir . '/backend/storage/update-backups';
+            $backupDir = $this->updateService->getRootDir() . '/backend/storage/update-backups';
             $backupFile = $this->backupService->createBackupFile($backupDir);
             $elapsed    = round(microtime(true) - $t0, 1);
             $output[]   = "✅ تم إنشاء النسخة الاحتياطية: " . basename($backupFile) . " ({$elapsed}s)";
@@ -157,7 +88,7 @@ class UpdateController extends Controller {
 
         // الخطوة 2: جلب معلومات الإصدار البعيد
         $output[] = '🌐 الاتصال بخادم التحديثات...';
-        $remote = $this->fetchRemoteVersion();
+        $remote = $this->updateService->fetchRemoteVersion();
         if (!$remote) {
             return Response::error(
                 'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت.',
@@ -170,7 +101,7 @@ class UpdateController extends Controller {
 
         // الخطوة 3: فحص Git
         $output[] = '🔧 التحقق من Git...';
-        $gitDir = $this->rootDir . DIRECTORY_SEPARATOR . '.git';
+        $gitDir = $this->updateService->getRootDir() . DIRECTORY_SEPARATOR . '.git';
 
         if (!is_dir($gitDir) && !file_exists($gitDir)) {
             [$revOut, $revCode] = $this->gitService->runGit(['rev-parse', '--git-dir']);
@@ -202,7 +133,7 @@ class UpdateController extends Controller {
         [$testOut, $testCode] = $this->gitService->runGit(['status', '--porcelain']);
         if ($testCode !== 0) {
             $errMsg = implode(' ', $testOut);
-            $this->gitService->runGit(['config', '--global', '--add', 'safe.directory', $this->rootDir]);
+            $this->gitService->runGit(['config', '--global', '--add', 'safe.directory', $this->updateService->getRootDir()]);
             [$testOut2, $testCode2] = $this->gitService->runGit(['status', '--porcelain']);
             if ($testCode2 !== 0) {
                 $this->gitService->runGit(['config', '--global', '--add', 'safe.directory', '*']);
@@ -320,7 +251,7 @@ class UpdateController extends Controller {
         $output[] = '🎉 تم استكمال التحديث بنجاح إلى v' . ($remote['version'] ?? '?');
 
         Logger::info('Update applied successfully', [
-            'from'    => $this->getLocalVersion()['version'] ?? '?',
+            'from'    => $this->updateService->getLocalVersion()['version'] ?? '?',
             'to'      => $remote['version'] ?? '?',
         ]);
 

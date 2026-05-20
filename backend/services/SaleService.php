@@ -10,7 +10,7 @@ use App\Models\Invoice;
 use App\Models\Product;
 use PDO;
 use Throwable;
-
+use App\Contracts\SaleServiceInterface;
 
 /**
  * SaleService — منطق الأعمال لعمليات البيع.
@@ -18,7 +18,7 @@ use Throwable;
  * يستخرج Business Logic من SaleController ليبقى الكونترولر
  * مسؤولاً فقط عن استقبال HTTP requests وإرجاع responses.
  */
-class SaleService
+class SaleService implements SaleServiceInterface
 {
     private Invoice  $invoiceModel;
     private Product  $productModel;
@@ -231,19 +231,13 @@ class SaleService
 
             $this->db->commit();
 
-            // إضافة نقاط الولاء تلقائياً بعد البيع الناجح
+            // إضافة نقاط الولاء كـ Background Job (لا تبطئ استجابة البيع)
             if ($customerId !== null && $replaceInvoiceId === 0) {
-                try {
-                    $loyalty = new \App\Services\LoyaltyService();
-                    $loyalty->earnPoints($customerId, $invoiceId, $totals['total']);
-                } catch (\Throwable $loyaltyError) {
-                    // لا نُفشل عملية البيع بسبب خطأ في نظام الولاء
-                    \App\Helpers\Logger::warning('فشل إضافة نقاط الولاء', [
-                        'customer_id' => $customerId,
-                        'invoice_id'  => $invoiceId,
-                        'error'       => $loyaltyError->getMessage(),
-                    ]);
-                }
+                \App\Helpers\JobQueue::dispatch('earn_loyalty_points', [
+                    'customer_id' => $customerId,
+                    'invoice_id'  => $invoiceId,
+                    'total'       => $totals['total'],
+                ], 1); // priority=1 (أعلى من المهام العادية)
             }
         } catch (Throwable $e) {
             $this->db->rollBack();

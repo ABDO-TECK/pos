@@ -7,9 +7,10 @@ use App\Helpers\Logger;
 use App\Models\Customer;
 use Exception;
 use Throwable;
+use App\Contracts\CustomerServiceInterface;
 
 
-class CustomerService {
+class CustomerService implements CustomerServiceInterface {
     
     private Customer $customerModel;
 

@@ -25,14 +25,16 @@ class InventoryController extends Controller {
         $filters += $this->getPaginationParams();
 
         $products = $this->productModel->all($filters);
-        return Response::cacheable($products, 60);
+        // المخزون يتغير بعد كل عملية شراء — لا نضع كاش هنا
+        return Response::success($products);
     }
 
     public function lowStock() {
         $filters = [];
         $filters += $this->getPaginationParams();
 
-        return Response::cacheable($this->productModel->getLowStock($filters), 60);
+        // المخزون المنخفض يتغير باستمرار — استجابة طازجة دائماً
+        return Response::success($this->productModel->getLowStock($filters));
     }
 
     public function adjust(string $id) {

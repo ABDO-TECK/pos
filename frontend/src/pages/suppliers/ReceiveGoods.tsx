@@ -126,6 +126,22 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       setPaymentType('cash')
       setDeposit(0)
       setMobileTab('products')
+
+      // ── تحديث فوري للمنتجات (تجاوز الكاش) ──────────────────
+      // نُعيد جلب المنتجات من الخادم مباشرة بعد تأكيد الاستلام
+      // حتى تنعكس الكميات الجديدة فوراً دون انتظار انتهاء الكاش
+      getProducts({ limit: 9999, _t: Date.now() })
+        .then((r) => {
+          const raw = r.data?.data as any
+          const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
+          if (list.length > 0) {
+            setAllProducts(list)
+            // تحديث productStore المشترك (يُستخدم في POS أيضاً)
+            useProductStore.getState().setProducts(list)
+            useProductStore.getState().invalidateCache()
+          }
+        })
+        .catch(() => { /* silent — البيانات ستُحدَّث في الدورة القادمة */ })
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
     } finally {

@@ -149,7 +149,31 @@ class Router {
     private function runMiddlewares(array $middlewares, callable $final): mixed {
         $chain = array_reduce(
             array_reverse($middlewares),
-            fn($next, $mw) => fn() => $this->container->get($mw)->handle($next),
+            function ($next, $mw) {
+                return function () use ($next, $mw) {
+                    // دعم middleware مع معاملات:
+                    // مصفوفة من 2 عناصر: [ClassName, param] → PermissionMiddleware
+                    // مصفوفة من 4 عناصر: [ClassName, key, max, window] → EndpointRateLimiter
+                    if (is_array($mw)) {
+                        $className = $mw[0];
+                        $authService = $this->container->get(\App\Services\AuthService::class);
+
+                        if (count($mw) === 2) {
+                            // PermissionMiddleware::require('permission.name')
+                            $instance = new $className($authService, $mw[1]);
+                        } elseif (count($mw) >= 4) {
+                            // EndpointRateLimiter::limit('key', max, window)
+                            $instance = new $className($authService, $mw[1], (int)$mw[2], (int)$mw[3]);
+                        } else {
+                            // fallback — حاول بناء مع عنصر واحد
+                            $instance = new $className($authService, $mw[1] ?? '');
+                        }
+                        return $instance->handle($next);
+                    }
+                    // الحالة العادية: string class name
+                    return $this->container->get($mw)->handle($next);
+                };
+            },
             $final
         );
         return $chain();

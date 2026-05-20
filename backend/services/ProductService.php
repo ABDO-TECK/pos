@@ -7,10 +7,10 @@ use App\Helpers\Logger;
 use App\Models\Product;
 use App\Models\PriceHistory;
 use App\Repositories\ProductRepository;
+use App\Contracts\ProductServiceInterface;
 use Exception;
 use PDOException;
 use Throwable;
-
 
 /**
  * ProductService — منطق الأعمال لإدارة المنتجات.
@@ -18,7 +18,7 @@ use Throwable;
  * يستخرج Business Logic من ProductController ليسهل إعادة استخدامه
  * من controllers أخرى أو من خطوط أوامر (CLI).
  */
-class ProductService
+class ProductService implements ProductServiceInterface
 {
     private ProductRepository $productRepo;
     private PriceHistory $priceHistory;

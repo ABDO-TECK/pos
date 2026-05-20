@@ -12,16 +12,19 @@ use App\Models\Product;
 use App\Models\PriceHistory;
 use App\Requests\ProductRequest;
 use App\Services\ProductService;
+use App\Services\AuthService;
 
 
 class ProductController extends Controller {
 
     private ProductService $productService;
     private Product        $productModel;
+    private AuthService    $authService;
 
-    public function __construct(ProductService $productService) {
+    public function __construct(ProductService $productService, AuthService $authService) {
         $this->productService = $productService;
         $this->productModel   = $productService->getProductModel();
+        $this->authService    = $authService;
     }
 
     public function index() {
@@ -36,9 +39,9 @@ class ProductController extends Controller {
 
         // إذا كانت النتيجة paginated (تحتوي data + pagination)
         if (isset($result['pagination'])) {
-            return Response::cacheable($result['data'], 120, null, ['pagination' => $result['pagination']]);
+            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
         } else {
-            return Response::cacheable($result, 120);
+            return Response::success($result);
         }
     }
 
@@ -113,7 +116,7 @@ class ProductController extends Controller {
     }
 
     public function lowStock() {
-        return Response::cacheable($this->productService->getLowStockProducts(), 60);
+        return Response::success($this->productService->getLowStockProducts());
     }
 
     /**

@@ -72,8 +72,8 @@ set_exception_handler(function (Throwable $e) {
 });
 
 // ── Routes ─────────────────────────────────────────────────────
-$container = new Container();
+$container = new \App\Core\Container();
+require_once __DIR__ . '/Config/bindings.php';
 $router = new Router($container);
 require_once __DIR__ . '/routes/api.php';
 $router->dispatch();
-

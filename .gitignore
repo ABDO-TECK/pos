@@ -61,3 +61,8 @@ tray/out/
 # -- QZ Tray bundled runtime & source --------------------
 build-tools/
 tray/
+
+# ── AI Agent Rules ──────────────────────────────────────
+AGENTS.md
+.agents/
+

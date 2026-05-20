@@ -6,6 +6,15 @@ use App\Config\Database;
 use App\Helpers\Response;
 use App\Services\AuthService;
 
+/**
+ * PermissionMiddleware — فحص صلاحيات RBAC من قاعدة البيانات.
+ *
+ * الاستخدام في Routes:
+ *   PermissionMiddleware::require('products.create')
+ *
+ * Admin يتجاوز كل الفحوصات (backward compatible).
+ * إذا لم يتم تمرير اسم صلاحية، يتصرف كـ AdminMiddleware (يقبل admin فقط).
+ */
 class PermissionMiddleware
 {
     private AuthService $authService;
@@ -15,6 +24,23 @@ class PermissionMiddleware
     {
         $this->authService = $authService;
         $this->permission  = $permission;
+    }
+
+    /**
+     * Factory method — تُنشئ callable يمكن استخدامه في مصفوفة middlewares.
+     *
+     * مثال:
+     *   $router->post('/api/products', [ProductController::class, 'store', [
+     *       AuthMiddleware::class,
+     *       PermissionMiddleware::require('products.create'),
+     *   ]]);
+     *
+     * @param string $permission اسم الصلاحية (مثل: 'products.create')
+     * @return array [className, permission] — يعالجها Router لبناء الـ middleware
+     */
+    public static function require(string $permission): array
+    {
+        return [self::class, $permission];
     }
 
     public function handle(callable $next): mixed
@@ -29,8 +55,13 @@ class PermissionMiddleware
             return $next();
         }
 
+        // إذا لم يتم تحديد صلاحية معينة → يعمل كـ AdminMiddleware (admin فقط)
+        if ($this->permission === '') {
+            return Response::forbidden('Admin access required');
+        }
+
         // فحص الصلاحية من قاعدة البيانات
-        if ($this->permission && !$this->hasPermission($user['role'], $this->permission)) {
+        if (!$this->hasPermission($user['role'], $this->permission)) {
             return Response::forbidden("ليس لديك صلاحية: {$this->permission}");
         }
 
@@ -54,6 +85,7 @@ class PermissionMiddleware
             $stmt->execute([$role, $permission]);
             $cache[$key] = (bool)$stmt->fetchColumn();
         } catch (\Throwable $e) {
+            // إذا فشل الاستعلام (مثلاً الجداول غير موجودة) → ارفض الوصول
             $cache[$key] = false;
         }
         return $cache[$key];

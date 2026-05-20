@@ -6,8 +6,8 @@ import {
   getProductByBarcodeFromIDB,
 } from '../utils/idb'
 
-/** مدة صلاحية الكاش: 5 دقائق */
-const CACHE_TTL_MS = 5 * 60 * 1000
+/** مدة صلاحية الكاش: 5 ثواني (بدلاً من 5 دقائق لتحديث المخزون بسرعة) */
+const CACHE_TTL_MS = 5 * 1000
 
 interface FetchParams {
   search?: string;
@@ -53,7 +53,11 @@ const useProductStore = create<ProductState>((set, get) => ({
     set({ loading: true })
     try {
       const res = await getProducts(params)
-      const products = res.data.data as Product[]
+      // Fallback in case res.data is the array directly, or res.data.data is undefined
+      let products = res.data?.data as Product[]
+      if (!products) {
+        products = Array.isArray(res.data) ? res.data : []
+      }
       set({ products, loading: false, lastFetched: Date.now() })
 
       // حفظ في IDB عند تحميل كل المنتجات (بدون فلتر)

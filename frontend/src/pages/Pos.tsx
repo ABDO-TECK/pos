@@ -40,8 +40,9 @@ export default function POS() {
 
   /** بدون بحث: حد معقول للأداء؛ مع بحث: كل النتائج المطابقة */
   const gridProducts = useMemo(() => {
-    if (productSearch.trim()) return filteredProducts
-    return filteredProducts.slice(0, 100)
+    const list = filteredProducts || []
+    if (productSearch.trim()) return list
+    return list.slice(0, 100)
   }, [filteredProducts, productSearch])
 
   const subtotal = items.reduce((s, i) => s + (parseFloat(String(i.subtotal)) || 0), 0)

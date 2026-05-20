@@ -1,0 +1,15 @@
+<?php
+namespace App\Contracts;
+
+use App\Models\Invoice;
+
+interface SaleServiceInterface
+{
+    public function getSettings(): array;
+    public function enrichItems(array $items): array;
+    public function calculateTotals(array $enrichedItems, float $discount, array $data): array;
+    public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array;
+    public function getLowStockAlerts(array $enrichedItems): array;
+    public function deleteInvoice(int $invoiceId): array;
+    public function getInvoiceModel(): Invoice;
+}

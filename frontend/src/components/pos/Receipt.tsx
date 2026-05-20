@@ -103,6 +103,18 @@ export default function Receipt({ invoice, change, onClose }) {
         toast.success(`تم اختيار الطابعة: ${name}`)
     }
 
+    // ── Keyboard Shortcuts ──
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Enter' && !showPrinterPicker) {
+                e.preventDefault()
+                onClose()
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [onClose, showPrinterPicker])
+
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div className="modal" style={{ maxWidth: '420px' }}>
@@ -220,7 +232,7 @@ export default function Receipt({ invoice, change, onClose }) {
                         style={{ flex: 1, justifyContent: 'center' }}
                         onClick={onClose}
                     >
-                        إغلاق
+                        إغلاق <kbd style={{ fontSize: '0.7rem', background: 'var(--bg)', border: '1px solid var(--border)', padding: '0.1rem 0.3rem', borderRadius: '3px', marginRight: '0.4rem' }}>Enter</kbd>
                     </button>
                 </div>
 

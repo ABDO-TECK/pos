@@ -4,9 +4,10 @@ namespace App\Services;
 
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
+use App\Contracts\SupplierServiceInterface;
 use Exception;
 
-class SupplierService {
+class SupplierService implements SupplierServiceInterface {
     
     private Supplier $supplierModel;
     private SupplierLedger $ledgerModel;

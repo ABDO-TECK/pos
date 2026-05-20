@@ -117,6 +117,21 @@ class JobQueue
             'log_audit_event' => function (array $p) {
                 Logger::info('Audit: ' . ($p['action'] ?? 'unknown'), $p);
             },
+            'earn_loyalty_points' => function (array $p) {
+                $customerId = $p['customer_id'] ?? 0;
+                $invoiceId  = $p['invoice_id'] ?? 0;
+                $total      = (float)($p['total'] ?? 0);
+                if ($customerId <= 0 || $invoiceId <= 0 || $total <= 0) return;
+                
+                $loyalty = new \App\Services\LoyaltyService();
+                $points  = $loyalty->earnPoints($customerId, $invoiceId, $total);
+                if ($points > 0) {
+                    Logger::info("Loyalty: earned {$points} points", [
+                        'customer_id' => $customerId,
+                        'invoice_id'  => $invoiceId,
+                    ]);
+                }
+            },
         ];
 
         if (!isset($handlers[$jobName])) {

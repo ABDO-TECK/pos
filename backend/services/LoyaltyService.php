@@ -3,8 +3,9 @@ namespace App\Services;
 
 use App\Config\Database;
 use PDO;
+use App\Contracts\LoyaltyServiceInterface;
 
-class LoyaltyService {
+class LoyaltyService implements LoyaltyServiceInterface {
     private PDO $db;
 
     public function __construct() {

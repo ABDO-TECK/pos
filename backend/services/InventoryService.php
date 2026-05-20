@@ -7,9 +7,9 @@ use App\Controllers\SaleController;
 use App\Controllers\SupplierController;
 use App\Helpers\Logger;
 use App\Models\Product;
-use App\Models\Supplier;
+use App\Repositories\SupplierRepository;
 use Throwable;
-
+use App\Contracts\InventoryServiceInterface;
 
 /**
  * InventoryService — منطق المخزون المشترك.
@@ -17,15 +17,15 @@ use Throwable;
  * يُوحّد عمليات زيادة/خصم المخزون المستخدمة في SaleController
  * و SupplierController لتجنب التكرار.
  */
-class InventoryService
+class InventoryService implements InventoryServiceInterface
 {
     private Product  $productModel;
-    private Supplier $supplierModel;
+    private SupplierRepository $supplierRepo;
 
-    public function __construct(Product $productModel, Supplier $supplierModel)
+    public function __construct(Product $productModel, SupplierRepository $supplierRepo)
     {
-        $this->productModel  = $productModel;
-        $this->supplierModel = $supplierModel;
+        $this->productModel = $productModel;
+        $this->supplierRepo = $supplierRepo;
     }
 
     // ── Bulk purchase (from supplier) ────────────────────────
@@ -45,7 +45,7 @@ class InventoryService
             return ['ok' => false, 'error' => 'items array is required', 'code' => 422];
         }
 
-        $supplier = $this->supplierModel->findById((int) $data['supplier_id']);
+        $supplier = $this->supplierRepo->findById((int) $data['supplier_id']);
         if (!$supplier) {
             return ['ok' => false, 'error' => 'Supplier not found', 'code' => 404];
         }
@@ -53,7 +53,7 @@ class InventoryService
         $replaceInvoiceId = isset($data['replace_invoice_id']) ? (int) $data['replace_invoice_id'] : 0;
         $existingInvoice = null;
         if ($replaceInvoiceId > 0) {
-            $existingInvoice = $this->supplierModel->getPurchaseInvoice($replaceInvoiceId);
+            $existingInvoice = $this->supplierRepo->getPurchaseInvoice($replaceInvoiceId);
             if (!$existingInvoice) {
                 return ['ok' => false, 'error' => 'Original invoice not found for replacement', 'code' => 404];
             }
@@ -71,15 +71,15 @@ class InventoryService
                 foreach ($existingInvoice['items'] as $oldItem) {
                     $this->productModel->decrementQuantity((int) $oldItem['product_id'], (int) $oldItem['quantity']);
                 }
-                $this->supplierModel->deletePurchaseInvoiceItems($replaceInvoiceId);
-                $this->supplierModel->updatePurchaseInvoiceTotals($replaceInvoiceId, [
+                $this->supplierRepo->deletePurchaseInvoiceItems($replaceInvoiceId);
+                $this->supplierRepo->updatePurchaseInvoiceTotals($replaceInvoiceId, [
                     'total'       => $grandTotal,
                     'items_count' => count($data['items']),
                     'notes'       => $data['notes'] ?? null,
                 ]);
                 $invoiceId = $replaceInvoiceId;
             } else {
-                $invoiceId = $this->supplierModel->createPurchaseInvoice([
+                $invoiceId = $this->supplierRepo->createPurchaseInvoice([
                     'supplier_id' => (int) $data['supplier_id'],
                     'total'       => $grandTotal,
                     'items_count' => count($data['items']),
@@ -99,7 +99,7 @@ class InventoryService
                     return ['ok' => false, 'error' => "Product ID {$item['product_id']} not found", 'code' => 404];
                 }
 
-                $this->supplierModel->createPurchase([
+                $this->supplierRepo->createPurchase([
                     'purchase_invoice_id' => $invoiceId,
                     'supplier_id'         => (int) $data['supplier_id'],
                     'product_id'          => (int) $item['product_id'],
@@ -148,7 +148,7 @@ class InventoryService
      */
     public function deletePurchaseInvoice(int $id): array
     {
-        $invoice = $this->supplierModel->getPurchaseInvoice($id);
+        $invoice = $this->supplierRepo->getPurchaseInvoice($id);
         if (!$invoice) {
             return ['ok' => false, 'error' => 'Purchase invoice not found', 'code' => 404];
         }
@@ -159,7 +159,7 @@ class InventoryService
             foreach ($invoice['items'] as $item) {
                 $this->productModel->decrementQuantity((int) $item['product_id'], (int) $item['quantity']);
             }
-            $this->supplierModel->deletePurchaseInvoice($id);
+            $this->supplierRepo->deletePurchaseInvoice($id);
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -174,7 +174,7 @@ class InventoryService
 
     private function recordSupplierLedger(int $supplierId, int $invoiceId, float $grandTotal, float $deposit, array $authUser): void
     {
-        $this->supplierModel->addLedgerEntry([
+        $this->supplierRepo->addLedgerEntry([
             'supplier_id'         => $supplierId,
             'type'                => 'debit',
             'amount'              => $grandTotal,
@@ -184,7 +184,7 @@ class InventoryService
         ]);
 
         if ($deposit > 0) {
-            $this->supplierModel->addLedgerEntry([
+            $this->supplierRepo->addLedgerEntry([
                 'supplier_id'         => $supplierId,
                 'type'                => 'credit',
                 'amount'              => $deposit,
