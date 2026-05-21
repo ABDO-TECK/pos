@@ -19,6 +19,13 @@ services:
       - FORCE_HTTPS=${FORCE_HTTPS:-true}
       - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8000}
+      - REDIS_HOST=${REDIS_HOST:-}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - TOKEN_LIFETIME=${TOKEN_LIFETIME:-604800}
+      - LOW_STOCK_THRESHOLD=${LOW_STOCK_THRESHOLD:-5}
+      - TAX_RATE=${TAX_RATE:-0.15}
+      - QZ_PRIVATE_KEY_PATH=${QZ_PRIVATE_KEY_PATH:-}
     depends_on:
       db:
         condition: service_healthy
