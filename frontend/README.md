@@ -1,16 +1,49 @@
-# React + Vite
+# 🎨 Smart POS - Frontend Documentation
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+هذا المجلد يحتوي على كود الواجهة الأمامية لنظام نقاط البيع (POS). تم بناء الواجهة باستخدام أحدث التقنيات لضمان أداء عالي وسرعة استجابة للمستخدم، بالإضافة لدعم العمل في حالة انقطاع الإنترنت (Offline-First).
 
-Currently, two official plugins are available:
+## 🛠️ التقنيات الأساسية
+- **React 19.2** + **Vite**
+- **Zustand** (لإدارة الحالة State Management)
+- **IndexedDB / idb** (لحفظ البيانات محلياً والعمل بدون إنترنت)
+- **Axios** (للتعامل مع الـ API)
+- **QZ Tray** (للطباعة الصامتة للفواتير والباركود)
+- **Recharts** (للرسوم البيانية في لوحة التحكم)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 📂 هيكل المجلدات الرئيسي (`src/`)
 
-## React Compiler
+- `/api` - يحتوي على إعدادات Axios وملف `endpoints.ts` الذي يضم جميع اتصالات السيرفر.
+- `/store` - يحتوي على ملفات Zustand لإدارة الحالة المركزية:
+  - `authStore.ts` - إدارة الجلسة والمستخدمين.
+  - `productStore.ts` - إدارة المنتجات مع كاش لحظي (5 ثوانٍ).
+  - `cartStore.ts` - إدارة سلة المبيعات وحساب الإجماليات.
+  - `settingsStore.ts` - إدارة إعدادات النظام (الضريبة، اسم المحل).
+- `/pages` - صفحات النظام الأساسية (POS, التقارير, المنتجات، العملاء).
+- `/components` - المكونات القابلة لإعادة الاستخدام (مثل `Cart.tsx`, `Receipt.tsx`).
+- `/utils` - الأدوات والمكتبات المساعدة، ومن أهمها:
+  - `idb.ts`: إدارة قاعدة البيانات المحلية IndexedDB.
+  - `offlineSync.ts`: محرك المزامنة التلقائية للمبيعات عند عودة الإنترنت.
+  - `qzPrint.ts`: مكتبة التواصل مع طابعات الإيصالات عبر QZ Tray.
+- `/locales` - ملفات الترجمة (عربي/إنجليزي) لـ `i18next`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 📶 نظام العمل بدون إنترنت (Offline Mode)
+تم تصميم النظام ليكون مرناً جداً في حال انقطاع الشبكة:
+1. **التخزين (Caching):** يتم حفظ المنتجات والعملاء محلياً في `IndexedDB` بمجرد تحميلها للمرة الأولى.
+2. **البيع الأوفلاين:** عند انقطاع الاتصال، لا يتوقف الكاشير عن العمل. يتم حفظ "المبيعات المعلقة" في `IndexedDB`.
+3. **المزامنة (Syncing):** محرك `offlineSync.ts` يراقب حالة الاتصال بشكل دوري، وبمجرد عودة الإنترنت، يقوم بإرسال المبيعات المعلقة للسيرفر بالخلفية بشكل صامت دون إزعاج المستخدم.
 
-## Expanding the ESLint configuration
+## 🖨️ الطباعة (Printing)
+الواجهة لا تعتمد على نافذة الطباعة التقليدية للمتصفح (والتي تعيق سرعة الكاشير). بدلاً من ذلك، نتواصل مباشرة مع خدمة **QZ Tray** عبر `WebSocket`.
+تم تجهيز `receiptBuilder.ts` لكتابة أوامر ESC/POS مباشرة للطابعة الحرارية، مما يعطي سرعة فائقة في طباعة الفواتير وقص الورق، بالإضافة إلى طباعة الباركود للمنتجات.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 تشغيل بيئة التطوير
+```bash
+# تثبيت الحزم (Dependencies)
+npm install
+
+# تشغيل خادم التطوير (Dev Server)
+npm run dev
+
+# بناء نسخة الإنتاج (Production Build)
+npm run build
+```

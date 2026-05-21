@@ -1,9 +1,9 @@
 # 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
 
 ![Version](https://img.shields.io/badge/version-1.1.31-blue.svg)
-![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)
+![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
 ![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
-![Electron](https://img.shields.io/badge/Electron-Desktop-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-30.0-47848F?logo=electron&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
 
@@ -14,31 +14,65 @@
 ## ✨ المميزات الرئيسية (Features)
 
 - ⚡ **نقطة بيع فائقة السرعة (Fast POS):** دعم كامل لأجهزة قراءة الباركود، اختصارات لوحة المفاتيح، والبحث اللحظي مع تنبيهات صوتية.
-- 📶 **دعم العمل بدون إنترنت (Offline-First):** إمكانية البيع والعمل حتى في حال انقطاع الاتصال بالسيرفر بفضل `IndexedDB` والمزامنة التلقائية (Sync Queue) عند عودة الاتصال.
+- 📶 **دعم العمل بدون إنترنت (Offline-First):** إمكانية البيع والعمل حتى في حال انقطاع الاتصال بالسيرفر بفضل `IndexedDB` والمزامنة التلقائية عند عودة الاتصال.
 - 📦 **إدارة المخزون والمشتريات:** تتبع دقيق للمخزون، تنبيهات بالنواقص، وإدارة فواتير المشتريات وحسابات الموردين (Ledger).
-- 👥 **إدارة العملاء:** تسجيل بيانات العملاء، إدارة الحسابات الآجلة (الديون)، وتسديد الدفعات.
+- 👥 **إدارة العملاء والولاء:** تسجيل بيانات العملاء، إدارة الحسابات الآجلة (الديون)، ونظام نقاط الولاء للعملاء المتميزين.
 - 🖨️ **طباعة الفواتير والباركود:** تكامل مع `QZ Tray` لطباعة الإيصالات والباركود بصمت وبسرعة على طابعات الكاشير والحرارية.
-- 📊 **تقارير وتحليلات ذكية:** رسوم بيانية تفاعلية (`Recharts`) للإيرادات، الأرباح، والمصروفات اليومية والشهرية، بالإضافة لتحديد المنتجات الأكثر مبيعاً وربحية.
-- 🖥️ **تطبيق سطح مكتب (Desktop App):** النظام يعمل كتطبيق ويب (PWA) أو تطبيق سطح مكتب مستقل مبني بـ `Electron`.
-- 🔒 **أمان وحماية:** توثيق آمن، حماية ضد ثغرات SQL Injection عبر `PDO`، وتحديد صلاحيات دقيق (مدير / كاشير).
+- 🖥️ **تطبيق Portable Desktop:** النظام يعمل كتطبيق ويب (PWA) أو تطبيق سطح مكتب مستقل مبني بـ `Electron` يدمج بداخله (PHP و MySQL) ليعمل بدون أي تثبيت مسبق.
+- 🚀 **تحديثات لحظية (Real-time):** الاعتماد على تقنيات الـ `ETag Caching` و `Server-Sent Events` لضمان تزامن البيانات لحظياً بين المستخدمين دون التحميل على السيرفر.
 
 ---
 
 ## 🛠️ التقنيات المستخدمة (Tech Stack)
 
-### الواجهة الأمامية (Frontend)
-- **الإطار:** React 19 + Vite
-- **تطبيق سطح المكتب:** Electron
+### 🎨 الواجهة الأمامية (Frontend)
+- **الإطار:** React 19.2 + Vite
 - **إدارة الحالة:** Zustand
+- **التوجيه:** React Router 7.14
+- **قاعدة البيانات المحلية:** IndexedDB (idb)
 - **الرسوم البيانية:** Recharts
-- **الطباعة:** QZ Tray (للطباعة المباشرة بدون نوافذ حوار)
-- **تخزين محلي:** IndexedDB لعمليات الأوفلاين (Offline Mode)
 
-### الواجهة الخلفية (Backend)
-- **اللغة:** PHP 8.2 (Native MVC Architecture)
-- **قواعد البيانات:** MySQL / SQLite
-- **الحماية:** Rate Limiting, Parameter Binding, Content Security Policy (CSP)
-- **بيئة التشغيل:** XAMPP أو Docker (متوفر `docker-compose.yml`)
+### ⚙️ الواجهة الخلفية (Backend)
+- **اللغة:** PHP 8.2 (Service Layer + Repository Pattern)
+- **قواعد البيانات:** MySQL 8.0
+- **نظام التخزين المؤقت:** Redis / APCu / File Cache مع دعم الإبطال التلقائي (Cache Invalidation).
+- **المهام بالخلفية:** Job Queue & Event Dispatcher.
+
+### 💻 تطبيق سطح المكتب (Desktop App)
+- **الإطار:** Electron 30.0
+- **إدارة الخدمات:** تشغيل (PHP Server، MySQL المدمج، HTTPS Proxy، WebSocket) في الخلفية.
+- **التحديث التلقائي:** عبر GitHub Releases (electron-updater).
+
+---
+
+## 📂 هيكل المشروع (Project Structure)
+
+```text
+/pos
+├── /backend          ← PHP Native MVC API (الواجهة الخلفية)
+│   ├── config/       ← إعدادات قاعدة البيانات والتطبيق
+│   ├── Controllers/  ← دوال التحكم (HTTP)
+│   ├── Services/     ← منطق الأعمال (Business Logic)
+│   ├── Repositories/ ← الوصول لقاعدة البيانات
+│   ├── Models/       ← الكيانات الأساسية
+│   └── index.php     ← نقطة الدخول (Entry Point)
+│
+├── /frontend         ← React 19 + Vite (الواجهة الأمامية)
+│
+├── /electron         ← تطبيق سطح المكتب (إدارة الخدمات)
+│   ├── main.js       ← ملف الإطلاق الأساسي
+│   └── services/     ← خدمات PHP و MySQL المدمجة
+│
+├── /portable         ← بيئات التشغيل المستقلة (PHP, MySQL, Java) المدمجة مع التطبيق
+│
+├── /tray             ← إعدادات وملفات QZ Tray لطباعة الفواتير
+│
+├── /database         ← الجداول وسكربتات التهيئة (Migrations & Schema)
+│
+├── /certs            ← شهادات الـ SSL للاتصال الآمن محلياً
+│
+└── docker-compose.yml
+```
 
 ---
 
@@ -51,35 +85,26 @@ docker-compose up -d --build
 ```
 سيكون النظام متاحاً على: `http://localhost:8080`
 
-### الخيار الثاني: التشغيل المحلي (XAMPP / Node.js)
+### الخيار الثاني: التشغيل المحلي (XAMPP / Node.js) للتطوير
 
-#### 1. إعداد قاعدة البيانات (Database Setup)
-1. قم بفتح `http://localhost/phpmyadmin`.
-2. قم بإنشاء قاعدة بيانات (يفضل تسميتها `pos`).
-3. استورد ملف الـ Schema لتجهيز الجداول:
-   ```bash
-   mysql -u root -p pos < C:\xampp\htdocs\pos\database\pos_schema.sql
-   ```
-
-#### 2. إعداد الخادم (Backend)
-- الـ API تعمل على المسار: `http://localhost/pos/backend/api`
-- تأكد من ضبط إعدادات الاتصال بقاعدة البيانات في ملف: `backend/config/config.php`
-
-#### 3. تشغيل الواجهة الأمامية (Frontend)
+**1. إعداد قاعدة البيانات (Database Setup):**
+استورد ملف الـ Schema لتجهيز الجداول:
 ```bash
-cd C:\xampp\htdocs\pos\frontend
+mysql -u root -p pos < C:\xampp\htdocs\pos\database\pos_schema.sql
+```
+
+**2. تشغيل الواجهة الأمامية (Frontend):**
+```bash
+cd frontend
 npm install
 npm run dev
 ```
-- واجهة الويب متاحة على: `http://localhost:5173`
 
-#### 4. تشغيل تطبيق سطح المكتب (Electron)
-لتشغيل البرنامج كتطبيق Desktop:
+**3. تشغيل تطبيق سطح المكتب (Electron):**
 ```bash
-cd C:\xampp\htdocs\pos
 npm run electron:dev
 ```
-لعمل حزمة تثبيت (Build) لتطبيق Desktop:
+لعمل حزمة تثبيت (Build) مستقلة (Portable EXE):
 ```bash
 npm run electron:build
 ```
@@ -88,43 +113,12 @@ npm run electron:build
 
 ## 🔑 بيانات الدخول الافتراضية
 
-| الدور (Role) | البريد الإلكتروني (Email) | كلمة المرور (Password) |
+| الدور (Role) | البريد الإلكتروني (Email) | كلمة المرور الافتراضية |
 |--------------|---------------------------|-------------------------|
 | مدير النظام | admin@pos.com             | password                |
-| كاشير        | cashier@pos.com           | password                |
 
-> **ملاحظة:** يُنصح بشدة تغيير كلمة المرور للمدير بعد تسجيل الدخول الأول لضمان الأمان.
-
----
-
-## 📂 هيكل المشروع (Project Structure)
-
-```text
-/pos
-├── /backend          ← PHP Native MVC API
-│   ├── config/       ← إعدادات قاعدة البيانات والتطبيق
-│   ├── core/         ← الموجه (Router) والمتحكم الأساسي
-│   ├── controllers/  ← Auth, Products, Sales, Suppliers, Reports
-│   ├── models/       ← User, Product, Invoice, Supplier, Customer
-│   ├── middleware/   ← Auth, Admin, RateLimiter
-│   ├── routes/       ← api.php
-│   └── index.php     ← Entry point
-│
-├── /frontend         ← React + Vite
-│   └── src/
-│       ├── api/      ← Axios + API endpoints
-│       ├── store/    ← Zustand stores (auth, cart, products)
-│       ├── pages/    ← POS, Products, Inventory, Reports, Users...
-│       ├── components/
-│       └── utils/    ← IDB (Offline), Formatters, QZ Print helpers
-│
-├── /database         ← ملفات هيكل قاعدة البيانات
-│   └── pos_schema.sql
-│
-├── /docker           ← ملفات إعداد حاويات Docker
-├── main.js           ← ملف الإطلاق لتطبيق Electron
-└── docker-compose.yml
-```
+> [!WARNING]
+> النظام يجبر المستخدم على تغيير كلمة المرور الافتراضية عند تسجيل الدخول لأول مرة لضمان الأمان.
 
 ---
 
