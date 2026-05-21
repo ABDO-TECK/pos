@@ -31,7 +31,7 @@ class Response {
         $ifNoneMatch = trim($ifNoneMatch, '"W/ ');
 
         $headers = [
-            'Cache-Control' => "public, max-age={$ttl}",
+            'Cache-Control' => "no-cache, must-revalidate",
             'ETag'          => 'W/"' . $etag . '"'
         ];
 
