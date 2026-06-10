@@ -37,19 +37,22 @@ if errorlevel 1 (
     echo [%date% %time%] MySQL already running. >> "%LOG%"
 )
 
-:: â”€â”€ 3. Wait briefly for services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+:: ── 3. Wait briefly for services ──────────────────────────────────────────
 timeout /t 2 /nobreak >nul
 
-:: â”€â”€ Get Local IP Address â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+:: ── Get Local IP Address ──────────────────────────────────────────────────
 set "LOCAL_IP=localhost"
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /I "IPv4"') do (
-    set "LOCAL_IP=%%a"
-    goto :ip_found
+for /f "tokens=4" %%a in ('route print ^| findstr "\<0.0.0.0\>"') do (
+    echo %%a| findstr /R "^[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" >nul
+    if not errorlevel 1 (
+        set "LOCAL_IP=%%a"
+        goto :ip_found
+    )
 )
 :ip_found
 set "LOCAL_IP=%LOCAL_IP: =%"
 
-:: â”€â”€ 4. Start frontend (npm) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+:: ── 4. Start frontend (npm) ───────────────────────────────────────────────
 if /I "%FRONTEND_MODE%"=="preview" (
     set FRONTEND_PORT=4173
     set "FRONTEND_URL=http://%LOCAL_IP%:4173"

@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserMultiFormatReader, BrowserCodeReader } from '@zxing/browser'
@@ -74,9 +74,10 @@ function buildReaderHints() {
  * هذا هو السبب الجذري لعدم قراءة الباركود: حلقة scan() الداخلية في المكتبة
  * تستخدم instanceof NotFoundException وعندما تفشل تتوقف الحلقة تمامًا بعد أول إطار.
  */
-function isBenignScanError(err) {
-  if (!err) return false
-  const name = err.name || err.constructor?.name || ''
+function isBenignScanError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const name = (err as { name?: string; constructor?: { name?: string } }).name 
+    || (err as { constructor?: { name?: string } }).constructor?.name || ''
   return (
     name === 'NotFoundException' ||
     name === 'ChecksumException' ||
@@ -113,12 +114,17 @@ const SCAN_SUCCESS_DELAY = 300
  * على instanceof لفحص NotFoundException — وهذا يفشل في بنية ES5 ويوقف حلقة المسح.
  * بدلاً من ذلك ننشئ حلقة مسح يدوية تتحكم بكل شيء بنفسها.
  */
-export default function BarcodeCameraScanner({ onResult, onClose }) {
-  const videoRef = useRef<any>(null)
+interface BarcodeCameraScannerProps {
+  onResult: (barcode: string) => void
+  onClose: () => void
+}
+
+export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCameraScannerProps) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const onResultRef = useRef(onResult)
   onResultRef.current = onResult
 
-  const [error, setError] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(true)
 
   useEffect(() => {
@@ -133,13 +139,12 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
 
     const reader = new BrowserMultiFormatReader(buildReaderHints())
     let finished = false
-    let scanTimer = null
-    /** @type {MediaStream|null} */
-    let activeStream = null
+    let scanTimer: ReturnType<typeof setTimeout> | null = null
+    let activeStream: MediaStream | null = null
 
     const stopAll = () => {
       finished = true
-      clearTimeout(scanTimer)
+      if (scanTimer !== null) clearTimeout(scanTimer)
       if (activeStream) {
         activeStream.getTracks().forEach((t) => {
           try { t.stop() } catch { /* ignore */ }
@@ -149,7 +154,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
       try { BrowserCodeReader.releaseAllStreams() } catch { /* ignore */ }
       const v = videoRef.current
       if (v?.srcObject) {
-        v.srcObject.getTracks().forEach((t) => {
+        ;(v.srcObject as MediaStream).getTracks().forEach((t: MediaStreamTrack) => {
           try { t.stop() } catch { /* ignore */ }
         })
         v.srcObject = null
@@ -162,12 +167,12 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
      */
     const startManualScanLoop = () => {
       // إنشاء canvas لالتقاط الإطارات
-      let canvas = null
-      let ctx = null
+      let canvas: HTMLCanvasElement | null = null
+      let ctx: CanvasRenderingContext2D | null = null
 
       const ensureCanvas = () => {
-        const vw = video.videoWidth
-        const vh = video.videoHeight
+        const vw = video?.videoWidth
+        const vh = video?.videoHeight
         if (!vw || !vh) return false // الفيديو لم يتحمل بعد
         if (!canvas || canvas.width !== vw || canvas.height !== vh) {
           canvas = document.createElement('canvas')
@@ -190,8 +195,8 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
             scanTimer = setTimeout(loop, SCAN_INTERVAL)
             return
           }
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const result = reader.decodeFromCanvas(canvas)
+          if (ctx && canvas && video) ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const result = canvas ? reader.decodeFromCanvas(canvas) : null
           // نجحت القراءة!
           if (result) {
             const text = result.getText()?.trim()
@@ -204,7 +209,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
           }
           // نجاح لكن بدون نص — نحاول مرة أخرى
           scanTimer = setTimeout(loop, SCAN_SUCCESS_DELAY)
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (isBenignScanError(err)) {
             // لم يُعثر على باركود في هذا الإطار — عادي، نحاول مرة أخرى
             scanTimer = setTimeout(loop, SCAN_INTERVAL)
@@ -225,8 +230,8 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
       // نحاول أولاً بقيود متقدمة (دقة عالية)
       try {
         stream = await navigator.mediaDevices.getUserMedia(RICH_VIDEO_CONSTRAINTS)
-      } catch (richErr) {
-        const name = richErr?.name || ''
+      } catch (richErr: unknown) {
+        const name = (richErr as { name?: string })?.name || ''
         if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
           // القيود المتقدمة فشلت — نجرب قيود بسيطة
           try {
@@ -239,7 +244,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
         }
       }
 
-      if (finished) {
+      if (finished && stream) {
         // المكون أُغلق أثناء انتظار الكاميرا
         stream.getTracks().forEach((t) => t.stop())
         return
@@ -249,11 +254,11 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
 
       // تفعيل التركيز المستمر إن أمكن (يحسّن قراءة الباركود على الهواتف)
       try {
-        const track = stream.getVideoTracks()[0]
+        const track = stream?.getVideoTracks()[0]
         if (track) {
           const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}
-          if (caps.focusMode && caps.focusMode.includes('continuous')) {
-            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] })
+          if ((caps as any).focusMode && (caps as any).focusMode.includes('continuous')) {
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] })
           }
         }
       } catch {
@@ -288,7 +293,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }) {
       }
     }
 
-    startCamera().catch((e) => {
+    startCamera().catch((e: any) => {
       if (finished) return
       setStarting(false)
       const raw = String(e?.message || '')

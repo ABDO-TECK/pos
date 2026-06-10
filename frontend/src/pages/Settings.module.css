@@ -63,3 +63,61 @@
 .inputSmall {
   max-width: 160px;
 }
+
+/* Tab Styles */
+.settingsTabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+
+.settingsTabs::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, and Opera */
+}
+
+.tabButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tabButton:hover {
+  color: var(--text);
+}
+
+.tabActive {
+  font-weight: 700;
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.tabContent {
+  animation: settingsFadeIn 0.25s ease-in-out;
+}
+
+@keyframes settingsFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

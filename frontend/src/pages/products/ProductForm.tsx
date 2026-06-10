@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, X, Search, ChevronDown, Camera } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
@@ -8,26 +8,26 @@ import { extractApiError } from '../../utils/apiError'
 /* ── Barcode conflict helpers ── */
 
 /** منتج يملك هذا الباركود (أساسي أو إضافي)، مع استثناء منتج أثناء التعديل */
-export function findProductOwningBarcode(allProducts, barcode, excludeProductId) {
+export function findProductOwningBarcode(allProducts: any[], barcode: any, excludeProductId: any) {
   const t = String(barcode).trim()
   if (!t) return null
   for (const p of allProducts) {
     if (excludeProductId != null && Number(p.id) === Number(excludeProductId)) continue
     if (String(p.barcode ?? '') === t) return p
     if (String(p.box_barcode ?? '') === t) return p
-    if ((p.additional_barcodes || []).some((b) => String(b) === t)) return p
+    if ((p.additional_barcodes || []).some((b: any) => String(b) === t)) return p
   }
   return null
 }
 
-export function getBarcodeRowConflict(barcodes, rowIndex, excludeProductId, allProducts, form) {
+export function getBarcodeRowConflict(barcodes: any[], rowIndex: any, excludeProductId: any, allProducts: any[], form: any) {
   const bc = rowIndex === 'box'
     ? String(form?.box_barcode ?? '').trim()
     : String(barcodes[rowIndex] ?? '').trim()
   if (!bc) return null
   const dupElsewhere = rowIndex === 'box'
-    ? barcodes.some(b => String(b).trim() === bc)
-    : barcodes.some((b, j) => j !== rowIndex && String(b).trim() === bc) || String(form?.box_barcode ?? '').trim() === bc
+    ? barcodes.some((b: any) => String(b).trim() === bc)
+    : barcodes.some((b: any, j: number) => j !== rowIndex && String(b).trim() === bc) || String(form?.box_barcode ?? '').trim() === bc
   if (dupElsewhere) {
     return {
       kind: 'duplicate',
@@ -47,13 +47,13 @@ export function getBarcodeRowConflict(barcodes, rowIndex, excludeProductId, allP
   return null
 }
 
-export function formatProductApiError(err) {
+export function formatProductApiError(err: any) {
   const d = err?.response?.data
   if (!d) return 'حدث خطأ'
   if (typeof d.message === 'string' && d.message.trim()) return d.message
   const errors = d.errors
   if (errors && typeof errors === 'object') {
-    const lines = []
+    const lines: string[] = []
     for (const [field, msgs] of Object.entries(errors)) {
       const arr = Array.isArray(msgs) ? msgs : [msgs]
       const label = field === 'name' ? 'اسم المنتج' : field === 'price' ? 'سعر البيع' : field
@@ -70,18 +70,18 @@ export function formatProductApiError(err) {
 }
 
 /* ── Label ── */
-function Label({ children }) {
+function Label({ children }: any) {
   return <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>{children}</label>
 }
 
 /* ── Category Combobox ── */
-export function CategoryCombobox({ categories, value, onChange }) {
+export function CategoryCombobox({ categories, value, onChange }: any) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const rootRef = useRef<any>(null)
 
   useEffect(() => {
-    const close = (e) => {
+    const close = (e: any) => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', close)
@@ -95,10 +95,10 @@ export function CategoryCombobox({ categories, value, onChange }) {
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase()
     if (!t) return categories
-    return categories.filter((c) => (c.name || '').toLowerCase().includes(t))
+    return categories.filter((c: any) => (c.name || '').toLowerCase().includes(t))
   }, [categories, q])
 
-  const selected = categories.find((c) => String(c.id) === String(value))
+  const selected = categories.find((c: any) => String(c.id) === String(value))
   const displayLabel =
     value === '' || value == null ? 'بدون فئة' : (selected?.name ?? 'فئة غير معروفة')
 
@@ -106,7 +106,7 @@ export function CategoryCombobox({ categories, value, onChange }) {
     onChange('')
     setOpen(false)
   }
-  const pick = (id) => {
+  const pick = (id: any) => {
     onChange(String(id))
     setOpen(false)
   }
@@ -174,7 +174,7 @@ export function CategoryCombobox({ categories, value, onChange }) {
                 لا توجد فئات تطابق البحث
               </div>
             ) : (
-              filtered.map((c) => (
+              filtered.map((c: any) => (
                 <button
                   key={c.id}
                   type="button"
@@ -194,11 +194,11 @@ export function CategoryCombobox({ categories, value, onChange }) {
 }
 
 /* ── Product Form ── */
-export default function ProductForm({ form, setForm, categories, modalKey, allProducts = [], editingProductId = null }) {
+export default function ProductForm({ form, setForm, categories, modalKey, allProducts = [], editingProductId = null }: any) {
   const [barcodeCameraRow, setBarcodeCameraRow] = useState<any>(null)
   const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState<any>(null)
 
-  const openBarcodeCamera = async (target) => {
+  const openBarcodeCamera = async (target: any) => {
     try {
       if (!BarcodeScannerLazy) {
         const m = await import('../../components/BarcodeCameraScanner')
@@ -207,25 +207,25 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
       setBarcodeCameraRow(target)
     } catch (err) { toast.error(extractApiError(err, 'تعذر تحميل ماسح الباركود')) }
   }
-  const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
+  const f = (k: any) => ({ value: form[k] ?? '', onChange: (e: any) => setForm((p: any) => ({ ...p, [k]: e.target.value })) })
   const isByWeight = parseInt(form.sell_by_weight) === 1
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
-  const setBarcodeAt = (i, v) => {
-    setForm((p) => {
+  const setBarcodeAt = (i: any, v: any) => {
+    setForm((p: any) => {
       const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
       b[i] = v
       return { ...p, barcodes: b }
     })
   }
   const addBarcodeRow = () =>
-    setForm((p) => {
+    setForm((p: any) => {
       const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
       return { ...p, barcodes: [...b, ''] }
     })
-  const removeBarcodeRow = (i) => {
+  const removeBarcodeRow = (i: number) => {
     if (i === 0) return
-    setForm((p) => {
+    setForm((p: any) => {
       const b = Array.isArray(p.barcodes) ? [...p.barcodes] : [p.barcode || '']
       const next = b.filter((_, j) => j !== i)
       return { ...p, barcodes: next.length ? next : [''] }
@@ -274,7 +274,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
           اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية. على الهاتف يمكنك الضغط على أيقونة الكاميرا لمسح الباركود.
         </p>
-        {barcodes.map((bc, idx) => {
+        {barcodes.map((bc: any, idx: number) => {
           const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts, form)
           return (
             <div key={idx} style={{ marginBottom: '0.45rem' }}>
@@ -363,7 +363,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
           </div>
           <button
             type="button"
-            onClick={() => setForm(p => ({ ...p, sell_by_weight: p.sell_by_weight ? 0 : 1 }))}
+            onClick={() => setForm((p: any) => ({ ...p, sell_by_weight: p.sell_by_weight ? 0 : 1 }))}
             style={{
               width: '44px', height: '24px', borderRadius: '12px', border: 'none',
               background: isByWeight ? 'var(--primary)' : 'var(--border)',
@@ -470,16 +470,16 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
           key={modalKey}
           categories={categories}
           value={form.category_id ?? ''}
-          onChange={(id) => setForm((p) => ({ ...p, category_id: id }))}
+          onChange={(id: any) => setForm((p: any) => ({ ...p, category_id: id }))}
         />
       </div>
     </div>
 
     {BarcodeScannerLazy && barcodeCameraRow !== null && (
       <BarcodeScannerLazy
-        onResult={(text) => {
+        onResult={(text: string) => {
           if (barcodeCameraRow === 'box') {
-            setForm((p) => ({ ...p, box_barcode: text }))
+            setForm((p: any) => ({ ...p, box_barcode: text }))
           } else {
             setBarcodeAt(barcodeCameraRow, text)
           }

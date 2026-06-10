@@ -11,10 +11,19 @@ class SupplierService implements SupplierServiceInterface {
     
     private Supplier $supplierModel;
     private SupplierLedger $ledgerModel;
+    private \App\Repositories\SupplierRepository $supplierRepo;
+    private \App\Repositories\ProductRepository $productRepo;
 
-    public function __construct(Supplier $supplierModel, SupplierLedger $ledgerModel) {
+    public function __construct(
+        Supplier $supplierModel, 
+        SupplierLedger $ledgerModel,
+        \App\Repositories\SupplierRepository $supplierRepo,
+        \App\Repositories\ProductRepository $productRepo
+    ) {
         $this->supplierModel = $supplierModel;
         $this->ledgerModel = $ledgerModel;
+        $this->supplierRepo = $supplierRepo;
+        $this->productRepo = $productRepo;
     }
 
     public function addPayment(int $supplierId, array $data, array $authUser): array {
@@ -81,5 +90,30 @@ class SupplierService implements SupplierServiceInterface {
         }
 
         return $this->ledgerModel->getLedger((int)$entry['supplier_id']);
+    }
+
+    public function recordSinglePurchase(array $data): array {
+        $product = $this->productRepo->findById((int)$data['product_id']);
+        if (!$product) {
+            throw new Exception('Product not found', 404);
+        }
+
+        $supplier = $this->supplierRepo->findById((int)$data['supplier_id']);
+        if (!$supplier) {
+            throw new Exception('Supplier not found', 404);
+        }
+
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->supplierRepo->createPurchase($data);
+            $this->productRepo->getModel()->incrementQuantity((int)$data['product_id'], (int)$data['quantity']);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('Failed to record purchase', 500);
+        }
+
+        return ['product' => $this->productRepo->findById((int)$data['product_id'])];
     }
 }

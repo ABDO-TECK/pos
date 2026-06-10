@@ -33,7 +33,7 @@ class SupplierControllerTest extends TestCase
             ->willReturn(['id' => 1, 'name' => 'مورد تجريبي', 'phone' => '05555']);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $productModelMock, $inventoryServiceMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
             ->onlyMethods(['getBody'])
             ->getMock();
 
@@ -60,7 +60,7 @@ class SupplierControllerTest extends TestCase
         $authServiceMock = $this->createMock(AuthService::class);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $productModelMock, $inventoryServiceMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
             ->onlyMethods(['getBody'])
             ->getMock();
 
@@ -90,7 +90,7 @@ class SupplierControllerTest extends TestCase
             ->with(999)
             ->willReturn(null);
 
-        $controller = new SupplierController($supplierModelMock, $productModelMock, $inventoryServiceMock, $supplierServiceMock, $authServiceMock);
+        $controller = new SupplierController($supplierModelMock, $supplierServiceMock, $authServiceMock);
 
         $response = $controller->destroy('999');
 
@@ -117,7 +117,7 @@ class SupplierControllerTest extends TestCase
             ->willReturn(['supplier' => ['id' => 1], 'entries' => [], 'balance' => 0.0]);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $productModelMock, $inventoryServiceMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
             ->onlyMethods(['getBody'])
             ->getMock();
 

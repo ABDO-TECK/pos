@@ -14,6 +14,26 @@ declare global {
     message?: string;
     pagination?: { page: number; limit: number; total: number; pages: number };
   }
+
+  interface ApiQueryParams {
+    page?: number | string;
+    limit?: number | string;
+    search?: string;
+    category_id?: number | string;
+    supplier_id?: number | string;
+    customer_id?: number | string;
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+    date?: string;
+    month?: number | string;
+    year?: number | string;
+    type?: string;
+    sort?: string;
+    order?: 'asc' | 'desc';
+    barcode?: string;
+    brand?: string;
+  }
 }
 
 export {};

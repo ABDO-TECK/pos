@@ -14,7 +14,7 @@ class ExpenseCategoryRepository implements RepositoryInterface
         $this->model = $model;
     }
 
-    public function getAll(): array
+    public function all(array $filters = []): array
     {
         return $this->model->getAll();
     }

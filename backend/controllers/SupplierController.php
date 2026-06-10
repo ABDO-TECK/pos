@@ -7,28 +7,21 @@ use App\Core\Controller;
 use App\Core\ValidationException;
 use App\Helpers\ErrorCodes;
 use App\Helpers\Response;
-use App\Helpers\AuditLog;
-use App\Repositories\SupplierRepository;
-use App\Repositories\ProductRepository;
-use App\Requests\SupplierRequest;
 use App\Services\AuthService;
-use App\Services\InventoryService;
 use App\Services\SupplierService;
+use App\Repositories\SupplierRepository;
+use App\Requests\SupplierRequest;
 use Throwable;
 
 
 class SupplierController extends Controller {
 
     private SupplierRepository $supplierRepo;
-    private ProductRepository  $productRepo;
-    private InventoryService $inventoryService;
     private SupplierService  $supplierService;
     private AuthService      $authService;
 
-    public function __construct(SupplierRepository $supplierRepo, ProductRepository $productRepo, InventoryService $inventoryService, SupplierService $supplierService, AuthService $authService) {
+    public function __construct(SupplierRepository $supplierRepo, SupplierService $supplierService, AuthService $authService) {
         $this->supplierRepo     = $supplierRepo;
-        $this->productRepo      = $productRepo;
-        $this->inventoryService = $inventoryService;
         $this->supplierService  = $supplierService;
         $this->authService      = $authService;
     }
@@ -98,112 +91,7 @@ class SupplierController extends Controller {
         });
     }
 
-    /** Single-item purchase (legacy) */
-    public function purchase() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'supplier_id' => 'required',
-            'product_id'  => 'required',
-            'quantity'    => 'required|numeric',
-            'cost'        => 'required|numeric',
-        ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors, ErrorCodes::VALIDATION_FAILED);
 
-        $product = $this->productRepo->findById((int)$data['product_id']);
-        if (!$product) return Response::notFound('Product not found');
-
-        $supplier = $this->supplierRepo->findById((int)$data['supplier_id']);
-        if (!$supplier) return Response::notFound('Supplier not found');
-
-        try {
-            return $this->withTransaction(function () use ($data) {
-                $this->supplierRepo->createPurchase($data);
-                $this->productRepo->getModel()->incrementQuantity((int)$data['product_id'], (int)$data['quantity']);
-                return Response::success([
-                    'product' => $this->productRepo->findById((int)$data['product_id']),
-                ], 'Purchase recorded and stock updated', 201);
-            });
-        } catch (Throwable $e) {
-            return Response::serverError('Failed to record purchase');
-        }
-    }
-
-    /** List purchase invoices (like sales list) */
-    public function purchaseInvoices() {
-        $filters = [
-            'supplier_id' => $this->getParam('supplier_id'),
-            'date'        => $this->getParam('date'),
-            'month'       => $this->getParam('month'),
-            'year'        => $this->getParam('year'),
-            ...$this->getPaginationParams(),
-            'search'      => $this->getParam('search'),
-        ];
-        
-        $result = $this->supplierRepo->getPurchaseInvoices($filters);
-        if (isset($result['pagination'])) {
-            return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
-        } else {
-            return Response::success($result);
-        }
-    }
-
-    /** Get single purchase invoice detail (like sales detail) */
-    public function purchaseInvoiceDetail(string $id) {
-        $invoice = $this->supplierRepo->getPurchaseInvoice((int)$id);
-        if (!$invoice) return Response::notFound('Purchase invoice not found');
-        return Response::success($invoice);
-    }
-
-    /** Delete a purchase invoice and restore stock */
-    public function purchaseInvoiceDelete(string $id) {
-        $result = $this->inventoryService->deletePurchaseInvoice((int)$id);
-
-        if (!$result['ok']) {
-            $code = $result['code'] ?? 500;
-            return $code === 404
-                ? Response::notFound($result['error'])
-                : Response::serverError($result['error']);
-        }
-
-        AuditLog::log($this->authService->id(), 'delete_purchase_invoice', 'purchase_invoice', (int)$id);
-
-        return Response::success(null, 'Purchase invoice deleted and stock restored');
-    }
-
-    /** Legacy flat purchases list */
-    public function purchases() {
-        $filters = [
-            'supplier_id' => $this->getParam('supplier_id'),
-            'date_from'   => $this->getParam('date_from'),
-            'date_to'     => $this->getParam('date_to'),
-            ...$this->getPaginationParams(),
-        ];
-        $result = $this->supplierRepo->getPurchases($filters);
-        if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
-        }
-        return Response::success($result);
-    }
-
-    /** Bulk purchase — creates a purchase invoice + items */
-    public function purchaseBulk() {
-        $data   = $this->getBody();
-        $auth   = $this->authService->user();
-        $result = $this->inventoryService->processBulkPurchase($data, $auth);
-
-        if (!$result['ok']) {
-            $code = $result['code'] ?? 500;
-            return $code === 404
-                ? Response::notFound($result['error'], ErrorCodes::INVOICE_NOT_FOUND)
-                : Response::error($result['error'], $code, null, ErrorCodes::SERVER_ERROR);
-        }
-
-        $isUpdate = $result['is_update'] ?? false;
-        return Response::success([
-            'invoice_id'      => $result['invoice_id'],
-            'items_processed' => $result['items_processed'],
-        ], $isUpdate ? 'Purchase invoice updated' : 'Bulk purchase recorded', $isUpdate ? 200 : 201);
-    }
 
     /**
      * POST /api/suppliers/{id}/payment

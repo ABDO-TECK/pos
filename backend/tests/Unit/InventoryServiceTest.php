@@ -5,18 +5,19 @@ namespace Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use App\Services\InventoryService;
 use App\Models\Product;
-use App\Models\Supplier;
+use App\Repositories\SupplierRepository;
+use PHPUnit\Framework\MockObject\MockObject;
 
 class InventoryServiceTest extends TestCase
 {
     private InventoryService $service;
-    private Product $productMock;
-    private Supplier $supplierMock;
+    private Product&MockObject $productMock;
+    private SupplierRepository&MockObject $supplierMock;
 
     protected function setUp(): void
     {
         $this->productMock  = $this->createMock(Product::class);
-        $this->supplierMock = $this->createMock(Supplier::class);
+        $this->supplierMock = $this->createMock(SupplierRepository::class);
 
         $this->service = new InventoryService($this->productMock, $this->supplierMock);
     }

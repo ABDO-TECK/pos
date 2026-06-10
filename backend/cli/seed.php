@@ -13,6 +13,7 @@ if (php_sapi_name() !== 'cli') {
     die('Forbidden: CLI only.');
 }
 
+require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../Config/config.php';
 
 use App\Config\Database;
@@ -29,15 +30,27 @@ try {
         exit(1);
     }
 
-    $files = glob($seedDir . '/*.sql');
-    sort($files);
+    $files = ['permissions_seed.sql', 'default_data.sql'];
+    
+    // إضافة الديمو إذا تم طلبها
+    global $argv;
+    if (in_array('--demo', $argv ?? [])) {
+        $files[] = 'demo_data.sql';
+        echo "Demo mode activated! Will insert demo data.\n";
+    }
 
     $executed = 0;
     foreach ($files as $file) {
         $name = basename($file);
         echo "  Seeding: {$name} ... ";
+        
+        $filePath = $seedDir . '/' . $name;
+        if (!file_exists($filePath)) {
+            echo "NOT FOUND (skipped)\n";
+            continue;
+        }
 
-        $sql = file_get_contents($file);
+        $sql = file_get_contents($filePath);
         if (!$sql) {
             echo "EMPTY (skipped)\n";
             continue;

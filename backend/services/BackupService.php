@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Config\Database;
+use App\Core\Container;
+use App\Services\MigrationService;
+use mysqli;
 use App\Contracts\BackupServiceInterface;
 use PDO;
 use RuntimeException;
@@ -39,7 +42,10 @@ class BackupService implements BackupServiceInterface {
     }
 
     /**
-     * Stream the backup directly to output (for download).
+     * تدفق (Stream) النسخة الاحتياطية لقاعدة البيانات مباشرة للعميل للتحميل.
+     * يولد أمر التصدير ويطبعه فوراً لتقليل استهلاك الذاكرة.
+     *
+     * @return void
      */
     public function streamBackup(): void {
         $tables = $this->db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
@@ -95,6 +101,128 @@ class BackupService implements BackupServiceInterface {
 
         echo "SET FOREIGN_KEY_CHECKS=1;\n";
         flush();
+    }
+
+    // ── Restore ─────────────────────────────────────────────
+
+    /**
+     * التحقق من صحة ملف SQL المرفوع.
+     *
+     * @param array $file   مصفوفة $_FILES['sql_file']
+     * @return array ['ok' => true, 'content' => string] أو ['ok' => false, 'error' => string, 'code' => int]
+     */
+    public function validateUploadedSqlFile(array $file): array
+    {
+        if (empty($file) || (int) ($file['error'] ?? 0) !== UPLOAD_ERR_OK) {
+            return ['ok' => false, 'error' => 'لم يتم رفع الملف أو فشل الرفع', 'code' => 400];
+        }
+
+        $name = (string) ($file['name'] ?? '');
+        if (!str_ends_with(strtolower($name), '.sql')) {
+            return ['ok' => false, 'error' => 'يجب أن يكون الملف بصيغة .sql', 'code' => 400];
+        }
+
+        $maxBytes = 50 * 1024 * 1024; // 50 MB
+        if ((int) ($file['size'] ?? 0) > $maxBytes) {
+            return ['ok' => false, 'error' => 'حجم الملف يتجاوز الحد المسموح (50 ميجابايت)', 'code' => 400];
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+        if ($content === false || strlen($content) < 30) {
+            return ['ok' => false, 'error' => 'الملف فارغ أو غير قابل للقراءة', 'code' => 400];
+        }
+
+        // إزالة BOM
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
+
+        // تنظيف UNSIGNED لمنع خطأ Foreign Key errno 150
+        $content = preg_replace('/\b((?:INT|BIGINT|TINYINT|SMALLINT|MEDIUMINT)(?:\s*\([\d]+\))?)\s+UNSIGNED\b/i', '$1', $content);
+
+        if (!preg_match('/\b(DROP\s+TABLE|CREATE\s+TABLE|INSERT\s+INTO)\b/is', $content)) {
+            return ['ok' => false, 'error' => 'محتوى الملف لا يبدو ملف SQL صالحاً لقاعدة البيانات', 'code' => 400];
+        }
+
+        // منع أوامر خطرة
+        if (preg_match('/\b(OUTFILE|DUMPFILE|LOAD_FILE|INTO\s+OUTFILE)\b/is', $content)) {
+            return ['ok' => false, 'error' => 'الملف يحتوي على أوامر غير مسموحة', 'code' => 400];
+        }
+
+        return ['ok' => true, 'content' => $content];
+    }
+
+    /**
+     * تنفيذ استعادة قاعدة البيانات من محتوى SQL + إعادة تشغيل الترحيلات.
+     *
+     * @param string $sqlContent  محتوى SQL المُنظّف
+     * @return array ['ok' => true, 'message' => string] أو ['ok' => false, 'error' => string, 'code' => int]
+     */
+    public function restoreFromSql(string $sqlContent): array
+    {
+        // ── استخدام mysqli بدلاً من PDO ──
+        // السبب: PDO لا يدعم multi_query() اللازمة لتنفيذ ملف SQL كامل
+        $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
+        if ($mysqli->connect_errno) {
+            return ['ok' => false, 'error' => 'فشل الاتصال بقاعدة البيانات: ' . $mysqli->connect_error, 'code' => 500];
+        }
+        $mysqli->set_charset('utf8mb4');
+
+        // تعطيل الوضع الصارم لتجنب أخطاء "Data truncated"
+        $mysqli->query("SET sql_mode=''");
+        $mysqli->query("SET FOREIGN_KEY_CHECKS=0");
+
+        if (!$mysqli->multi_query($sqlContent)) {
+            $err = $mysqli->error;
+            $mysqli->close();
+            return ['ok' => false, 'error' => 'فشل تنفيذ الاستعادة: ' . $err, 'code' => 500];
+        }
+
+        do {
+            if ($res = $mysqli->store_result()) {
+                $res->free();
+            }
+            if (!$mysqli->more_results()) {
+                break;
+            }
+            if (!$mysqli->next_result()) {
+                $err = $mysqli->error;
+                $mysqli->close();
+                return ['ok' => false, 'error' => 'فشل أثناء الاستعادة: ' . $err, 'code' => 500];
+            }
+        } while (true);
+
+        $mysqli->close();
+        Database::resetInstance();
+
+        // ── الاستعادة الذكية: ترقية النسخة القديمة ──
+        $freshDb = Database::getInstance();
+        try {
+            $freshDb->exec('DELETE FROM schema_versions');
+        } catch (\Throwable $e) {
+            // الجدول قد لا يكون موجوداً
+        }
+
+        // حذف flag الـ Smart Skip
+        $flagFile = realpath(__DIR__ . '/../storage/migrations_hash.flag');
+        if ($flagFile && is_file($flagFile)) {
+            @unlink($flagFile);
+        }
+
+        // تشغيل جميع الهجرات
+        Database::resetInstance();
+        require_once __DIR__ . '/../core/Container.php';
+        $container = new Container();
+        $migrationService = $container->get(MigrationService::class);
+        $migrationResult = $migrationService->runAllMigrations(true);
+
+        $msg = 'تمت استعادة قاعدة البيانات بنجاح';
+        if ($migrationResult['executed'] > 0) {
+            $msg .= '، وتمت ترقيتها للإصدار الحديث (' . $migrationResult['executed'] . ' تحديثات).';
+        }
+        if (!empty($migrationResult['errors'])) {
+            $msg .= ' ولكن حدثت بعض الأخطاء أثناء الترقية التلقائية.';
+        }
+
+        return ['ok' => true, 'message' => $msg];
     }
 
     /**

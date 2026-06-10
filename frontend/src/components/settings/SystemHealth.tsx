@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Activity, Database, HardDrive, Cpu, RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import { getHealthCheck } from '../../api/endpoints'
+import styles from './SystemHealth.module.css'
 
 interface HealthData {
   status: 'healthy' | 'unhealthy'
@@ -38,19 +39,10 @@ export default function SystemHealth() {
 
   useEffect(() => { fetchHealth() }, [])
 
-  const cardStyle: React.CSSProperties = {
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)', padding: '1rem',
-    display: 'flex', flexDirection: 'column', gap: '0.5rem',
-  }
-  const rowStyle: React.CSSProperties = {
-    display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem',
-  }
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div className={styles.container}>
+      <div className={styles.header}>
+        <h3 className={styles.title}>
           <Activity size={18} /> حالة النظام
         </h3>
         <button className="btn btn-ghost btn-sm" onClick={fetchHealth} disabled={loading}>
@@ -61,25 +53,25 @@ export default function SystemHealth() {
       {error && <div style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</div>}
 
       {data && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+        <div className={styles.grid}>
           {/* Database */}
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+          <div className={styles.card}>
+            <div className={styles.cardTitle}>
               <Database size={16} /> قاعدة البيانات <StatusIcon status={data.checks.database.status} />
             </div>
-            <div style={rowStyle}><span>الحالة</span><span>{data.checks.database.status}</span></div>
+            <div className={styles.row}><span>الحالة</span><span>{data.checks.database.status}</span></div>
             {data.checks.database.latency_ms != null && (
-              <div style={rowStyle}><span>زمن الاستجابة</span><span>{data.checks.database.latency_ms} ms</span></div>
+              <div className={styles.row}><span>زمن الاستجابة</span><span>{data.checks.database.latency_ms} ms</span></div>
             )}
           </div>
 
           {/* Disk */}
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+          <div className={styles.card}>
+            <div className={styles.cardTitle}>
               <HardDrive size={16} /> القرص الصلب <StatusIcon status={data.checks.disk.status} />
             </div>
-            <div style={rowStyle}><span>المساحة المتاحة</span><span>{data.checks.disk.free_gb} GB</span></div>
-            <div style={rowStyle}><span>نسبة الاستخدام</span><span>{data.checks.disk.used_percent}%</span></div>
+            <div className={styles.row}><span>المساحة المتاحة</span><span>{data.checks.disk.free_gb} GB</span></div>
+            <div className={styles.row}><span>نسبة الاستخدام</span><span>{data.checks.disk.used_percent}%</span></div>
             <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{
                 height: '100%', borderRadius: 3,
@@ -90,22 +82,22 @@ export default function SystemHealth() {
           </div>
 
           {/* Memory */}
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+          <div className={styles.card}>
+            <div className={styles.cardTitle}>
               <Cpu size={16} /> الذاكرة <StatusIcon status={data.checks.memory.status} />
             </div>
-            <div style={rowStyle}><span>الاستخدام الحالي</span><span>{data.checks.memory.usage_mb} MB</span></div>
-            <div style={rowStyle}><span>الذروة</span><span>{data.checks.memory.peak_mb} MB</span></div>
-            <div style={rowStyle}><span>الحد الأقصى</span><span>{data.checks.memory.limit}</span></div>
+            <div className={styles.row}><span>الاستخدام الحالي</span><span>{data.checks.memory.usage_mb} MB</span></div>
+            <div className={styles.row}><span>الذروة</span><span>{data.checks.memory.peak_mb} MB</span></div>
+            <div className={styles.row}><span>الحد الأقصى</span><span>{data.checks.memory.limit}</span></div>
           </div>
 
           {/* PHP */}
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+          <div className={styles.card}>
+            <div className={styles.cardTitle}>
               ⚙️ PHP {data.checks.php.version}
             </div>
             {Object.entries(data.checks.php.extensions).map(([ext, loaded]) => (
-              <div key={ext} style={rowStyle}>
+              <div key={ext} className={styles.row}>
                 <span>{ext}</span>
                 <span style={{ color: loaded ? 'var(--primary)' : 'var(--danger)' }}>
                   {loaded ? '✓ مُفعّل' : '✗ غير مُفعّل'}
@@ -117,7 +109,7 @@ export default function SystemHealth() {
       )}
 
       {data && (
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+        <div className={styles.footer}>
           آخر فحص: {new Date(data.timestamp).toLocaleString('ar-EG')}
           {' — '}
           الحالة العامة: <strong style={{ color: data.status === 'healthy' ? 'var(--primary)' : 'var(--danger)' }}>

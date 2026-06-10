@@ -10,14 +10,23 @@ use App\Models\SupplierLedger;
 class SupplierServiceTest extends TestCase
 {
     private SupplierService $service;
-    private Supplier $supplierMock;
-    private SupplierLedger $ledgerMock;
+    private Supplier|\PHPUnit\Framework\MockObject\MockObject $supplierMock;
+    private SupplierLedger|\PHPUnit\Framework\MockObject\MockObject $ledgerMock;
+    private \App\Repositories\SupplierRepository|\PHPUnit\Framework\MockObject\MockObject $supplierRepoMock;
+    private \App\Repositories\ProductRepository|\PHPUnit\Framework\MockObject\MockObject $productRepoMock;
 
     protected function setUp(): void
     {
         $this->supplierMock = $this->createMock(Supplier::class);
         $this->ledgerMock = $this->createMock(SupplierLedger::class);
-        $this->service = new SupplierService($this->supplierMock, $this->ledgerMock);
+        $this->supplierRepoMock = $this->createMock(\App\Repositories\SupplierRepository::class);
+        $this->productRepoMock = $this->createMock(\App\Repositories\ProductRepository::class);
+        $this->service = new SupplierService(
+            $this->supplierMock, 
+            $this->ledgerMock, 
+            $this->supplierRepoMock, 
+            $this->productRepoMock
+        );
     }
 
     public function testAddPaymentThrowsIfSupplierNotFound()

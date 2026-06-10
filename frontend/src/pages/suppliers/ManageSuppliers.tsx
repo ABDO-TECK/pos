@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react'
 import { Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -19,7 +19,7 @@ export default function ManageSuppliers() {
     setLoading(true)
     try {
       const res = (await getSuppliers()).data
-      const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
+      const list = Array.isArray(res.data) ? res.data : ((res as any).data?.data ?? [])
       setSuppliers(list)
     }
     catch (err) { toast.error(extractApiError(err, 'فشل تحميل الموردين')) }
@@ -29,7 +29,7 @@ export default function ManageSuppliers() {
   useEffect(() => { load() }, [])
 
   const openNew  = () => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '', initial_balance: '', balance_direction: 'debit' }); setShowForm(true) }
-  const openEdit = (s) => {
+  const openEdit = (s: any) => {
     setEditing(s);
     setForm({
       name: s.name, phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '',
@@ -39,15 +39,15 @@ export default function ManageSuppliers() {
     setShowForm(true)
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault()
     try {
       const rawBal = parseFloat(form.initial_balance) || 0
+      const { balance_direction, ...restForm } = form
       const payload = {
-        ...form,
+        ...restForm,
         initial_balance: form.balance_direction === 'credit' ? -Math.abs(rawBal) : Math.abs(rawBal),
       }
-      delete payload.balance_direction
       if (editing) await updateSupplier(editing.id, payload)
       else await createSupplier(payload)
       toast.success(editing ? 'تم التحديث' : 'تمت الإضافة')
@@ -56,7 +56,7 @@ export default function ManageSuppliers() {
     } catch (err) { toast.error(extractApiError(err, 'فشلت العملية')) }
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: any) => {
     if (!(await confirm('حذف هذا المورد؟'))) return
     try { await deleteSupplier(id); toast.success('تم الحذف'); load() }
     catch (err) { toast.error(extractApiError(err, 'فشل الحذف')) }
@@ -132,7 +132,7 @@ export default function ManageSuppliers() {
                 <div key={fi.key}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>{fi.label}</label>
                   <input type={fi.type} className="input" required={fi.required}
-                    value={form[fi.key]} onChange={e => setForm({ ...form, [fi.key]: e.target.value })}
+                    value={(form as any)[fi.key]} onChange={e => setForm({ ...form, [fi.key]: e.target.value })}
                   />
                 </div>
               ))}

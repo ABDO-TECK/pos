@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect, useRef } from 'react'
 
 import { AlertTriangle, Warehouse, Search, Pencil, X } from 'lucide-react'
@@ -22,8 +22,10 @@ export default function Inventory() {
     if (showLoader) setLoading(true)
     try {
       const [invRes, lowRes] = await Promise.all([getInventory({ search: s }), getLowStock()])
-      const invRaw = invRes.data.data; setProducts(Array.isArray(invRaw) ? invRaw : (invRaw?.data ?? []))
-      const lowRaw = lowRes.data.data; setLowStock(Array.isArray(lowRaw) ? lowRaw : (lowRaw?.data ?? []))
+      const d = (await getInventory({ search: s })).data
+      setProducts(Array.isArray(d.data) ? d.data : ((d as any).data?.data ?? []))
+      const l = (await getLowStock()).data
+      setLowStock(Array.isArray(l.data) ? l.data : ((l as any).data?.data ?? []))
     } catch (err) { if (showLoader) toast.error('فشل تحميل المخزون') 
     }
     finally { 
@@ -39,7 +41,7 @@ export default function Inventory() {
     return () => clearInterval(intervalId)
   }, [])
 
-  const handleSearch = (val) => {
+  const handleSearch = (val: string) => {
     setSearch(val)
     searchRef.current = val
     clearTimeout(searchTimer.current)

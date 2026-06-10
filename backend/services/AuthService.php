@@ -15,18 +15,38 @@ class AuthService {
         $this->user = $user;
     }
 
+    /**
+     * الحصول على بيانات المستخدم الحالي.
+     *
+     * @return array|null بيانات المستخدم أو null إذا لم يكن مسجلاً الدخول
+     */
     public function user(): ?array {
         return $this->user;
     }
 
+    /**
+     * الحصول على معرّف المستخدم الحالي.
+     *
+     * @return int|null معرّف المستخدم أو null
+     */
     public function id(): ?int {
         return $this->user['id'] ?? null;
     }
 
+    /**
+     * الحصول على صلاحية/دور المستخدم الحالي.
+     *
+     * @return string|null دور المستخدم أو null
+     */
     public function role(): ?string {
         return $this->user['role'] ?? null;
     }
 
+    /**
+     * التحقق مما إذا كان هناك مستخدم مسجل الدخول.
+     *
+     * @return bool صحيح إذا كان مسجلاً الدخول، وإلا خطأ
+     */
     public function check(): bool {
         return $this->user !== null;
     }
@@ -38,10 +58,20 @@ class AuthService {
         self::$globalBranchId = $branchId; // تحديث القيمة الثابتة أيضاً
     }
 
+    /**
+     * الحصول على معرّف الفرع الحالي.
+     *
+     * @return int معرّف الفرع
+     */
     public function branchId(): int {
         return $this->branchId;
     }
 
+    /**
+     * الحصول على معرّف الفرع العام الثابت.
+     *
+     * @return int معرّف الفرع العام
+     */
     public static function getGlobalBranchId(): int {
         return self::$globalBranchId;
     }
@@ -52,6 +82,11 @@ class AuthService {
         $this->apiVersion = $version;
     }
 
+    /**
+     * الحصول على إصدار واجهة برمجة التطبيقات (API) الحالي.
+     *
+     * @return string إصدار الـ API
+     */
     public function apiVersion(): string {
         return $this->apiVersion;
     }

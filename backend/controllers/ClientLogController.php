@@ -28,45 +28,41 @@ class ClientLogController extends Controller
      */
     public function store()
     {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'level'   => 'required',
-            'message' => 'required',
-        ]);
+        $data = $this->getBody();
+        $logs = $data['logs'] ?? [$data]; // يدعم الـ Batch و الـ Single (للتوافق)
 
-        if ($errors) {
-            return Response::error('Validation failed', 422, $errors);
-        }
+        foreach ($logs as $logData) {
+            if (empty($logData['level']) || empty($logData['message'])) {
+                continue;
+            }
 
-        $level   = strtoupper($data['level'] ?? 'ERROR');
-        $message = '[CLIENT] ' . ($data['message'] ?? 'Unknown error');
+            $level   = strtoupper($logData['level'] ?? 'ERROR');
+            $message = '[CLIENT] ' . ($logData['message'] ?? 'Unknown error');
 
-        // تنقية وتحديد المعلومات المسموحة في السياق
-        $context = [];
-        if (!empty($data['context']) && is_array($data['context'])) {
-            $allowed = ['url', 'stack', 'component', 'userAgent', 'timestamp', 'userId', 'extra'];
-            foreach ($allowed as $key) {
-                if (isset($data['context'][$key])) {
-                    $context[$key] = is_string($data['context'][$key])
-                        ? mb_substr($data['context'][$key], 0, 2000)
-                        : $data['context'][$key];
+            $context = [];
+            if (!empty($logData['context']) && is_array($logData['context'])) {
+                $allowed = ['url', 'stack', 'component', 'userAgent', 'timestamp', 'userId', 'extra'];
+                foreach ($allowed as $key) {
+                    if (isset($logData['context'][$key])) {
+                        $context[$key] = is_string($logData['context'][$key])
+                            ? mb_substr($logData['context'][$key], 0, 2000)
+                            : $logData['context'][$key];
+                    }
                 }
             }
+
+            $context['client_ip'] = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+            match ($level) {
+                'CRITICAL' => Logger::critical($message, $context),
+                'ERROR'    => Logger::error($message, $context),
+                'WARNING'  => Logger::warning($message, $context),
+                'INFO'     => Logger::info($message, $context),
+                default    => Logger::error($message, $context),
+            };
         }
 
-        // إضافة معلومات الطلب
-        $context['client_ip'] = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-        // تسجيل الخطأ حسب المستوى
-        match ($level) {
-            'CRITICAL' => Logger::critical($message, $context),
-            'ERROR'    => Logger::error($message, $context),
-            'WARNING'  => Logger::warning($message, $context),
-            'INFO'     => Logger::info($message, $context),
-            default    => Logger::error($message, $context),
-        };
-
-        return Response::success(null, 'Log received');
+        return Response::success(null, 'Logs received');
     }
 
     /**

@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState } from 'react'
 import { Trash2, Plus, Minus, ShoppingCart, Package } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
@@ -41,7 +41,7 @@ export default function Cart() {
           item={item}
           onRemove={() => removeItem(item.id)}
           onUpdateQty={(qty) => updateQuantity(item.id, qty)}
-          onUpdatePrice={(price) => updatePrice(item.id, price)}
+          onUpdatePrice={(price) => updatePrice(item.id, Number(price))}
         />
       ))}
     </div>
@@ -50,7 +50,14 @@ export default function Cart() {
 
 // ── CartItem ────────────────────────────────────────────────────────────────
 
-function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
+interface CartItemProps {
+  item: any;
+  onRemove: () => void;
+  onUpdateQty: (qty: number) => void;
+  onUpdatePrice: (price: string) => void;
+}
+
+function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps) {
   const unitsPerBox = Math.max(1, parseInt(item.units_per_box) || 1)
   const isByWeight  = parseInt(item.sell_by_weight) === 1
   const hasBox      = unitsPerBox > 1 && !isByWeight
@@ -63,7 +70,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
   const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(item.quantity / unitsPerBox)) : null
   const displayQty = unitMode === 'box' ? boxCount : item.quantity
 
-  const handleUnitModeChange = (mode) => {
+  const handleUnitModeChange = (mode: string) => {
     if (mode === unitMode) return
     setUnitMode(mode)
     if (mode === 'kg') {
@@ -77,7 +84,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
 
   const handleDecrement = () => {
     if (unitMode === 'box') {
-      const newBoxes = Math.max(1, boxCount - 1)
+      const newBoxes = Math.max(1, (boxCount ?? 0) - 1)
       onUpdateQty(newBoxes * unitsPerBox)
     } else if (unitMode === 'kg') {
       onUpdateQty(Math.max(0.001, parseFloat((item.quantity - 0.25).toFixed(3))))
@@ -88,7 +95,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
 
   const handleIncrement = () => {
     if (unitMode === 'box') {
-      onUpdateQty((boxCount + 1) * unitsPerBox)
+      onUpdateQty(((boxCount ?? 0) + 1) * unitsPerBox)
     } else if (unitMode === 'kg') {
       onUpdateQty(parseFloat((item.quantity + 0.25).toFixed(3)))
     } else {
@@ -96,7 +103,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }) {
     }
   }
 
-  const handleInputChange = (raw) => {
+  const handleInputChange = (raw: string) => {
     if (unitMode === 'kg') {
       const val = parseFloat(raw) || 0.001
       onUpdateQty(Math.max(0.001, val))

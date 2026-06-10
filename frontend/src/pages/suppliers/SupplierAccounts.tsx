@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Edit2, Search, X, Package } from 'lucide-react'
 import useSettingsStore from '../../store/settingsStore'
@@ -13,7 +13,7 @@ import SupplierEditEntryModal from './components/SupplierEditEntryModal'
 import SupplierLedgerTable from './components/SupplierLedgerTable'
 import { extractApiError } from '../../utils/apiError'
 
-const fmtLedgerDate = (s) => {
+const fmtLedgerDate = (s: any) => {
   if (!s) return '—'
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return '—'
@@ -51,7 +51,7 @@ export default function SupplierAccounts() {
     setLoading(true)
     try {
       const res = (await getSuppliers()).data
-      const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
+      const list = Array.isArray(res.data) ? res.data : ((res as any).data?.data ?? [])
       setSuppliers(list)
     }
     catch (err) { toast.error(extractApiError(err, 'فشل تحميل الموردين')) }
@@ -67,7 +67,7 @@ export default function SupplierAccounts() {
     ), [suppliers, search])
 
   // ── ledger ──
-  const openLedger = async (s) => {
+  const openLedger = async (s: any) => {
     setLedgerLoading(true)
     setLedgerData({ supplier: s, entries: [], balance: 0 })
     try {
@@ -268,7 +268,7 @@ export default function SupplierAccounts() {
         <QZPrinterPicker
           printers={qz.printers}
           selectedPrinter={qz.selectedPrinter}
-          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onSelect={(name: string) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
           onClose={() => qz.setShowPrinterPicker(false)}
         />
       )}

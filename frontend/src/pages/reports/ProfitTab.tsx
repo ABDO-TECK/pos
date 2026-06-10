@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { getProfitReport } from '../../api/endpoints'
@@ -59,7 +59,7 @@ export default function ProfitTab() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: any, name: string) => [formatCurrency(v), name]} />
+                  <Tooltip formatter={(v, name) => [formatCurrency(Number(v)), String(name ?? '')]} />
                   <Legend />
                   <Bar dataKey="revenue" name="الإيرادات" fill="#3b82f6" radius={[4,4,0,0]} />
                   <Bar dataKey="cost"    name="التكاليف"  fill="#f97316" radius={[4,4,0,0]} />

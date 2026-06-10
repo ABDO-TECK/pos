@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react'
 
 import { Plus, X, Tag } from 'lucide-react'
@@ -31,7 +31,7 @@ const emptyProduct = {
   barcode: '',
 }
 
-function TabBtn({ active, onClick, children }) {
+function TabBtn({ active, onClick, children }: any) {
   return (
     <button onClick={onClick} style={{
       display: 'inline-flex', alignItems: 'center',
@@ -72,7 +72,7 @@ export default function Products() {
     setLoadingProducts(true)
     try { 
       const res = await getProducts()
-      const raw = res.data.data; setAllProducts(Array.isArray(raw) ? raw : (raw?.data ?? []))
+      const raw = (res.data as any).data; setAllProducts(Array.isArray(raw) ? raw : (raw?.data ?? []))
     }
     finally { setLoadingProducts(false) }
   }
@@ -89,7 +89,7 @@ export default function Products() {
   useEffect(() => {
     loadProducts()
     loadCategories()
-    getLowStock().then(r => { const d = r.data.data; setLowStock(Array.isArray(d) ? d : (d?.data ?? [])) })
+    getLowStock().then(r => { const d = (r.data as any).data; setLowStock(Array.isArray(d) ? d : (d?.data ?? [])) })
   }, [])
 
   // ── Product actions ──
@@ -98,7 +98,7 @@ export default function Products() {
     setEditProductId(null)
     setProductModal('create')
   }
-  const openEditProduct = (p) => {
+  const openEditProduct = (p: any) => {
     const extras = p.additional_barcodes || []
     setProductForm({
       ...p,
@@ -134,7 +134,7 @@ export default function Products() {
     finally { setSavingProduct(false) }
   }
 
-  const handleDeleteProduct = async (id, name) => {
+  const handleDeleteProduct = async (id: any, name: string) => {
     if (!(await confirm(`هل تريد حذف "${name}"؟`))) return
     try { 
       await deleteProduct(id)
@@ -147,7 +147,7 @@ export default function Products() {
 
   // ── Category actions ──
   const openCreateCategory = () => { setCategoryForm({ name: '' }); setEditCategoryId(null); setCategoryModal('create') }
-  const openEditCategory   = (c) => { setCategoryForm({ name: c.name }); setEditCategoryId(c.id); setCategoryModal('edit') }
+  const openEditCategory   = (c: any) => { setCategoryForm({ name: c.name }); setEditCategoryId(c.id); setCategoryModal('edit') }
 
   const handleSaveCategory = async () => {
     if (!categoryForm.name.trim()) { toast.error('اسم الفئة مطلوب'); return }
@@ -160,7 +160,7 @@ export default function Products() {
     finally { setSavingCategory(false) }
   }
 
-  const handleDeleteCategory = async (id, name) => {
+  const handleDeleteCategory = async (id: any, name: string) => {
     if (!(await confirm(`هل تريد حذف فئة "${name}"؟ سيتم إلغاء ربط المنتجات بها.`))) return
     try { await deleteCategory(id); toast.success('تم حذف الفئة'); loadCategories(); loadProducts() }
     catch (err) { toast.error(extractApiError(err, 'حدث خطأ أثناء الحذف')) }

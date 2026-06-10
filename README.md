@@ -1,6 +1,6 @@
 # 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
 
-![Version](https://img.shields.io/badge/version-1.1.31-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.32-blue.svg)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
 ![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-30.0-47848F?logo=electron&logoColor=white)
@@ -87,13 +87,24 @@ docker-compose up -d --build
 
 ### الخيار الثاني: التشغيل المحلي (XAMPP / Node.js) للتطوير
 
-**1. إعداد قاعدة البيانات (Database Setup):**
+**1. إعداد المتغيرات البيئية (Environment Variables):**
+قم بنسخ ملف الإعدادات الافتراضي للواجهة الخلفية وتعديله بما يتناسب مع بيئتك (بيانات قاعدة البيانات):
+```bash
+cd backend
+cp .env.example .env
+```
+
+**2. إعداد قاعدة البيانات (Database Setup):**
 استورد ملف الـ Schema لتجهيز الجداول:
 ```bash
 mysql -u root -p pos < C:\xampp\htdocs\pos\database\pos_schema.sql
 ```
+ثم قم ببذر البيانات الافتراضية (الصلاحيات وغيرها):
+```bash
+mysql -u root -p pos < C:\xampp\htdocs\pos\database\seeders\permissions_seed.sql
+```
 
-**2. تشغيل الواجهة الأمامية (Frontend):**
+**3. تشغيل الواجهة الأمامية (Frontend):**
 ```bash
 cd frontend
 npm install
@@ -119,6 +130,26 @@ npm run electron:build
 
 > [!WARNING]
 > النظام يجبر المستخدم على تغيير كلمة المرور الافتراضية عند تسجيل الدخول لأول مرة لضمان الأمان.
+
+---
+
+## 🧪 الاختبارات (Testing)
+
+النظام يحتوي على بنية اختبارات متكاملة لضمان الجودة:
+
+- **اختبارات الواجهة الخلفية (Backend Unit Tests):**
+  باستخدام `PHPUnit` لاختبار الـ Services والتأكد من صحة العمليات الحسابية ومنطق الأعمال.
+  ```bash
+  cd backend
+  vendor/bin/phpunit tests/
+  ```
+
+- **اختبارات الواجهة الأمامية (Frontend E2E Tests):**
+  باستخدام `Playwright` لاختبار رحلة المستخدم (User Journey) للصفحات الحرجة (مثل المصروفات، الإعدادات، وإدارة الجلسات).
+  ```bash
+  cd frontend
+  npm run test:e2e
+  ```
 
 ---
 

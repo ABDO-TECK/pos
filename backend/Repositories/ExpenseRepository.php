@@ -14,7 +14,7 @@ class ExpenseRepository implements RepositoryInterface
         $this->model = $model;
     }
 
-    public function getAll(array $filters = []): array
+    public function all(array $filters = []): array
     {
         return $this->model->getAll($filters);
     }

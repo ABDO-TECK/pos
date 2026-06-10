@@ -29,15 +29,13 @@ async function flush() {
 
   const batch = queue.splice(0, MAX_QUEUE)
 
-  for (const entry of batch) {
-    try {
-      await api.post('/client-log', entry, {
-        // @ts-ignore - custom config to suppress global error toast
-        hideGlobalError: true,
-      })
-    } catch (err) { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
-      console.warn('[clientLogger] Failed to send log entry:', entry.message)
-    }
+  try {
+    await api.post('/client-log', { logs: batch }, {
+      // @ts-ignore - custom config to suppress global error toast
+      hideGlobalError: true,
+    })
+  } catch (err) { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
+    console.warn('[clientLogger] Failed to send log batch')
   }
 
   // إذا بقيت عناصر في الطابور، جدول دفعة أخرى
@@ -124,18 +122,15 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (queue.length === 0) return
 
-    // استخدام sendBeacon لأنه يضمن الإرسال حتى أثناء إغلاق الصفحة
-    // (fetch/XMLHttpRequest قد يُلغيان عند الإغلاق)
     const url = (api.defaults.baseURL || '') + '/client-log'
-    for (const entry of queue.splice(0, MAX_QUEUE)) {
-      try {
-        navigator.sendBeacon(
-          url,
-          new Blob([JSON.stringify(entry)], { type: 'application/json' }),
-        )
-      } catch {
-        // لا شيء يمكن فعله — الصفحة تُغلق
-      }
+    const batch = queue.splice(0, MAX_QUEUE)
+    try {
+      navigator.sendBeacon(
+        url,
+        new Blob([JSON.stringify({ logs: batch })], { type: 'application/json' }),
+      )
+    } catch {
+      // لا شيء يمكن فعله — الصفحة تُغلق
     }
   })
 }

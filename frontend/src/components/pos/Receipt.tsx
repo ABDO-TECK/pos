@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react'
 import { Printer, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -29,7 +29,13 @@ const METHOD_LABELS = {
     credit:        'آجل',
 }
 
-export default function Receipt({ invoice, change, onClose }) {
+interface ReceiptProps {
+    invoice: any;
+    change?: number | string | null;
+    onClose: () => void;
+}
+
+export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
     const { storeName, taxEnabled, taxRate } = useSettingsStore()
     const settings = { storeName, taxEnabled, taxRate }
 
@@ -46,7 +52,7 @@ export default function Receipt({ invoice, change, onClose }) {
         setQzStatus('connecting')
         connectQZ()
             .then(() => { setQzStatus('ready'); setRemoteError(null); loadPrinters() })
-            .catch((err) => {
+            .catch((err: any) => {
                 setQzStatus('error')
                 if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
             })
@@ -57,7 +63,7 @@ export default function Receipt({ invoice, change, onClose }) {
         setRemoteError(null)
         connectQZ()
             .then(() => { setQzStatus('ready'); loadPrinters() })
-            .catch((err) => {
+            .catch((err: any) => {
                 setQzStatus('error')
                 if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
             })
@@ -66,7 +72,7 @@ export default function Receipt({ invoice, change, onClose }) {
     const loadPrinters = async () => {
         try {
             const list = await listPrinters()
-            setPrinters(list)
+            setPrinters(Array.isArray(list) ? list : [list] as any)
             const saved = getSavedPrinter()
             if (saved && list.includes(saved)) setSelectedPrinter(saved)
             else if (list.length === 1) { savePrinter(list[0]); setSelectedPrinter(list[0]) }
@@ -83,9 +89,9 @@ export default function Receipt({ invoice, change, onClose }) {
         if (!selectedPrinter) { setShowPrinterPicker(true); return }
         setPrinting(true)
         try {
-            await printInvoice(invoice, change, settings, selectedPrinter, paperSize)
+            await printInvoice(invoice, Number(change || 0), settings, selectedPrinter, paperSize)
             toast.success(`تمت الطباعة بنجاح (${paperSize})`)
-        } catch (err) {
+        } catch (err: any) {
             toast.error('فشل الطباعة: ' + (err.message ?? ''))
         } finally {
             setPrinting(false)
@@ -96,7 +102,7 @@ export default function Receipt({ invoice, change, onClose }) {
     const handleBrowserPrint = () => browserPrint(invoice, changeAmt, settings, '80mm')
     const handleA4Print = () => browserPrint(invoice, changeAmt, settings, 'A4')
 
-    const handlePrinterSelect = (name) => {
+    const handlePrinterSelect = (name: string) => {
         savePrinter(name)
         setSelectedPrinter(name)
         setShowPrinterPicker(false)
@@ -159,7 +165,7 @@ export default function Receipt({ invoice, change, onClose }) {
                         {/* Details */}
                         <div style={{ margin: '1.5mm 0', paddingBottom: '1mm' }}>
                             <InfoRow label="التاريخ" value={formatDate(invoice.created_at)} />
-                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method] ?? invoice.payment_method} />
+                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method as keyof typeof METHOD_LABELS] ?? invoice.payment_method} />
                             <InfoRow label="الوقت" value={new Date(invoice.created_at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })} />
                             <InfoRow label="الكاشير" value={invoice.cashier_name ?? '—'} />
                         </div>

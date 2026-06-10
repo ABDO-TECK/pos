@@ -4,29 +4,24 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\ValidationException;
-use App\Helpers\Cache;
 use App\Helpers\Logger;
 use App\Helpers\Response;
 use App\Repositories\ExpenseRepository;
-use App\Repositories\ExpenseCategoryRepository;
 use App\Requests\ExpenseRequest;
 use App\Services\AuthService;
 use App\Services\ExpenseService;
-use PDOException;
 use Throwable;
 
 
 class ExpenseController extends Controller
 {
     private ExpenseRepository $expenseRepo;
-    private ExpenseCategoryRepository $categoryRepo;
     private ExpenseService $expenseService;
     private AuthService $authService;
 
-    public function __construct(ExpenseRepository $expenseRepo, ExpenseCategoryRepository $categoryRepo, ExpenseService $expenseService, AuthService $authService)
+    public function __construct(ExpenseRepository $expenseRepo, ExpenseService $expenseService, AuthService $authService)
     {
         $this->expenseRepo = $expenseRepo;
-        $this->categoryRepo = $categoryRepo;
         $this->expenseService = $expenseService;
         $this->authService = $authService;
     }
@@ -35,69 +30,53 @@ class ExpenseController extends Controller
 
     public function getCategories(): array
     {
-        return Response::cacheable($this->categoryRepo->getAll(), 300); // Cache for 5 minutes
+        return Response::cacheable($this->expenseService->getAllCategories(), 300);
     }
 
     public function createCategory(): array
     {
-        $data = $this->getBody();
-        if (empty($data['name'])) {
-            return Response::error('اسم التصنيف مطلوب', 400);
-        }
         try {
-            return $this->withTransaction(function () use ($data) {
-                $id = $this->categoryRepo->create($data);
-                return Response::success($this->categoryRepo->findById($id));
+            return $this->withTransaction(function () {
+                $result = $this->expenseService->createCategory($this->getBody());
+                if (!$result['ok']) {
+                    return Response::error($result['error'], $result['code']);
+                }
+                return Response::success($result['category']);
             });
         } catch (Throwable $e) {
             Logger::error('Failed to create expense category', ['error' => $e->getMessage()]);
-            if ($e instanceof PDOException && $e->getCode() === '23000') {
-                return Response::error('هذا التصنيف موجود مسبقاً', 422);
-            }
             return Response::error('حدث خطأ أثناء إضافة التصنيف', 500);
         }
     }
 
     public function updateCategory(string $id): array
     {
-        $id = (int)$id;
-        $data = $this->getBody();
-        if (empty($data['name'])) {
-            return Response::error('اسم التصنيف مطلوب', 400);
-        }
-        if (!$this->categoryRepo->findById($id)) {
-            return Response::notFound('التصنيف غير موجود');
-        }
         try {
-            return $this->withTransaction(function () use ($id, $data) {
-                $this->categoryRepo->update($id, $data);
-                return Response::success($this->categoryRepo->findById($id));
+            return $this->withTransaction(function () use ($id) {
+                $result = $this->expenseService->updateCategory((int)$id, $this->getBody());
+                if (!$result['ok']) {
+                    return Response::error($result['error'], $result['code']);
+                }
+                return Response::success($result['category']);
             });
         } catch (Throwable $e) {
             Logger::error('Failed to update expense category', ['error' => $e->getMessage()]);
-            if ($e instanceof PDOException && $e->getCode() === '23000') {
-                return Response::error('هذا التصنيف موجود مسبقاً', 422);
-            }
             return Response::error('حدث خطأ أثناء تعديل التصنيف', 500);
         }
     }
 
     public function deleteCategory(string $id): array
     {
-        $id = (int)$id;
-        if (!$this->categoryRepo->findById($id)) {
-            return Response::notFound('التصنيف غير موجود');
-        }
         try {
             return $this->withTransaction(function () use ($id) {
-                $this->categoryRepo->delete($id);
+                $result = $this->expenseService->deleteCategory((int)$id);
+                if (!$result['ok']) {
+                    return Response::error($result['error'], $result['code']);
+                }
                 return Response::success(['message' => 'تم الحذف بنجاح']);
             });
         } catch (Throwable $e) {
             Logger::error('Failed to delete expense category', ['error' => $e->getMessage()]);
-            if ($e instanceof PDOException && $e->getCode() === '23000') {
-                return Response::error('لا يمكن حذف هذا التصنيف لوجود مصروفات مرتبطة به', 422);
-            }
             return Response::error('حدث خطأ أثناء الحذف', 500);
         }
     }
@@ -113,15 +92,14 @@ class ExpenseController extends Controller
             $filters['year'] = $this->getParam('year');
         }
         if ($this->getParam('category_id')) $filters['category_id'] = $this->getParam('category_id');
+        if ($this->getParam('start_date')) $filters['start_date'] = $this->getParam('start_date');
+        if ($this->getParam('end_date')) $filters['end_date'] = $this->getParam('end_date');
 
         $filters += $this->getPaginationParams();
 
-        $result = $this->expenseRepo->getAll($filters);
+        $result = $this->expenseRepo->all($filters);
 
-        if (isset($result['pagination'])) {
-            return Response::success($result['data'], 'success', 200, ['pagination' => $result['pagination']]);
-        }
-        return Response::success($result);
+        return Response::success($result['data'] ?? $result, 'success', 200, isset($result['pagination']) ? ['pagination' => $result['pagination']] : []);
     }
 
     public function createExpense(): array
@@ -139,10 +117,8 @@ class ExpenseController extends Controller
         }
 
         try {
-            return $this->withTransaction(function () use ($data, $user) {
-                $id = $this->expenseService->createExpense($data, $user);
-                return Response::success($this->expenseRepo->findById($id));
-            });
+            $id = $this->expenseService->createExpense($data, $user);
+            return Response::success($this->expenseRepo->findById($id));
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);
@@ -162,10 +138,8 @@ class ExpenseController extends Controller
         }
 
         try {
-            return $this->withTransaction(function () use ($id, $data) {
-                $this->expenseService->updateExpense($id, $data);
-                return Response::success($this->expenseRepo->findById($id));
-            });
+            $this->expenseService->updateExpense($id, $data);
+            return Response::success($this->expenseRepo->findById($id));
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);

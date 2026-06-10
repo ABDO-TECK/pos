@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect, useMemo } from 'react'
 
 import {
@@ -21,8 +21,8 @@ import CustomerCard from '../components/customers/CustomerCard'
 import CustomerFormModal from './customers/components/CustomerFormModal'
 import CustomerPaymentModal from './customers/components/CustomerPaymentModal'
 import CustomerEditEntryModal from './customers/components/CustomerEditEntryModal'
-import CustomerLedgerTable from './customers/components/CustomerLedgerTable'
 import { extractApiError } from '../utils/apiError'
+import CustomerLedgerPanel from './customers/CustomerLedgerPanel'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ export default function Customers() {
     setLoading(true)
     try {
       const res = (await getCustomers()).data
-      const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
+      const list = Array.isArray(res.data) ? res.data : ((res.data as any)?.data ?? [])
       setCustomers(list)
     }
     catch (err) { toast.error(extractApiError(err, 'فشل تحميل العملاء')) }
@@ -83,7 +83,7 @@ export default function Customers() {
     ), [customers, search])
 
   // ── ledger ──
-  const openLedger = async (c) => {
+  const openLedger = async (c: any) => {
     setLedgerLoading(true)
     setLedgerData({ customer: c, entries: [], balance: 0 })
     try {
@@ -95,7 +95,7 @@ export default function Customers() {
 
   // ── CRUD ──
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal('create') }
-  const openEdit   = (c, e) => {
+  const openEdit   = (c: any, e: any) => {
     e.stopPropagation()
     setForm({
       name: c.name, phone: c.phone || '', address: c.address || '',
@@ -111,11 +111,11 @@ export default function Customers() {
     setSaving(true)
     try {
       const rawBal = parseFloat(form.initial_balance) || 0
+      const { balance_direction, ...restForm } = form
       const payload = {
-        ...form,
+        ...restForm,
         initial_balance: form.balance_direction === 'credit' ? -Math.abs(rawBal) : Math.abs(rawBal),
       }
-      delete payload.balance_direction
       if (modal === 'create') {
         await createCustomer(payload)
         toast.success('تم إضافة العميل')
@@ -134,7 +134,7 @@ export default function Customers() {
     finally { setSaving(false) }
   }
 
-  const handleDelete = async (c, e) => {
+  const handleDelete = async (c: any, e: any) => {
     e.stopPropagation()
     if (!(await confirm(`هل تريد حذف العميل "${c.name}"؟`))) return
     try {
@@ -217,8 +217,8 @@ export default function Customers() {
                 customer={c}
                 active={ledgerData?.customer?.id === c.id}
                 onClick={() => openLedger(c)}
-                onEdit={(e) => openEdit(c, e)}
-                onDelete={user?.role === 'admin' ? (e) => handleDelete(c, e) : null}
+                onEdit={(e: any) => openEdit(c, e)}
+                onDelete={user?.role === 'admin' ? (e: any) => handleDelete(c, e) : undefined}
               />
             ))}
           </div>
@@ -226,71 +226,15 @@ export default function Customers() {
       </div>
 
       {/* ── كشف الحساب ───────────────────────────────────────────────────── */}
-      {ledgerData && (
-        <div className="split-detail">
-
-          {/* رأس كشف الحساب */}
-          <div className="ledger-header">
-            <div className="ledger-header-title">
-              <button className="btn btn-ghost btn-icon" onClick={() => setLedgerData(null)}>
-                <ArrowRight size={18} />
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, wordBreak: 'break-word' }}>
-                  كشف حساب — {ledgerData.customer.name}
-                </h2>
-                {ledgerData.customer.phone && (
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    <Phone size={11} style={{ verticalAlign: 'middle' }} /> {ledgerData.customer.phone}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="ledger-header-actions">
-              {/* الرصيد الإجمالي */}
-              <div className="ledger-balance" style={{
-                background: ledgerData.balance > 0 ? 'rgba(239,68,68,.08)' : 'rgba(34,197,94,.08)',
-                border: `1px solid ${ledgerData.balance > 0 ? '#fca5a5' : '#86efac'}`,
-                borderRadius: 'var(--radius)', padding: '0.4rem 0.9rem', textAlign: 'center',
-              }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.1rem' }}>الرصيد المستحق</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: ledgerData.balance > 0 ? 'var(--danger)' : 'var(--primary)' }}>
-                  {formatCurrency(Math.abs(ledgerData.balance))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                <button className="btn btn-primary btn-sm" style={{ padding: '0.4rem 0.8rem', justifyContent: 'center' }} onClick={() => setPayModal(true)}>
-                  <PlusCircle size={15} /> تسجيل دفعة
-                </button>
-                <QZPrintButton
-                  qzReady={qz.qzReady}
-                  printing={qz.printing}
-                  onQZPrint={async () => {
-                    const b64 = await exportCustomerLedgerPDF(ledgerData.customer.id, true)
-                    if (!b64) return
-                    const r = await qz.qzPrintPDF(b64)
-                    if (r.ok) toast.success('تمت الطباعة بنجاح')
-                    else if (r.error) toast.error('فشل الطباعة: ' + r.error)
-                  }}
-                  onPickPrinter={() => qz.setShowPrinterPicker(true)}
-                  onBrowserPrint={() => exportCustomerLedgerPDF(ledgerData.customer.id)}
-                  label="طباعة وتصدير"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* جدول كشف الحساب */}
-          <CustomerLedgerTable
-            ledgerLoading={ledgerLoading}
-            ledgerData={ledgerData}
-            setEditEntryModal={setEditEntryModal}
-            setEditEntryForm={setEditEntryForm}
-          />
-        </div>
-      )}
+      <CustomerLedgerPanel
+        ledgerData={ledgerData}
+        setLedgerData={setLedgerData}
+        qz={qz}
+        setPayModal={setPayModal}
+        ledgerLoading={ledgerLoading}
+        setEditEntryModal={setEditEntryModal}
+        setEditEntryForm={setEditEntryForm}
+      />
 
       {/* ── modal إضافة / تعديل عميل ────────────────────────────────────── */}
       <CustomerFormModal
@@ -332,7 +276,7 @@ export default function Customers() {
         <QZPrinterPicker
           printers={qz.printers}
           selectedPrinter={qz.selectedPrinter}
-          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onSelect={(name: string) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
           onClose={() => qz.setShowPrinterPicker(false)}
         />
       )}

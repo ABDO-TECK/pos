@@ -1,9 +1,9 @@
-// @ts-nocheck
+
 import { useState } from 'react'
 import { Plus, Minus, Trash2, Package } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
 
-export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }) {
+export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove }: any) {
   const product     = line.product
   const unitsPerBox = Math.max(1, parseInt(product.units_per_box, 10) || 1)
   const isByWeight  = parseInt(product.sell_by_weight) === 1
@@ -14,7 +14,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
   const boxCount   = unitMode === 'box' ? Math.max(1, Math.round(line.quantity / unitsPerBox)) : null
   const displayQty = unitMode === 'box' ? boxCount : line.quantity
 
-  const handleUnitModeChange = (mode) => {
+  const handleUnitModeChange = (mode: string) => {
     if (mode === unitMode) return
     setUnitMode(mode)
     if (mode === 'kg') {
@@ -28,7 +28,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
 
   const handleDecrement = () => {
     if (unitMode === 'box') {
-      const newBoxes = Math.max(1, boxCount - 1)
+      const newBoxes = Math.max(1, (boxCount ?? 0) - 1)
       onUpdateQty(product.id, newBoxes * unitsPerBox)
     } else if (unitMode === 'kg') {
       onUpdateQty(product.id, Math.max(0.001, parseFloat((line.quantity - 0.25).toFixed(3))))
@@ -39,7 +39,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
 
   const handleIncrement = () => {
     if (unitMode === 'box') {
-      onUpdateQty(product.id, (boxCount + 1) * unitsPerBox)
+      onUpdateQty(product.id, ((boxCount ?? 0) + 1) * unitsPerBox)
     } else if (unitMode === 'kg') {
       onUpdateQty(product.id, parseFloat((line.quantity + 0.25).toFixed(3)))
     } else {
@@ -47,7 +47,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
     }
   }
 
-  const handleQtyInputChange = (raw) => {
+  const handleQtyInputChange = (raw: string) => {
     if (unitMode === 'kg') {
       const val = parseFloat(raw) || 0.001
       onUpdateQty(product.id, Math.max(0.001, val))
