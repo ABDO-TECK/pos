@@ -7,6 +7,7 @@ const { setupAutoUpdater } = require('./services/auto-updater');
 const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
 const { startQZTray, stopQZTray } = require('./services/qz-tray');
 const { ensureQZCerts, getQZCertificate, signQZMessage } = require('./services/qz-certs');
+const { configureFirewall } = require('./services/firewall');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -28,6 +29,9 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  // ── Configure Windows Firewall rules (production) ──
+  configureFirewall().catch(err => console.error('[Firewall] Failed:', err));
+
   ipcMain.handle('get-version', () => app.getVersion());
   ipcMain.handle('qz-get-cert', () => getQZCertificate());
   ipcMain.handle('qz-sign', (_event, data) => signQZMessage(data));

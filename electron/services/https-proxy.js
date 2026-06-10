@@ -6,6 +6,23 @@ const net = require('net');
 
 let proxyServer = null;
 
+/**
+ * Get the SSL directory path. In production (packaged), we use the
+ * writable userData directory because app.asar is read-only.
+ * In development, we use the local electron/assets/ssl directory.
+ */
+function getSslDir() {
+  try {
+    const { app } = require('electron');
+    if (app.isPackaged) {
+      return path.join(app.getPath('userData'), 'ssl');
+    }
+  } catch (e) {
+    // electron not available (unlikely but safe fallback)
+  }
+  return path.join(__dirname, '..', 'assets', 'ssl');
+}
+
 function generateCertificate(certPath, keyPath) {
   try {
     const forge = require('node-forge');
@@ -37,7 +54,7 @@ function generateCertificate(certPath, keyPath) {
     
     fs.writeFileSync(certPath, pemCert);
     fs.writeFileSync(keyPath, pemKey);
-    console.log('[HTTPS] Certificate generated successfully');
+    console.log('[HTTPS] Certificate generated successfully at:', dir);
   } catch (err) {
     console.error('[HTTPS] Failed to generate certificate:', err.message);
   }
@@ -45,10 +62,12 @@ function generateCertificate(certPath, keyPath) {
 
 function startHttpsProxy(phpPort, httpsPort) {
   return new Promise((resolve) => {
-    const sslDir = path.join(__dirname, '..', 'assets', 'ssl');
+    const sslDir = getSslDir();
     const keyPath = path.join(sslDir, 'server.key');
     const certPath = path.join(sslDir, 'server.crt');
     
+    console.log('[HTTPS] SSL directory:', sslDir);
+
     // Generate cert if it doesn't exist
     if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
       generateCertificate(certPath, keyPath);

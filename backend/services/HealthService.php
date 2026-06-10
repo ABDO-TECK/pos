@@ -230,40 +230,71 @@ class HealthService
     {
         $ips = [];
         
-        // 1. Get host name and resolve IPs
-        $host = gethostname();
-        if ($host) {
-            $list = gethostbynamel($host);
-            if (is_array($list)) {
-                foreach ($list as $ip) {
-                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
-                        $ips[] = $ip;
-                    }
-                }
-            }
-        }
-
-        // 2. Fallback on Windows: use ipconfig command if gethostbynamel didn't find any or is incomplete
+        // 1. Primary for Windows: parse ipconfig with filter
         if (stripos(PHP_OS, 'WIN') !== false) {
             $output = [];
             @exec('ipconfig', $output);
+            $currentAdapter = '';
             foreach ($output as $line) {
+                // Check if the line is a header (e.g., "Wireless LAN adapter Wi-Fi:" or "Ethernet adapter Ethernet:")
+                // Supports English headers and Arabic characters for localized Windows versions
+                if (preg_match('/^(Wireless LAN adapter|Ethernet adapter|Adapter|إيثرنت|شبكة)\s+(.*):$/i', trim($line), $matches)) {
+                    $currentAdapter = trim($matches[2]);
+                }
+                
                 if (preg_match('/IPv4 Address[\.\s]+:\s*([0-9\.]+)/i', $line, $matches)) {
                     $ip = trim($matches[1]);
-                    if ($ip !== '127.0.0.1' && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
+                        // Skip APIPA (169.254.x.x)
+                        if (str_starts_with($ip, '169.254.')) {
+                            continue;
+                        }
+                        
+                        // Exclude virtual adapters
+                        $lowerAdapter = strtolower($currentAdapter);
+                        if (
+                            str_contains($lowerAdapter, 'virtualbox') || 
+                            str_contains($lowerAdapter, 'vmware') || 
+                            str_contains($lowerAdapter, 'vethernet') || 
+                            str_contains($lowerAdapter, 'hyper-v') || 
+                            str_contains($lowerAdapter, 'host-only') ||
+                            str_contains($lowerAdapter, 'loopback')
+                        ) {
+                            continue;
+                        }
+                        
                         $ips[] = $ip;
                     }
                 }
             }
         } else {
-            // Fallback on Linux / macOS
+            // Linux / macOS fallback: parse hostname -I
             $output = @shell_exec("hostname -I 2>/dev/null");
             if ($output) {
                 $parts = explode(' ', trim($output));
                 foreach ($parts as $ip) {
                     $ip = trim($ip);
                     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
-                        $ips[] = $ip;
+                        if (!str_starts_with($ip, '169.254.')) {
+                            $ips[] = $ip;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Ultimate Fallback: gethostbynamel if no physical network IPs were resolved
+        if (empty($ips)) {
+            $host = gethostname();
+            if ($host) {
+                $list = gethostbynamel($host);
+                if (is_array($list)) {
+                    foreach ($list as $ip) {
+                        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
+                            if (!str_starts_with($ip, '169.254.')) {
+                                $ips[] = $ip;
+                            }
+                        }
                     }
                 }
             }
