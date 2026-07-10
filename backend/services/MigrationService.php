@@ -16,8 +16,15 @@ class MigrationService {
 
     public function __construct() {
         $this->db = Database::getInstance();
-        $this->migrationsPath = realpath(__DIR__ . '/../../database/migrations/') . DIRECTORY_SEPARATOR;
-        $this->flagFile = __DIR__ . '/../storage/migrations_hash.flag';
+        $pharRunning = \Phar::running(false);
+        if ($pharRunning) {
+            $baseDir = dirname($pharRunning);
+            $this->migrationsPath = 'phar://' . str_replace('\\', '/', $pharRunning) . '/database/migrations/';
+            $this->flagFile = $baseDir . '/storage/migrations_hash.flag';
+        } else {
+            $this->migrationsPath = realpath(__DIR__ . '/../../database/migrations/') . DIRECTORY_SEPARATOR;
+            $this->flagFile = __DIR__ . '/../storage/migrations_hash.flag';
+        }
     }
 
     /**

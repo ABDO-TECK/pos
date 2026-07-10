@@ -219,7 +219,10 @@ class BackupService implements BackupServiceInterface {
         }
 
         // حذف flag الـ Smart Skip
-        $flagFile = realpath(__DIR__ . '/../storage/migrations_hash.flag');
+        $pharRunning = \Phar::running(false);
+        $flagFile = $pharRunning
+            ? dirname($pharRunning) . '/storage/migrations_hash.flag'
+            : realpath(__DIR__ . '/../storage/migrations_hash.flag');
         if ($flagFile && is_file($flagFile)) {
             @unlink($flagFile);
         }

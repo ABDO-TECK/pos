@@ -20,6 +20,20 @@ if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
 }
 require_once __DIR__ . '/vendor/autoload.php';
 
+// ── Auto-Migrate on Update (Self-Healing) ──────────────────────
+$pharRunning = \Phar::running(false);
+if ($pharRunning) {
+    $flagFile = dirname($pharRunning) . '/storage/migrations_hash.flag';
+    if (!file_exists($flagFile) || filemtime($pharRunning) > filemtime($flagFile)) {
+        try {
+            require_once __DIR__ . '/Services/MigrationService.php';
+            (new \App\Services\MigrationService())->runAllMigrations();
+        } catch (\Throwable $e) {
+            // Suppress errors during boot-level auto-migration to avoid blocking index.php
+        }
+    }
+}
+
 // ── Event System ──────────────────────────────────────────────
 \App\Helpers\CacheSubscriber::register();
 
