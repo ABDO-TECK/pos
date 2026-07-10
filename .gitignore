@@ -31,6 +31,7 @@ backend/cache/
 backend/logs/
 backend/*.log
 backend/.env
+backend/.phpunit.result.cache
 backend/vendor/
 backend/adminer.php
 backend/adminer-local.php
