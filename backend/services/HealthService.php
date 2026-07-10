@@ -23,85 +23,354 @@ class HealthService
     public function runHealthCheck(): array
     {
         $checks = [];
-        $overallHealthy = true;
-        $warnings = [];
+        $criticalFailed = false;
+        $hasWarnings = false;
 
-        // ── 1. Database ──
+        // ── 1. Database Check ──
         try {
             $db = Database::getInstance();
-            $db->query('SELECT 1');
             $start = microtime(true);
             $db->query('SELECT 1');
+            $latency = round((microtime(true) - $start) * 1000, 2);
             $checks['database'] = [
-                'status'     => 'connected',
-                'latency_ms' => round((microtime(true) - $start) * 1000, 2),
+                'status'     => 'ok',
+                'severity'   => 'critical',
+                'message'    => "Connected successfully. Latency: {$latency}ms"
             ];
         } catch (Throwable $e) {
-            $checks['database'] = ['status' => 'error', 'message' => $e->getMessage()];
-            $overallHealthy = false;
-        }
-
-        // ── 2. Disk Space ──
-        $storagePath = __DIR__ . '/../storage';
-        $freeBytes  = @disk_free_space($storagePath);
-        $totalBytes = @disk_total_space($storagePath);
-        if ($freeBytes !== false && $totalBytes !== false) {
-            $freeGB = round($freeBytes / (1024 * 1024 * 1024), 2);
-            $totalGB = round($totalBytes / (1024 * 1024 * 1024), 2);
-            $usedPercent = round((1 - $freeBytes / $totalBytes) * 100, 1);
-            $checks['disk'] = [
-                'status'       => $freeGB < 1 ? 'warning' : 'ok',
-                'free_gb'      => $freeGB,
-                'total_gb'     => $totalGB,
-                'used_percent' => $usedPercent,
+            $checks['database'] = [
+                'status'     => 'failed',
+                'severity'   => 'warning',
+                'message'    => "Database offline/skipped: " . $e->getMessage()
             ];
-            if ($freeGB < 0.5) $overallHealthy = false;
+            $hasWarnings = true;
+        }
+
+        // ── 2. Storage Check ──
+        $storagePath = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR') ?? (__DIR__ . '/../storage');
+        $storageWritable = false;
+        if (is_dir($storagePath)) {
+            $testFile = $storagePath . DIRECTORY_SEPARATOR . '.write-test-' . uniqid();
+            if (@file_put_contents($testFile, 'test') !== false) {
+                @unlink($testFile);
+                $storageWritable = true;
+            }
+        }
+        if ($storageWritable) {
+            $checks['storage'] = [
+                'status'   => 'ok',
+                'severity' => 'critical',
+                'message'  => "Storage directory is writable: {$storagePath}"
+            ];
         } else {
-            $checks['disk'] = ['status' => 'unknown'];
+            $checks['storage'] = [
+                'status'   => 'failed',
+                'severity' => 'critical',
+                'message'  => "Storage directory is not writable: {$storagePath}"
+            ];
+            $criticalFailed = true;
         }
 
-        // ── 3. Memory ──
-        $checks['memory'] = [
+        // ── 3. Logs Check ──
+        $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH') ?? (__DIR__ . '/../logs');
+        $logsWritable = false;
+        if (is_dir($logsPath)) {
+            $testFile = $logsPath . DIRECTORY_SEPARATOR . '.write-test-' . uniqid();
+            if (@file_put_contents($testFile, 'test') !== false) {
+                @unlink($testFile);
+                $logsWritable = true;
+            }
+        }
+        if ($logsWritable) {
+            $checks['logs'] = [
+                'status'   => 'ok',
+                'severity' => 'warning',
+                'message'  => "Logs directory is writable: {$logsPath}"
+            ];
+        } else {
+            $checks['logs'] = [
+                'status'   => 'failed',
+                'severity' => 'warning',
+                'message'  => "Logs directory is not writable: {$logsPath}"
+            ];
+            $hasWarnings = true;
+        }
+
+        // ── 4. Version Check ──
+        $version = '1.1.32';
+        $versionFile = __DIR__ . '/../version.json';
+        if (!file_exists($versionFile)) {
+            $versionFile = __DIR__ . '/../../../version.json';
+        }
+        if (file_exists($versionFile)) {
+            $versionData = json_decode(file_get_contents($versionFile), true);
+            if (isset($versionData['version'])) {
+                $version = $versionData['version'];
+            }
+        }
+        $checks['version'] = [
             'status'   => 'ok',
-            'usage_mb' => round(memory_get_usage(true) / (1024 * 1024), 2),
-            'peak_mb'  => round(memory_get_peak_usage(true) / (1024 * 1024), 2),
-            'limit'    => ini_get('memory_limit'),
+            'severity' => 'info',
+            'message'  => "Version: {$version}"
         ];
 
-        // ── 4. PHP Info ──
-        $checks['php'] = [
-            'version'    => PHP_VERSION,
-            'extensions' => [
-                'pdo_mysql' => extension_loaded('pdo_mysql'),
-                'mbstring'  => extension_loaded('mbstring'),
-                'json'      => extension_loaded('json'),
-                'redis'     => extension_loaded('redis'),
-            ],
+        // ── 5. Migrations Check ──
+        $metadataPath = getenv('RUNTIME_METADATA_PATH');
+        $migrationCheck = [
+            'status'   => 'ok',
+            'severity' => 'info',
+            'message'  => 'No migration metadata registry found (development/initial state).'
         ];
 
-        // ── 5. Security Warnings ──
-        $defaultPassHash = defined('DEFAULT_PASSWORD_HASH') ? DEFAULT_PASSWORD_HASH : '';
-        if ($defaultPassHash) {
-            try {
-                $db = Database::getInstance();
-                $stmt = $db->prepare('SELECT COUNT(*) FROM users WHERE password = ?');
-                $stmt->execute([$defaultPassHash]);
-                $defaultPassCount = (int) $stmt->fetchColumn();
-                if ($defaultPassCount > 0) {
-                    $warnings[] = "⚠️ يوجد {$defaultPassCount} مستخدم(ين) بكلمة المرور الافتراضية. يرجى تغييرها فوراً.";
+        if ($metadataPath && file_exists($metadataPath)) {
+            $metadataContent = @file_get_contents($metadataPath);
+            if ($metadataContent) {
+                $metadata = json_decode($metadataContent, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($metadata['migrationState'])) {
+                    $state = $metadata['migrationState'];
+                    $v = $metadata['appVersion'] ?? 'unknown';
+                    
+                    // Parse file migrations
+                    $fileMigrations = $metadata['fileMigrations'] ?? [];
+                    $hasFileFailed = false;
+                    $hasFileConflict = false;
+                    $conflictDetails = [];
+                    foreach ($fileMigrations as $key => $migration) {
+                        $status = $migration['status'] ?? '';
+                        if ($status === 'failed') {
+                            $hasFileFailed = true;
+                        } elseif ($status === 'conflict' || $status === 'migrated_with_conflict_copy') {
+                            $hasFileConflict = true;
+                            $conflictDetails[] = $key;
+                        }
+                    }
+
+                    // Parse mysql migration preflight status
+                    $mysqlMigration = $metadata['mysqlMigration'] ?? [];
+                    $mysqlStatus = $mysqlMigration['status'] ?? 'not_started';
+
+                    // Parse mysql rollback status
+                    $mysqlRollback = $metadata['mysqlRollback'] ?? [];
+                    $rollbackStatus = $mysqlRollback['status'] ?? 'not_started';
+
+                    if ($hasFileFailed) {
+                        $migrationCheck = [
+                            'status'   => 'failed',
+                            'severity' => 'warning',
+                            'message'  => "One or more file migrations failed. Active version: {$v}."
+                        ];
+                        $hasWarnings = true;
+                    } elseif (in_array($mysqlStatus, ['failed', 'verify_failed'])) {
+                        $migrationCheck = [
+                            'status'   => 'failed',
+                            'severity' => 'warning',
+                            'message'  => "MySQL migration failed or verify failed. Status: {$mysqlStatus}. Active version: {$v}."
+                        ];
+                        $hasWarnings = true;
+                    } elseif (in_array($mysqlStatus, ['locked', 'access_denied', 'process_detected_copy_skipped', 'backup_skipped_size_limit', 'unknown_lock_state', 'destination_not_empty', 'external_mysql_process_detected'])) {
+                        $migrationCheck = [
+                            'status'   => 'pending',
+                            'severity' => 'warning',
+                            'message'  => "MySQL migration issue detected: {$mysqlStatus}. Safe files migrated successfully."
+                        ];
+                        $hasWarnings = true;
+                    } elseif ($rollbackStatus === 'rollback_completed') {
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "MySQL rollback completed successfully."
+                        ];
+                    } elseif ($rollbackStatus === 'rollback_restore_staged_verified') {
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "Rollback restore staging verified; final switch not performed."
+                        ];
+                    } elseif (in_array($rollbackStatus, ['rollback_restore_blocked', 'final_switch_blocked'])) {
+                        $migrationCheck = [
+                            'status'   => 'pending',
+                            'severity' => 'warning',
+                            'message'  => "MySQL rollback restore/switch blocked. Reason: " . ($mysqlRollback['lastError'] ?? 'unknown')
+                        ];
+                        $hasWarnings = true;
+                    } elseif (in_array($rollbackStatus, ['rollback_restore_verify_failed', 'final_switch_snapshot_failed', 'final_switch_verify_failed', 'failed'])) {
+                        $migrationCheck = [
+                            'status'   => 'failed',
+                            'severity' => 'warning',
+                            'message'  => "MySQL rollback/switch failed or verify failed. Status: {$rollbackStatus}. Active version: {$v}."
+                        ];
+                        $hasWarnings = true;
+                    } elseif ($rollbackStatus === 'rollback_blocked') {
+                        $migrationCheck = [
+                            'status'   => 'pending',
+                            'severity' => 'warning',
+                            'message'  => "MySQL rollback blocked. Reason: " . ($mysqlRollback['lastError'] ?? 'unknown')
+                        ];
+                        $hasWarnings = true;
+                    } elseif ($mysqlStatus === 'migration_committed') {
+                        $rollbackMsg = "";
+                        if ($mysqlMigration['rollbackAvailable'] ?? false) {
+                            $rollbackMsg = " Rollback is available.";
+                        }
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "MySQL controlled migration committed. Active version: {$v}.{$rollbackMsg}"
+                        ];
+                    } elseif ($mysqlStatus === 'backup_verified') {
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "MySQL preflight backup verified. Active version: {$v}."
+                        ];
+                    } elseif (in_array($mysqlStatus, ['candidate_found', 'backup_created', 'active_migration_not_enabled'])) {
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "MySQL migration status is {$mysqlStatus}. Active version: {$v}."
+                        ];
+                    } elseif ($hasFileConflict) {
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'warning',
+                            'message'  => "File migration conflict: conflict-safe legacy copies created for: " . implode(', ', $conflictDetails) . "."
+                        ];
+                        $hasWarnings = true;
+                    } elseif ($state === 'committed' || $state === 'idle') {
+                        $mysqlMsg = "";
+                        if ($mysqlStatus === 'skipped') {
+                            $mysqlMsg = " No legacy MySQL candidate directories found.";
+                        }
+                        $migrationCheck = [
+                            'status'   => 'ok',
+                            'severity' => 'info',
+                            'message'  => "Migration state is {$state}. Active version: {$v}.{$mysqlMsg}"
+                        ];
+                    } elseif ($state === 'pending' || $state === 'copying' || $state === 'verified') {
+                        $migrationCheck = [
+                            'status'   => 'pending',
+                            'severity' => 'warning',
+                            'message'  => "Migration is in progress. State: {$state}. Targeted version: {$v}."
+                        ];
+                        $hasWarnings = true;
+                    } elseif ($state === 'failed' || $state === 'reverted') {
+                        $migrationCheck = [
+                            'status'   => 'failed',
+                            'severity' => 'warning',
+                            'message'  => "Migration failed or reverted. State: {$state}."
+                        ];
+                        $hasWarnings = true;
+                    }
+                } else {
+                    $migrationCheck = [
+                        'status'   => 'failed',
+                        'severity' => 'warning',
+                        'message'  => 'Migration metadata is invalid or corrupt.'
+                    ];
+                    $hasWarnings = true;
                 }
-            } catch (Throwable $e) {}
+            }
         }
-        
-        // التحقق من كلمة مرور قاعدة البيانات الافتراضية
-        if (($_ENV['DB_PASS'] ?? '') === 'secret') {
-            $warnings[] = "⚠️ كلمة مرور قاعدة البيانات هي 'secret' (الافتراضية). يرجى تغييرها فوراً في بيئة الإنتاج لحماية بياناتك.";
+        $checks['migrations'] = $migrationCheck;
+
+        // ── 6. Disk Space Check ──
+        try {
+            $freeBytes   = @disk_free_space($storagePath) ?: 0;
+            $totalBytes  = @disk_total_space($storagePath) ?: 0;
+            $usedBytes   = $totalBytes - $freeBytes;
+            $usedPercent = $totalBytes > 0 ? round(($usedBytes / $totalBytes) * 100, 2) : 0;
+            $freeGb      = round($freeBytes / (1024 * 1024 * 1024), 2);
+            $totalGb     = round($totalBytes / (1024 * 1024 * 1024), 2);
+            $diskStatus  = $usedPercent > 90 ? 'warning' : 'ok';
+            
+            $checks['disk'] = [
+                'status'       => $diskStatus,
+                'severity'     => 'warning',
+                'message'      => "Free space: {$freeGb} GB of {$totalGb} GB ({$usedPercent}% used)",
+                'free_gb'      => $freeGb,
+                'total_gb'     => $totalGb,
+                'used_percent' => $usedPercent
+            ];
+        } catch (\Throwable $e) {
+            $checks['disk'] = [
+                'status'       => 'failed',
+                'severity'     => 'warning',
+                'message'      => 'Failed to check disk space: ' . $e->getMessage(),
+                'free_gb'      => 0.0,
+                'total_gb'     => 0.0,
+                'used_percent' => 0.0
+            ];
+            $hasWarnings = true;
+        }
+
+        // ── 7. Memory Check ──
+        try {
+            $usageBytes = memory_get_usage(true);
+            $peakBytes  = memory_get_peak_usage(true);
+            $limit      = ini_get('memory_limit');
+            
+            $checks['memory'] = [
+                'status'   => 'ok',
+                'severity' => 'info',
+                'message'  => 'Memory limit is ' . ($limit ?: 'unlimited'),
+                'usage_mb' => round($usageBytes / (1024 * 1024), 2),
+                'peak_mb'  => round($peakBytes / (1024 * 1024), 2),
+                'limit'    => $limit ?: 'unlimited'
+            ];
+        } catch (\Throwable $e) {
+            $checks['memory'] = [
+                'status'   => 'failed',
+                'severity' => 'info',
+                'message'  => 'Failed to check memory: ' . $e->getMessage(),
+                'usage_mb' => 0.0,
+                'peak_mb'  => 0.0,
+                'limit'    => 'unknown'
+            ];
+        }
+
+        // ── 8. PHP & Extensions Check ──
+        try {
+            $extensions = [
+                'pdo_mysql' => extension_loaded('pdo_mysql'),
+                'openssl'   => extension_loaded('openssl'),
+                'mbstring'  => extension_loaded('mbstring'),
+                'curl'      => extension_loaded('curl'),
+                'gd'        => extension_loaded('gd'),
+                'zip'       => extension_loaded('zip'),
+            ];
+            
+            $checks['php'] = [
+                'status'     => 'ok',
+                'severity'   => 'info',
+                'message'    => 'PHP Version ' . PHP_VERSION,
+                'version'    => PHP_VERSION,
+                'extensions' => $extensions
+            ];
+        } catch (\Throwable $e) {
+            $checks['php'] = [
+                'status'     => 'failed',
+                'severity'   => 'info',
+                'message'    => 'Failed to check PHP info: ' . $e->getMessage(),
+                'version'    => PHP_VERSION,
+                'extensions' => []
+            ];
+        }
+
+        // Overall status
+        if ($criticalFailed) {
+            $status = 'failed';
+        } elseif ($hasWarnings) {
+            $status = 'degraded';
+        } else {
+            $status = 'ok';
         }
 
         return [
-            'healthy'  => $overallHealthy,
-            'checks'   => $checks,
-            'warnings' => $warnings,
+            'healthy'         => !$criticalFailed,
+            'critical_failed' => $criticalFailed,
+            'status'          => $status,
+            'checks'          => $checks,
+            'version'         => $version
         ];
     }
 

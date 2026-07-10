@@ -12,32 +12,48 @@ class CorsMiddleware
 {
     public function handle(callable $next): mixed
     {
-        $allowedOrigins = [
-            'http://localhost:5173',
-            'http://localhost:3000',
-            'http://127.0.0.1:5173',
-            'https://localhost:5173',
-            'https://127.0.0.1:5173',
-            'file://',
-            'app://.',
-            FRONTEND_URL,
-        ];
-
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-        $originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
-
-        // السماح بأصل من IP الشبكة المحلية (LAN)
-        if (!$originAllowed && $origin !== '') {
-            $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
-            if (preg_match($lanPattern, $origin) === 1) {
-                $originAllowed = true;
-            }
+        // Temporary logging of Origin header for packaged QA run
+        if (class_exists('App\Helpers\Logger') && $origin !== '') {
+            \App\Helpers\Logger::info("CORS Origin: '$origin', Method: '" . ($_SERVER['REQUEST_METHOD'] ?? '') . "', URI: '" . ($_SERVER['REQUEST_URI'] ?? '') . "'");
         }
 
-        // السماح بطلبات بدون Origin (Electron file:// protocol)
-        if ($origin === '' && php_sapi_name() === 'cli-server') {
-            $originAllowed = true;
+        $appEnv = EnvLoader::get('APP_ENV', 'development');
+
+        if ($appEnv === 'development') {
+            $allowedOrigins = [
+                'http://localhost:5173',
+                'http://localhost:3000',
+                'http://127.0.0.1:5173',
+                'https://localhost:5173',
+                'https://127.0.0.1:5173',
+                'file://',
+                'app://.',
+                'app://pos-app',
+                FRONTEND_URL,
+            ];
+
+            $originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
+
+            // السماح بأصل من IP الشبكة المحلية (LAN) في وضع التطوير
+            if (!$originAllowed && $origin !== '') {
+                $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
+                if (preg_match($lanPattern, $origin) === 1) {
+                    $originAllowed = true;
+                }
+            }
+
+            // السماح بطلبات بدون Origin
+            if ($origin === '' && php_sapi_name() === 'cli-server') {
+                $originAllowed = true;
+            }
+        } else {
+            // Production - allow only the custom protocol origin
+            $allowedOrigins = [
+                'app://pos-app',
+            ];
+            $originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
         }
 
         if ($originAllowed && $origin !== '') {

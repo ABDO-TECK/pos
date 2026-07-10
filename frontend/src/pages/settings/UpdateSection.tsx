@@ -1,33 +1,93 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RefreshCw, List } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { applyUpdate } from '../../api/endpoints'
 import useUpdateStore from '../../store/updateStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
-import { extractApiError } from '../../utils/apiError'
 
 export default function UpdateSection() {
   const { confirm } = useConfirmStore()
-  const { hasUpdate, currentVersion, latestVersion, changelog, isChecking, forceCheck } = useUpdateStore()
+  const { hasUpdate, currentVersion, latestVersion, changelog, isChecking, forceCheck, updatesDisabled, updatesDisabledMessage, updatesUnreachable, updateErrorMessage } = useUpdateStore()
 
   const [applyingUpdate, setApplyingUpdate] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
+  const [desktopUpdaterStatus, setDesktopUpdaterStatus] = useState<UpdaterStatus | null>(null)
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.updater?.onStatus?.(async (status) => {
+      setDesktopUpdaterStatus(status)
+      appendUpdaterLog(status)
+
+      if (status.state === 'ready_to_install' && status.canInstall) {
+        setApplyingUpdate(false)
+        const shouldInstall = await confirm('تم تحميل التحديث. هل تريد إعادة تشغيل التطبيق الآن لتثبيته؟')
+        if (shouldInstall) {
+          setApplyingUpdate(true)
+          await window.electronAPI?.updater?.install()
+        }
+      }
+
+      if (status.state === 'error' || status.state === 'update_not_available' || status.state === 'developer_only') {
+        setApplyingUpdate(false)
+      }
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [confirm])
+
+  const appendUpdaterLog = (status: UpdaterStatus) => {
+    const line = formatUpdaterStatus(status)
+    if (!line) return
+    setUpdateLogs((logs) => [...logs, line])
+  }
 
   const handleCheckUpdate = async () => {
     try {
       const data = await forceCheck()
+      if (data && (data as any).updates_disabled) {
+        toast.error((data as any).message || 'خادم التحديثات غير مهيأ.')
+        return
+      }
+      if (data && (data as any).updates_unreachable) {
+        toast.error(formatUpdateError(data as Record<string, unknown>))
+        return
+      }
       if (data?.has_update) {
         toast.success('تم العثور على تحديث جديد!')
         setShowChangelog(true)
       } else {
         toast.success('النظام محدّث لأحدث إصدار')
       }
-    } catch (err: any) { toast.error(extractApiError(err, 'فشل التحقق من التحديثات')) }
+    } catch (err: any) {
+      toast.error(formatUpdateError(err.response?.data?.data || err.response?.data || err))
+    }
   }
 
   const handleApplyUpdate = async (force = false) => {
+    const desktopUpdater = window.electronAPI?.updater
+    const updaterStatus = desktopUpdater ? await desktopUpdater.getStatus() : null
+    if (desktopUpdater && updaterStatus?.isPackaged) {
+      setApplyingUpdate(true)
+      setUpdateLogs([])
+      try {
+        const status = await desktopUpdater.download()
+        setDesktopUpdaterStatus(status)
+        appendUpdaterLog(status)
+        if (status.state === 'error') {
+          toast.error(status.error || 'فشل تحميل تحديث سطح المكتب.')
+          setApplyingUpdate(false)
+        }
+      } catch (err: any) {
+        toast.error(err?.message || 'فشل تحميل تحديث سطح المكتب.')
+        setApplyingUpdate(false)
+      }
+      return
+    }
+
     if (!force) {
       if (!(await confirm('سيتم إنشاء نسخة احتياطية من قاعدة البيانات ثم تحديث ملفات النظام والمكتبات تلقائياً. هل أنت متأكد من رغبتك بالاستمرار؟ (قد يستغرق الأمر دقيقة أو اثنتين)'))) return
     }
@@ -73,24 +133,54 @@ export default function UpdateSection() {
         التحقق من توفر تحديثات جديدة للنظام من المطور وتطبيقها بضغطة زر واحدة مجاناً بفضل نظام التشغيل السحابي.
       </p>
       
-      <div style={{
-        padding: '1rem', 
-        borderRadius: 'var(--radius)', 
-        background: hasUpdate ? 'rgba(40, 167, 69, 0.1)' : 'var(--bg)',
-        border: hasUpdate ? '1px solid rgba(40, 167, 69, 0.3)' : '1px solid var(--border)'
-      }}>
-        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: hasUpdate ? 'var(--success)' : 'var(--text)' }}>
-          {hasUpdate ? '🎉 تحديث جديد متوفر!' : '✅ النظام مُحدَّث'}
-        </h3>
-        <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem' }}>
-          الإصدار الحالي: <strong>{currentVersion ? `v${currentVersion}` : 'غير معروف'}</strong>
-        </p>
-        {latestVersion && (
+      {updatesDisabled ? (
+        <div style={{
+          padding: '1rem', 
+          borderRadius: 'var(--radius)', 
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)'
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: 'var(--danger)' }}>
+            ⚠️ {updatesDisabledMessage || 'خادم التحديثات غير مهيأ.'}
+          </h3>
           <p style={{ margin: 0, fontSize: '0.85rem' }}>
-            أحدث إصدار متاح: <strong>v{latestVersion}</strong>
+            الإصدار الحالي: <strong>{currentVersion ? `v${currentVersion}` : 'غير معروف'}</strong>
           </p>
-        )}
-      </div>
+        </div>
+      ) : updatesUnreachable ? (
+        <div style={{
+          padding: '1rem', 
+          borderRadius: 'var(--radius)', 
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '1px solid rgba(245, 158, 11, 0.3)'
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: 'var(--warning)' }}>
+            ⚠️ {updateErrorMessage || 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'}
+          </h3>
+          <p style={{ margin: 0, fontSize: '0.85rem' }}>
+            الإصدار الحالي: <strong>{currentVersion ? `v${currentVersion}` : 'غير معروف'}</strong>
+          </p>
+        </div>
+      ) : (
+        <div style={{
+          padding: '1rem', 
+          borderRadius: 'var(--radius)', 
+          background: hasUpdate ? 'rgba(40, 167, 69, 0.1)' : 'var(--bg)',
+          border: hasUpdate ? '1px solid rgba(40, 167, 69, 0.3)' : '1px solid var(--border)'
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: hasUpdate ? 'var(--success)' : 'var(--text)' }}>
+            {hasUpdate ? '🎉 تحديث جديد متوفر!' : '✅ النظام مُحدَّث'}
+          </h3>
+          <p style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem' }}>
+            الإصدار الحالي: <strong>{currentVersion ? `v${currentVersion}` : 'غير معروف'}</strong>
+          </p>
+          {latestVersion && (
+            <p style={{ margin: 0, fontSize: '0.85rem' }}>
+              أحدث إصدار متاح: <strong>v{latestVersion}</strong>
+            </p>
+          )}
+        </div>
+      )}
 
       {(applyingUpdate || updateLogs.length > 0) && (
         <div style={{ padding: '1rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginTop: '0.5rem' }}>
@@ -163,7 +253,7 @@ export default function UpdateSection() {
            className="btn btn-primary"
            style={{ background: 'var(--success)', border: 'none' }}
          >
-           {applyingUpdate ? 'جاري التحديث...' : 'تحديث الآن'}
+           {formatUpdateButtonLabel(applyingUpdate, desktopUpdaterStatus)}
          </button>
         )}
       </div>
@@ -182,4 +272,54 @@ export default function UpdateSection() {
       )}
     </section>
   )
+}
+
+function formatUpdateButtonLabel(applyingUpdate: boolean, status: UpdaterStatus | null): string {
+  if (status?.state === 'downloading' && status.progress?.percent != null) {
+    return `جاري التحميل ${Math.round(status.progress.percent)}%`
+  }
+  if (status?.state === 'ready_to_install') return 'جاهز للتثبيت'
+  if (status?.state === 'restarting') return 'جاري إعادة التشغيل...'
+  return applyingUpdate ? 'جاري التحديث...' : 'تحديث الآن'
+}
+
+function formatUpdaterStatus(status: UpdaterStatus): string {
+  switch (status.state) {
+    case 'checking':
+      return '🔎 جاري التحقق من بيانات إصدار GitHub...'
+    case 'update_available':
+      return `✅ تحديث سطح مكتب متاح${status.updateInfo?.version ? `: v${status.updateInfo.version}` : ''}`
+    case 'update_not_available':
+      return '✅ لا يوجد تحديث سطح مكتب جديد في GitHub Releases.'
+    case 'downloading':
+      return `📥 جاري تنزيل التحديث${status.progress?.percent != null ? ` (${Math.round(status.progress.percent)}%)` : '...'}`
+    case 'ready_to_install':
+      return '✅ تم تحميل التحديث وأصبح جاهزاً للتثبيت.'
+    case 'restarting':
+      return '🔄 سيتم إعادة تشغيل التطبيق لتثبيت التحديث.'
+    case 'developer_only':
+      return '⚠️ تحديث سطح المكتب عبر Electron متاح في النسخة المعبأة فقط.'
+    case 'error':
+      return `❌ ${status.error || 'فشل تحديث سطح المكتب.'}`
+    default:
+      return ''
+  }
+}
+
+function formatUpdateError(data: Record<string, unknown> | undefined): string {
+  const baseMessage = typeof data?.message === 'string'
+    ? data.message
+    : 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'
+  const errorCode = typeof data?.errorCode === 'string'
+    ? data.errorCode
+    : (typeof data?.status === 'string' ? data.status : null)
+  const details = typeof data?.details === 'string' ? data.details : null
+  const checkedUrl = typeof data?.checkedUrl === 'string' ? data.checkedUrl : null
+  const technicalParts = [
+    errorCode ? `code: ${errorCode}` : null,
+    details ? `details: ${details}` : null,
+    checkedUrl ? `url: ${checkedUrl}` : null,
+  ].filter(Boolean)
+
+  return technicalParts.length ? `${baseMessage} (${technicalParts.join(' | ')})` : baseMessage
 }

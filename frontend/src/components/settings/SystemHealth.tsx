@@ -30,7 +30,11 @@ export default function SystemHealth() {
     setError('')
     try {
       const res = await getHealthCheck()
-      setData(res.data.data ?? (res.data as any))
+      const healthData = res.data.data ?? (res.data as any)
+      setData({
+        ...healthData,
+        timestamp: healthData?.timestamp ?? new Date().toISOString(),
+      })
     } catch (err) { setError('فشل الاتصال بالخادم')
     } finally {
       setLoading(false)
@@ -57,26 +61,26 @@ export default function SystemHealth() {
           {/* Database */}
           <div className={styles.card}>
             <div className={styles.cardTitle}>
-              <Database size={16} /> قاعدة البيانات <StatusIcon status={data.checks.database.status} />
+              <Database size={16} /> قاعدة البيانات <StatusIcon status={data?.checks?.database?.status ?? 'unknown'} />
             </div>
-            <div className={styles.row}><span>الحالة</span><span>{data.checks.database.status}</span></div>
-            {data.checks.database.latency_ms != null && (
-              <div className={styles.row}><span>زمن الاستجابة</span><span>{data.checks.database.latency_ms} ms</span></div>
+            <div className={styles.row}><span>الحالة</span><span>{data?.checks?.database?.status ?? 'unknown'}</span></div>
+            {data?.checks?.database?.latency_ms != null && (
+              <div className={styles.row}><span>زمن الاستجابة</span><span>{data?.checks?.database?.latency_ms} ms</span></div>
             )}
           </div>
 
           {/* Disk */}
           <div className={styles.card}>
             <div className={styles.cardTitle}>
-              <HardDrive size={16} /> القرص الصلب <StatusIcon status={data.checks.disk.status} />
+              <HardDrive size={16} /> القرص الصلب <StatusIcon status={data?.checks?.disk?.status ?? 'unknown'} />
             </div>
-            <div className={styles.row}><span>المساحة المتاحة</span><span>{data.checks.disk.free_gb} GB</span></div>
-            <div className={styles.row}><span>نسبة الاستخدام</span><span>{data.checks.disk.used_percent}%</span></div>
+            <div className={styles.row}><span>المساحة المتاحة</span><span>{data?.checks?.disk?.free_gb ?? 0} GB</span></div>
+            <div className={styles.row}><span>نسبة الاستخدام</span><span>{data?.checks?.disk?.used_percent ?? 0}%</span></div>
             <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{
                 height: '100%', borderRadius: 3,
-                width: `${data.checks.disk.used_percent}%`,
-                background: data.checks.disk.used_percent > 90 ? 'var(--danger)' : 'var(--primary)',
+                width: `${data?.checks?.disk?.used_percent ?? 0}%`,
+                background: (data?.checks?.disk?.used_percent ?? 0) > 90 ? 'var(--danger)' : 'var(--primary)',
               }} />
             </div>
           </div>
@@ -84,19 +88,19 @@ export default function SystemHealth() {
           {/* Memory */}
           <div className={styles.card}>
             <div className={styles.cardTitle}>
-              <Cpu size={16} /> الذاكرة <StatusIcon status={data.checks.memory.status} />
+              <Cpu size={16} /> الذاكرة <StatusIcon status={data?.checks?.memory?.status ?? 'unknown'} />
             </div>
-            <div className={styles.row}><span>الاستخدام الحالي</span><span>{data.checks.memory.usage_mb} MB</span></div>
-            <div className={styles.row}><span>الذروة</span><span>{data.checks.memory.peak_mb} MB</span></div>
-            <div className={styles.row}><span>الحد الأقصى</span><span>{data.checks.memory.limit}</span></div>
+            <div className={styles.row}><span>الاستخدام الحالي</span><span>{data?.checks?.memory?.usage_mb ?? 0} MB</span></div>
+            <div className={styles.row}><span>الذروة</span><span>{data?.checks?.memory?.peak_mb ?? 0} MB</span></div>
+            <div className={styles.row}><span>الحد الأقصى</span><span>{data?.checks?.memory?.limit ?? 'unknown'}</span></div>
           </div>
 
           {/* PHP */}
           <div className={styles.card}>
             <div className={styles.cardTitle}>
-              ⚙️ PHP {data.checks.php.version}
+              ⚙️ PHP {data?.checks?.php?.version ?? 'unknown'}
             </div>
-            {Object.entries(data.checks.php.extensions).map(([ext, loaded]) => (
+            {data?.checks?.php?.extensions && Object.entries(data.checks.php.extensions).map(([ext, loaded]) => (
               <div key={ext} className={styles.row}>
                 <span>{ext}</span>
                 <span style={{ color: loaded ? 'var(--primary)' : 'var(--danger)' }}>
@@ -110,10 +114,10 @@ export default function SystemHealth() {
 
       {data && (
         <div className={styles.footer}>
-          آخر فحص: {new Date(data.timestamp).toLocaleString('ar-EG')}
+          آخر فحص: {data.timestamp ? new Date(data.timestamp).toLocaleString('ar-EG') : 'غير معروف'}
           {' — '}
-          الحالة العامة: <strong style={{ color: data.status === 'healthy' ? 'var(--primary)' : 'var(--danger)' }}>
-            {data.status === 'healthy' ? '✓ سليم' : '⚠ يحتاج انتباه'}
+          الحالة العامة: <strong style={{ color: data.status === 'healthy' || data.status === 'ok' ? 'var(--primary)' : 'var(--danger)' }}>
+            {(data.status === 'healthy' || data.status === 'ok') ? '✓ سليم' : '⚠ يحتاج انتباه'}
           </strong>
         </div>
       )}

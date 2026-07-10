@@ -12,10 +12,20 @@ use RuntimeException;
 
 
 class BackupService implements BackupServiceInterface {
-    private PDO $db;
+    private ?PDO $db = null;
 
-    public function __construct(PDO $db) {
+    public function __construct() {
+    }
+
+    public function setDb(PDO $db): void {
         $this->db = $db;
+    }
+
+    private function getDb(): PDO {
+        if ($this->db === null) {
+            $this->db = Database::getInstance();
+        }
+        return $this->db;
     }
 
     /**
@@ -48,7 +58,7 @@ class BackupService implements BackupServiceInterface {
      * @return void
      */
     public function streamBackup(): void {
-        $tables = $this->db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+        $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
 
         echo "-- POS Database Backup\n";
         echo "-- Generated: " . date('Y-m-d H:i:s') . "\n";
@@ -58,7 +68,7 @@ class BackupService implements BackupServiceInterface {
 
         foreach ($tables as $table) {
             // Table structure
-            $createStmt = $this->db->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
+            $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
             $ddl = $createStmt['Create Table'] ?? null;
             if ($ddl === null && is_array($createStmt)) {
                 $vals = array_values($createStmt);
@@ -74,7 +84,7 @@ class BackupService implements BackupServiceInterface {
             flush();
 
             // Table data (Streamed row by row)
-            $stmt = $this->db->query("SELECT * FROM `$table`");
+            $stmt = $this->getDb()->query("SELECT * FROM `$table`");
             $firstRow = true;
             
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -87,7 +97,7 @@ class BackupService implements BackupServiceInterface {
                 }
 
                 $escaped = array_map(function ($v) {
-                    return $v === null ? 'NULL' : $this->db->quote((string)$v);
+                    return $v === null ? 'NULL' : $this->getDb()->quote((string)$v);
                 }, array_values($row));
                 
                 echo '(' . implode(', ', $escaped) . ')';
@@ -229,14 +239,14 @@ class BackupService implements BackupServiceInterface {
      * Generate backup SQL string in memory.
      */
     private function generateBackupSql(): string {
-        $tables = $this->db->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+        $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
 
         $sql  = "-- POS Auto-Update Backup\n";
         $sql .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
         $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
 
         foreach ($tables as $table) {
-            $createStmt = $this->db->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
+            $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
             $ddl = $createStmt['Create Table'] ?? null;
             if ($ddl === null && is_array($createStmt)) {
                 $vals = array_values($createStmt);
@@ -250,14 +260,14 @@ class BackupService implements BackupServiceInterface {
             $sql .= "DROP TABLE IF EXISTS `$table`;\n";
             $sql .= $ddl . ";\n\n";
 
-            $rows = $this->db->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
+            $rows = $this->getDb()->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
             if (!empty($rows)) {
                 $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
                 $sql .= "INSERT INTO `$table` ($columns) VALUES\n";
                 $values = [];
                 foreach ($rows as $row) {
                     $escaped = array_map(function ($v) {
-                        return $v === null ? 'NULL' : $this->db->quote((string)$v);
+                        return $v === null ? 'NULL' : $this->getDb()->quote((string)$v);
                     }, array_values($row));
                     $values[] = '(' . implode(', ', $escaped) . ')';
                 }

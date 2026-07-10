@@ -19,11 +19,33 @@ interface ElectronAPI {
 
   showNotification: (title: string, body: string) => Promise<void>;
 
-  onUpdateAvailable: (callback: (info: any) => void) => void;
-  onUpdateDownloaded: (callback: (info: any) => void) => void;
-  installUpdate: () => Promise<void>;
+  updater?: {
+    check: () => Promise<UpdaterStatus>;
+    download: () => Promise<UpdaterStatus>;
+    install: () => Promise<UpdaterStatus>;
+    getStatus: () => Promise<UpdaterStatus>;
+    onStatus: (callback: (status: UpdaterStatus) => void) => () => void;
+  };
 }
 
 interface Window {
   electronAPI?: ElectronAPI;
+}
+
+interface UpdaterStatus {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'update_available'
+    | 'update_not_available'
+    | 'downloading'
+    | 'ready_to_install'
+    | 'restarting'
+    | 'developer_only'
+    | 'error';
+  isPackaged: boolean;
+  updateInfo?: { version?: string; [key: string]: unknown } | null;
+  progress?: { percent?: number; transferred?: number; total?: number } | null;
+  error?: string | null;
+  canInstall?: boolean;
 }

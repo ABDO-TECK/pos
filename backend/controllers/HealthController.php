@@ -17,13 +17,12 @@ class HealthController {
     public function check() {
         $result = $this->healthService->runHealthCheck();
 
-        $statusCode = $result['healthy'] ? 200 : 503;
+        $statusCode = $result['critical_failed'] ? 503 : 200;
         return Response::json([
-            'status'          => $result['healthy'] ? 'healthy' : 'unhealthy',
+            'status'          => $result['status'],
+            'critical_failed' => $result['critical_failed'],
             'checks'          => $result['checks'],
-            'warnings'        => $result['warnings'],
-            'timestamp'       => date('c'),
-            'uptime_seconds'  => (int)(microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']),
+            'version'         => $result['version']
         ], $statusCode);
     }
 

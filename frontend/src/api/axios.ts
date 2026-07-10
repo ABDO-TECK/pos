@@ -20,6 +20,12 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers['X-XSRF-TOKEN'] = xsrf
   }
 
+  // Prepend dynamic API base URL if available in Electron runtime
+  const dynamicBase = (window as any).API_BASE_URL
+  if (dynamicBase) {
+    config.baseURL = `${dynamicBase}/api/v1`
+  }
+
   return config
 })
 
@@ -36,10 +42,15 @@ api.interceptors.response.use(
   async (err: AxiosError) => {
     const originalRequest = err.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    // Try refresh on 401 (except login and refresh endpoints)
+    // If the request was for update check, completely skip refresh, auth redirect, localStorage clear, and reload
+    const isUpdateCheck = originalRequest?.url?.includes('/update/check') || err.config?.url?.includes('/update/check');
+
+    // Try refresh on 401 (except login, refresh, client-log, and update-check endpoints)
     if (err.response?.status === 401
+        && !isUpdateCheck
         && !originalRequest?.url?.includes('/login')
         && !originalRequest?.url?.includes('/refresh')
+        && !originalRequest?.url?.includes('/client-log')
         && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -67,7 +78,7 @@ api.interceptors.response.use(
     // Handle 403 force_password_change — update the auth store silently
     const data = err.response?.data as Record<string, unknown> | undefined;
     const errors = data?.errors as Record<string, unknown> | undefined;
-    if (err.response?.status === 403 && errors?.force_password_change) {
+    if (err.response?.status === 403 && errors?.force_password_change && !isUpdateCheck) {
       try {
         const raw = localStorage.getItem('pos_auth')
         if (raw) {
@@ -86,8 +97,9 @@ api.interceptors.response.use(
       return Promise.reject(err)
     }
 
-    // Skip global toast if explicitly requested via custom config
-    if (err.config && (err.config as unknown as Record<string, unknown>).hideGlobalError) {
+    // Skip global toast if explicitly requested via custom config or if it is an update check
+    const isGlobalErrorHidden = err.config && (err.config as unknown as Record<string, unknown>).hideGlobalError;
+    if (isGlobalErrorHidden || isUpdateCheck) {
       return Promise.reject(err)
     }
 

@@ -7,7 +7,8 @@ use App\Helpers\EnvLoader;
 
 // ── تحميل ملف البيئة (.env) ───────────────────────────────────
 require_once __DIR__ . '/../Helpers/EnvLoader.php';
-EnvLoader::load(__DIR__ . '/../.env');
+$envPath = getenv('ENV_PATH') ?: __DIR__ . '/../.env';
+EnvLoader::load($envPath);
 // في بيئة الإنتاج: تحقق من المتغيرات الإلزامية
 if (EnvLoader::get('APP_ENV', 'development') === 'production') {
     EnvLoader::validate([

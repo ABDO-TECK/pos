@@ -21,8 +21,8 @@ export function useInventorySSE(enabled: boolean = true) {
   useEffect(() => {
     if (!enabled) return
 
-    const baseUrl = (import.meta.env.VITE_API_URL as string) || ''
-    const url = `${baseUrl}/api/sse/inventory?last_id=${lastIdRef.current}`
+    const rawBaseUrl = (window as any).API_BASE_URL || (import.meta.env.VITE_API_URL as string) || ''
+    const url = `${rawBaseUrl}/api/sse/inventory?last_id=${lastIdRef.current}`
 
     if (typeof EventSource === 'undefined') {
       console.warn('[SSE] EventSource not supported in this browser. Real-time updates disabled.')

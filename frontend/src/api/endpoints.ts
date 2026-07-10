@@ -63,7 +63,7 @@ export const getSettings = () => api.get<ApiResponse<AppSettings>>('/settings')
 export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiResponse<AppSettings>>('/settings', data)
 
 // Updates
-export const checkUpdate = () => api.get<ApiResponse<UpdateCheckResult>>('/update/check')
+export const checkUpdate = (config?: any) => api.get<ApiResponse<UpdateCheckResult>>('/update/check', config)
 export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', force ? { force: true } : null, { timeout: 300_000 })
 
 // Backup

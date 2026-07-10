@@ -30,6 +30,17 @@ class CsrfMiddleware {
                 return $next();
             }
         }
+
+        // Skip CSRF check for desktop runtime (Electron)
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        if (
+            str_starts_with($origin, 'app://') ||
+            str_starts_with($origin, 'file://') ||
+            stripos($userAgent, 'electron') !== false
+        ) {
+            return $next();
+        }
         
         $cookieToken = $_COOKIE['XSRF-TOKEN'] ?? '';
         $headerToken = $this->getHeaderToken();

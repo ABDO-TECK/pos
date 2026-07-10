@@ -40,6 +40,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: null,
       manifest: {
         name: 'POS System',
         short_name: 'POS',

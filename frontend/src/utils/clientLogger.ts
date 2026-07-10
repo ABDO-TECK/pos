@@ -4,13 +4,40 @@
  * يتم تجميع الأخطاء (batching) وإرسالها دفعة واحدة لتقليل الطلبات.
  * يتم تخزين الأخطاء مؤقتاً في ذاكرة المتصفح وإرسالها كل 5 ثوانٍ.
  */
-import api from '../api/axios'
+import axios from 'axios'
 
 interface ClientLogEntry {
   level: 'error' | 'warning' | 'info'
   message: string
   context?: Record<string, unknown>
 }
+
+// Helper: read a cookie by name
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+  return match ? decodeURIComponent(match[2]) : null
+}
+
+// ── Isolated Axios instance for logs ──────────────────────────
+const loggerApi = axios.create({
+  baseURL: '/api/v1',
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
+})
+
+loggerApi.interceptors.request.use((config) => {
+  const xsrf = getCookie('XSRF-TOKEN')
+  if (xsrf && config.headers) {
+    config.headers['X-XSRF-TOKEN'] = xsrf
+  }
+  
+  // Prepend dynamic API base URL if available in Electron runtime
+  const dynamicBase = (window as any).API_BASE_URL
+  if (dynamicBase) {
+    config.baseURL = `${dynamicBase}/api/v1`
+  }
+  return config
+})
 
 // ── تجميع الأخطاء ─────────────────────────────────────────────
 const queue: ClientLogEntry[] = []
@@ -30,10 +57,7 @@ async function flush() {
   const batch = queue.splice(0, MAX_QUEUE)
 
   try {
-    await api.post('/client-log', { logs: batch }, {
-      // @ts-ignore - custom config to suppress global error toast
-      hideGlobalError: true,
-    })
+    await loggerApi.post('/client-log', { logs: batch })
   } catch (err) { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
     console.warn('[clientLogger] Failed to send log batch')
   }
@@ -122,7 +146,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (queue.length === 0) return
 
-    const url = (api.defaults.baseURL || '') + '/client-log'
+    const rawBase = (window as any).API_BASE_URL || ''
+    const url = `${rawBase}/api/v1/client-log`
     const batch = queue.splice(0, MAX_QUEUE)
     try {
       navigator.sendBeacon(

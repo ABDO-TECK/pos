@@ -42,8 +42,7 @@ function getMysqlPaths() {
   const portableMysqld = path.join(portableDir, 'mysql', 'bin', 'mysqld.exe');
 
   if (fs.existsSync(portableMysqld)) {
-    const userDataPath = app.getPath('userData');
-    const dbDataPath = path.join(userDataPath, 'mysql_data');
+    const dbDataPath = getMysqlDataDir();
 
     return {
       mysqldPath: portableMysqld,
@@ -89,4 +88,133 @@ function getQZTrayPath() {
   throw new Error('qz-tray.jar not found. Build it with: cd tray && ant distribute');
 }
 
-module.exports = { getPhpPath, getMysqlPaths, isPackaged, getPortableDir, getBackendDir, getDatabaseDir, getJavaPath, getQZTrayPath };
+let resolvedDataDir = null;
+
+function getConfigDir() {
+  const appDataPath = process.env.APPDATA || app.getPath('appData');
+  return path.join(appDataPath, 'POS System');
+}
+
+function getPrimaryDataDir() {
+  const programDataPath = process.env.PROGRAMDATA || 'C:\\ProgramData';
+  return path.join(programDataPath, 'POS System');
+}
+
+function getFallbackDataDir() {
+  const localAppDataPath = process.env.LOCALAPPDATA || path.join(app.getPath('appData'), '..', 'Local');
+  return path.join(localAppDataPath, 'POS System', 'Data');
+}
+
+function getDataDir() {
+  if (resolvedDataDir) return resolvedDataDir;
+
+  const primary = getPrimaryDataDir();
+  const fallback = getFallbackDataDir();
+
+  try {
+    if (!fs.existsSync(primary)) {
+      fs.mkdirSync(primary, { recursive: true });
+    }
+
+    const testFile = path.join(primary, `.write-test-${Math.random().toString(36).substring(7)}`);
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+
+    resolvedDataDir = primary;
+  } catch (err) {
+    console.warn(`[Paths] Primary directory ${primary} is not writable. Falling back to LocalAppData. Error: ${err.message}`);
+    try {
+      if (!fs.existsSync(fallback)) {
+        fs.mkdirSync(fallback, { recursive: true });
+      }
+      resolvedDataDir = fallback;
+    } catch (fallbackErr) {
+      console.error(`[Paths] Fallback directory ${fallback} is also not writable:`, fallbackErr);
+      resolvedDataDir = app.getPath('userData');
+    }
+  }
+
+  return resolvedDataDir;
+}
+
+function getLogsDir() {
+  return path.join(getDataDir(), 'logs');
+}
+
+function getTempDir() {
+  return path.join(getDataDir(), 'temp');
+}
+
+function getBackupsDir() {
+  return path.join(getDataDir(), 'backups');
+}
+
+function getMysqlDataDir() {
+  return path.join(getDataDir(), 'mysql_data');
+}
+
+function getRuntimeMetadataPath() {
+  return path.join(getConfigDir(), 'runtime_metadata.json');
+}
+
+function getRuntimePortsPath() {
+  return path.join(getConfigDir(), 'runtime_ports.json');
+}
+
+function getEnvPath() {
+  return path.join(getConfigDir(), '.env');
+}
+
+function getRecoveryAuthPath() {
+  return path.join(getConfigDir(), 'recovery_auth.json');
+}
+
+function ensureRuntimeDirs() {
+  const config = getConfigDir();
+  const data = getDataDir();
+  const mysql = getMysqlDataDir();
+  const backups = getBackupsDir();
+  const updates = path.join(data, 'updates');
+  const temp = getTempDir();
+  const logs = getLogsDir();
+
+  const dirs = [config, data, mysql, backups, updates, temp, logs];
+  dirs.forEach(dir => {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err) {
+      console.error(`[Paths] Failed to create directory: ${dir}`, err);
+    }
+  });
+
+  const isPrimary = (data === getPrimaryDataDir());
+  console.log(`[Paths] Config Directory: ${config}`);
+  console.log(`[Paths] Data Directory: ${data} (${isPrimary ? 'ProgramData' : 'LocalAppData Fallback'})`);
+  console.log(`[Paths] All subfolders verified/created.`);
+}
+
+module.exports = {
+  getPhpPath,
+  getMysqlPaths,
+  isPackaged,
+  getPortableDir,
+  getBackendDir,
+  getDatabaseDir,
+  getJavaPath,
+  getQZTrayPath,
+  getConfigDir,
+  getPrimaryDataDir,
+  getFallbackDataDir,
+  getDataDir,
+  getLogsDir,
+  getTempDir,
+  getBackupsDir,
+  getMysqlDataDir,
+  getRuntimeMetadataPath,
+  getRuntimePortsPath,
+  getEnvPath,
+  getRecoveryAuthPath,
+  ensureRuntimeDirs
+};

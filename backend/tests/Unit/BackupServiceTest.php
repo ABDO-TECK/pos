@@ -15,7 +15,8 @@ class BackupServiceTest extends TestCase
     {
         // Mock PDO
         $this->pdoMock = $this->createMock(PDO::class);
-        $this->service = new BackupService($this->pdoMock);
+        $this->service = new BackupService();
+        $this->service->setDb($this->pdoMock);
     }
 
     public function testBackupFileNameFormatAndCreation(): void

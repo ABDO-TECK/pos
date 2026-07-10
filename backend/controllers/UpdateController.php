@@ -24,10 +24,6 @@ class UpdateController extends Controller {
 
     public function check() {
         $result = $this->updateService->checkForUpdate();
-        if (!$result['ok']) {
-            return Response::error($result['error'], 502);
-        }
-        unset($result['ok']);
         return Response::success($result);
     }
 
