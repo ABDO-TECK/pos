@@ -557,9 +557,9 @@ function Warn-VersionMismatches {
 
 function Warn-PhpUnitCache {
     $cachePath = 'backend/.phpunit.result.cache'
-    Set-ReleaseCommandAttempt "git ls-files --error-unmatch $cachePath"
-    & git -C $RepoRoot ls-files --error-unmatch $cachePath *> $null
-    $isTracked = $LASTEXITCODE -eq 0
+    Set-ReleaseCommandAttempt "git ls-files $cachePath"
+    $trackedFiles = & git -C $RepoRoot ls-files $cachePath 2>$null
+    $isTracked = ($trackedFiles -ne $null -and $trackedFiles.Length -gt 0)
     if (-not $isTracked) {
         return
     }
