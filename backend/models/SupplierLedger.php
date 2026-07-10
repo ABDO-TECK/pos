@@ -116,4 +116,10 @@ class SupplierLedger {
         $stmt->execute([$entryId]);
         return $stmt->fetch() ?: null;
     }
+
+    /** حذف قيد من كشف الحساب */
+    public function deleteLedgerEntry(int $entryId): void {
+        $stmt = $this->db->prepare('DELETE FROM supplier_ledger WHERE id = ?');
+        $stmt->execute([$entryId]);
+    }
 }

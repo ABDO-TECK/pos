@@ -4,16 +4,16 @@ namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use App\Services\CustomerService;
-use App\Models\Customer;
+use App\Repositories\CustomerRepository;
 
 class CustomerServiceTest extends TestCase
 {
     private CustomerService $service;
-    private Customer $customerMock;
+    private CustomerRepository $customerMock;
 
     protected function setUp(): void
     {
-        $this->customerMock = $this->createMock(Customer::class);
+        $this->customerMock = $this->createMock(CustomerRepository::class);
         $this->service = new CustomerService($this->customerMock);
     }
 

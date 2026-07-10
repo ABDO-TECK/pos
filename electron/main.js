@@ -166,7 +166,9 @@ app.whenReady().then(async () => {
       return new Response('Access Denied', { status: 403 });
     }
 
-    const distDir = path.join(app.getAppPath(), 'frontend', 'dist');
+    const distDir = app.isPackaged
+      ? path.join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'frontend', 'dist')
+      : path.join(app.getAppPath(), 'frontend', 'dist');
     let targetFile = path.join(distDir, filePath);
 
     // Resolve and verify normalized target is within dist directory
@@ -523,7 +525,7 @@ app.whenReady().then(async () => {
     const { waitForHealth } = require('./services/php-server');
     await waitForHealth(phpServerInfo.baseUrl);
 
-    await startHttpsProxy(phpPort, 8443);
+    await startHttpsProxy(phpPort, 8443, wsServerInfo.port);
 
     // تشغيل job worker في الخلفية
     const { spawn } = require('child_process');

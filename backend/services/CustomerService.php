@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Config\Database;
 use App\Helpers\Logger;
-use App\Models\Customer;
 use Exception;
 use Throwable;
 use App\Contracts\CustomerServiceInterface;
@@ -12,17 +11,17 @@ use App\Contracts\CustomerServiceInterface;
 
 class CustomerService implements CustomerServiceInterface {
     
-    private Customer $customerModel;
+    private \App\Repositories\CustomerRepository $customerRepo;
 
-    public function __construct(Customer $customerModel) {
-        $this->customerModel = $customerModel;
+    public function __construct(\App\Repositories\CustomerRepository $customerRepo) {
+        $this->customerRepo = $customerRepo;
     }
 
     public function createCustomer(array $data): int {
         $db = Database::getInstance();
         $db->beginTransaction();
         try {
-            $id = $this->customerModel->create($data);
+            $id = $this->customerRepo->create($data);
             $db->commit();
             return $id;
         } catch (Throwable $e) {
@@ -33,7 +32,7 @@ class CustomerService implements CustomerServiceInterface {
     }
 
     public function addPayment(int $customerId, array $data, array $authUser): array {
-        $customer = $this->customerModel->findById($customerId);
+        $customer = $this->customerRepo->findById($customerId);
         if (!$customer) {
             throw new Exception('العميل غير موجود', 404);
         }
@@ -48,7 +47,7 @@ class CustomerService implements CustomerServiceInterface {
         $db = \App\Config\Database::getInstance();
         $db->beginTransaction();
         try {
-            $this->customerModel->addLedgerEntry([
+            $this->customerRepo->addLedgerEntry([
                 'customer_id' => $customerId,
                 'type'        => $type,
                 'amount'      => $amount,
@@ -62,11 +61,11 @@ class CustomerService implements CustomerServiceInterface {
             throw new Exception('فشل تسجيل الدفعة', 500);
         }
 
-        return $this->customerModel->getLedger($customerId);
+        return $this->customerRepo->getLedger($customerId);
     }
 
     public function updateLedgerEntry(int $entryId, array $data): array {
-        $entry = $this->customerModel->getLedgerEntry($entryId);
+        $entry = $this->customerRepo->getLedgerEntry($entryId);
         if (!$entry) {
             throw new Exception('القيد غير موجود', 404);
         }
@@ -84,7 +83,7 @@ class CustomerService implements CustomerServiceInterface {
         $db = \App\Config\Database::getInstance();
         $db->beginTransaction();
         try {
-            $this->customerModel->updateLedgerEntry($entryId, [
+            $this->customerRepo->updateLedgerEntry($entryId, [
                 'type'        => $type,
                 'amount'      => $amount,
                 'description' => $data['description'] ?? $entry['description'],
@@ -95,6 +94,25 @@ class CustomerService implements CustomerServiceInterface {
             throw new Exception('فشل تحديث القيد', 500);
         }
 
-        return $this->customerModel->getLedger((int)$entry['customer_id']);
+        return $this->customerRepo->getLedger((int)$entry['customer_id']);
+    }
+
+    public function deleteLedgerEntry(int $entryId): array {
+        $entry = $this->customerRepo->getLedgerEntry($entryId);
+        if (!$entry) {
+            throw new \Exception('القيد غير موجود', 404);
+        }
+
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->customerRepo->deleteLedgerEntry($entryId);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new \Exception('فشل حذف القيد', 500);
+        }
+
+        return $this->customerRepo->getLedger((int)$entry['customer_id']);
     }
 }

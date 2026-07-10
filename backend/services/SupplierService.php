@@ -2,32 +2,27 @@
 
 namespace App\Services;
 
-use App\Models\Supplier;
-use App\Models\SupplierLedger;
 use App\Contracts\SupplierServiceInterface;
 use Exception;
 
 class SupplierService implements SupplierServiceInterface {
     
-    private Supplier $supplierModel;
-    private SupplierLedger $ledgerModel;
+    private \App\Repositories\SupplierLedgerRepository $ledgerRepo;
     private \App\Repositories\SupplierRepository $supplierRepo;
     private \App\Repositories\ProductRepository $productRepo;
 
     public function __construct(
-        Supplier $supplierModel, 
-        SupplierLedger $ledgerModel,
+        \App\Repositories\SupplierLedgerRepository $ledgerRepo,
         \App\Repositories\SupplierRepository $supplierRepo,
         \App\Repositories\ProductRepository $productRepo
     ) {
-        $this->supplierModel = $supplierModel;
-        $this->ledgerModel = $ledgerModel;
+        $this->ledgerRepo = $ledgerRepo;
         $this->supplierRepo = $supplierRepo;
         $this->productRepo = $productRepo;
     }
 
     public function addPayment(int $supplierId, array $data, array $authUser): array {
-        $supplier = $this->supplierModel->findById($supplierId);
+        $supplier = $this->supplierRepo->findById($supplierId);
         if (!$supplier) {
             throw new Exception('المورد غير موجود', 404);
         }
@@ -42,7 +37,7 @@ class SupplierService implements SupplierServiceInterface {
         $db = \App\Config\Database::getInstance();
         $db->beginTransaction();
         try {
-            $this->ledgerModel->addLedgerEntry([
+            $this->ledgerRepo->create([
                 'supplier_id'         => $supplierId,
                 'type'                => $type,
                 'amount'              => $amount,
@@ -56,11 +51,11 @@ class SupplierService implements SupplierServiceInterface {
             throw new Exception('فشل تسجيل الدفعة', 500);
         }
 
-        return $this->ledgerModel->getLedger($supplierId);
+        return $this->ledgerRepo->getLedger($supplierId);
     }
 
     public function updateLedgerEntry(int $entryId, array $data): array {
-        $entry = $this->ledgerModel->getLedgerEntry($entryId);
+        $entry = $this->ledgerRepo->findById($entryId);
         if (!$entry) {
             throw new Exception('القيد غير موجود', 404);
         }
@@ -78,7 +73,7 @@ class SupplierService implements SupplierServiceInterface {
         $db = \App\Config\Database::getInstance();
         $db->beginTransaction();
         try {
-            $this->ledgerModel->updateLedgerEntry($entryId, [
+            $this->ledgerRepo->update($entryId, [
                 'type'        => $type,
                 'amount'      => $amount,
                 'description' => $data['description'] ?? $entry['description'],
@@ -89,7 +84,7 @@ class SupplierService implements SupplierServiceInterface {
             throw new Exception('فشل تحديث القيد', 500);
         }
 
-        return $this->ledgerModel->getLedger((int)$entry['supplier_id']);
+        return $this->ledgerRepo->getLedger((int)$entry['supplier_id']);
     }
 
     public function recordSinglePurchase(array $data): array {
@@ -115,5 +110,24 @@ class SupplierService implements SupplierServiceInterface {
         }
 
         return ['product' => $this->productRepo->findById((int)$data['product_id'])];
+    }
+
+    public function deleteLedgerEntry(int $entryId): array {
+        $entry = $this->ledgerRepo->findById($entryId);
+        if (!$entry) {
+            throw new Exception('القيد غير موجود', 404);
+        }
+
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $this->ledgerRepo->delete($entryId);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw new Exception('فشل حذف القيد', 500);
+        }
+
+        return $this->ledgerRepo->getLedger((int)$entry['supplier_id']);
     }
 }

@@ -76,4 +76,57 @@ class ProductServiceTest extends TestCase
 
         $this->assertCount(3, $result);
     }
+
+    public function testCreateProductSuccess()
+    {
+        $data = [
+            'name' => 'Test Product',
+            'price' => 25.00,
+            'barcode' => '123456789',
+            'cost' => 15.00,
+            'quantity' => 100,
+        ];
+
+        $this->productRepoMock->method('create')
+            ->willReturn(1);
+
+        $this->productRepoMock->method('findById')
+            ->with(1)
+            ->willReturn(array_merge(['id' => 1], $data));
+
+        $result = $this->service->createProduct($data);
+
+        $this->assertTrue($result['ok']);
+        $this->assertEquals(1, $result['product']['id']);
+        $this->assertEquals('Test Product', $result['product']['name']);
+    }
+
+    public function testUpdateProductNotFound()
+    {
+        $this->productRepoMock->method('findById')
+            ->willReturn(null);
+
+        $result = $this->service->updateProduct(999, ['name' => 'Updated']);
+
+        $this->assertFalse($result['ok']);
+        $this->assertEquals(404, $result['code']);
+    }
+
+    public function testUpdateProductSuccess()
+    {
+        $this->productRepoMock->method('findById')
+            ->willReturn(['id' => 1, 'name' => 'Old', 'barcode' => '12345', 'price' => 10, 'cost' => 5]);
+
+        $this->productRepoMock->expects($this->once())
+            ->method('update');
+
+        $this->productRepoMock->method('findById')
+            ->willReturnMap([
+                [1, ['id' => 1, 'name' => 'New Name', 'barcode' => '12345', 'price' => 15, 'cost' => 5]]
+            ]);
+
+        $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
+
+        $this->assertTrue($result['ok']);
+    }
 }

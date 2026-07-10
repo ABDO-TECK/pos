@@ -11,6 +11,7 @@ $router->put('/api/customers/{id}',            [CustomerController::class, 'upda
 $router->delete('/api/customers/{id}',         [CustomerController::class, 'destroy',    [AuthMiddleware::class, PermissionMiddleware::require('customers.delete')]]);
 $router->post('/api/customers/{id}/payment',   [CustomerController::class, 'addPayment',       [AuthMiddleware::class]]);
 $router->put('/api/customers/ledger/{entryId}', [CustomerController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
+$router->delete('/api/customers/ledger/{entryId}', [CustomerController::class, 'deleteLedgerEntry', [AuthMiddleware::class]]);
 $router->get('/api/customers/{id}/pdf', [LedgerPdfController::class, 'customerPdf', [AuthMiddleware::class]]);
 
 use App\Controllers\LoyaltyController;

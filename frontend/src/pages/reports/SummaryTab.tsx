@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { getReportSummary, getTopProducts } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
+import { Coins, Box, TrendingUp, TrendingDown, Sparkles, Calendar, FileText, AlertTriangle, BarChart3, Gem } from 'lucide-react'
 
 export default function SummaryTab() {
   const [summary, setSummary] = useState<any>(null)
@@ -18,20 +19,20 @@ export default function SummaryTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
-        <SCard label="إيرادات اليوم" value={formatCurrency(summary.today_revenue)} color="var(--primary)" icon="💰" />
-        <SCard label="إجمالي التكاليف (اليوم)" value={formatCurrency(summary.today_cost ?? 0)} color="var(--warning)" icon="📦" />
-        <SCard label="ربح المبيعات (اليوم)" value={formatCurrency(summary.today_profit ?? 0)} color="var(--primary-d)" icon="📈" title="ربح المبيعات = الإيرادات − التكاليف" />
-        <SCard label="مصروفات اليوم" value={formatCurrency(summary.today_expenses ?? 0)} color="var(--danger)" icon="💸" />
-        <SCard label="صافي الربح الفعلي (اليوم)" value={formatCurrency(summary.today_net_profit ?? 0)} color={profitColor(summary.today_net_profit)} icon="✨" title="صافي الربح الفعلي = ربح المبيعات − المصروفات" />
+        <SCard label="إيرادات اليوم" value={formatCurrency(summary.today_revenue)} color="var(--primary)" icon={Coins} />
+        <SCard label="إجمالي التكاليف (اليوم)" value={formatCurrency(summary.today_cost ?? 0)} color="var(--warning)" icon={Box} />
+        <SCard label="ربح المبيعات (اليوم)" value={formatCurrency(summary.today_profit ?? 0)} color="var(--primary-d)" icon={TrendingUp} title="ربح المبيعات = الإيرادات − التكاليف" />
+        <SCard label="مصروفات اليوم" value={formatCurrency(summary.today_expenses ?? 0)} color="var(--danger)" icon={TrendingDown} />
+        <SCard label="صافي الربح الفعلي (اليوم)" value={formatCurrency(summary.today_net_profit ?? 0)} color={profitColor(summary.today_net_profit)} icon={Sparkles} title="صافي الربح الفعلي = ربح المبيعات − المصروفات" />
 
-        <SCard label="إيرادات الشهر" value={formatCurrency(summary.month_revenue)} color="var(--secondary)" icon="📅" />
-        <SCard label="إجمالي التكاليف (الشهر)" value={formatCurrency(summary.month_cost ?? 0)} color="var(--warning)" icon="📦" />
-        <SCard label="ربح المبيعات (الشهر)" value={formatCurrency(summary.month_profit ?? 0)} color="var(--primary-d)" icon="📊" title="ربح المبيعات = الإيرادات − التكاليف" />
-        <SCard label="مصروفات الشهر" value={formatCurrency(summary.month_expenses ?? 0)} color="var(--danger)" icon="💸" />
-        <SCard label="صافي الربح الفعلي (الشهر)" value={formatCurrency(summary.month_net_profit ?? 0)} color={profitColor(summary.month_net_profit)} icon="💎" title="صافي الربح الفعلي = ربح المبيعات − المصروفات" />
+        <SCard label="إيرادات الشهر" value={formatCurrency(summary.month_revenue)} color="var(--secondary)" icon={Calendar} />
+        <SCard label="إجمالي التكاليف (الشهر)" value={formatCurrency(summary.month_cost ?? 0)} color="var(--warning)" icon={Box} />
+        <SCard label="ربح المبيعات (الشهر)" value={formatCurrency(summary.month_profit ?? 0)} color="var(--primary-d)" icon={BarChart3} title="ربح المبيعات = الإيرادات − التكاليف" />
+        <SCard label="مصروفات الشهر" value={formatCurrency(summary.month_expenses ?? 0)} color="var(--danger)" icon={TrendingDown} />
+        <SCard label="صافي الربح الفعلي (الشهر)" value={formatCurrency(summary.month_net_profit ?? 0)} color={profitColor(summary.month_net_profit)} icon={Gem} title="صافي الربح الفعلي = ربح المبيعات − المصروفات" />
 
-        <SCard label="فواتير اليوم" value={formatNumber(summary.today_invoices)} icon="🧾" />
-        <SCard label="مخزون منخفض" value={formatNumber(summary.low_stock_count)} color={summary.low_stock_count > 0 ? 'var(--warning)' : undefined} icon="⚠️" />
+        <SCard label="فواتير اليوم" value={formatNumber(summary.today_invoices)} icon={FileText} />
+        <SCard label="مخزون منخفض" value={formatNumber(summary.low_stock_count)} color={summary.low_stock_count > 0 ? 'var(--warning)' : undefined} icon={AlertTriangle} />
       </div>
 
       {topProducts.length > 0 && (

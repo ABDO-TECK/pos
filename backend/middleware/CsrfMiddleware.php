@@ -32,12 +32,12 @@ class CsrfMiddleware {
         }
 
         // Skip CSRF check for desktop runtime (Electron)
+        // Only trust the Origin header (app:// or file://) — NOT User-Agent,
+        // because User-Agent is trivially spoofable by any HTTP client.
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
         if (
             str_starts_with($origin, 'app://') ||
-            str_starts_with($origin, 'file://') ||
-            stripos($userAgent, 'electron') !== false
+            str_starts_with($origin, 'file://')
         ) {
             return $next();
         }

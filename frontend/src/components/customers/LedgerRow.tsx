@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Edit2 } from 'lucide-react';
+import { Edit2, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 
 const fmtDate = (s) => {
@@ -16,7 +16,7 @@ const fmtDate = (s) => {
   }).format(d);
 };
 
-export default function LedgerRow({ row, onEdit }) {
+export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }) {
   const isDebit  = row.debit  > 0;
   const isCredit = row.credit > 0;
   return (
@@ -31,6 +31,27 @@ export default function LedgerRow({ row, onEdit }) {
         {row.type === 'initial' && (
           <span style={{ marginRight: '0.5rem', fontSize: '0.7rem', background: 'rgba(59,130,246,.1)', color: 'var(--secondary)', borderRadius: '3px', padding: '0.1rem 0.35rem' }}>رصيد مبدئي</span>
         )}
+        {row.invoice_id && (
+          <button
+            className="btn btn-link btn-sm"
+            style={{
+              marginRight: '0.5rem',
+              padding: 0,
+              fontSize: '0.78rem',
+              color: 'var(--primary)',
+              textDecoration: 'underline',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.2rem',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+            onClick={() => onViewInvoice(row.invoice_id)}
+          >
+            (فاتورة مبيعات #{row.invoice_id})
+          </button>
+        )}
       </td>
       <td style={{ padding: '0.55rem 0.75rem', textAlign: 'left', fontWeight: isDebit ? 700 : 400, color: isDebit ? 'var(--danger)' : 'var(--text-muted)' }}>
         {isDebit ? formatCurrency(row.debit) : '—'}
@@ -44,11 +65,18 @@ export default function LedgerRow({ row, onEdit }) {
         {row.balance < 0 && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>ر</span>}
       </td>
       <td style={{ padding: '0.2rem 0.5rem', textAlign: 'center' }}>
-        {row.id && row.type !== 'initial' && (
-          <button className="btn btn-ghost btn-icon" style={{ padding: '0.25rem', color: 'var(--text-muted)' }} onClick={onEdit} title="تعديل القيد">
-            <Edit2 size={13} />
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+          {row.id && row.type !== 'initial' && (
+            <>
+              <button className="btn btn-ghost btn-icon btn-sm" style={{ padding: '0.25rem', color: 'var(--text-muted)' }} onClick={onEdit} title="تعديل القيد">
+                <Edit2 size={13} />
+              </button>
+              <button className="btn btn-ghost btn-icon btn-sm" style={{ padding: '0.25rem', color: 'var(--danger)' }} onClick={onDelete} title="حذف القيد">
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
       </td>
     </tr>
   );

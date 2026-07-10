@@ -1,7 +1,7 @@
-
 import { useState } from 'react'
 import { Trash2, Plus, Minus, ShoppingCart, Package } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
+import useProductStore from '../../store/productStore'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 
 export default function Cart() {
@@ -58,12 +58,17 @@ interface CartItemProps {
 }
 
 function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps) {
-  const unitsPerBox = Math.max(1, parseInt(item.units_per_box) || 1)
-  const isByWeight  = parseInt(item.sell_by_weight) === 1
-  const hasBox      = unitsPerBox > 1 && !isByWeight
+  const switchItemProduct = useCartStore(s => s.switchItemProduct)
+  const products          = useProductStore(s => s.products)
 
-  // unitMode: 'piece' | 'box' | 'kg'
-  const defaultMode = isByWeight ? 'kg' : (item.scanned_as_box && hasBox ? 'box' : 'piece')
+  const unitsPerBox = Math.max(1, parseInt(item.units_per_box) || 1)
+  const unitType    = item.unit_type ?? (parseInt(item.sell_by_weight) === 1 ? 'weight' : 'piece')
+  const isByWeight  = unitType === 'weight'
+  const isByLiter   = unitType === 'liter'
+  const hasBox      = unitsPerBox > 1 && unitType === 'piece'
+
+  // unitMode: 'piece' | 'box' | 'kg' | 'liter'
+  const defaultMode = isByWeight ? 'kg' : (isByLiter ? 'liter' : (item.scanned_as_box && hasBox ? 'box' : 'piece'))
   const [unitMode, setUnitMode] = useState(defaultMode)
 
   // عدد الصناديق المعروض (يُحسب من الكمية الكلية)
@@ -73,8 +78,8 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
   const handleUnitModeChange = (mode: string) => {
     if (mode === unitMode) return
     setUnitMode(mode)
-    if (mode === 'kg') {
-      onUpdateQty(1) // 1 كجم
+    if (mode === 'kg' || mode === 'liter') {
+      onUpdateQty(1)
     } else if (mode === 'piece') {
       onUpdateQty(1)
     } else {
@@ -86,7 +91,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
     if (unitMode === 'box') {
       const newBoxes = Math.max(1, (boxCount ?? 0) - 1)
       onUpdateQty(newBoxes * unitsPerBox)
-    } else if (unitMode === 'kg') {
+    } else if (unitMode === 'kg' || unitMode === 'liter') {
       onUpdateQty(Math.max(0.001, parseFloat((item.quantity - 0.25).toFixed(3))))
     } else {
       onUpdateQty(item.quantity - 1)
@@ -96,7 +101,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
   const handleIncrement = () => {
     if (unitMode === 'box') {
       onUpdateQty(((boxCount ?? 0) + 1) * unitsPerBox)
-    } else if (unitMode === 'kg') {
+    } else if (unitMode === 'kg' || unitMode === 'liter') {
       onUpdateQty(parseFloat((item.quantity + 0.25).toFixed(3)))
     } else {
       onUpdateQty(item.quantity + 1)
@@ -104,7 +109,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
   }
 
   const handleInputChange = (raw: string) => {
-    if (unitMode === 'kg') {
+    if (unitMode === 'kg' || unitMode === 'liter') {
       const val = parseFloat(raw) || 0.001
       onUpdateQty(Math.max(0.001, val))
     } else if (unitMode === 'box') {
@@ -137,10 +142,52 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
               overflowWrap: 'anywhere',
             }}
           >
-            {item.name}
-            {isByWeight && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>⚖️</span>}
+            {item.name} {item.size_name ? `(${item.size_name})` : ''}
+            {isByWeight && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>(وزن)</span>}
+            {isByLiter && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>(لتر)</span>}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{item.barcode}</div>
+          {(() => {
+            const parentId = item.parent_product_id || products.find(p => p.id === item.id && p.sizes && p.sizes.length > 0)?.id
+            const parentProduct = parentId ? products.find(p => p.id === parentId) : null
+            const sizesList = parentProduct?.sizes || []
+            if (sizesList.length === 0) return null
+            return (
+              <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>المقاس:</span>
+                <select
+                  value={item.id}
+                  onChange={(e) => {
+                    const newId = Number(e.target.value)
+                    const newProduct = sizesList.find((s: any) => s.id === newId)
+                    if (newProduct) {
+                      switchItemProduct(item.id, {
+                        ...newProduct,
+                        unit_type: parentProduct?.unit_type,
+                        sell_by_weight: parentProduct?.sell_by_weight,
+                      })
+                    }
+                  }}
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '0.15rem 0.35rem',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.25rem',
+                    background: 'var(--surface)',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {sizesList.map((sz: any) => (
+                    <option key={sz.id} value={sz.id}>
+                      {sz.size_name} — {formatCurrency(sz.price)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          })()}
           <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700 }}>
             {formatCurrency(item.subtotal)}
           </div>
@@ -164,7 +211,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
               color: 'var(--text-muted)',
               background: 'var(--surface)'
             }}
-            title={isByWeight ? 'سعر الكيلو' : 'تعديل السعر لهذه الفاتورة فقط'}
+            title={isByWeight ? 'سعر الكيلو' : isByLiter ? 'سعر اللتر' : 'تعديل السعر لهذه الفاتورة فقط'}
           />
         </div>
 
@@ -181,7 +228,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
       {/* الصف الثاني: ضوابط الكمية + القائمة المنسدلة */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
 
-        {/* قائمة منسدلة: قطعة / صندوق (للمنتجات العادية) أو إشارة للكيلو */}
+        {/* قائمة منسدلة: قطعة / صندوق (للمنتجات العادية) أو إشارة للكيلو/اللتر */}
         {hasBox ? (
           <select
             value={unitMode}
@@ -215,7 +262,22 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
               flexShrink: 0,
             }}
           >
-            كيلو ⚖️
+            كيلو
+          </span>
+        ) : isByLiter ? (
+          <span
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '0.22rem 0.35rem',
+              border: '1px solid var(--primary)',
+              borderRadius: '0.3rem',
+              background: 'rgba(34,197,94,0.08)',
+              color: 'var(--primary)',
+              flexShrink: 0,
+            }}
+          >
+            لتر
           </span>
         ) : null}
 
@@ -230,12 +292,12 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
           </button>
           <input
             type="number"
-            min={unitMode === 'kg' ? 0.001 : 1}
-            step={unitMode === 'kg' ? '0.001' : '1'}
+            min={unitMode === 'kg' || unitMode === 'liter' ? 0.001 : 1}
+            step={unitMode === 'kg' || unitMode === 'liter' ? '0.001' : '1'}
             value={displayQty}
             onChange={(e) => handleInputChange(e.target.value)}
             style={{
-              width: unitMode === 'kg' ? '4rem' : '3rem', textAlign: 'center', border: '1px solid var(--border)',
+              width: unitMode === 'kg' || unitMode === 'liter' ? '4rem' : '3rem', textAlign: 'center', border: '1px solid var(--border)',
               borderRadius: '0.3rem', padding: '0.25rem 0.2rem', fontSize: '0.9rem',
             }}
           />
@@ -248,8 +310,8 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
           </button>
         </div>
 
-        {/* أزرار أوزان سريعة — تظهر فقط للمنتجات الوزنية */}
-        {unitMode === 'kg' && (
+        {/* أزرار أوزان سريعة — تظهر للمنتجات الوزنية واللترية */}
+        {(unitMode === 'kg' || unitMode === 'liter') && (
           <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0 }}>
             {[0.25, 0.5, 0.75, 1].map(w => (
               <button
@@ -263,9 +325,9 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
                   border: item.quantity === w ? '1px solid var(--primary)' : undefined,
                   color: item.quantity === w ? 'var(--primary)' : undefined,
                 }}
-                title={`${w} كجم`}
+                title={`${w} ${unitMode === 'kg' ? 'كجم' : 'لتر'}`}
               >
-                {w === 0.25 ? '¼' : w === 0.5 ? '½' : w === 0.75 ? '¾' : '1'}
+                {w === 0.25 ? '0.25' : w === 0.5 ? '0.5' : w === 0.75 ? '0.75' : '1'}
               </button>
             ))}
           </div>
@@ -274,7 +336,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
         {/* وسم الوحدة النشطة */}
         <span style={{
           fontSize: '0.72rem',
-          color: unitMode === 'box' ? 'var(--secondary)' : unitMode === 'kg' ? 'var(--primary)' : 'var(--text-muted)',
+          color: unitMode === 'box' ? 'var(--secondary)' : (unitMode === 'kg' || unitMode === 'liter') ? 'var(--primary)' : 'var(--text-muted)',
           fontWeight: 600,
           flexShrink: 0,
           display: 'flex',
@@ -282,9 +344,11 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
           gap: '0.2rem',
         }}>
           {unitMode === 'box'
-            ? <><Package size={11} /> {formatNumber(item.quantity)} قطعة</>
+            ? <>{formatNumber(item.quantity)} قطعة</>
             : unitMode === 'kg'
             ? `${parseFloat(item.quantity).toFixed(3)} كجم`
+            : unitMode === 'liter'
+            ? `${parseFloat(item.quantity).toFixed(2)} لتر`
             : null
           }
         </span>

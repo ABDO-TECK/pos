@@ -110,4 +110,37 @@ class InventoryServiceTest extends TestCase
         $result = $this->service->processBulkPurchase($data, $authUser);
         $this->assertFalse($result['ok']);
     }
+
+    public function testBulkPurchaseRejectsStringQuantity()
+    {
+        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Test']);
+
+        $data = [
+            'supplier_id' => 1,
+            'items' => [
+                ['product_id' => 1, 'quantity' => 'abc', 'cost' => 10]
+            ]
+        ];
+        $authUser = ['id' => 1];
+
+        $result = $this->service->processBulkPurchase($data, $authUser);
+        $this->assertFalse($result['ok']);
+    }
+
+    public function testBulkPurchaseRejectsMissingCost()
+    {
+        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Test']);
+
+        $data = [
+            'supplier_id' => 1,
+            'items' => [
+                ['product_id' => 1, 'quantity' => 5]
+                // cost is missing
+            ]
+        ];
+        $authUser = ['id' => 1];
+
+        $result = $this->service->processBulkPurchase($data, $authUser);
+        $this->assertFalse($result['ok']);
+    }
 }

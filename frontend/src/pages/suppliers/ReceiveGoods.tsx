@@ -4,11 +4,12 @@ import { Trash2, ShoppingCart, Check, Package } from 'lucide-react'
 import BarcodeInput from '../../components/pos/BarcodeInput'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
-import { getSuppliers, getProducts, createBulkPurchase } from '../../api/endpoints'
+import { getSuppliers, getProducts, createBulkPurchase, getPurchaseInvoice } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
-import CreditPurchaseSection from './components/CreditPurchaseSection'
 import ReceiveGoodsProductCard from './components/ReceiveGoodsProductCard'
 import ReceiveGoodsCartLine from './components/ReceiveGoodsCartLine'
+import ReceiveConfirmModal from './components/ReceiveConfirmModal'
+import PurchaseReceiptModal from './components/PurchaseReceiptModal'
 import styles from '../Suppliers.module.css'
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
@@ -22,6 +23,10 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
   const [paymentType, setPaymentType] = useState('cash')  // 'cash' | 'credit'
   const [deposit, setDeposit]         = useState(0)
 
+  // ── Modals states ──────────────────────────────────────────────────
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [invoiceToPrint, setInvoiceToPrint]     = useState<any>(null)
+
   const q = search.trim().toLowerCase()
   const products = q
     ? allProducts.filter((p) => {
@@ -31,6 +36,8 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
         return nm || bc || ex
       })
     : allProducts
+
+  const selectedSupplier = suppliers.find(s => String(s.id) === String(supplierId))
 
   useEffect(() => {
     const fetchAll = (isInitial = false) => {
@@ -57,29 +64,70 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
 
   /* ── Cart helpers ── */
   const addToCart = (product) => {
-    const unitsPerBox = Math.max(1, parseInt(product.units_per_box) || 1)
-    const qtyToAdd = product.scanned_as_box ? unitsPerBox : 1
+    let targetProduct = product
+    if (product.sizes && product.sizes.length > 0) {
+      targetProduct = {
+        ...product.sizes[0],
+        unit_type: product.unit_type,
+        sell_by_weight: product.sell_by_weight
+      }
+    }
+
+    const unitsPerBox = Math.max(1, parseInt(targetProduct.units_per_box) || 1)
+    const qtyToAdd = targetProduct.scanned_as_box ? unitsPerBox : 1
 
     setCart((prev) => {
-      const existing = prev.find((c) => c.product.id === product.id)
+      const existing = prev.find((c) => c.product.id === targetProduct.id)
       if (existing) {
         return prev.map((c) =>
-          c.product.id === product.id ? { ...c, quantity: c.quantity + qtyToAdd } : c
+          c.product.id === targetProduct.id ? { ...c, quantity: c.quantity + qtyToAdd } : c
         )
       }
       return [
         ...prev,
         {
-          product,
+          product: targetProduct,
           quantity: qtyToAdd,
           cost:
-            parseFloat(product.cost) > 0
-              ? parseFloat(product.cost)
-              : parseFloat(product.price) || 0,
+            parseFloat(targetProduct.cost) > 0
+              ? parseFloat(targetProduct.cost)
+              : parseFloat(targetProduct.price) || 0,
         },
       ]
     })
-    toast.success(product.name, { duration: 700 })
+    toast.success(targetProduct.name, { duration: 700 })
+  }
+
+  const switchCartLineProduct = (oldProductId, newProduct, parentProduct) => {
+    setCart((prev) => {
+      const targetProduct = {
+        ...newProduct,
+        unit_type: parentProduct?.unit_type,
+        sell_by_weight: parentProduct?.sell_by_weight
+      }
+      const existingIndex = prev.findIndex((c) => c.product.id === targetProduct.id && c.product.id !== oldProductId)
+      const oldLine = prev.find((c) => c.product.id === oldProductId)
+      if (!oldLine) return prev
+
+      if (existingIndex >= 0) {
+        return prev
+          .map((c, idx) =>
+            idx === existingIndex
+              ? { ...c, quantity: c.quantity + oldLine.quantity }
+              : c
+          )
+          .filter((c) => c.product.id !== oldProductId)
+      } else {
+        const cost = parseFloat(targetProduct.cost) > 0
+          ? parseFloat(targetProduct.cost)
+          : parseFloat(targetProduct.price) || 0
+        return prev.map((c) =>
+          c.product.id === oldProductId
+            ? { ...c, product: targetProduct, cost }
+            : c
+        )
+      }
+    })
   }
 
   const updateLineQuantity = (productId, qty) => {
@@ -102,46 +150,60 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
   const cartTotal = cart.reduce((s, c) => s + c.cost * c.quantity, 0)
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0)
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (deliveryData: any = {}) => {
     if (!supplierId) { toast.error('يرجى اختيار مورد'); return }
     if (cart.length === 0) { toast.error('السلة فارغة'); return }
     setConfirming(true)
     try {
       const amountDue = paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : 0
-      await createBulkPurchase({
+      const res = await createBulkPurchase({
         replace_invoice_id: invoiceId,
         supplier_id: parseInt(supplierId),
         items: cart.map(c => ({ product_id: c.product.id, quantity: c.quantity, cost: c.cost, update_cost: true })),
         payment_type: paymentType,
         deposit: paymentType === 'credit' ? deposit : 0,
+        ...deliveryData
       })
+
+      const createdInvoiceId = res.data.data?.invoice_id
+
       toast.success(
         invoiceId ? 'تم تحديث الفاتورة والمخزون'
         : paymentType === 'credit'
           ? `تم تسجيل الشراء الآجل 📋 — المتبقي ${formatCurrency(amountDue)}`
           : 'تم تسجيل الشراء وتحديث المخزون'
       )
+      
       setCart([])
       if(setInvoiceId) setInvoiceId(null)
       setPaymentType('cash')
       setDeposit(0)
       setMobileTab('products')
+      setShowConfirmModal(false)
+
+      // Fetch invoice for printing
+      if (createdInvoiceId) {
+        getPurchaseInvoice(createdInvoiceId)
+          .then((invRes) => {
+            setInvoiceToPrint(invRes.data.data)
+          })
+          .catch(() => {
+            toast.error('فشل جلب تفاصيل الفاتورة للطباعة')
+          })
+      }
 
       // ── تحديث فوري للمنتجات (تجاوز الكاش) ──────────────────
-      // نُعيد جلب المنتجات من الخادم مباشرة بعد تأكيد الاستلام
-      // حتى تنعكس الكميات الجديدة فوراً دون انتظار انتهاء الكاش
       getProducts({ limit: 9999, _t: Date.now() })
         .then((r) => {
           const raw = r.data?.data as any
           const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
           if (list.length > 0) {
             setAllProducts(list)
-            // تحديث productStore المشترك (يُستخدم في POS أيضاً)
             useProductStore.getState().setProducts(list)
             useProductStore.getState().invalidateCache()
           }
         })
-        .catch(() => { /* silent — البيانات ستُحدَّث في الدورة القادمة */ })
+        .catch(() => { /* silent */ })
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
     } finally {
@@ -149,13 +211,13 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     }
   }
 
-  // F12 Shortcut to confirm receive goods
+  // F12 Shortcut to open confirm goods modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F12') {
         e.preventDefault()
-        if (cart.length > 0 && supplierId && !confirming) {
-          handleConfirm()
+        if (cart.length > 0 && supplierId && !confirming && !showConfirmModal) {
+          setShowConfirmModal(true)
         } else if (!supplierId && cart.length > 0) {
           toast.error('يرجى اختيار مورد لإتمام العملية')
         }
@@ -163,7 +225,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [cart, supplierId, confirming, paymentType, deposit, invoiceId])
+  }, [cart, supplierId, confirming, showConfirmModal])
 
   /* ── Panels ── */
   const ProductsPanel = (
@@ -229,6 +291,8 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
               onUpdateQty={updateLineQuantity}
               onUpdateCost={updateLineCost}
               onRemove={() => removeFromCart(c.product.id)}
+              onSwitchProduct={switchCartLineProduct}
+              allProducts={allProducts}
             />
           ))
         )}
@@ -243,24 +307,25 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           </div>
         )}
 
-        {/* خيار الشراء بالآجل */}
-        {cart.length > 0 && (
-          <CreditPurchaseSection
-            paymentType={paymentType}
-            setPaymentType={setPaymentType}
-            deposit={deposit}
-            setDeposit={setDeposit}
-            cartTotal={cartTotal}
-          />
-        )}
 
-        <button onClick={handleConfirm} disabled={confirming || cart.length === 0 || !supplierId}
-          className="btn btn-primary btn-lg" style={{
+
+        <button
+          onClick={() => {
+            if (!supplierId) {
+              toast.error('يرجى اختيار مورد لإتمام العملية')
+              return
+            }
+            setShowConfirmModal(true)
+          }}
+          disabled={confirming || cart.length === 0}
+          className="btn btn-primary btn-lg"
+          style={{
             justifyContent: 'center', width: '100%',
             ...(paymentType === 'credit' ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : {})
-          }}>
+          }}
+        >
           {confirming ? <span className="spinner" /> : <Check size={18} />}
-          {invoiceId ? 'تحديث الفاتورة' : paymentType === 'credit' ? 'تأكيد استلام آجل' : 'تأكيد الاستلام'}{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
+          {invoiceId ? 'مراجعة وتحديث الفاتورة' : paymentType === 'credit' ? 'تأكيد استلام آجل' : 'تأكيد الاستلام'}{cart.length > 0 ? ` — ${formatCurrency(cartTotal)}` : ''}
           <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>F12</kbd>
         </button>
       </div>
@@ -301,6 +366,29 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           </button>
         </div>
       </div>
+
+      {showConfirmModal && (
+        <ReceiveConfirmModal
+          supplier={selectedSupplier}
+          cart={cart}
+          cartTotal={cartTotal}
+          cartCount={cartCount}
+          paymentType={paymentType}
+          setPaymentType={setPaymentType}
+          deposit={deposit}
+          setDeposit={setDeposit}
+          onClose={() => setShowConfirmModal(false)}
+          onConfirm={handleConfirm}
+          loading={confirming}
+        />
+      )}
+
+      {invoiceToPrint && (
+        <PurchaseReceiptModal
+          invoice={invoiceToPrint}
+          onClose={() => setInvoiceToPrint(null)}
+        />
+      )}
     </>
   )
 }

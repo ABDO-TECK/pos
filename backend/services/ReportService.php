@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\Expense;
-use App\Models\Invoice;
-use App\Models\Product;
-use App\Models\Supplier;
+use App\Repositories\InvoiceRepository;
+use App\Repositories\ExpenseRepository;
+use App\Repositories\ProductRepository;
+use App\Repositories\SupplierRepository;
 
 /**
  * ReportService — منطق الأعمال لتوليد التقارير والإحصائيات.
@@ -14,16 +14,21 @@ use App\Models\Supplier;
  */
 class ReportService {
 
-    private Invoice $invoiceModel;
-    private Expense $expenseModel;
-    private Product $productModel;
-    private Supplier $supplierModel;
+    private InvoiceRepository $invoiceRepo;
+    private ExpenseRepository $expenseRepo;
+    private ProductRepository $productRepo;
+    private SupplierRepository $supplierRepo;
 
-    public function __construct(Invoice $invoiceModel, Expense $expenseModel, Product $productModel, Supplier $supplierModel) {
-        $this->invoiceModel = $invoiceModel;
-        $this->expenseModel = $expenseModel;
-        $this->productModel = $productModel;
-        $this->supplierModel = $supplierModel;
+    public function __construct(
+        InvoiceRepository $invoiceRepo,
+        ExpenseRepository $expenseRepo,
+        ProductRepository $productRepo,
+        SupplierRepository $supplierRepo
+    ) {
+        $this->invoiceRepo = $invoiceRepo;
+        $this->expenseRepo = $expenseRepo;
+        $this->productRepo = $productRepo;
+        $this->supplierRepo = $supplierRepo;
     }
 
     /**
@@ -33,9 +38,9 @@ class ReportService {
      * @return array تفاصيل التقرير
      */
     public function getDailySummary(string $date): array {
-        $summary = $this->invoiceModel->getDailySummary($date);
-        $invoices = $this->invoiceModel->all(['date' => $date]);
-        $totalExpenses = $this->expenseModel->getTotalExpensesForDate($date);
+        $summary = $this->invoiceRepo->getDailySummary($date);
+        $invoices = $this->invoiceRepo->all(['date' => $date]);
+        $totalExpenses = $this->expenseRepo->getTotalExpensesForDate($date);
 
         if ($summary) {
             $summary['total_expenses'] = $totalExpenses;
@@ -57,13 +62,13 @@ class ReportService {
      * @return array تفاصيل التقرير
      */
     public function getMonthlySummary(int $month, int $year): array {
-        $data  = $this->invoiceModel->getMonthlySummary($month, $year);
+        $data  = $this->invoiceRepo->getMonthlySummary($month, $year);
 
         $totalRevenue  = array_sum(array_column($data, 'total_revenue'));
         $totalInvoices = array_sum(array_column($data, 'total_invoices'));
-        $totalProfit   = $this->invoiceModel->getTotalProfitForMonth($month, $year);
-        $totalCost     = $this->invoiceModel->getTotalCostForMonth($month, $year);
-        $totalExpenses = $this->expenseModel->getTotalExpensesForMonth($month, $year);
+        $totalProfit   = $this->invoiceRepo->getTotalProfitForMonth($month, $year);
+        $totalCost     = $this->invoiceRepo->getTotalCostForMonth($month, $year);
+        $totalExpenses = $this->expenseRepo->getTotalExpensesForMonth($month, $year);
         $netProfit     = $totalProfit - $totalExpenses;
 
         return [
@@ -88,7 +93,7 @@ class ReportService {
      * @return array قائمة المنتجات
      */
     public function getTopProducts(int $limit = 10, ?string $fromDate = null, ?string $toDate = null): array {
-        return $this->invoiceModel->getTopProducts($limit, $fromDate, $toDate);
+        return $this->invoiceRepo->getTopProducts($limit, $fromDate, $toDate);
     }
 
     /**
@@ -99,14 +104,14 @@ class ReportService {
      * @return array تفاصيل تقرير الأرباح
      */
     public function getProfitReport(int $month, int $year): array {
-        $totals = $this->invoiceModel->getProfitReportTotals($month, $year);
-        $topProfit = $this->invoiceModel->getTopProfitProducts($month, $year, 20);
-        $dailyBreakdown = $this->invoiceModel->getDailyProfitBreakdown($month, $year);
+        $totals = $this->invoiceRepo->getProfitReportTotals($month, $year);
+        $topProfit = $this->invoiceRepo->getTopProfitProducts($month, $year, 20);
+        $dailyBreakdown = $this->invoiceRepo->getDailyProfitBreakdown($month, $year);
 
         $revenue = (float)$totals['total_revenue'];
         $cost    = (float)$totals['total_cost'];
         $profit  = (float)$totals['total_profit'];
-        $expenses = $this->expenseModel->getTotalExpensesForMonth($month, $year);
+        $expenses = $this->expenseRepo->getTotalExpensesForMonth($month, $year);
         $netProfit = $profit - $expenses;
         $margin  = $revenue > 0 ? round($netProfit / $revenue * 100, 2) : 0;
 
@@ -130,21 +135,21 @@ class ReportService {
      * @return array ملخص الإحصائيات
      */
     public function getDashboardSummary(): array {
-        $todayRevenue   = $this->invoiceModel->getTodayRevenue();
-        $monthRevenue   = $this->invoiceModel->getMonthRevenue();
-        $todayInvoices  = $this->invoiceModel->getTodayInvoicesCount();
+        $todayRevenue   = $this->invoiceRepo->getTodayRevenue();
+        $monthRevenue   = $this->invoiceRepo->getMonthRevenue();
+        $todayInvoices  = $this->invoiceRepo->getTodayInvoicesCount();
         
-        $totalProducts  = $this->productModel->getTotalProductsCount();
-        $lowStockCount  = $this->productModel->getLowStockProductsCount();
-        $totalSuppliers = $this->supplierModel->getTotalSuppliersCount();
+        $totalProducts  = $this->productRepo->getTotalProductsCount();
+        $lowStockCount  = $this->productRepo->getLowStockProductsCount();
+        $totalSuppliers = $this->supplierRepo->getTotalSuppliersCount();
 
-        $monthProfit = $this->invoiceModel->getTotalProfitForMonth((int)date('n'), (int)date('Y'));
-        $todayProfit = $this->invoiceModel->getTotalProfitForDate(date('Y-m-d'));
-        $todayCost   = $this->invoiceModel->getTotalCostForDate(date('Y-m-d'));
-        $monthCost   = $this->invoiceModel->getTotalCostForMonth((int)date('n'), (int)date('Y'));
+        $monthProfit = $this->invoiceRepo->getTotalProfitForMonth((int)date('n'), (int)date('Y'));
+        $todayProfit = $this->invoiceRepo->getTotalProfitForDate(date('Y-m-d'));
+        $todayCost   = $this->invoiceRepo->getTotalCostForDate(date('Y-m-d'));
+        $monthCost   = $this->invoiceRepo->getTotalCostForMonth((int)date('n'), (int)date('Y'));
         
-        $todayExpenses = $this->expenseModel->getTotalExpensesForDate(date('Y-m-d'));
-        $monthExpenses = $this->expenseModel->getTotalExpensesForMonth((int)date('n'), (int)date('Y'));
+        $todayExpenses = $this->expenseRepo->getTotalExpensesForDate(date('Y-m-d'));
+        $monthExpenses = $this->expenseRepo->getTotalExpensesForMonth((int)date('n'), (int)date('Y'));
 
         return [
             'today_revenue'  => (float)$todayRevenue,

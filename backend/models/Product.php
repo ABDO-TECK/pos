@@ -27,9 +27,24 @@ class Product {
         $params = ['branch_id' => $branchId];
 
         if (!empty($filters['search'])) {
-            $where[]          = '(p.name LIKE :search OR p.barcode LIKE :search OR p.box_barcode LIKE :search
-                OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode LIKE :search))';
-            $params['search'] = '%' . $filters['search'] . '%';
+            $searchTerm = trim($filters['search']);
+            // Barcode lookups: use exact match + prefix (index-friendly)
+            // Name lookups: use LIKE with leading wildcard (unavoidable for substring)
+            $where[] = '(
+                p.name LIKE :search_wild
+                OR p.barcode = :search_exact
+                OR p.barcode LIKE :search_prefix
+                OR p.box_barcode = :search_exact2
+                OR p.box_barcode LIKE :search_prefix2
+                OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND (pb.barcode = :search_exact3 OR pb.barcode LIKE :search_prefix3))
+            )';
+            $params['search_wild']    = '%' . $searchTerm . '%';
+            $params['search_exact']   = $searchTerm;
+            $params['search_prefix']  = $searchTerm . '%';
+            $params['search_exact2']  = $searchTerm;
+            $params['search_prefix2'] = $searchTerm . '%';
+            $params['search_exact3']  = $searchTerm;
+            $params['search_prefix3'] = $searchTerm . '%';
         }
         if (!empty($filters['category_id'])) {
             $where[]              = 'p.category_id = :category_id';
@@ -37,6 +52,16 @@ class Product {
         }
         if (isset($filters['low_stock']) && $filters['low_stock']) {
             $where[] = 'p.quantity <= p.low_stock_threshold';
+        }
+        
+        // تصفية المنتجات الأبناء (المقاسات) إلا إذا تم تحديد البحث عنها
+        if (isset($filters['parent_product_id'])) {
+            if ($filters['parent_product_id'] !== 'all') {
+                $where[] = 'p.parent_product_id = :parent_product_id';
+                $params['parent_product_id'] = $filters['parent_product_id'];
+            }
+        } else {
+            $where[] = 'p.parent_product_id IS NULL';
         }
 
         $whereClause = implode(' AND ', $where);
@@ -70,6 +95,9 @@ class Product {
             $rows = $stmt->fetchAll();
             $this->attachAdditionalBarcodes($rows);
 
+            // جلب المقاسات لكل منتج رئيسي (batch query — no N+1)
+            $this->attachSizes($rows);
+
             return [
                 'data' => $rows,
                 'pagination' => [
@@ -92,6 +120,10 @@ class Product {
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
         $this->attachAdditionalBarcodes($rows);
+
+        // جلب المقاسات لكل منتج رئيسي (batch query — no N+1)
+        $this->attachSizes($rows);
+
         return $rows;
     }
 
@@ -107,7 +139,49 @@ class Product {
             return null;
         }
         $product['additional_barcodes'] = $this->getAdditionalBarcodesList($id);
+
+        // جلب المقاسات المرتبطة
+        $stmt = $this->db->prepare('SELECT * FROM products WHERE parent_product_id = ? AND deleted_at IS NULL');
+        $stmt->execute([$id]);
+        $sizes = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        $this->attachAdditionalBarcodes($sizes);
+        $product['sizes'] = $sizes;
+
         return $product;
+    }
+
+    /**
+     * Batch-load sizes for multiple parent products in a single query.
+     * Eliminates the N+1 problem where each product triggers a separate SELECT.
+     */
+    private function attachSizes(array &$rows): void
+    {
+        if (empty($rows)) return;
+
+        $parentIds = array_column($rows, 'id');
+        if (empty($parentIds)) return;
+
+        $placeholders = str_repeat('?,', count($parentIds) - 1) . '?';
+        $stmt = $this->db->prepare(
+            "SELECT * FROM products WHERE parent_product_id IN ($placeholders) AND deleted_at IS NULL"
+        );
+        $stmt->execute($parentIds);
+        $allSizes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // Attach additional barcodes to all size rows in one batch
+        $this->attachAdditionalBarcodes($allSizes);
+
+        // Group sizes by parent_product_id
+        $grouped = [];
+        foreach ($allSizes as $size) {
+            $grouped[$size['parent_product_id']][] = $size;
+        }
+
+        // Assign grouped sizes to each parent row
+        foreach ($rows as &$row) {
+            $row['sizes'] = $grouped[$row['id']] ?? [];
+        }
+        unset($row);
     }
 
     public function findByBarcode(string $barcode): ?array {
@@ -132,9 +206,12 @@ class Product {
 
 
     public function create(array $data): int {
+        $unitType = $data['unit_type'] ?? 'piece';
+        $sellByWeight = ($unitType === 'weight') ? 1 : 0;
+
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, units_per_box, sell_by_weight)
-             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :units_per_box, :sell_by_weight)'
+            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, parent_product_id, size_name, units_per_box, sell_by_weight, unit_type)
+             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :parent_product_id, :size_name, :units_per_box, :sell_by_weight, :unit_type)'
         );
         $stmt->execute([
             'name'                => $data['name'],
@@ -145,8 +222,11 @@ class Product {
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
+            'parent_product_id'   => !empty($data['parent_product_id']) ? (int)$data['parent_product_id'] : null,
+            'size_name'           => !empty($data['size_name']) ? $data['size_name'] : null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
-            'sell_by_weight'      => (int)($data['sell_by_weight'] ?? 0),
+            'sell_by_weight'      => $sellByWeight,
+            'unit_type'           => $unitType,
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -154,6 +234,9 @@ class Product {
 
 
     public function update(int $id, array $data): void {
+        $unitType = $data['unit_type'] ?? 'piece';
+        $sellByWeight = ($unitType === 'weight') ? 1 : 0;
+
         $stmt = $this->db->prepare(
             'UPDATE products SET
                 name = :name,
@@ -164,8 +247,11 @@ class Product {
                 quantity = :quantity,
                 low_stock_threshold = :low_stock_threshold,
                 category_id = :category_id,
+                parent_product_id = :parent_product_id,
+                size_name = :size_name,
                 units_per_box = :units_per_box,
-                sell_by_weight = :sell_by_weight
+                sell_by_weight = :sell_by_weight,
+                unit_type = :unit_type
              WHERE id = :id'
         );
         $stmt->execute([
@@ -177,8 +263,11 @@ class Product {
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
             'category_id'         => $data['category_id'] ?? null,
+            'parent_product_id'   => !empty($data['parent_product_id']) ? (int)$data['parent_product_id'] : null,
+            'size_name'           => !empty($data['size_name']) ? $data['size_name'] : null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
-            'sell_by_weight'      => (int)($data['sell_by_weight'] ?? 0),
+            'sell_by_weight'      => $sellByWeight,
+            'unit_type'           => $unitType,
             'id'                  => $id,
         ]);
     }

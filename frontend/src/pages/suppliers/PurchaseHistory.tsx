@@ -62,6 +62,8 @@ export default function PurchaseHistory({ onReturnToCart }) {
   const settings                      = useSettingsStore()
   const { confirm }                   = useConfirmStore()
   const qz = useQZPrinter()
+  const [hidePrices, setHidePrices] = useState(false)
+  const [hideQuantities, setHideQuantities] = useState(false)
 
   useEffect(() => {
     getSuppliers().then(r => { const d = (r.data as any).data; setSuppliers(Array.isArray(d) ? d : (d?.data ?? [])) }).catch(console.error)
@@ -233,13 +235,13 @@ export default function PurchaseHistory({ onReturnToCart }) {
                     qzReady={qz.qzReady}
                     printing={qz.printing}
                     onQZPrint={async (paperSize) => {
-                      const html = buildPurchaseReceiptHTML(selected, settings, paperSize)
+                      const html = buildPurchaseReceiptHTML(selected, settings, paperSize, { hidePrices, hideQuantities })
                       const r = await qz.qzPrint(html)
                       if (r.ok) toast.success(`تمت الطباعة بنجاح (${paperSize})`)
                       else if (r.error) toast.error('فشل الطباعة: ' + r.error)
                     }}
                     onPickPrinter={() => qz.setShowPrinterPicker(true)}
-                    onBrowserPrint={(paperSize) => browserPrintPurchase(selected, settings, paperSize)}
+                    onBrowserPrint={(paperSize) => browserPrintPurchase(selected, settings, paperSize, { hidePrices, hideQuantities })}
                   />
                 )}
                 <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
@@ -252,12 +254,54 @@ export default function PurchaseHistory({ onReturnToCart }) {
 
             {selected && (
               <>
+                {/* Print Toggles */}
+                <div style={{
+                  display: 'flex',
+                  gap: '1.5rem',
+                  background: 'var(--bg)',
+                  borderRadius: 'var(--radius)',
+                  padding: '0.6rem 0.8rem',
+                  marginBottom: '1rem',
+                  border: '1px solid var(--border)',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }} onClick={() => setHidePrices(!hidePrices)}>
+                    <input type="checkbox" checked={hidePrices} readOnly style={{ pointerEvents: 'none', cursor: 'pointer' }} />
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>إخفاء الأسعار في الطباعة</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }} onClick={() => setHideQuantities(!hideQuantities)}>
+                    <input type="checkbox" checked={hideQuantities} readOnly style={{ pointerEvents: 'none', cursor: 'pointer' }} />
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>إخفاء الكميات في الطباعة</span>
+                  </div>
+                </div>
+
                 <div className="resp-2col" style={{ marginBottom: '1rem' }}>
                   <InfoCard label="المورد" value={selected.supplier_name} />
                   <InfoCard label="التاريخ" value={formatDate(selected.created_at)} />
                   <InfoCard label="إجمالي الفاتورة" value={formatCurrency(selected.total)} />
                   <InfoCard label="إجمالي عدد الجرعات / الأصناف" value={formatNumber(selected.items_count)} />
                 </div>
+
+                {/* Delivery Info */}
+                {(selected.driver_name || selected.vehicle_number || selected.delivery_date || selected.delivery_notes) && (
+                  <div style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '0.75rem',
+                    marginBottom: '1rem'
+                  }}>
+                    <h4 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      🚚 بيانات التسليم
+                    </h4>
+                    <div className="resp-2col" style={{ gap: '0.5rem', fontSize: '0.8rem' }}>
+                      {selected.driver_name && <div><strong>السائق:</strong> {selected.driver_name}</div>}
+                      {selected.vehicle_number && <div><strong>رقم السيارة:</strong> {selected.vehicle_number}</div>}
+                      {selected.delivery_date && <div><strong>تاريخ التسليم:</strong> {formatDate(selected.delivery_date)}</div>}
+                      {selected.delivery_notes && <div style={{ gridColumn: '1/-1', whiteSpace: 'pre-wrap' }}><strong>ملاحظات التسليم:</strong><br/>{selected.delivery_notes}</div>}
+                    </div>
+                  </div>
+                )}
 
                 <div className="table-wrapper" style={{ marginBottom: '1rem' }}>
                   <table style={{ fontSize: '0.88rem' }}>

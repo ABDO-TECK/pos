@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\Config\Database;
-use App\Controllers\SaleController;
 use App\Helpers\Logger;
-use App\Models\Customer;
-use App\Models\Invoice;
-use App\Models\Product;
+use App\Repositories\InvoiceRepository;
+use App\Repositories\ProductRepository;
+use App\Repositories\CustomerRepository;
+use App\Repositories\InventoryEventRepository;
 use PDO;
 use Throwable;
 use App\Contracts\SaleServiceInterface;
@@ -20,17 +20,24 @@ use App\Contracts\SaleServiceInterface;
  */
 class SaleService implements SaleServiceInterface
 {
-    private Invoice  $invoiceModel;
-    private Product  $productModel;
-    private Customer $customerModel;
+    private InvoiceRepository $invoiceRepo;
+    private ProductRepository $productRepo;
+    private CustomerRepository $customerRepo;
+    private InventoryEventRepository $inventoryEventRepo;
     private PDO      $db;
 
-    public function __construct(Invoice $invoiceModel, Product $productModel, Customer $customerModel)
-    {
-        $this->invoiceModel  = $invoiceModel;
-        $this->productModel  = $productModel;
-        $this->customerModel = $customerModel;
-        $this->db            = Database::getInstance();
+    public function __construct(
+        InvoiceRepository $invoiceRepo,
+        ProductRepository $productRepo,
+        CustomerRepository $customerRepo,
+        InventoryEventRepository $inventoryEventRepo,
+        PDO $db
+    ) {
+        $this->invoiceRepo        = $invoiceRepo;
+        $this->productRepo        = $productRepo;
+        $this->customerRepo       = $customerRepo;
+        $this->inventoryEventRepo = $inventoryEventRepo;
+        $this->db                 = $db;
     }
 
     // ── Settings helper ───────────────────────────────────────
@@ -71,7 +78,7 @@ class SaleService implements SaleServiceInterface
             if (empty($item['product_id']) || empty($item['quantity'])) {
                 return ['ok' => false, 'error' => 'Invalid item data', 'code' => 400];
             }
-            $product = $this->productModel->findById((int) $item['product_id']);
+            $product = $this->productRepo->findById((int) $item['product_id']);
             if (!$product) {
                 return ['ok' => false, 'error' => "Product ID {$item['product_id']} not found", 'code' => 400];
             }
@@ -146,7 +153,7 @@ class SaleService implements SaleServiceInterface
         $existingInvoice  = null;
 
         if ($replaceInvoiceId > 0) {
-            $existingInvoice = $this->invoiceModel->findById($replaceInvoiceId);
+            $existingInvoice = $this->invoiceRepo->findById($replaceInvoiceId);
             if (!$existingInvoice) {
                 return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
             }
@@ -158,19 +165,18 @@ class SaleService implements SaleServiceInterface
 
             if ($replaceInvoiceId > 0) {
                 // مرتجع / إعادة فوترة
-                $inventoryEvent = new \App\Models\InventoryEvent($this->db);
                 foreach ($existingInvoice['items'] as $old) {
-                    $this->productModel->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
-                    $updatedProduct = $this->productModel->findById((int) $old['product_id']);
-                    $inventoryEvent->record((int) $old['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$old['quantity']);
+                    $this->productRepo->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
+                    $updatedProduct = $this->productRepo->findById((int) $old['product_id']);
+                    $this->inventoryEventRepo->record((int) $old['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$old['quantity']);
                 }
                 
                 // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
                 $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$replaceInvoiceId]);
                 
-                $this->invoiceModel->deleteItemsByInvoiceId($replaceInvoiceId);
+                $this->invoiceRepo->deleteItemsByInvoiceId($replaceInvoiceId);
 
-                $this->invoiceModel->updateTotals($replaceInvoiceId, [
+                $this->invoiceRepo->updateTotals($replaceInvoiceId, [
                     'customer_id'    => $customerId,
                     'subtotal'       => $totals['subtotal'],
                     'discount'       => $totals['discount'],
@@ -181,6 +187,10 @@ class SaleService implements SaleServiceInterface
                     'change_due'     => max(0, $totals['change_due']),
                     'amount_due'     => $totals['amount_due'],
                     'status'         => $data['status'] ?? 'completed',
+                    'driver_name'    => $data['driver_name'] ?? null,
+                    'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'delivery_date'  => $data['delivery_date'] ?? null,
+                    'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
                 $invoiceId = $replaceInvoiceId;
                 
@@ -192,7 +202,7 @@ class SaleService implements SaleServiceInterface
                 // إنشاء عميل جديد إذا لزم
                 if ($customerId === null && !empty($data['new_customer']['name'])) {
                     $nc = $data['new_customer'];
-                    $customerId = $this->customerModel->create([
+                    $customerId = $this->customerRepo->create([
                         'name'            => trim($nc['name']),
                         'phone'           => $nc['phone'] ?? null,
                         'address'         => $nc['address'] ?? null,
@@ -200,7 +210,7 @@ class SaleService implements SaleServiceInterface
                     ]);
                 }
 
-                $invoiceId = $this->invoiceModel->create([
+                $invoiceId = $this->invoiceRepo->create([
                     'user_id'        => $authUser['id'],
                     'customer_id'    => $customerId,
                     'subtotal'       => $totals['subtotal'],
@@ -212,6 +222,10 @@ class SaleService implements SaleServiceInterface
                     'change_due'     => max(0, $totals['change_due']),
                     'amount_due'     => $totals['amount_due'],
                     'status'         => $data['status'] ?? 'completed',
+                    'driver_name'    => $data['driver_name'] ?? null,
+                    'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'delivery_date'  => $data['delivery_date'] ?? null,
+                    'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
 
                 // تسجيل قيود كشف حساب العميل
@@ -221,12 +235,12 @@ class SaleService implements SaleServiceInterface
             }
 
             // إضافة البنود وخصم المخزون
-            $inventoryEvent = new \App\Models\InventoryEvent($this->db);
             foreach ($enrichedItems as $item) {
-                $this->invoiceModel->addItem($invoiceId, $item);
-                $this->productModel->decrementQuantity($item['product_id'], $item['quantity']);
-                $updatedProduct = $this->productModel->findById($item['product_id']);
-                $inventoryEvent->record($item['product_id'], 'sale', (int)$updatedProduct['quantity'], -$item['quantity']);
+                $this->invoiceRepo->addItem($invoiceId, $item);
+                $this->productRepo->decrementQuantity($item['product_id'], $item['quantity']);
+                // Calculate new quantity in PHP instead of an extra DB query per item
+                $newQuantity = (int)($item['product']['quantity'] ?? 0) - (int)$item['quantity'];
+                $this->inventoryEventRepo->record($item['product_id'], 'sale', $newQuantity, -$item['quantity']);
             }
 
             $this->db->commit();
@@ -257,7 +271,7 @@ class SaleService implements SaleServiceInterface
         
         $statusMarker = $status === 'reserved' ? ' 🕒 (محجوزة - لم تُسلم)' : '';
 
-        $this->customerModel->addLedgerEntry([
+        $this->customerRepo->addLedgerEntry([
             'customer_id' => $customerId,
             'type'        => 'debit',
             'amount'      => $totals['total'],
@@ -268,7 +282,7 @@ class SaleService implements SaleServiceInterface
 
         if ($effectivePayment > 0) {
             $desc = $paymentMethod === 'credit' ? "عربون فاتورة #{$invoiceId}" : "سداد لفاتورة #{$invoiceId}";
-            $this->customerModel->addLedgerEntry([
+            $this->customerRepo->addLedgerEntry([
                 'customer_id' => $customerId,
                 'type'        => 'credit',
                 'amount'      => $effectivePayment,
@@ -288,7 +302,7 @@ class SaleService implements SaleServiceInterface
     {
         if (empty($enrichedItems)) return [];
         $productIds = array_unique(array_column($enrichedItems, 'product_id'));
-        return $this->productModel->getLowStockByProductIds($productIds);
+        return $this->productRepo->getLowStockByProductIds($productIds);
     }
 
     // ── Delete invoice ──────────────────────────────────────
@@ -300,18 +314,17 @@ class SaleService implements SaleServiceInterface
      */
     public function deleteInvoice(int $invoiceId): array
     {
-        $invoice = $this->invoiceModel->findById($invoiceId);
+        $invoice = $this->invoiceRepo->findById($invoiceId);
         if (!$invoice) {
             return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
         }
 
         $this->db->beginTransaction();
         try {
-            $inventoryEvent = new \App\Models\InventoryEvent($this->db);
             foreach ($invoice['items'] as $item) {
-                $this->productModel->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
-                $updatedProduct = $this->productModel->findById((int) $item['product_id']);
-                $inventoryEvent->record((int) $item['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$item['quantity']);
+                $this->productRepo->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
+                $updatedProduct = $this->productRepo->findById((int) $item['product_id']);
+                $this->inventoryEventRepo->record((int) $item['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$item['quantity']);
             }
             // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
             $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);
@@ -330,8 +343,8 @@ class SaleService implements SaleServiceInterface
 
     // ── Accessors ───────────────────────────────────────────
 
-    public function getInvoiceModel(): Invoice
+    public function getInvoiceModel(): InvoiceRepository
     {
-        return $this->invoiceModel;
+        return $this->invoiceRepo;
     }
 }

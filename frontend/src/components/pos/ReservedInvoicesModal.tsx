@@ -6,6 +6,7 @@ import { formatCurrency, formatShortDate } from '../../utils/formatters'
 import toast from 'react-hot-toast'
 import { useConfirmStore } from '../../store/confirmStore'
 import { DEFAULT_PAGE_SIZE } from '../../api/constants'
+import IconBadge from '../common/IconBadge'
 
 export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
   const [invoices, setInvoices] = useState<any[]>([])
@@ -57,7 +58,10 @@ export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: '700px', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>الفواتير المحجوزة 🕒</h2>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <IconBadge icon={Clock} color="warning" shape="rounded" size={16} badgeSize={26} />
+            الفواتير المحجوزة
+          </h2>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 

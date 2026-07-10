@@ -387,7 +387,9 @@ class UpdateService
             $this->gitService->runGit(['config', '--global', '--add', 'safe.directory', $this->getRootDir()]);
             [$testOut2, $testCode2] = $this->gitService->runGit(['status', '--porcelain']);
             if ($testCode2 !== 0) {
-                $this->gitService->runGit(['config', '--global', '--add', 'safe.directory', '*']);
+                // Do NOT use '*' — it disables ownership checks for ALL repos on this machine.
+                // Instead, try adding the specific directory with --system scope.
+                $this->gitService->runGit(['config', '--system', '--add', 'safe.directory', $this->getRootDir()]);
                 [$testOut3, $testCode3] = $this->gitService->runGit(['status', '--porcelain']);
                 if ($testCode3 !== 0) {
                     Logger::error('Update: git status failed after safe.directory fix', [

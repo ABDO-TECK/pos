@@ -33,13 +33,11 @@ class BackupService implements BackupServiceInterface {
      * Returns the full path to the backup file.
      */
     public function createBackupFile(string $backupDir): string {
-        $sql = $this->generateBackupSql();
-
         if (!is_dir($backupDir)) {
-            mkdir($backupDir, 0777, true);
+            mkdir($backupDir, 0750, true);
         }
         $filename = rtrim($backupDir, '/\\') . '/pre_update_' . date('Y-m-d_H-i-s') . '.sql';
-        file_put_contents($filename, $sql);
+        $this->generateBackupSqlToFile($filename);
 
         // Keep only last 10 backups
         $files = glob(rtrim($backupDir, '/\\') . '/pre_update_*.sql') ?: [];
@@ -152,9 +150,18 @@ class BackupService implements BackupServiceInterface {
             return ['ok' => false, 'error' => 'محتوى الملف لا يبدو ملف SQL صالحاً لقاعدة البيانات', 'code' => 400];
         }
 
-        // منع أوامر خطرة
-        if (preg_match('/\b(OUTFILE|DUMPFILE|LOAD_FILE|INTO\s+OUTFILE)\b/is', $content)) {
-            return ['ok' => false, 'error' => 'الملف يحتوي على أوامر غير مسموحة', 'code' => 400];
+        // منع أوامر خطرة — قائمة موسعة
+        $dangerousPatterns = [
+            '/\b(OUTFILE|DUMPFILE|LOAD_FILE|INTO\s+OUTFILE)\b/is',
+            '/\b(GRANT|REVOKE|CREATE\s+USER|ALTER\s+USER|DROP\s+USER)\b/is',
+            '/\b(LOAD\s+DATA|SOURCE)\b/is',
+            '/\b(SLEEP|BENCHMARK|GET_LOCK)\b/is',
+            '/\b(DROP\s+DATABASE)\b/is',
+        ];
+        foreach ($dangerousPatterns as $pattern) {
+            if (preg_match($pattern, $content)) {
+                return ['ok' => false, 'error' => 'الملف يحتوي على أوامر غير مسموحة', 'code' => 400];
+            }
         }
 
         return ['ok' => true, 'content' => $content];
@@ -236,7 +243,71 @@ class BackupService implements BackupServiceInterface {
     }
 
     /**
-     * Generate backup SQL string in memory.
+     * Generate backup SQL directly to a file using streaming (row-by-row).
+     * This avoids loading the entire database into memory.
+     */
+    private function generateBackupSqlToFile(string $filePath): void {
+        $fh = fopen($filePath, 'w');
+        if ($fh === false) {
+            throw new RuntimeException("Cannot open backup file for writing: $filePath");
+        }
+
+        try {
+            $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+
+            fwrite($fh, "-- POS Auto-Update Backup\n");
+            fwrite($fh, "-- Generated: " . date('Y-m-d H:i:s') . "\n");
+            fwrite($fh, "SET FOREIGN_KEY_CHECKS=0;\n\n");
+
+            foreach ($tables as $table) {
+                $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
+                $ddl = $createStmt['Create Table'] ?? null;
+                if ($ddl === null && is_array($createStmt)) {
+                    $vals = array_values($createStmt);
+                    $ddl  = $vals[1] ?? '';
+                }
+                if (!$ddl) {
+                    throw new RuntimeException("تعذر قراءة هيكل الجدول: $table");
+                }
+
+                fwrite($fh, "-- Table: $table\n");
+                fwrite($fh, "DROP TABLE IF EXISTS `$table`;\n");
+                fwrite($fh, $ddl . ";\n\n");
+
+                // Stream rows one at a time — no fetchAll()
+                $stmt = $this->getDb()->query("SELECT * FROM `$table`");
+                $firstRow = true;
+
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    if ($firstRow) {
+                        $columns = '`' . implode('`, `', array_keys($row)) . '`';
+                        fwrite($fh, "INSERT INTO `$table` ($columns) VALUES\n");
+                        $firstRow = false;
+                    } else {
+                        fwrite($fh, ",\n");
+                    }
+
+                    $escaped = array_map(function ($v) {
+                        return $v === null ? 'NULL' : $this->getDb()->quote((string)$v);
+                    }, array_values($row));
+
+                    fwrite($fh, '(' . implode(', ', $escaped) . ')');
+                }
+
+                if (!$firstRow) {
+                    fwrite($fh, ";\n\n");
+                }
+            }
+
+            fwrite($fh, "SET FOREIGN_KEY_CHECKS=1;\n");
+        } finally {
+            fclose($fh);
+        }
+    }
+
+    /**
+     * @deprecated Use generateBackupSqlToFile() instead to avoid OOM on large databases.
+     * Kept for backward compatibility with unit tests.
      */
     private function generateBackupSql(): string {
         $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);

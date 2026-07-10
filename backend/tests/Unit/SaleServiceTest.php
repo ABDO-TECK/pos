@@ -4,27 +4,32 @@ namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use App\Services\SaleService;
-use App\Models\Invoice;
-use App\Models\Product;
-use App\Models\Customer;
+use App\Repositories\InvoiceRepository;
+use App\Repositories\ProductRepository;
+use App\Repositories\CustomerRepository;
+use App\Repositories\InventoryEventRepository;
 
 class SaleServiceTest extends TestCase
 {
     private SaleService $service;
-    private Invoice $invoiceMock;
-    private Product $productMock;
-    private Customer $customerMock;
+    private InvoiceRepository $invoiceMock;
+    private ProductRepository $productMock;
+    private CustomerRepository $customerMock;
+    private InventoryEventRepository $inventoryEventMock;
 
     protected function setUp(): void
     {
-        $this->invoiceMock  = $this->createMock(Invoice::class);
-        $this->productMock  = $this->createMock(Product::class);
-        $this->customerMock = $this->createMock(Customer::class);
+        $this->invoiceMock        = $this->createMock(InvoiceRepository::class);
+        $this->productMock        = $this->createMock(ProductRepository::class);
+        $this->customerMock       = $this->createMock(CustomerRepository::class);
+        $this->inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
         $this->service = new SaleService(
             $this->invoiceMock,
             $this->productMock,
-            $this->customerMock
+            $this->customerMock,
+            $this->inventoryEventMock,
+            $this->createMock(\PDO::class)
         );
     }
 
@@ -82,7 +87,7 @@ class SaleServiceTest extends TestCase
     public function testCalculateTotalsWithoutTax()
     {
         $service = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
             
@@ -106,7 +111,7 @@ class SaleServiceTest extends TestCase
     public function testCalculateTotalsWithTax()
     {
         $service = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
             
@@ -129,7 +134,7 @@ class SaleServiceTest extends TestCase
     public function testCalculateTotalsWithCreditSale()
     {
         $service = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
             
@@ -187,7 +192,7 @@ class SaleServiceTest extends TestCase
     public function testCalculateTotalsChangeDue()
     {
         $service = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
         $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
@@ -202,7 +207,7 @@ class SaleServiceTest extends TestCase
     public function testCalculateTotalsWithDiscount()
     {
         $service = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock])
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
         $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
@@ -214,5 +219,101 @@ class SaleServiceTest extends TestCase
         $this->assertEquals(200, $totals['subtotal']);
         $this->assertEquals(20, $totals['discount']);
         $this->assertEquals(180, $totals['total']);
+    }
+
+    public function testCalculateTotalsWithTaxAndDiscount()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn(['tax_enabled' => '1', 'tax_rate' => '15']);
+
+        // subtotal=200, discount=50, taxable=150, tax=22.50, total=172.50
+        $items = [['price' => 100, 'quantity' => 2, 'unit_cost' => 50]];
+        $data = ['payment_method' => 'cash', 'amount_paid' => 200];
+        $totals = $service->calculateTotals($items, 50, $data);
+
+        $this->assertEquals(200, $totals['subtotal']);
+        $this->assertEquals(50, $totals['discount']);
+        $this->assertEquals(22.50, $totals['tax']);
+        $this->assertEquals(172.50, $totals['total']);
+        $this->assertEquals(27.50, $totals['change_due']); // 200 - 172.50
+        $this->assertEquals(0, $totals['amount_due']);
+    }
+
+    public function testCalculateTotalsCreditSaleWithoutCustomer()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '15']);
+
+        $items = [['price' => 100, 'quantity' => 1, 'unit_cost' => 50]];
+        $data = ['payment_method' => 'credit', 'amount_paid' => 0];
+
+        $totals = $service->calculateTotals($items, 0, $data);
+
+        $this->assertTrue($totals['is_credit_sale']);
+        $this->assertNull($totals['customer_id']); // no customer_id provided
+        $this->assertEquals(100, $totals['amount_due']);
+        $this->assertEquals(0, $totals['deposit']);
+    }
+
+    public function testCalculateTotalsWithZeroAmountPaid()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
+
+        $items = [['price' => 50, 'quantity' => 2, 'unit_cost' => 30]];
+        // When amount_paid is not set, it defaults to total
+        $data = ['payment_method' => 'cash'];
+
+        $totals = $service->calculateTotals($items, 0, $data);
+
+        $this->assertEquals(100, $totals['total']);
+        $this->assertEquals(100, $totals['amount_paid']); // defaults to total
+        $this->assertEquals(0, $totals['change_due']);
+        $this->assertEquals(0, $totals['amount_due']);
+    }
+
+    public function testEnrichItemsWithEmptyArray()
+    {
+        $result = $this->service->enrichItems([]);
+        $this->assertTrue($result['ok']);
+        $this->assertEmpty($result['items']);
+    }
+
+    public function testGetLowStockAlertsReturnsAlerts()
+    {
+        $enrichedItems = [
+            ['product_id' => 1, 'quantity' => 5, 'price' => 10, 'unit_cost' => 5],
+            ['product_id' => 2, 'quantity' => 3, 'price' => 20, 'unit_cost' => 12],
+        ];
+
+        $this->productMock->method('getLowStockByProductIds')
+            ->with([1, 2])
+            ->willReturn([['id' => 1, 'name' => 'Low Product', 'quantity' => 2]]);
+
+        $alerts = $this->service->getLowStockAlerts($enrichedItems);
+
+        $this->assertCount(1, $alerts);
+        $this->assertEquals(1, $alerts[0]['id']);
+    }
+
+    public function testGetLowStockAlertsWithEmptyItems()
+    {
+        $alerts = $this->service->getLowStockAlerts([]);
+        $this->assertEmpty($alerts);
+    }
+
+    public function testGetInvoiceModelReturnsInvoice()
+    {
+        $model = $this->service->getInvoiceModel();
+        $this->assertInstanceOf(InvoiceRepository::class, $model);
     }
 }

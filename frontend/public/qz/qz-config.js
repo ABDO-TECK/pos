@@ -5,7 +5,8 @@
 
 function getQZTrayHost() {
     const h = window.location.hostname;
-    return (h === 'localhost' || h === '127.0.0.1') ? 'localhost' : h;
+    const isLocal = h === 'localhost' || h === '127.0.0.1' || h === 'pos-app' || h === '';
+    return isLocal ? 'localhost' : h;
 }
 
 window.QZ_CONFIG = {
@@ -15,7 +16,7 @@ window.QZ_CONFIG = {
     retries:   2,
     delay:     0,
     /** URL of sign-message.php relative to origin — e.g. /pos/backend/sign-message.php */
-    signUrl:   '/pos/backend/sign-message.php',
+    signUrl:   '/sign-message.php',
     /** URL of digital-certificate.txt in the public folder */
     certUrl:   '/digital-certificate.txt',
 };

@@ -50,7 +50,9 @@
                   "asarUnpack":  [
                                      "backend/backend.phar",
                                      "backend/certs/**/*",
-                                     "database/pos_schema.sql"
+                                     "database/pos_schema.sql",
+                                     "frontend/dist/**/*",
+                                     "frontend/public/**/*"
                                  ],
                   "publish":  {
                                   "provider":  "github",

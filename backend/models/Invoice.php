@@ -103,18 +103,30 @@ class Invoice {
             ];
         }
 
-        // ── بدون pagination ──
+        // ── بدون pagination — configurable limit ──
+        $defaultLimit = defined('INVOICE_DEFAULT_LIMIT') ? INVOICE_DEFAULT_LIMIT : 1000;
         $sql = "SELECT i.*, u.name AS cashier_name, c.name AS customer_name
                 FROM invoices i
                 JOIN users u ON u.id = i.user_id
                 LEFT JOIN customers c ON c.id = i.customer_id
                 WHERE $whereClause
                 ORDER BY i.created_at DESC
-                LIMIT 200";
+                LIMIT :inv_limit";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll();
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':inv_limit', $defaultLimit, \PDO::PARAM_INT);
+        $stmt->execute();
+        $results = $stmt->fetchAll();
+
+        // Warn if limit was hit — operator should use pagination
+        if (count($results) >= $defaultLimit && class_exists('App\Helpers\Logger')) {
+            \App\Helpers\Logger::warning("Invoice query hit the default limit of {$defaultLimit}. Use pagination (page/limit params) to see all records.");
+        }
+
+        return $results;
     }
 
     public function findById(int $id): ?array {
@@ -134,7 +146,7 @@ class Invoice {
 
     public function getItems(int $invoiceId): array {
         $stmt = $this->db->prepare(
-            'SELECT ii.*, p.name AS product_name, p.barcode
+            'SELECT ii.*, p.name AS product_name, p.barcode, p.unit_type, p.size_name, p.sell_by_weight
              FROM invoice_items ii
              JOIN products p ON p.id = ii.product_id
              WHERE ii.invoice_id = ?'
@@ -145,8 +157,8 @@ class Invoice {
 
     public function create(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO invoices (user_id, customer_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due, amount_due, status)
-             VALUES (:user_id, :customer_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due, :amount_due, :status)'
+            'INSERT INTO invoices (user_id, customer_id, subtotal, discount, tax, total, payment_method, amount_paid, change_due, amount_due, status, driver_name, vehicle_number, delivery_date, delivery_notes)
+             VALUES (:user_id, :customer_id, :subtotal, :discount, :tax, :total, :payment_method, :amount_paid, :change_due, :amount_due, :status, :driver_name, :vehicle_number, :delivery_date, :delivery_notes)'
         );
         $stmt->execute([
             'user_id'        => $data['user_id'],
@@ -160,6 +172,10 @@ class Invoice {
             'change_due'     => $data['change_due'] ?? 0,
             'amount_due'     => $data['amount_due'] ?? 0,
             'status'         => $data['status'] ?? 'completed',
+            'driver_name'    => $data['driver_name'] ?? null,
+            'vehicle_number' => $data['vehicle_number'] ?? null,
+            'delivery_date'  => $data['delivery_date'] ?? null,
+            'delivery_notes' => $data['delivery_notes'] ?? null,
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -196,7 +212,11 @@ class Invoice {
                 amount_paid = :amount_paid,
                 change_due = :change_due,
                 amount_due = :amount_due,
-                status = :status
+                status = :status,
+                driver_name = :driver_name,
+                vehicle_number = :vehicle_number,
+                delivery_date = :delivery_date,
+                delivery_notes = :delivery_notes
              WHERE id = :id'
         );
         $stmt->execute([
@@ -211,6 +231,10 @@ class Invoice {
             'change_due'       => $data['change_due'] ?? 0,
             'amount_due'       => $data['amount_due'] ?? 0,
             'status'           => $data['status'] ?? 'completed',
+            'driver_name'      => $data['driver_name'] ?? null,
+            'vehicle_number'   => $data['vehicle_number'] ?? null,
+            'delivery_date'    => $data['delivery_date'] ?? null,
+            'delivery_notes'   => $data['delivery_notes'] ?? null,
         ]);
     }
 

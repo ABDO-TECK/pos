@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Helpers\Cache;
 use App\Helpers\Response;
 use PDO;
+use App\Requests\SettingsRequest;
 
 
 class SettingsController extends Controller {
@@ -35,7 +36,8 @@ class SettingsController extends Controller {
     }
 
     public function update() {
-        $data = $this->getBody();
+        $request = new SettingsRequest($this->getBody());
+        $data = $request->validated();
         $allowed = ['store_name', 'tax_enabled', 'tax_rate', 'loyalty_enabled', 'loyalty_points_per_rial', 'loyalty_rial_per_point'];
 
         return $this->withTransaction(function ($db) use ($data, $allowed) {

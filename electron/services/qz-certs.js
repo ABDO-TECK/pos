@@ -32,6 +32,7 @@ async function ensureQZCerts(qzTrayDir, javaPath) {
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     console.log('[QZ Certs] Certificates already exist for message signing');
     _copyOverrideCert(certPath, qzTrayDir);
+    _publishCertsForBrowser(certPath, keyPath);
     
     if (!fs.existsSync(flagPath)) {
       console.log('[QZ Certs] WSS SSL not installed silently. Installing now via QZ Tray certgen...');
@@ -89,6 +90,9 @@ async function ensureQZCerts(qzTrayDir, javaPath) {
 
   // 5. نسخ الشهادة كـ override.crt
   _copyOverrideCert(certPath, qzTrayDir);
+
+  // 5.5 نشر الشهادة والمفتاح لمتصفحات الشبكة (الهواتف)
+  _publishCertsForBrowser(certPath, keyPath);
   
   // 6. تشغيل التثبيت الصامت لشهادات الـ SSL الخاصة بـ QZ Tray
   await installSSLcertSilently(qzTrayDir, javaPath, flagPath);
@@ -137,6 +141,41 @@ function _copyOverrideCert(certPath, qzTrayDir) {
     console.log('[QZ Certs] override.crt copied to:', overridePath);
   } catch (err) {
     console.warn('[QZ Certs] Could not copy override.crt:', err.message);
+  }
+}
+
+/**
+ * ينشر الشهادة والمفتاح الخاص للوصول عبر HTTP (للأجهزة الخارجية كالهواتف).
+ * - الشهادة → frontend/dist/digital-certificate.txt (يقدّمها PHP router)
+ * - المفتاح → backend/storage/private-key.pem (يستخدمه sign-message.php)
+ */
+function _publishCertsForBrowser(certPath, keyPath) {
+  const { getBackendDir } = require('../utils/paths');
+  const backendDir = getBackendDir();
+  // Resolve project root from backend dir
+  const projectRoot = path.resolve(backendDir, '..');
+
+  // 1. Copy cert to frontend/dist/digital-certificate.txt
+  try {
+    const distDir = path.join(projectRoot, 'frontend', 'dist');
+    if (fs.existsSync(distDir)) {
+      const destCert = path.join(distDir, 'digital-certificate.txt');
+      fs.copyFileSync(certPath, destCert);
+      console.log('[QZ Certs] Certificate published to:', destCert);
+    }
+  } catch (err) {
+    console.warn('[QZ Certs] Could not publish certificate to frontend/dist:', err.message);
+  }
+
+  // 2. Copy private key to backend/storage/private-key.pem
+  try {
+    const storageDir = path.join(backendDir, 'storage');
+    if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
+    const destKey = path.join(storageDir, 'private-key.pem');
+    fs.copyFileSync(keyPath, destKey);
+    console.log('[QZ Certs] Private key published to:', destKey);
+  } catch (err) {
+    console.warn('[QZ Certs] Could not publish private key to backend/storage:', err.message);
   }
 }
 

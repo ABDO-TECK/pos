@@ -73,17 +73,25 @@ class InventoryService implements InventoryServiceInterface
                 }
                 $this->supplierRepo->deletePurchaseInvoiceItems($replaceInvoiceId);
                 $this->supplierRepo->updatePurchaseInvoiceTotals($replaceInvoiceId, [
-                    'total'       => $grandTotal,
-                    'items_count' => count($data['items']),
-                    'notes'       => $data['notes'] ?? null,
+                    'total'          => $grandTotal,
+                    'items_count'    => count($data['items']),
+                    'notes'          => $data['notes'] ?? null,
+                    'driver_name'    => $data['driver_name'] ?? null,
+                    'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'delivery_date'  => $data['delivery_date'] ?? null,
+                    'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
                 $invoiceId = $replaceInvoiceId;
             } else {
                 $invoiceId = $this->supplierRepo->createPurchaseInvoice([
-                    'supplier_id' => (int) $data['supplier_id'],
-                    'total'       => $grandTotal,
-                    'items_count' => count($data['items']),
-                    'notes'       => $data['notes'] ?? null,
+                    'supplier_id'    => (int) $data['supplier_id'],
+                    'total'          => $grandTotal,
+                    'items_count'    => count($data['items']),
+                    'notes'          => $data['notes'] ?? null,
+                    'driver_name'    => $data['driver_name'] ?? null,
+                    'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'delivery_date'  => $data['delivery_date'] ?? null,
+                    'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
             }
 
@@ -115,15 +123,27 @@ class InventoryService implements InventoryServiceInterface
             }
 
             // تسجيل قيود كشف حساب المورد
-            $isCreditPurchase = ($data['payment_type'] ?? '') === 'credit';
-            if ($isCreditPurchase && $replaceInvoiceId === 0) {
-                $this->recordSupplierLedger(
-                    (int) $data['supplier_id'],
-                    $invoiceId,
-                    $grandTotal,
-                    (float) ($data['deposit'] ?? 0),
-                    $authUser
-                );
+            $paymentType = $data['payment_type'] ?? 'cash';
+            if ($replaceInvoiceId === 0) {
+                if ($paymentType === 'credit') {
+                    $this->recordSupplierLedger(
+                        (int) $data['supplier_id'],
+                        $invoiceId,
+                        $grandTotal,
+                        (float) ($data['deposit'] ?? 0),
+                        $authUser,
+                        'credit'
+                    );
+                } elseif ($paymentType === 'cash') {
+                    $this->recordSupplierLedger(
+                        (int) $data['supplier_id'],
+                        $invoiceId,
+                        $grandTotal,
+                        $grandTotal,
+                        $authUser,
+                        'cash'
+                    );
+                }
             }
 
             $db->commit();
@@ -159,6 +179,10 @@ class InventoryService implements InventoryServiceInterface
             foreach ($invoice['items'] as $item) {
                 $this->productModel->decrementQuantity((int) $item['product_id'], (int) $item['quantity']);
             }
+            
+            // Delete related supplier ledger entries
+            $db->prepare('DELETE FROM supplier_ledger WHERE purchase_invoice_id = ?')->execute([$id]);
+
             $this->supplierRepo->deletePurchaseInvoice($id);
             $db->commit();
         } catch (Throwable $e) {
@@ -172,18 +196,34 @@ class InventoryService implements InventoryServiceInterface
 
     // ── Supplier ledger helper ───────────────────────────────
 
-    private function recordSupplierLedger(int $supplierId, int $invoiceId, float $grandTotal, float $deposit, array $authUser): void
+    private function recordSupplierLedger(int $supplierId, int $invoiceId, float $grandTotal, float $deposit, array $authUser, string $paymentType = 'credit'): void
     {
+        $desc = "فاتورة شراء #{$invoiceId}";
+        if ($paymentType === 'cash') {
+            $desc .= " (نقدي)";
+        } elseif ($deposit > 0) {
+            $desc .= " (عربون {$deposit})";
+        }
+
         $this->supplierRepo->addLedgerEntry([
             'supplier_id'         => $supplierId,
             'type'                => 'debit',
             'amount'              => $grandTotal,
-            'description'         => "فاتورة شراء #{$invoiceId}" . ($deposit > 0 ? " (عربون {$deposit})" : ''),
+            'description'         => $desc,
             'purchase_invoice_id' => $invoiceId,
             'created_by'          => $authUser['id'],
         ]);
 
-        if ($deposit > 0) {
+        if ($paymentType === 'cash') {
+            $this->supplierRepo->addLedgerEntry([
+                'supplier_id'         => $supplierId,
+                'type'                => 'credit',
+                'amount'              => $grandTotal,
+                'description'         => "سداد نقدي لفاتورة شراء #{$invoiceId}",
+                'purchase_invoice_id' => $invoiceId,
+                'created_by'          => $authUser['id'],
+            ]);
+        } elseif ($deposit > 0) {
             $this->supplierRepo->addLedgerEntry([
                 'supplier_id'         => $supplierId,
                 'type'                => 'credit',

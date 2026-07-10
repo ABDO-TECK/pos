@@ -29,7 +29,7 @@ class AuthMiddleware {
              JOIN users u ON u.id = t.user_id
              WHERE t.token = ?'
         );
-        $stmt->execute([$token]);
+        $stmt->execute([hash('sha256', $token)]);
         $row = $stmt->fetch();
 
         if (!$row) {
@@ -53,9 +53,13 @@ class AuthMiddleware {
             }
         }
 
-        $expiresAtTime = strtotime($row['expires_at']);
-        if ($row['expires_at'] && $expiresAtTime < time()) {
-            return Response::unauthorized('Token expired');
+        // Compare expiry using UTC to avoid timezone mismatches between PHP and MySQL (timezone safety)
+        if ($row['expires_at']) {
+            $expiresAtUtc = new \DateTime($row['expires_at'], new \DateTimeZone('UTC'));
+            $nowUtc = new \DateTime('now', new \DateTimeZone('UTC'));
+            if ($expiresAtUtc < $nowUtc) {
+                return Response::unauthorized('Token expired');
+            }
         }
 
 

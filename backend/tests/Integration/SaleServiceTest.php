@@ -2,9 +2,10 @@
 
 namespace Tests\Integration;
 
-use App\Models\Customer;
-use App\Models\Invoice;
-use App\Models\Product;
+use App\Repositories\CustomerRepository;
+use App\Repositories\InvoiceRepository;
+use App\Repositories\ProductRepository;
+use App\Repositories\InventoryEventRepository;
 use App\Services\SaleService;
 use PHPUnit\Framework\TestCase;
 
@@ -15,16 +16,17 @@ class SaleServiceTest extends TestCase
      */
     public function testEnrichItemsSuccess()
     {
-        $invoiceModelMock = $this->createMock(Invoice::class);
-        $productModelMock = $this->createMock(Product::class);
-        $customerModelMock = $this->createMock(Customer::class);
+        $invoiceRepoMock = $this->createMock(InvoiceRepository::class);
+        $productRepoMock = $this->createMock(ProductRepository::class);
+        $customerRepoMock = $this->createMock(CustomerRepository::class);
+        $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
-        $productModelMock->expects($this->once())
+        $productRepoMock->expects($this->once())
             ->method('findById')
             ->with(1)
             ->willReturn(['id' => 1, 'price' => 10.0, 'cost' => 5.0]);
 
-        $saleService = new SaleService($invoiceModelMock, $productModelMock, $customerModelMock);
+        $saleService = new SaleService($invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class));
 
         $result = $saleService->enrichItems([['product_id' => 1, 'quantity' => 2]]);
 
@@ -41,16 +43,17 @@ class SaleServiceTest extends TestCase
      */
     public function testEnrichItemsFailsForMissingProduct()
     {
-        $invoiceModelMock = $this->createMock(Invoice::class);
-        $productModelMock = $this->createMock(Product::class);
-        $customerModelMock = $this->createMock(Customer::class);
+        $invoiceRepoMock = $this->createMock(InvoiceRepository::class);
+        $productRepoMock = $this->createMock(ProductRepository::class);
+        $customerRepoMock = $this->createMock(CustomerRepository::class);
+        $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
-        $productModelMock->expects($this->once())
+        $productRepoMock->expects($this->once())
             ->method('findById')
             ->with(999)
             ->willReturn(null);
 
-        $saleService = new SaleService($invoiceModelMock, $productModelMock, $customerModelMock);
+        $saleService = new SaleService($invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class));
 
         $result = $saleService->enrichItems([['product_id' => 999, 'quantity' => 1]]);
 
@@ -63,13 +66,14 @@ class SaleServiceTest extends TestCase
      */
     public function testCalculateTotalsWithDiscount()
     {
-        $invoiceModelMock = $this->createMock(Invoice::class);
-        $productModelMock = $this->createMock(Product::class);
-        $customerModelMock = $this->createMock(Customer::class);
+        $invoiceRepoMock = $this->createMock(InvoiceRepository::class);
+        $productRepoMock = $this->createMock(ProductRepository::class);
+        $customerRepoMock = $this->createMock(CustomerRepository::class);
+        $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
         // Partial mock to bypass getSettings and DB dependency
         $saleService = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$invoiceModelMock, $productModelMock, $customerModelMock])
+            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock])
             ->onlyMethods(['getSettings'])
             ->getMock();
 
@@ -96,20 +100,21 @@ class SaleServiceTest extends TestCase
      */
     public function testProcessSaleSuccess()
     {
-        $invoiceModelMock = $this->createMock(Invoice::class);
-        $productModelMock = $this->createMock(Product::class);
-        $customerModelMock = $this->createMock(Customer::class);
+        $invoiceRepoMock = $this->createMock(InvoiceRepository::class);
+        $productRepoMock = $this->createMock(ProductRepository::class);
+        $customerRepoMock = $this->createMock(CustomerRepository::class);
+        $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
-        $invoiceModelMock->expects($this->once())
+        $invoiceRepoMock->expects($this->once())
             ->method('create')
             ->willReturn(1);
 
-        $productModelMock->expects($this->once())
+        $productRepoMock->expects($this->once())
             ->method('decrementQuantity')
             ->with(1, 2.0);
 
         $saleService = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$invoiceModelMock, $productModelMock, $customerModelMock])
+            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock])
             ->onlyMethods(['getSettings'])
             ->getMock();
 
@@ -137,16 +142,17 @@ class SaleServiceTest extends TestCase
      */
     public function testDeleteInvoiceNotFound()
     {
-        $invoiceModelMock = $this->createMock(Invoice::class);
-        $productModelMock = $this->createMock(Product::class);
-        $customerModelMock = $this->createMock(Customer::class);
+        $invoiceRepoMock = $this->createMock(InvoiceRepository::class);
+        $productRepoMock = $this->createMock(ProductRepository::class);
+        $customerRepoMock = $this->createMock(CustomerRepository::class);
+        $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
-        $invoiceModelMock->expects($this->once())
+        $invoiceRepoMock->expects($this->once())
             ->method('findById')
             ->with(999)
             ->willReturn(null);
 
-        $saleService = new SaleService($invoiceModelMock, $productModelMock, $customerModelMock);
+        $saleService = new SaleService($invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class));
 
         $result = $saleService->deleteInvoice(999);
 

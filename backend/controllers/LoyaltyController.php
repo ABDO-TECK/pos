@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Helpers\Response;
 use App\Services\LoyaltyService;
+use App\Requests\LoyaltyRedeemRequest;
 
 class LoyaltyController extends Controller {
     private LoyaltyService $loyalty;
@@ -22,8 +23,9 @@ class LoyaltyController extends Controller {
     }
 
     public function redeem(string $customerId) {
-        $body = $this->getBody();
-        $points = (int)($body['points'] ?? 0);
+        $request = new LoyaltyRedeemRequest($this->getBody());
+        $data = $request->validated();
+        $points = (int)($data['points'] ?? 0);
         if ($points <= 0) return Response::error('عدد النقاط غير صالح', 400);
 
         try {

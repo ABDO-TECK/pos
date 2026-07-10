@@ -14,6 +14,8 @@ interface CustomerLedgerPanelProps {
   ledgerLoading: boolean
   setEditEntryModal: (modal: any) => void
   setEditEntryForm: (form: any) => void
+  onDeleteEntry: (entryId: number) => void
+  onViewInvoice: (invoiceId: number) => void
 }
 
 export default function CustomerLedgerPanel({
@@ -23,7 +25,9 @@ export default function CustomerLedgerPanel({
   setPayModal,
   ledgerLoading,
   setEditEntryModal,
-  setEditEntryForm
+  setEditEntryForm,
+  onDeleteEntry,
+  onViewInvoice
 }: CustomerLedgerPanelProps) {
   if (!ledgerData) return null
 
@@ -88,6 +92,8 @@ export default function CustomerLedgerPanel({
         ledgerData={ledgerData}
         setEditEntryModal={setEditEntryModal}
         setEditEntryForm={setEditEntryForm}
+        onDeleteEntry={onDeleteEntry}
+        onViewInvoice={onViewInvoice}
       />
     </div>
   )

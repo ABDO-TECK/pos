@@ -14,9 +14,20 @@ class User {
     }
 
     public function findByEmail(string $email): ?array {
-        $stmt = $this->db->prepare('SELECT * FROM users WHERE email = ? AND is_active = 1 LIMIT 1');
+        $stmt = $this->db->prepare('SELECT id, name, email, role, is_active, force_password_change, created_at FROM users WHERE email = ? AND is_active = 1 LIMIT 1');
         $stmt->execute([$email]);
         return $stmt->fetch() ?: null;
+    }
+
+    /**
+     * Fetch the password hash for a user by email (for authentication only).
+     * This is separate from findByEmail() to avoid leaking password hashes.
+     */
+    public function getPasswordHashByEmail(string $email): ?string {
+        $stmt = $this->db->prepare('SELECT password FROM users WHERE email = ? AND is_active = 1 LIMIT 1');
+        $stmt->execute([$email]);
+        $row = $stmt->fetch();
+        return $row ? $row['password'] : null;
     }
 
     public function findById(int $id): ?array {
@@ -27,27 +38,29 @@ class User {
 
     public function createToken(int $userId): string {
         $token     = bin2hex(random_bytes(32));
-        $expiresAt = date('Y-m-d H:i:s', time() + TOKEN_LIFETIME);
+        $hashedToken = hash('sha256', $token);
+        $expiresAt = gmdate('Y-m-d H:i:s', time() + TOKEN_LIFETIME);
         $stmt = $this->db->prepare('INSERT INTO tokens (user_id, token, expires_at) VALUES (?, ?, ?)');
-        $stmt->execute([$userId, $token, $expiresAt]);
+        $stmt->execute([$userId, $hashedToken, $expiresAt]);
         return $token;
     }
 
     public function deleteToken(string $token): void {
         $stmt = $this->db->prepare('DELETE FROM tokens WHERE token = ?');
-        $stmt->execute([$token]);
+        $stmt->execute([hash('sha256', $token)]);
     }
 
     public function extendToken(string $token, string $expiresAt): void {
         $stmt = $this->db->prepare('UPDATE tokens SET expires_at = ? WHERE token = ?');
-        $stmt->execute([$expiresAt, $token]);
+        $stmt->execute([$expiresAt, hash('sha256', $token)]);
     }
 
     public function createRefreshToken(int $userId): string {
         $token = bin2hex(random_bytes(64));
-        $expiresAt = date('Y-m-d H:i:s', time() + REFRESH_TOKEN_LIFETIME);
+        $hashedToken = hash('sha256', $token);
+        $expiresAt = gmdate('Y-m-d H:i:s', time() + REFRESH_TOKEN_LIFETIME);
         $stmt = $this->db->prepare('INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)');
-        $stmt->execute([$userId, $token, $expiresAt]);
+        $stmt->execute([$userId, $hashedToken, $expiresAt]);
         return $token;
     }
 
@@ -55,14 +68,14 @@ class User {
         $stmt = $this->db->prepare(
             'SELECT rt.*, u.is_active FROM refresh_tokens rt
              JOIN users u ON u.id = rt.user_id
-             WHERE rt.token = ? AND rt.expires_at > NOW()'
+             WHERE rt.token = ? AND rt.expires_at > UTC_TIMESTAMP()'
         );
-        $stmt->execute([$token]);
+        $stmt->execute([hash('sha256', $token)]);
         return $stmt->fetch() ?: null;
     }
 
     public function deleteRefreshToken(string $token): void {
-        $this->db->prepare('DELETE FROM refresh_tokens WHERE token = ?')->execute([$token]);
+        $this->db->prepare('DELETE FROM refresh_tokens WHERE token = ?')->execute([hash('sha256', $token)]);
     }
 
     public function deleteAllRefreshTokens(int $userId): void {

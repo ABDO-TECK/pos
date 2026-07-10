@@ -44,16 +44,22 @@ class UserController extends Controller {
 
     public function update(string $id) {
         $auth = $this->authService->user();
-        if ($auth['role'] !== 'admin' && (int)$id !== $auth['id']) {
+        $isSelf = (int)$id === (int)$auth['id'];
+        $isAdmin = $auth['role'] === 'admin';
+
+        // Non-admin users can ONLY update their own profile
+        if (!$isAdmin && !$isSelf) {
             return Response::error('Access denied', 403);
         }
 
         $request = new \App\Requests\UserUpdateRequest($this->getBody());
         $data = $request->validated();
 
-        if ($auth['role'] !== 'admin') {
+        // Non-admin users cannot change role, is_active, or email
+        if (!$isAdmin) {
             unset($data['role']);
             unset($data['is_active']);
+            unset($data['email']); // prevent email changes by non-admins
         }
 
         return $this->withTransaction(function () use ($id, $data) {

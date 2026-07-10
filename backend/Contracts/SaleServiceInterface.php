@@ -1,7 +1,7 @@
 <?php
 namespace App\Contracts;
 
-use App\Models\Invoice;
+use App\Repositories\InvoiceRepository;
 
 interface SaleServiceInterface
 {
@@ -11,5 +11,5 @@ interface SaleServiceInterface
     public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array;
     public function getLowStockAlerts(array $enrichedItems): array;
     public function deleteInvoice(int $invoiceId): array;
-    public function getInvoiceModel(): Invoice;
+    public function getInvoiceModel(): InvoiceRepository;
 }

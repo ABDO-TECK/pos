@@ -28,8 +28,9 @@ class AuthController extends Controller {
         $data = $request->validated();
 
         $user = $this->userModel->findByEmail($data['email']);
+        $passwordHash = $user ? $this->userModel->getPasswordHashByEmail($data['email']) : null;
 
-        if (!$user || !password_verify($data['password'], $user['password'])) {
+        if (!$user || !$passwordHash || !password_verify($data['password'], $passwordHash)) {
             return Response::unauthorized('البريد الإلكتروني أو كلمة المرور غير صحيحة');
         }
 
@@ -103,7 +104,15 @@ class AuthController extends Controller {
             return Response::unauthorized('Invalid refresh token');
         }
 
-        // إنشاء access token جديد
+        // ── Refresh Token Rotation ──
+        // 1. Delete the old refresh token (invalidate it)
+        $this->userModel->deleteRefreshToken($refreshToken);
+
+        // 2. Issue a new refresh token
+        $newRefreshToken = $this->userModel->createRefreshToken($record['user_id']);
+        setcookie('pos_refresh_token', $newRefreshToken, CookieHelper::options(time() + REFRESH_TOKEN_LIFETIME));
+
+        // 3. Issue a new access token
         $newToken = $this->userModel->createToken($record['user_id']);
         setcookie('pos_token', $newToken, CookieHelper::options(time() + TOKEN_LIFETIME));
 

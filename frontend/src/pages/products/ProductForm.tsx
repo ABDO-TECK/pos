@@ -1,9 +1,9 @@
-
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Plus, X, Search, ChevronDown, Camera } from 'lucide-react'
+import { Plus, X, Search, ChevronDown, Camera, Scale, Droplet, Layers, Box } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
 import toast from 'react-hot-toast'
 import { extractApiError } from '../../utils/apiError'
+import IconBadge from '../../components/common/IconBadge'
 
 /* ── Barcode conflict helpers ── */
 
@@ -208,7 +208,10 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
     } catch (err) { toast.error(extractApiError(err, 'تعذر تحميل ماسح الباركود')) }
   }
   const f = (k: any) => ({ value: form[k] ?? '', onChange: (e: any) => setForm((p: any) => ({ ...p, [k]: e.target.value })) })
-  const isByWeight = parseInt(form.sell_by_weight) === 1
+  const unitType = form.unit_type ?? (parseInt(form.sell_by_weight) === 1 ? 'weight' : 'piece')
+  const isByWeight = unitType === 'weight'
+  const isByPiece = unitType === 'piece'
+  const isByLiter = unitType === 'liter'
   const barcodes = Array.isArray(form.barcodes) ? form.barcodes : [form.barcode || '']
 
   const setBarcodeAt = (i: any, v: any) => {
@@ -264,215 +267,275 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
 
   return (
     <>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
-      <div style={{ gridColumn: 'span 2' }}>
-        <Label>اسم المنتج *</Label>
-        <input className="input" {...f('name')} placeholder="مثال: أرز بسمتي 1كغ" required />
-      </div>
-      <div style={{ gridColumn: 'span 2' }}>
-      <Label>الباركود</Label>
-        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
-          اختياري — إذا تركته فارغًا سيُولد باركود تلقائيًا، والباركودات الإضافية اختيارية. على الهاتف يمكنك الضغط على أيقونة الكاميرا لمسح الباركود.
-        </p>
-        {barcodes.map((bc: any, idx: number) => {
-          const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts, form)
-          return (
-            <div key={idx} style={{ marginBottom: '0.45rem' }}>
-              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <input
-                    className="input"
-                    style={{
-                      width: '100%',
-                      borderColor: conflict ? '#dc2626' : undefined,
-                      boxShadow: conflict ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
-                    }}
-                    value={bc}
-                    onChange={(e) => setBarcodeAt(idx, e.target.value)}
-                    placeholder={idx === 0 ? 'باركود المنتج (أو اتركه فارغًا لتوليد تلقائي)' : 'باركود إضافي'}
-                    title={conflict ? conflict.title : undefined}
-                    aria-invalid={conflict ? true : undefined}
-                  />
-                  {conflict && (
-                    <div
-                      className="barcode-conflict-hint"
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', textAlign: 'right' }}>
+      
+      {/* ── العمود الأيمن ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div>
+          <Label>اسم المنتج *</Label>
+          <input className="input" {...f('name')} placeholder="مثال: أرز بسمتي 1كغ" required />
+        </div>
+
+        <div>
+          <Label>الباركود</Label>
+          <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
+            اختياري — إذا تركته فارغًا سيُولد تلقائيًا.
+          </p>
+          {barcodes.map((bc: any, idx: number) => {
+            const conflict = getBarcodeRowConflict(barcodes, idx, editingProductId, allProducts, form)
+            return (
+              <div key={idx} style={{ marginBottom: '0.4rem' }}>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      className="input"
                       style={{
-                        fontSize: '0.72rem',
-                        color: '#991b1b',
-                        marginTop: '0.3rem',
-                        lineHeight: 1.45,
-                        padding: '0.35rem 0.5rem',
-                        background: '#fee2e2',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px',
+                        width: '100%',
+                        borderColor: conflict ? '#dc2626' : undefined,
+                        boxShadow: conflict ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
                       }}
-                      title={conflict.line}
-                    >
-                      {conflict.line}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-icon"
-                  style={{ flexShrink: 0, marginTop: '0.15rem' }}
-                  title="مسح الباركود بالكاميرا"
-                  aria-label="مسح الباركود بالكاميرا"
-                  onClick={() => openBarcodeCamera(idx)}
-                >
-                  <Camera size={18} />
-                </button>
-                {idx > 0 ? (
+                      value={bc}
+                      onChange={(e) => setBarcodeAt(idx, e.target.value)}
+                      placeholder={idx === 0 ? 'باركود المنتج (أو اتركه فارغًا للإنشاء التلقائي)' : 'باركود إضافي'}
+                      title={conflict ? conflict.title : undefined}
+                    />
+                    {conflict && (
+                      <div
+                        style={{
+                          fontSize: '0.7rem', color: '#991b1b', marginTop: '0.2rem',
+                          padding: '0.25rem 0.4rem', background: '#fee2e2',
+                          border: '1px solid #fecaca', borderRadius: '4px',
+                        }}
+                      >
+                        {conflict.line}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-icon"
+                    className="btn btn-ghost btn-icon btn-sm"
                     style={{ flexShrink: 0, marginTop: '0.15rem' }}
-                    title="حذف هذا الباركود"
-                    onClick={() => removeBarcodeRow(idx)}
+                    onClick={() => openBarcodeCamera(idx)}
+                    title="مسح بالكاميرا"
                   >
-                    <X size={16} />
+                    <Camera size={16} />
                   </button>
-                ) : null}
+                  {idx > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon btn-sm"
+                      style={{ flexShrink: 0, marginTop: '0.15rem' }}
+                      onClick={() => removeBarcodeRow(idx)}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={addBarcodeRow} style={{ marginTop: '0.15rem' }}>
-          <Plus size={14} style={{ marginLeft: '0.25rem' }} />
-          إضافة باركود
-        </button>
-      </div>
-      {/* ── Sell by weight toggle ── */}
-      <div style={{ gridColumn: 'span 2' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.6rem 0.75rem',
-          background: isByWeight ? 'rgba(34,197,94,0.06)' : 'var(--bg)',
-          border: `1px solid ${isByWeight ? 'var(--primary)' : 'var(--border)'}`,
-          borderRadius: 'var(--radius)',
-          transition: 'all .2s',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '1.1rem' }}>⚖️</span>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>يُباع بالوزن (كيلو)</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {isByWeight ? 'الكمية والمبيعات ستكون بالكيلوجرام (يدعم الكسور: 0.5 = نصف كيلو)' : 'المنتج يُباع بالقطعة حالياً'}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setForm((p: any) => ({ ...p, sell_by_weight: p.sell_by_weight ? 0 : 1 }))}
-            style={{
-              width: '44px', height: '24px', borderRadius: '12px', border: 'none',
-              background: isByWeight ? 'var(--primary)' : 'var(--border)',
-              position: 'relative', cursor: 'pointer', transition: 'background .2s', flexShrink: 0,
-            }}
-            aria-label="تبديل البيع بالوزن"
-          >
-            <span style={{
-              position: 'absolute', top: '2px',
-              right: isByWeight ? '2px' : '20px',
-              width: '20px', height: '20px', borderRadius: '50%',
-              background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-              transition: 'right .2s',
-            }} />
+            )
+          })}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={addBarcodeRow} style={{ marginTop: '0.15rem', padding: '0.2rem 0.5rem' }}>
+            <Plus size={12} style={{ marginLeft: '0.2rem' }} /> إضافة باركود إضافي
           </button>
         </div>
-      </div>
-      <div>
-        <Label>سعر البيع {isByWeight ? 'للكيلو' : ''} *</Label>
-        <input className="input" type="number" step="0.01" min="0" {...f('price')} placeholder="0.00" required />
-      </div>
-      <div>
-        <Label>سعر التكلفة {isByWeight ? 'للكيلو' : ''}</Label>
-        <input className="input" type="number" step="0.01" min="0" {...f('cost')} placeholder="0.00" />
-      </div>
-      <div>
-        <Label>{isByWeight ? 'الوزن الحالي (كجم)' : 'الكمية'}</Label>
-        <input className="input" type="number" min="0" step={isByWeight ? '0.001' : '1'} {...f('quantity')} placeholder={isByWeight ? '0.000' : '0'} />
-        {isByWeight && <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>مثال: 50 = خمسون كيلو في المخزن</p>}
-      </div>
-      <div>
-        <Label>حد التنبيه المنخفض</Label>
-        <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
-      </div>
-      {!isByWeight && (
-        <div style={{ gridColumn: 'span 2', background: 'rgba(59,130,246,0.06)', border: '1px dashed var(--secondary)', borderRadius: 'var(--radius)', padding: '0.65rem 0.75rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.65rem' }}>
-            <div>
-              <Label>📦 عدد القطع في الصندوق</Label>
-              <input
-                className="input"
-                type="number"
-                min="1"
-                step="1"
-                {...f('units_per_box')}
-                placeholder="1"
-                style={{ width: '100%' }}
-              />
-            </div>
-            <div>
-              <Label>باركود الصندوق (اختياري)</Label>
-              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+
+        {/* نوع الوحدة */}
+        <div style={{ marginTop: '0.5rem' }}>
+          <Label>نوع الوحدة</Label>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            {[
+              { id: 'piece', label: 'قطعة', icon: Box, color: 'secondary' },
+              { id: 'weight', label: 'وزن (كجم)', icon: Scale, color: 'primary' },
+              { id: 'liter', label: 'لتر', icon: Droplet, color: 'info' }
+            ].map(item => (
+              <button
+                key={item.id}
+                type="button"
+                className={`btn btn-sm ${unitType === item.id ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', height: '34px', fontSize: '0.82rem' }}
+                onClick={() => setForm((p: any) => ({ ...p, unit_type: item.id, sell_by_weight: item.id === 'weight' ? 1 : 0 }))}
+              >
+                <IconBadge icon={item.icon} color={unitType === item.id ? 'default' : item.color as any} shape="rounded" size={12} badgeSize={20} />
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* قسم المقاسات المتعددة */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <IconBadge icon={Layers} color="secondary" shape="rounded" size={12} badgeSize={22} />
+              المقاسات والأحجام المتعددة
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: '0.76rem', padding: '0.2rem 0.5rem' }}
+              onClick={() => setForm((p: any) => ({
+                ...p,
+                sizes: [...(p.sizes || []), { size_name: '', price: p.price || '', cost: p.cost || '', barcode: '' }]
+              }))}
+            >
+              <Plus size={12} style={{ marginLeft: '0.2rem' }} /> إضافة مقاس
+            </button>
+          </div>
+          {(!form.sizes || form.sizes.length === 0) ? (
+            <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: 0 }}>
+              لا توجد مقاسات مضافة. يُباع المنتج كمقاس واحد افتراضي.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '2px' }}>
+              {form.sizes.map((sz: any, sIdx: number) => (
+                <div key={sIdx} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1.5fr auto', gap: '0.3rem', alignItems: 'center' }}>
                   <input
-                    className="input"
+                    className="input input-sm"
+                    style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
+                    placeholder="المقاس (صغير)"
+                    value={sz.size_name}
+                    onChange={(e) => {
+                      const newSizes = [...form.sizes]
+                      newSizes[sIdx].size_name = e.target.value
+                      setForm((p: any) => ({ ...p, sizes: newSizes }))
+                    }}
+                    required
+                  />
+                  <input
+                    className="input input-sm"
+                    style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
+                    type="number"
+                    step="0.01"
+                    placeholder="سعر البيع"
+                    value={sz.price}
+                    onChange={(e) => {
+                      const newSizes = [...form.sizes]
+                      newSizes[sIdx].price = e.target.value
+                      setForm((p: any) => ({ ...p, sizes: newSizes }))
+                    }}
+                    required
+                  />
+                  <input
+                    className="input input-sm"
+                    style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
+                    type="number"
+                    step="0.01"
+                    placeholder="تكلفة"
+                    value={sz.cost}
+                    onChange={(e) => {
+                      const newSizes = [...form.sizes]
+                      newSizes[sIdx].cost = e.target.value
+                      setForm((p: any) => ({ ...p, sizes: newSizes }))
+                    }}
+                  />
+                  <input
+                    className="input input-sm"
+                    style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
+                    placeholder="باركود (تلقائي)"
+                    value={sz.barcode}
+                    onChange={(e) => {
+                      const newSizes = [...form.sizes]
+                      newSizes[sIdx].barcode = e.target.value
+                      setForm((p: any) => ({ ...p, sizes: newSizes }))
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon btn-sm"
+                    style={{ color: 'var(--danger)', padding: '0.2rem' }}
+                    onClick={() => setForm((p: any) => ({
+                      ...p,
+                      sizes: p.sizes.filter((_: any, j: number) => j !== sIdx)
+                    }))}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── العمود الأيسر ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        
+        <div>
+          <Label>الفئة</Label>
+          <CategoryCombobox
+            key={modalKey}
+            categories={categories}
+            value={form.category_id ?? ''}
+            onChange={(id: any) => setForm((p: any) => ({ ...p, category_id: id }))}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+          <div>
+            <Label>سعر البيع الافتراضي *</Label>
+            <input className="input" type="number" step="0.01" min="0" {...f('price')} placeholder="0.00" required />
+          </div>
+          <div>
+            <Label>سعر التكلفة الافتراضي</Label>
+            <input className="input" type="number" step="0.01" min="0" {...f('cost')} placeholder="0.00" />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+          <div>
+            <Label>{isByWeight ? 'الوزن الحالي (كجم)' : isByLiter ? 'الحجم الحالي (لتر)' : 'الكمية الحالية'}</Label>
+            <input className="input" type="number" min="0" step={isByPiece ? '1' : '0.001'} {...f('quantity')} placeholder="0" />
+          </div>
+          <div>
+            <Label>حد التنبيه المنخفض</Label>
+            <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
+          </div>
+        </div>
+
+        {/* قسم كرتونة البيع بالتجزئة (قطعة فقط) */}
+        {isByPiece && (
+          <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px dashed var(--border)', borderRadius: 'var(--radius)', padding: '0.6rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.4rem' }}>
+              <IconBadge icon={Box} color="secondary" shape="rounded" size={12} badgeSize={22} />
+              كرتونة البيع التجميعي
+            </span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '0.4rem', marginBottom: '0.4rem' }}>
+              <div>
+                <Label>قطع/صندوق</Label>
+                <input className="input input-sm" type="number" min="1" step="1" {...f('units_per_box')} placeholder="1" />
+              </div>
+              <div>
+                <Label>باركود الصندوق</Label>
+                <div style={{ display: 'flex', gap: '0.2rem' }}>
+                  <input
+                    className="input input-sm"
                     {...f('box_barcode')}
-                    placeholder="امسح باركود الكرتونة"
+                    placeholder="باركود الكرتونة"
                     style={{
                       width: '100%',
                       borderColor: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '#dc2626' : undefined,
-                      boxShadow: getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form) ? '0 0 0 1px rgba(220, 38, 38, 0.35)' : undefined,
                     }}
-                    title={getBarcodeRowConflict(barcodes, 'box', editingProductId, allProducts, form)?.title}
                   />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon btn-sm"
+                    onClick={() => openBarcodeCamera('box')}
+                    title="مسح بالكاميرا"
+                  >
+                    <Camera size={16} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-icon"
-                  onClick={() => openBarcodeCamera('box')}
-                  title="مسح بالكاميرا"
-                >
-                  <Camera size={18} />
-                </button>
               </div>
             </div>
-          </div>
-          <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '0 0 0.45rem' }}>
-            عند مسح "باركود الصندوق" في نقطة البيع، سيتم إضافة كمية الصندوق المعرفة دفعةً واحدة إلى الفاتورة.
-          </p>
-          <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'stretch', flexWrap: 'wrap' }}>
-            <div
-              style={{
-                flex: 1,
-                minWidth: '200px',
-                fontSize: '0.76rem',
-                fontWeight: 600,
-                color: 'var(--secondary)',
-                lineHeight: 1.5,
-                padding: '0.45rem 0.55rem',
-                background: 'rgba(59,130,246,0.1)',
-                borderRadius: '6px',
-                border: '1px solid rgba(59,130,246,0.22)',
-                alignSelf: 'center',
-              }}
-            >
+            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
               {stockBoxesHint}
             </div>
           </div>
-        </div>
-      )}
-      <div style={{ gridColumn: 'span 2' }}>
-        <Label>الفئة</Label>
-        <CategoryCombobox
-          key={modalKey}
-          categories={categories}
-          value={form.category_id ?? ''}
-          onChange={(id: any) => setForm((p: any) => ({ ...p, category_id: id }))}
-        />
+        )}
+
       </div>
+
     </div>
 
     {BarcodeScannerLazy && barcodeCameraRow !== null && (

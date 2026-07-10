@@ -1,11 +1,11 @@
-
 import { useState, useEffect, useRef } from 'react'
 
-import { AlertTriangle, Warehouse, Search, Pencil, X } from 'lucide-react'
+import { AlertTriangle, Warehouse, Search, Pencil, X, Coins, Box } from 'lucide-react'
 import { getInventory, getLowStock, adjustInventory } from '../api/endpoints'
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import { extractApiError } from '../utils/apiError'
+import IconBadge from '../components/common/IconBadge'
 
 export default function Inventory() {
   const [products, setProducts] = useState<any[]>([])
@@ -88,12 +88,12 @@ export default function Inventory() {
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
-        <StatCard icon={<Warehouse size={22} color="var(--secondary)" />} label="إجمالي المنتجات" value={formatNumber(products.length)} />
-        <StatCard icon={<AlertTriangle size={22} color="var(--warning)" />} label="مخزون منخفض" value={formatNumber(lowStock.length)} color="var(--warning)" />
-        <StatCard icon={<span style={{ fontSize: '1.2rem' }}>📦</span>} label="إجمالي الوحدات"
-          value={formatNumber(products.reduce((s, p) => s + p.quantity, 0))} />
-        <StatCard icon={<span style={{ fontSize: '1.2rem' }}>💰</span>} label="قيمة المخزون"
-          value={formatCurrency(products.reduce((s, p) => s + p.quantity * p.cost, 0))} />
+        <StatCard icon={<IconBadge icon={Warehouse} color="secondary" shape="circle" size={16} badgeSize={32} />} label="إجمالي المنتجات" value={formatNumber(products.length)} />
+        <StatCard icon={<IconBadge icon={AlertTriangle} color={lowStock.length > 0 ? 'warning' : 'muted'} shape="circle" size={16} badgeSize={32} />} label="مخزون منخفض" value={formatNumber(lowStock.length)} color={lowStock.length > 0 ? 'var(--warning)' : undefined} />
+        <StatCard icon={<IconBadge icon={Box} color="primary" shape="circle" size={16} badgeSize={32} />} label="إجمالي الوحدات"
+          value={formatNumber(products.reduce((s, p) => s + Number(p.quantity), 0))} />
+        <StatCard icon={<IconBadge icon={Coins} color="warning" shape="circle" size={16} badgeSize={32} />} label="قيمة المخزون"
+          value={formatCurrency(products.reduce((s, p) => s + Number(p.quantity) * Number(p.cost), 0))} />
       </div>
 
       {/* Table */}
@@ -122,8 +122,22 @@ export default function Inventory() {
                   <tr key={p.id}>
                     <td style={{ fontWeight: 600 }}>{p.name}</td>
                     <td><code style={{ fontSize: '0.8rem' }}>{p.barcode}</code></td>
-                    <td style={{ fontWeight: 700, fontSize: '1rem', color: isNeg ? '#ef4444' : undefined }}>{formatNumber(p.quantity)}</td>
-                    <td>{formatNumber(p.low_stock_threshold)}</td>
+                    <td style={{ fontWeight: 700, fontSize: '1rem', color: isNeg ? '#ef4444' : undefined }}>
+                      {p.unit_type === 'weight' 
+                        ? `${parseFloat(p.quantity).toFixed(3)} كجم`
+                        : p.unit_type === 'liter'
+                        ? `${parseFloat(p.quantity).toFixed(2)} لتر`
+                        : `${formatNumber(p.quantity)} قطعة`
+                      }
+                    </td>
+                    <td>
+                      {p.unit_type === 'weight' 
+                        ? `${parseFloat(p.low_stock_threshold).toFixed(3)} كجم`
+                        : p.unit_type === 'liter'
+                        ? `${parseFloat(p.low_stock_threshold).toFixed(2)} لتر`
+                        : `${formatNumber(p.low_stock_threshold)} قطعة`
+                      }
+                    </td>
                     <td>
                       {isNeg ? <span className="badge badge-red">سالب</span>
                         : isOut ? <span className="badge badge-red">نفد</span>
@@ -132,7 +146,7 @@ export default function Inventory() {
                     </td>
                     <td>{formatCurrency(p.quantity * p.cost)}</td>
                     <td>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setEditModal(p); setNewQty(p.quantity) }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setEditModal(p); setNewQty(parseFloat(p.quantity) || 0) }}>
                         <Pencil size={13} /> تعديل
                       </button>
                     </td>
@@ -154,7 +168,13 @@ export default function Inventory() {
             </div>
             <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>المنتج: <strong>{editModal.name}</strong></p>
             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>الكمية الجديدة</label>
-            <input className="input input-lg" type="number" min={0} value={newQty} onChange={(e) => setNewQty(parseInt(e.target.value) || 0)} />
+            <input 
+              className="input input-lg" 
+              type="number" 
+              step={editModal.unit_type === 'weight' || editModal.unit_type === 'liter' ? '0.001' : '1'} 
+              value={newQty} 
+              onChange={(e) => setNewQty(parseFloat(e.target.value) || 0)} 
+            />
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
               <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={handleAdjust}>حفظ</button>
               <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setEditModal(null)}>إلغاء</button>

@@ -6,11 +6,12 @@ import { exportSupplierLedgerPDF } from '../../utils/pdfExport'
 import useQZPrinter from '../../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../../components/QZPrinterUI'
 import toast from 'react-hot-toast'
-import { getSuppliers, getSupplier, addSupplierPayment, updateSupplierLedgerEntry } from '../../api/endpoints'
+import { getSuppliers, getSupplier, addSupplierPayment, updateSupplierLedgerEntry, deleteSupplierLedgerEntry, getPurchaseInvoice } from '../../api/endpoints'
 import { formatCurrency } from '../../utils/formatters'
 import SupplierPaymentModal from './components/SupplierPaymentModal'
 import SupplierEditEntryModal from './components/SupplierEditEntryModal'
 import SupplierLedgerTable from './components/SupplierLedgerTable'
+import PurchaseReceiptModal from './components/PurchaseReceiptModal'
 import { extractApiError } from '../../utils/apiError'
 
 const fmtLedgerDate = (s: any) => {
@@ -43,6 +44,33 @@ export default function SupplierAccounts() {
   const [editEntryModal, setEditEntryModal] = useState<any>(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
+
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+
+  const handleViewInvoice = async (invoiceId: number) => {
+    setInvoiceLoading(true)
+    try {
+      const res = await getPurchaseInvoice(invoiceId)
+      setSelectedInvoice(res.data.data)
+    } catch (err) {
+      toast.error(extractApiError(err, 'فشل تحميل تفاصيل الفاتورة'))
+    } finally {
+      setInvoiceLoading(false)
+    }
+  }
+
+  const handleDeleteEntry = async (entryId: number) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا القيد؟')) return
+    try {
+      const res = await deleteSupplierLedgerEntry(entryId)
+      setLedgerData(res.data.data)
+      toast.success('تم حذف القيد بنجاح')
+      load() // تحديث رصيد المورد في القائمة
+    } catch (err) {
+      toast.error(extractApiError(err, 'فشل حذف القيد'))
+    }
+  }
 
   const qz = useQZPrinter()
   const settings = useSettingsStore()
@@ -234,6 +262,8 @@ export default function SupplierAccounts() {
             ledgerData={ledgerData}
             setEditEntryModal={setEditEntryModal}
             setEditEntryForm={setEditEntryForm}
+            onDeleteEntry={handleDeleteEntry}
+            onViewInvoice={handleViewInvoice}
           />
         </div>
       )}
@@ -270,6 +300,13 @@ export default function SupplierAccounts() {
           selectedPrinter={qz.selectedPrinter}
           onSelect={(name: string) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
           onClose={() => qz.setShowPrinterPicker(false)}
+        />
+      )}
+
+      {selectedInvoice && (
+        <PurchaseReceiptModal
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
         />
       )}
     </div>

@@ -4,7 +4,8 @@ import { formatCurrency } from '../../../utils/formatters'
 
 export default function CustomerLedgerTable({
   ledgerLoading, ledgerData,
-  setEditEntryModal, setEditEntryForm
+  setEditEntryModal, setEditEntryForm,
+  onDeleteEntry, onViewInvoice
 }) {
   if (ledgerLoading) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>جارٍ التحميل...</div>
@@ -20,7 +21,7 @@ export default function CustomerLedgerTable({
             {['التاريخ', 'البيان', 'مدين', 'دائن', 'الرصيد', ''].map(h => (
               <th key={h} style={{
                 padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: h === 'مدين' || h === 'دائن' || h === 'الرصيد' ? 'left' : 'right',
-                borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap', width: h === '' ? '40px' : 'auto'
+                borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap', width: h === '' ? '80px' : 'auto'
               }}>{h}</th>
             ))}
           </tr>
@@ -29,14 +30,18 @@ export default function CustomerLedgerTable({
           {ledgerData.entries.length === 0 ? (
             <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>لا توجد حركات بعد</td></tr>
           ) : ledgerData.entries.map((row, i) => (
-            <LedgerRow key={row.id ?? `init-${i}`} row={row} onEdit={() => {
-              setEditEntryModal(row)
-              setEditEntryForm({
-                type: row.type,
-                amount: row.type === 'debit' ? (row.debit || 0) : (row.credit || 0),
-                description: row.description || ''
-              })
-            }} />
+            <LedgerRow key={row.id ?? `init-${i}`} row={row}
+              onEdit={() => {
+                setEditEntryModal(row)
+                setEditEntryForm({
+                  type: row.type,
+                  amount: row.type === 'debit' ? (row.debit || 0) : (row.credit || 0),
+                  description: row.description || ''
+                })
+              }}
+              onDelete={() => onDeleteEntry(row.id)}
+              onViewInvoice={onViewInvoice}
+            />
           ))}
         </tbody>
         {ledgerData.entries.length > 0 && (

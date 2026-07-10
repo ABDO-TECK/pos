@@ -5,6 +5,7 @@ const path = require('path');
 const net = require('net');
 
 let proxyServer = null;
+let targetWsPort = null;
 
 /**
  * Get the SSL directory path. In production (packaged), we use the
@@ -60,8 +61,9 @@ function generateCertificate(certPath, keyPath) {
   }
 }
 
-function startHttpsProxy(phpPort, httpsPort) {
+function startHttpsProxy(phpPort, httpsPort, wsPort) {
   return new Promise((resolve) => {
+    targetWsPort = wsPort;
     const sslDir = getSslDir();
     const keyPath = path.join(sslDir, 'server.key');
     const certPath = path.join(sslDir, 'server.crt');
@@ -136,7 +138,8 @@ function startHttpsProxy(phpPort, httpsPort) {
 
       // WebSocket upgrade support — required for Service Worker & HMR
       proxyServer.on('upgrade', (req, socket, head) => {
-        const proxySocket = net.connect(phpPort, '127.0.0.1', () => {
+        const targetPort = targetWsPort || phpPort;
+        const proxySocket = net.connect(targetPort, '127.0.0.1', () => {
           // Reconstruct the HTTP upgrade request
           const reqLine = `${req.method} ${req.url} HTTP/1.1\r\n`;
           const headers = Object.entries(req.headers)

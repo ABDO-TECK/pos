@@ -1,7 +1,7 @@
-import React from 'react'
-import { ShoppingCart, Trash2 } from 'lucide-react'
+import { ShoppingCart, Trash2, Scale, Droplet, Layers, Box } from 'lucide-react'
 import { formatCurrency, formatNumber, formatPercent } from '../../utils/formatters'
 import toast from 'react-hot-toast'
+import IconBadge from '../common/IconBadge'
 
 interface CartHeaderProps {
   items: Array<{ product_id: number; quantity: number; price: number }>
@@ -19,7 +19,7 @@ interface CartTotalsProps {
 }
 
 interface ProductCardProps {
-  product: { id: number; name: string; price: number; quantity: number; barcode: string; low_stock_threshold?: number; units_per_box?: number; sell_by_weight?: number }
+  product: { id: number; name: string; price: number; quantity: number; barcode: string; low_stock_threshold?: number; units_per_box?: number; sell_by_weight?: number; unit_type?: string; sizes?: any[] }
   onAdd: (e: React.MouseEvent<HTMLButtonElement>) => void
 }
 
@@ -78,6 +78,10 @@ export function CartTotals({ items, subtotal, tax, total, taxEnabled, taxRate }:
 export function ProductCard({ product, onAdd }: ProductCardProps) {
   const isOutOfStock = product.quantity <= 0
   const isLowStock   = product.quantity <= (product.low_stock_threshold || 5) && product.quantity > 0
+  const unitType     = product.unit_type ?? (Number(product.sell_by_weight) === 1 ? 'weight' : 'piece')
+  const isByWeight   = unitType === 'weight'
+  const isByLiter    = unitType === 'liter'
+  const isByPiece    = unitType === 'piece'
   const upb          = Number(product.units_per_box) || 1
 
   return (
@@ -110,12 +114,28 @@ export function ProductCard({ product, onAdd }: ProductCardProps) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: 'auto', gap: '0.3rem', width: '100%' }}>
         <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {Number(product.sell_by_weight) === 1 && (
-            <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>⚖️ وزن</span>
+          {isByWeight && (
+            <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+              <IconBadge icon={Scale} color="primary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+              وزن
+            </span>
           )}
-          {upb > 1 && Number(product.sell_by_weight) !== 1 && (
-            <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
-              📦 {formatNumber(upb)}
+          {isByLiter && (
+            <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+              <IconBadge icon={Droplet} color="primary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+              لتر
+            </span>
+          )}
+          {upb > 1 && isByPiece && (
+            <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} title={`صندوق: ${formatNumber(upb)} قطعة`}>
+              <IconBadge icon={Box} color="secondary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+              {formatNumber(upb)}
+            </span>
+          )}
+          {(product.sizes || []).length > 0 && (
+            <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+              <IconBadge icon={Layers} color="secondary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+              مقاسات ({formatNumber((product.sizes || []).length)})
             </span>
           )}
           {isOutOfStock && <span className="badge badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>نفد</span>}

@@ -10,6 +10,8 @@ export interface CartItem {
   units_per_box?: number;
   sell_by_weight?: number;
   scanned_as_box?: boolean;
+  unit_type?: string;
+  size_name?: string;
 }
 
 export interface AddItemProduct {
@@ -20,6 +22,8 @@ export interface AddItemProduct {
   units_per_box?: string | number;
   sell_by_weight?: string | number;
   scanned_as_box?: boolean;
+  unit_type?: string;
+  size_name?: string;
   [key: string]: unknown;
 }
 
@@ -52,6 +56,7 @@ interface CartState {
   setAmountPaid: (amount: number) => void;
   clearCart: () => void;
   mergeInvoiceLines: (lines: MergeInvoiceLine[], invoiceId?: number | null, customerId?: number | null, amountPaid?: number) => void;
+  switchItemProduct: (oldId: number, newProduct: AddItemProduct) => void;
 }
 
 const useCartStore = create<CartState>((set, get) => ({
@@ -63,13 +68,55 @@ const useCartStore = create<CartState>((set, get) => ({
   rebillingCustomerId: null,
   rebillingAmountPaid: 0,
 
+  switchItemProduct: (oldId: number, newProduct: AddItemProduct) => {
+    const items = get().items
+    const price = parseFloat(String(newProduct.price)) || 0
+    const unitsPerBox = Math.max(1, parseInt(String(newProduct.units_per_box)) || 1)
+    const unitType = newProduct.unit_type ?? (parseInt(String(newProduct.sell_by_weight)) === 1 ? 'weight' : 'piece')
+
+    const existingIndex = items.findIndex((i) => i.id === newProduct.id && i.id !== oldId)
+    const oldItem = items.find((i) => i.id === oldId)
+    if (!oldItem) return
+
+    if (existingIndex >= 0) {
+      set({
+        items: items
+          .map((i, idx) =>
+            idx === existingIndex
+              ? { ...i, quantity: i.quantity + oldItem.quantity, subtotal: (i.quantity + oldItem.quantity) * i.price }
+              : i
+          )
+          .filter((i) => i.id !== oldId),
+      })
+    } else {
+      set({
+        items: items.map((i) =>
+          i.id === oldId
+            ? {
+                ...i,
+                id: newProduct.id,
+                name: newProduct.name,
+                barcode: newProduct.barcode,
+                price: price,
+                subtotal: i.quantity * price,
+                units_per_box: unitsPerBox,
+                unit_type: unitType,
+                size_name: newProduct.size_name,
+              }
+            : i
+        ),
+      })
+    }
+  },
+
   addItem: (product: AddItemProduct) => {
     const items = get().items
     const price = parseFloat(String(product.price)) || 0
     const unitsPerBox = Math.max(1, parseInt(String(product.units_per_box)) || 1)
-    const isByWeight = parseInt(String(product.sell_by_weight)) === 1
+    const unitType = product.unit_type ?? (parseInt(String(product.sell_by_weight)) === 1 ? 'weight' : 'piece')
+    const isByWeight = unitType === 'weight'
     
-    const qtyToAdd = product.scanned_as_box ? unitsPerBox : (isByWeight ? 1 : 1)
+    const qtyToAdd = product.scanned_as_box ? unitsPerBox : 1
 
     const existing = items.find((i) => i.id === product.id)
     if (existing) {
@@ -82,7 +129,7 @@ const useCartStore = create<CartState>((set, get) => ({
       })
     } else {
       set({
-        items: [...items, { ...product, price, quantity: qtyToAdd, subtotal: price * qtyToAdd, units_per_box: unitsPerBox, sell_by_weight: isByWeight ? 1 : 0 }],
+        items: [...items, { ...product, price, quantity: qtyToAdd, subtotal: price * qtyToAdd, units_per_box: unitsPerBox, sell_by_weight: isByWeight ? 1 : 0, unit_type: unitType }],
       })
     }
   },

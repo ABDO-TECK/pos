@@ -12,6 +12,7 @@ import useSettingsStore from '../store/settingsStore'
 import {
   getCustomers, getCustomer, createCustomer,
   updateCustomer, deleteCustomer, addCustomerPayment, updateCustomerLedgerEntry,
+  deleteCustomerLedgerEntry, getSale
 } from '../api/endpoints'
 import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
@@ -23,6 +24,7 @@ import CustomerPaymentModal from './customers/components/CustomerPaymentModal'
 import CustomerEditEntryModal from './customers/components/CustomerEditEntryModal'
 import { extractApiError } from '../utils/apiError'
 import CustomerLedgerPanel from './customers/CustomerLedgerPanel'
+import SaleDetailModal from './sales/SaleDetailModal'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,33 @@ export default function Customers() {
   const [editEntryModal, setEditEntryModal] = useState<any>(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
+
+  const [selectedSale, setSelectedSale] = useState<any>(null)
+  const [saleDetailLoading, setSaleDetailLoading] = useState(false)
+
+  const handleViewInvoice = async (invoiceId: number) => {
+    setSaleDetailLoading(true)
+    try {
+      const res = await getSale(invoiceId)
+      setSelectedSale(res.data.data)
+    } catch (err) {
+      toast.error(extractApiError(err, 'فشل تحميل تفاصيل الفاتورة'))
+    } finally {
+      setSaleDetailLoading(false)
+    }
+  }
+
+  const handleDeleteEntry = async (entryId: number) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا القيد؟')) return
+    try {
+      const res = await deleteCustomerLedgerEntry(entryId)
+      setLedgerData(res.data.data)
+      toast.success('تم حذف القيد بنجاح')
+      load() // تحديث رصيد العميل في القائمة
+    } catch (err) {
+      toast.error(extractApiError(err, 'فشل حذف القيد'))
+    }
+  }
 
   const settings = useSettingsStore()
 
@@ -234,7 +263,24 @@ export default function Customers() {
         ledgerLoading={ledgerLoading}
         setEditEntryModal={setEditEntryModal}
         setEditEntryForm={setEditEntryForm}
+        onDeleteEntry={handleDeleteEntry}
+        onViewInvoice={handleViewInvoice}
       />
+
+      {/* ── detail sale modal ────────────────────────────────────────────── */}
+      {selectedSale && (
+        <SaleDetailModal
+          selected={selectedSale}
+          detailLoading={saleDetailLoading}
+          deleting={false}
+          isAdmin={user?.role === 'admin'}
+          settings={settings}
+          qz={qz}
+          onClose={() => setSelectedSale(null)}
+          onReturnToCart={() => {}}
+          onDelete={() => {}}
+        />
+      )}
 
       {/* ── modal إضافة / تعديل عميل ────────────────────────────────────── */}
       <CustomerFormModal

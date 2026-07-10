@@ -21,6 +21,10 @@ declare global {
     items?: SaleItem[];
     invoice?: { id: number; status: string };
     low_stock_alerts?: { product_id: number; name: string; quantity: number }[];
+    driver_name?: string | null;
+    vehicle_number?: string | null;
+    delivery_date?: string | null;
+    delivery_notes?: string | null;
   }
 }
 

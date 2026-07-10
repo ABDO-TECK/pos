@@ -4,34 +4,32 @@ namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use App\Services\SupplierService;
-use App\Models\Supplier;
-use App\Models\SupplierLedger;
+use App\Repositories\SupplierRepository;
+use App\Repositories\SupplierLedgerRepository;
+use App\Repositories\ProductRepository;
 
 class SupplierServiceTest extends TestCase
 {
     private SupplierService $service;
-    private Supplier|\PHPUnit\Framework\MockObject\MockObject $supplierMock;
-    private SupplierLedger|\PHPUnit\Framework\MockObject\MockObject $ledgerMock;
-    private \App\Repositories\SupplierRepository|\PHPUnit\Framework\MockObject\MockObject $supplierRepoMock;
-    private \App\Repositories\ProductRepository|\PHPUnit\Framework\MockObject\MockObject $productRepoMock;
+    private SupplierLedgerRepository|\PHPUnit\Framework\MockObject\MockObject $ledgerRepoMock;
+    private SupplierRepository|\PHPUnit\Framework\MockObject\MockObject $supplierRepoMock;
+    private ProductRepository|\PHPUnit\Framework\MockObject\MockObject $productRepoMock;
 
     protected function setUp(): void
     {
-        $this->supplierMock = $this->createMock(Supplier::class);
-        $this->ledgerMock = $this->createMock(SupplierLedger::class);
-        $this->supplierRepoMock = $this->createMock(\App\Repositories\SupplierRepository::class);
-        $this->productRepoMock = $this->createMock(\App\Repositories\ProductRepository::class);
+        $this->ledgerRepoMock = $this->createMock(SupplierLedgerRepository::class);
+        $this->supplierRepoMock = $this->createMock(SupplierRepository::class);
+        $this->productRepoMock = $this->createMock(ProductRepository::class);
         $this->service = new SupplierService(
-            $this->supplierMock, 
-            $this->ledgerMock, 
-            $this->supplierRepoMock, 
+            $this->ledgerRepoMock,
+            $this->supplierRepoMock,
             $this->productRepoMock
         );
     }
 
     public function testAddPaymentThrowsIfSupplierNotFound()
     {
-        $this->supplierMock->method('findById')->willReturn(null);
+        $this->supplierRepoMock->method('findById')->willReturn(null);
 
         $this->expectException(\Exception::class);
         $this->expectExceptionMessage('المورد غير موجود');
@@ -41,7 +39,7 @@ class SupplierServiceTest extends TestCase
 
     public function testAddPaymentThrowsIfAmountIsZero()
     {
-        $this->supplierMock->method('findById')->willReturn(['id' => 1, 'name' => 'Supplier']);
+        $this->supplierRepoMock->method('findById')->willReturn(['id' => 1, 'name' => 'Supplier']);
 
         $this->expectException(\Exception::class);
         $this->expectExceptionMessage('يجب أن يكون المبلغ أكبر من صفر');
@@ -51,7 +49,7 @@ class SupplierServiceTest extends TestCase
 
     public function testUpdateLedgerEntryThrowsIfNotFound()
     {
-        $this->ledgerMock->method('getLedgerEntry')->willReturn(null);
+        $this->ledgerRepoMock->method('findById')->willReturn(null);
 
         $this->expectException(\Exception::class);
         $this->expectExceptionMessage('القيد غير موجود');
@@ -61,7 +59,7 @@ class SupplierServiceTest extends TestCase
 
     public function testUpdateLedgerEntryThrowsIfInvalidType()
     {
-        $this->ledgerMock->method('getLedgerEntry')
+        $this->ledgerRepoMock->method('findById')
             ->willReturn(['id' => 1, 'supplier_id' => 1, 'type' => 'credit']);
 
         $this->expectException(\Exception::class);

@@ -3,57 +3,37 @@ namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use App\Services\LoyaltyService;
+use App\Repositories\LoyaltyRepository;
 use PDO;
-use PDOStatement;
-use ReflectionClass;
 
 class LoyaltyServiceTest extends TestCase
 {
     private LoyaltyService $service;
+    private LoyaltyRepository&\PHPUnit\Framework\MockObject\MockObject $repoMock;
     private PDO&\PHPUnit\Framework\MockObject\MockObject $pdoMock;
 
     protected function setUp(): void
     {
         $this->pdoMock = $this->createMock(PDO::class);
-        $this->service = clone $this->getMockBuilder(LoyaltyService::class)
-            ->disableOriginalConstructor()
-            ->getMock();
-
-        // Use Reflection to set the private PDO property
-        $reflection = new ReflectionClass(LoyaltyService::class);
-        $property = $reflection->getProperty('db');
-        $property->setAccessible(true);
-        $property->setValue($this->service, $this->pdoMock);
-        
-        // Actually, disableOriginalConstructor() makes it a mock. We want a real instance 
-        // with the db property injected.
-        $this->service = $reflection->newInstanceWithoutConstructor();
-        $property->setValue($this->service, $this->pdoMock);
+        $this->repoMock = $this->createMock(LoyaltyRepository::class);
+        $this->service = new LoyaltyService($this->repoMock, $this->pdoMock);
     }
 
     public function testIsEnabledReturnsTrue()
     {
-        $stmtMock = $this->createMock(PDOStatement::class);
-        $stmtMock->method('fetchColumn')->willReturn('1');
-
-        $this->pdoMock->expects($this->once())
-            ->method('prepare')
-            ->with($this->stringContains('loyalty_enabled'))
-            ->willReturn($stmtMock);
+        $this->repoMock->expects($this->once())
+            ->method('isEnabled')
+            ->willReturn(true);
 
         $this->assertTrue($this->service->isEnabled());
     }
 
     public function testCalculatePoints()
     {
-        $stmtMock = $this->createMock(PDOStatement::class);
         // Assuming 2 points per rial
-        $stmtMock->method('fetchColumn')->willReturn('2');
-
-        $this->pdoMock->expects($this->once())
-            ->method('prepare')
-            ->with($this->stringContains('loyalty_points_per_rial'))
-            ->willReturn($stmtMock);
+        $this->repoMock->expects($this->once())
+            ->method('getPointsPerRial')
+            ->willReturn(2);
 
         // 100.5 rials * 2 points/rial = 201 points
         $this->assertEquals(201, $this->service->calculatePoints(100.5));
@@ -61,13 +41,16 @@ class LoyaltyServiceTest extends TestCase
 
     public function testRedeemPointsThrowsExceptionIfInsufficient()
     {
-        $stmtMock = $this->createMock(PDOStatement::class);
-        $stmtMock->method('fetchColumn')->willReturn('10'); // User has 10 points
-
+        // Setup transaction mock behavior
         $this->pdoMock->expects($this->once())
-            ->method('prepare')
-            ->with($this->stringContains('loyalty_points FROM customers'))
-            ->willReturn($stmtMock);
+            ->method('beginTransaction');
+        $this->pdoMock->expects($this->once())
+            ->method('rollBack');
+
+        $this->repoMock->expects($this->once())
+            ->method('getCustomerPoints')
+            ->with(1)
+            ->willReturn(10); // User has 10 points
 
         $this->expectException(\Exception::class);
         $this->expectExceptionMessage('رصيد النقاط غير كافي');

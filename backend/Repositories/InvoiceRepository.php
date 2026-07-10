@@ -54,6 +54,11 @@ class InvoiceRepository implements RepositoryInterface
         $this->model->updateStatus($id, $status);
     }
 
+    public function update(int $id, array $data): void
+    {
+        throw new \BadMethodCallException('Use updateTotals or updateStatus instead.');
+    }
+
     public function delete(int $id): void
     {
         $this->model->delete($id);

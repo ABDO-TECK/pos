@@ -61,6 +61,40 @@ class ProductService implements ProductServiceInterface
             }
 
             $this->productRepo->syncAdditionalBarcodes($id, $extras);
+
+            // حفظ المقاسات المرفقة
+            if (!empty($data['sizes']) && is_array($data['sizes'])) {
+                foreach ($data['sizes'] as $size) {
+                    $sizeBarcode = trim($size['barcode'] ?? '');
+                    $isSizeAutoBarcode = ($sizeBarcode === '');
+                    if ($isSizeAutoBarcode) {
+                        $sizeBarcode = 'TEMP-SZ-' . uniqid('', true);
+                    }
+
+                    $this->productRepo->assertBarcodesAvailable(null, $sizeBarcode, []);
+
+                    $sizeId = $this->productRepo->create([
+                        'name'                => $data['name'] . ' - ' . $size['size_name'],
+                        'barcode'             => $sizeBarcode,
+                        'box_barcode'         => null,
+                        'price'               => $size['price'],
+                        'cost'                => $size['cost'] ?? 0,
+                        'quantity'            => $size['quantity'] ?? 0,
+                        'low_stock_threshold' => $size['low_stock_threshold'] ?? ($data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD),
+                        'category_id'         => $data['category_id'] ?? null,
+                        'parent_product_id'   => $id,
+                        'size_name'           => $size['size_name'],
+                        'units_per_box'       => 1,
+                        'sell_by_weight'      => 0,
+                        'unit_type'           => $data['unit_type'] ?? 'piece',
+                    ]);
+
+                    if ($isSizeAutoBarcode) {
+                        $this->productRepo->updateMainBarcode($sizeId, (string) $sizeId);
+                    }
+                }
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -71,7 +105,7 @@ class ProductService implements ProductServiceInterface
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'فشل إنشاء المنتج', 'code' => 500];
+            return ['ok' => false, 'error' => 'فشل إنشاء المنتج: ' . $e->getMessage(), 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -107,13 +141,85 @@ class ProductService implements ProductServiceInterface
             $this->productRepo->assertBarcodesAvailable($id, $main, $extrasToCheck);
             $data['barcode'] = $main;
             $this->productRepo->update($id, $data);
-            
+
             // تسجيل تغيير السعر (إن وُجد)
-            // ملاحظة: نحتاج جلب الـ AuthService للحصول على user_id لو أمكن، 
-            // لكن للتبسيط، الـ userId اختياري حالياً، سنمرر null حتى نُمرره من الـ Controller مستقبلاً
             $this->priceHistory->record($id, $product, $data, null);
-            
+
             $this->productRepo->syncAdditionalBarcodes($id, $extras);
+
+            // مزامنة المقاسات
+            $existingSizeIds = [];
+            $stmt = $db->prepare('SELECT id FROM products WHERE parent_product_id = ? AND deleted_at IS NULL');
+            $stmt->execute([$id]);
+            $existingSizeIds = $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+
+            $keepSizeIds = [];
+
+            if (isset($data['sizes']) && is_array($data['sizes'])) {
+                foreach ($data['sizes'] as $size) {
+                    $sizeBarcode = trim($size['barcode'] ?? '');
+                    $isSizeAutoBarcode = ($sizeBarcode === '');
+
+                    $sizeId = !empty($size['id']) ? (int)$size['id'] : null;
+
+                    if ($sizeId) {
+                        if ($isSizeAutoBarcode) {
+                            $sizeBarcode = (string)$sizeId;
+                        }
+                        $this->productRepo->assertBarcodesAvailable($sizeId, $sizeBarcode, []);
+
+                        $this->productRepo->update($sizeId, [
+                            'name'                => $data['name'] . ' - ' . $size['size_name'],
+                            'barcode'             => $sizeBarcode,
+                            'box_barcode'         => null,
+                            'price'               => $size['price'],
+                            'cost'                => $size['cost'] ?? 0,
+                            'quantity'            => $size['quantity'] ?? 0,
+                            'low_stock_threshold' => $size['low_stock_threshold'] ?? ($data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD),
+                            'category_id'         => $data['category_id'] ?? null,
+                            'parent_product_id'   => $id,
+                            'size_name'           => $size['size_name'],
+                            'units_per_box'       => 1,
+                            'sell_by_weight'      => 0,
+                            'unit_type'           => $data['unit_type'] ?? 'piece',
+                        ]);
+                        $keepSizeIds[] = $sizeId;
+                    } else {
+                        if ($isSizeAutoBarcode) {
+                            $sizeBarcode = 'TEMP-SZ-' . uniqid('', true);
+                        }
+                        $this->productRepo->assertBarcodesAvailable(null, $sizeBarcode, []);
+
+                        $newSizeId = $this->productRepo->create([
+                            'name'                => $data['name'] . ' - ' . $size['size_name'],
+                            'barcode'             => $sizeBarcode,
+                            'box_barcode'         => null,
+                            'price'               => $size['price'],
+                            'cost'                => $size['cost'] ?? 0,
+                            'quantity'            => $size['quantity'] ?? 0,
+                            'low_stock_threshold' => $size['low_stock_threshold'] ?? ($data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD),
+                            'category_id'         => $data['category_id'] ?? null,
+                            'parent_product_id'   => $id,
+                            'size_name'           => $size['size_name'],
+                            'units_per_box'       => 1,
+                            'sell_by_weight'      => 0,
+                            'unit_type'           => $data['unit_type'] ?? 'piece',
+                        ]);
+
+                        if ($isSizeAutoBarcode) {
+                            $this->productRepo->updateMainBarcode($newSizeId, (string)$newSizeId);
+                        }
+                        $keepSizeIds[] = $newSizeId;
+                    }
+                }
+            }
+
+            // حذف المقاسات الملغاة
+            $toDeleteIds = array_diff($existingSizeIds, $keepSizeIds);
+            foreach ($toDeleteIds as $delId) {
+                $this->productRepo->delete($delId);
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -124,7 +230,7 @@ class ProductService implements ProductServiceInterface
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'فشل تحديث المنتج', 'code' => 500];
+            return ['ok' => false, 'error' => 'فشل تحديث المنتج: ' . $e->getMessage(), 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -162,12 +268,20 @@ class ProductService implements ProductServiceInterface
             ];
         }
 
+        $db = Database::getInstance();
+        $db->beginTransaction();
         try {
             $this->productRepo->delete($id);
+            $db->commit();
         } catch (PDOException $e) {
+            $db->rollBack();
             if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
                 return ['ok' => false, 'error' => 'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.', 'code' => 409];
             }
+            Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'error' => 'فشل حذف المنتج', 'code' => 500];
+        } catch (Throwable $e) {
+            $db->rollBack();
             Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
             return ['ok' => false, 'error' => 'فشل حذف المنتج', 'code' => 500];
         }

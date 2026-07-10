@@ -17,12 +17,22 @@ class HealthController {
     public function check() {
         $result = $this->healthService->runHealthCheck();
 
+        $wsPort = 8090; // default fallback
+        $portsPath = getenv('RUNTIME_PORTS_PATH');
+        if ($portsPath && file_exists($portsPath)) {
+            $data = json_decode(file_get_contents($portsPath), true);
+            if ($data && isset($data['wsPort'])) {
+                $wsPort = (int)$data['wsPort'];
+            }
+        }
+
         $statusCode = $result['critical_failed'] ? 503 : 200;
         return Response::json([
             'status'          => $result['status'],
             'critical_failed' => $result['critical_failed'],
             'checks'          => $result['checks'],
-            'version'         => $result['version']
+            'version'         => $result['version'],
+            'ws_port'         => $wsPort
         ], $statusCode);
     }
 

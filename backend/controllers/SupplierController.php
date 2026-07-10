@@ -128,6 +128,21 @@ class SupplierController extends Controller {
             return $code === 404 ? Response::notFound($e->getMessage(), ErrorCodes::SUPPLIER_NOT_FOUND) : Response::error($e->getMessage(), $code, null, ErrorCodes::SERVER_ERROR);
         }
     }
+
+    /**
+     * DELETE /api/suppliers/ledger/{entryId}
+     */
+    public function deleteLedgerEntry(string $entryId) {
+        $eid  = (int)$entryId;
+
+        try {
+            $ledger = $this->supplierService->deleteLedgerEntry($eid);
+            return Response::success($ledger, 'تم حذف القيد');
+        } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            return $code === 404 ? Response::notFound($e->getMessage(), ErrorCodes::SUPPLIER_NOT_FOUND) : Response::error($e->getMessage(), $code, null, ErrorCodes::SERVER_ERROR);
+        }
+    }
 }
 
 

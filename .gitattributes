@@ -1,0 +1,11 @@
+*.phar binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

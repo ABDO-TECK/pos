@@ -27,8 +27,8 @@ export default function SupplierPaymentModal({
             <label className="label">نوع الدفعة</label>
             <div style={{ display: 'flex', gap: '0.35rem' }}>
               {[
-                { id: 'debit',  label: 'دفع مبلغ للمورد',  color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-                { id: 'credit', label: 'استرداد مبلغ',     color: 'var(--primary)', bg: 'rgba(34,197,94,.1)' },
+                { id: 'debit',  label: 'استرداد مبلغ',     color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+                { id: 'credit', label: 'دفع مبلغ للمورد',  color: 'var(--primary)', bg: 'rgba(34,197,94,.1)' },
               ].map(d => (
                 <button key={d.id} type="button" onClick={() => setPayType(d.id)}
                   style={{

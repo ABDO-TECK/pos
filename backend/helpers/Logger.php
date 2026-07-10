@@ -99,7 +99,8 @@ class Logger
 
         // أيضًا إرسال إلى error_log للتوافق مع أدوات المراقبة
         if (in_array($level, [self::ERROR, self::CRITICAL], true)) {
-            error_log("[POS][{$level}] {$message}");
+            $contextStr = !empty($context) ? ' - Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+            error_log("[POS][{$level}] {$message}{$contextStr}");
         }
     }
 

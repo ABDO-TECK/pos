@@ -23,6 +23,7 @@ $router->delete('/api/purchase-invoices/{id}', [PurchaseController::class, 'purc
 $router->post('/api/purchases/bulk', [PurchaseController::class, 'purchaseBulk', [AuthMiddleware::class, PermissionMiddleware::require('purchases.create')]]);
 $router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class]]);
 $router->put('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
+$router->delete('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'deleteLedgerEntry', [AuthMiddleware::class]]);
 
 // Ledger PDF
 $router->get('/api/suppliers/{id}/pdf', [LedgerPdfController::class, 'supplierPdf', [AuthMiddleware::class]]);

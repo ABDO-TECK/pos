@@ -1,6 +1,6 @@
-// @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
-import { ShoppingCart, CreditCard, Grid3X3 } from 'lucide-react'
+import { ShoppingCart, CreditCard, Grid3X3, Clock } from 'lucide-react'
+import IconBadge from '../components/common/IconBadge'
 import BarcodeInput from '../components/pos/BarcodeInput'
 import Cart from '../components/pos/Cart'
 import PaymentModal from '../components/pos/PaymentModal'
@@ -84,8 +84,18 @@ export default function POS() {
 
   // Switch to cart tab automatically when an item is added on mobile
   const handleAddItem = (product: any) => {
-    useCartStore.getState().addItem(product)
-    toast.success(product.name, { duration: 800 })
+    if (product.sizes && product.sizes.length > 0) {
+      const sizeProduct = product.sizes[0]
+      useCartStore.getState().addItem({
+        ...sizeProduct,
+        unit_type: product.unit_type,
+        sell_by_weight: product.sell_by_weight
+      })
+      toast.success(sizeProduct.name, { duration: 800 })
+    } else {
+      useCartStore.getState().addItem(product)
+      toast.success(product.name, { duration: 800 })
+    }
   }
 
   return (
@@ -95,10 +105,11 @@ export default function POS() {
         {/* Barcode & Top Actions */}
         <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
           <div style={{ flex: 1 }}>
-            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} />
           </div>
-          <button className="btn btn-ghost" onClick={() => setShowReserved(true)}>
-             الفواتير المحجوزة 🕒
+          <button className="btn btn-ghost" onClick={() => setShowReserved(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+             <IconBadge icon={Clock} color="warning" shape="rounded" size={14} badgeSize={24} />
+             الفواتير المحجوزة
           </button>
         </div>
 
@@ -144,10 +155,10 @@ export default function POS() {
         {/* Barcode & Top Actions */}
         <div className="card" style={{ padding: '0.6rem', marginBottom: '0.6rem', display: 'flex', gap: '0.4rem' }}>
           <div style={{ flex: 1 }}>
-            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} />
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} />
           </div>
-          <button className="btn btn-ghost btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات">
-             🕒
+          <button className="btn btn-ghost btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+             <IconBadge icon={Clock} color="warning" shape="rounded" size={16} badgeSize={28} />
           </button>
         </div>
 
@@ -227,6 +238,7 @@ export default function POS() {
           }} 
         />
       )}
+
 
     </>
   )

@@ -70,6 +70,11 @@ class AuthService {
     /**
      * الحصول على معرّف الفرع العام الثابت.
      *
+     * @deprecated Use injected AuthService::branchId() instead.
+     *             This static accessor exists for backward compatibility with code
+     *             that cannot access the DI container (e.g., Model classes).
+     *             Callers should be migrated to receive AuthService via constructor injection.
+     *
      * @return int معرّف الفرع العام
      */
     public static function getGlobalBranchId(): int {

@@ -48,7 +48,7 @@ class LoginRateLimiter
 
         // 2. SQLite fallback
         $key = 'login_' . md5($ip) . '_' . floor($now / $this->windowSeconds);
-        $db = $this->getSQLiteDB();
+        $db = RateLimitStore::getDB();
         if (!$db) return;
 
         try {
@@ -84,25 +84,5 @@ class LoginRateLimiter
         exit;
     }
 
-    private function getSQLiteDB(): ?\PDO
-    {
-        static $db = null;
-        if ($db !== null) return $db;
-        try {
-            $dbPath = __DIR__ . '/../storage/rate_limit.sqlite';
-            $dir = dirname($dbPath);
-            if (!is_dir($dir)) @mkdir($dir, 0755, true);
-            $db = new \PDO('sqlite:' . $dbPath);
-            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-            $db->exec("CREATE TABLE IF NOT EXISTS rate_limits (
-                key_name TEXT PRIMARY KEY,
-                request_count INTEGER NOT NULL DEFAULT 1,
-                expires_at INTEGER NOT NULL
-            )");
-            $db->exec("PRAGMA journal_mode=WAL");
-            return $db;
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
+
 }

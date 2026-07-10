@@ -26,7 +26,9 @@ require_once __DIR__ . '/vendor/autoload.php';
 use App\Services\LoyaltyService;
 \App\Helpers\EventDispatcher::listen('sale.completed', function(array $data) {
     if (!empty($data['customer_id']) && !empty($data['invoice_id'])) {
-        (new LoyaltyService())->earnPoints(
+        $db = \App\Config\Database::getInstance();
+        $repo = new \App\Repositories\LoyaltyRepository($db);
+        (new LoyaltyService($repo, $db))->earnPoints(
             (int)$data['customer_id'],
             (int)$data['invoice_id'],
             (float)($data['total'] ?? 0)
@@ -42,7 +44,6 @@ header('Content-Type: application/json; charset=UTF-8');
 // ── Security Headers ──────────────────────────────────────────
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
-header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 
 

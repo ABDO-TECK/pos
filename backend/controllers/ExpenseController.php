@@ -68,13 +68,11 @@ class ExpenseController extends Controller
     public function deleteCategory(string $id): array
     {
         try {
-            return $this->withTransaction(function () use ($id) {
-                $result = $this->expenseService->deleteCategory((int)$id);
-                if (!$result['ok']) {
-                    return Response::error($result['error'], $result['code']);
-                }
-                return Response::success(['message' => 'تم الحذف بنجاح']);
-            });
+            $result = $this->expenseService->deleteCategory((int)$id);
+            if (!$result['ok']) {
+                return Response::error($result['error'], $result['code']);
+            }
+            return Response::success(['message' => 'تم الحذف بنجاح']);
         } catch (Throwable $e) {
             Logger::error('Failed to delete expense category', ['error' => $e->getMessage()]);
             return Response::error('حدث خطأ أثناء الحذف', 500);

@@ -55,10 +55,8 @@ class CustomerController extends Controller {
             $request = new CustomerRequest($this->getBody());
             $data = $request->validated();
             
-            return $this->withTransaction(function () use ($data) {
-                $id = $this->service->createCustomer($data);
-                return Response::success($this->customerRepo->findById($id), 'تم إضافة العميل', 201);
-            });
+            $id = $this->service->createCustomer($data);
+            return Response::success($this->customerRepo->findById($id), 'تم إضافة العميل', 201);
         } catch (ValidationException $e) {
             return Response::error('Validation failed', 422, $e->getErrors());
         }
@@ -104,7 +102,8 @@ class CustomerController extends Controller {
      */
     public function addPayment(string $id) {
         $cid  = (int)$id;
-        $data = $this->getBody();
+        $request = new \App\Requests\PaymentRequest($this->getBody());
+        $data = $request->validated();
         $auth = $this->authService->user();
 
         try {
@@ -127,6 +126,21 @@ class CustomerController extends Controller {
         try {
             $ledger = $this->service->updateLedgerEntry($eid, $data);
             return Response::success($ledger, 'تم تحديث القيد');
+        } catch (Throwable $e) {
+            $code = $e->getCode() ?: 500;
+            return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
+        }
+    }
+
+    /**
+     * DELETE /api/customers/ledger/{entryId}
+     */
+    public function deleteLedgerEntry(string $entryId) {
+        $eid  = (int)$entryId;
+
+        try {
+            $ledger = $this->service->deleteLedgerEntry($eid);
+            return Response::success($ledger, 'تم حذف القيد');
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);

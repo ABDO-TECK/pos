@@ -16,14 +16,18 @@ class PurchaseInvoice {
      */
     public function createPurchaseInvoice(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO purchase_invoices (supplier_id, total, items_count, notes)
-             VALUES (:supplier_id, :total, :items_count, :notes)'
+            'INSERT INTO purchase_invoices (supplier_id, total, items_count, notes, driver_name, vehicle_number, delivery_date, delivery_notes)
+             VALUES (:supplier_id, :total, :items_count, :notes, :driver_name, :vehicle_number, :delivery_date, :delivery_notes)'
         );
         $stmt->execute([
-            'supplier_id' => $data['supplier_id'],
-            'total'       => $data['total'] ?? 0,
-            'items_count' => $data['items_count'] ?? 0,
-            'notes'       => $data['notes'] ?? null,
+            'supplier_id'    => $data['supplier_id'],
+            'total'          => $data['total'] ?? 0,
+            'items_count'    => $data['items_count'] ?? 0,
+            'notes'          => $data['notes'] ?? null,
+            'driver_name'    => $data['driver_name'] ?? null,
+            'vehicle_number' => $data['vehicle_number'] ?? null,
+            'delivery_date'  => $data['delivery_date'] ?? null,
+            'delivery_notes' => $data['delivery_notes'] ?? null,
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -164,8 +168,27 @@ class PurchaseInvoice {
     }
 
     public function updatePurchaseInvoiceTotals(int $id, array $data): void {
-        $stmt = $this->db->prepare('UPDATE purchase_invoices SET total = :total, items_count = :items_count, notes = :notes WHERE id = :id');
-        $stmt->execute(['id' => $id, 'total' => $data['total'], 'items_count' => $data['items_count'], 'notes' => $data['notes']]);
+        $stmt = $this->db->prepare(
+            'UPDATE purchase_invoices 
+             SET total = :total, 
+                 items_count = :items_count, 
+                 notes = :notes, 
+                 driver_name = :driver_name, 
+                 vehicle_number = :vehicle_number, 
+                 delivery_date = :delivery_date, 
+                 delivery_notes = :delivery_notes 
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'id'             => $id, 
+            'total'          => $data['total'], 
+            'items_count'    => $data['items_count'], 
+            'notes'          => $data['notes'] ?? null,
+            'driver_name'    => $data['driver_name'] ?? null,
+            'vehicle_number' => $data['vehicle_number'] ?? null,
+            'delivery_date'  => $data['delivery_date'] ?? null,
+            'delivery_notes' => $data['delivery_notes'] ?? null,
+        ]);
     }
 
     public function deletePurchaseInvoice(int $id): array {

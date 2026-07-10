@@ -13,13 +13,12 @@ class CorsMiddleware
     public function handle(callable $next): mixed
     {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-
-        // Temporary logging of Origin header for packaged QA run
-        if (class_exists('App\Helpers\Logger') && $origin !== '') {
-            \App\Helpers\Logger::info("CORS Origin: '$origin', Method: '" . ($_SERVER['REQUEST_METHOD'] ?? '') . "', URI: '" . ($_SERVER['REQUEST_URI'] ?? '') . "'");
-        }
-
         $appEnv = EnvLoader::get('APP_ENV', 'development');
+
+        // Log CORS origins only in development or debug mode
+        if (class_exists('App\Helpers\Logger') && $origin !== '' && $appEnv === 'development') {
+            \App\Helpers\Logger::debug("CORS Origin: '$origin', Method: '" . ($_SERVER['REQUEST_METHOD'] ?? '') . "'");
+        }
 
         if ($appEnv === 'development') {
             $allowedOrigins = [
@@ -49,11 +48,27 @@ class CorsMiddleware
                 $originAllowed = true;
             }
         } else {
-            // Production - allow only the custom protocol origin
+            // Production - allow only the custom protocol origin + extra configured origins
             $allowedOrigins = [
                 'app://pos-app',
             ];
+
+            // Comma-separated extra allowed origins
+            $extraOrigins = EnvLoader::get('CORS_ALLOWED_ORIGINS', '');
+            if ($extraOrigins !== '') {
+                $extras = array_map('trim', explode(',', $extraOrigins));
+                $allowedOrigins = array_merge($allowedOrigins, $extras);
+            }
+
             $originAllowed = $origin !== '' && in_array($origin, $allowedOrigins, true);
+
+            // Also allow local network (LAN) access in production if explicitly configured
+            if (!$originAllowed && $origin !== '' && EnvLoader::getBool('CORS_ALLOW_LAN', false)) {
+                $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
+                if (preg_match($lanPattern, $origin) === 1) {
+                    $originAllowed = true;
+                }
+            }
         }
 
         if ($originAllowed && $origin !== '') {

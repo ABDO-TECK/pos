@@ -71,6 +71,8 @@ export default function NetworkAccessSection() {
   const connectionOptions: Array<{ label: string; url: string; note?: string; type: 'web' | 'electron-http' | 'electron-https' }> = []
 
   ips.forEach(ip => {
+    const isElectron = window.location.protocol === 'app:';
+    
     if (currentPort === '5173') {
       // Vite development server
       connectionOptions.push({
@@ -79,11 +81,12 @@ export default function NetworkAccessSection() {
         type: 'web',
         note: 'مناسب للاختبار والتطوير من الجوال مباشرة.'
       })
-    } else if (currentPort === '8080' || currentPort === '8443' || currentPort === '80' || currentPort === '443') {
+    } else if (isElectron || currentPort === '8080' || currentPort === '8443' || currentPort === '80' || currentPort === '443') {
       // Electron or standard ports
+      const httpPort = networkInfo?.port || '8080'
       connectionOptions.push({
         label: 'رابط النظام اللاسلكي (HTTP)',
-        url: `http://${ip}:8080${currentPath}/`,
+        url: `http://${ip}:${httpPort}${currentPath}/`,
         type: 'electron-http',
         note: 'رابط مباشر سريع متوافق مع كافة الهواتف بدون تحذيرات أمان.'
       })

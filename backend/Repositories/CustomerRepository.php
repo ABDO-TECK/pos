@@ -59,6 +59,11 @@ class CustomerRepository implements RepositoryInterface
         return $this->model->getLedgerEntry($entryId);
     }
 
+    public function deleteLedgerEntry(int $entryId): void
+    {
+        $this->model->deleteLedgerEntry($entryId);
+    }
+
     public function getModel(): Customer
     {
         return $this->model;

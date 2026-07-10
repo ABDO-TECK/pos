@@ -19,6 +19,9 @@ if (
 
 $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
 
+$pharRunning = Phar::running(false);
+$baseDir = $pharRunning ? dirname($pharRunning) : __DIR__;
+
 // ── 0.1 حماية الملفات الحساسة (.env, .git, logs, storage) ──────
 // حظر أي طلب مباشر لملفات البيئة أو الملفات الحساسة
 if (preg_match('#(\.env|\.git|/logs/|/storage/|\.phpunit|composer\.(json|lock|phar))#i', $uri)) {
@@ -34,7 +37,7 @@ if (preg_match('#/adminer#i', $uri)) {
     $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: null;
     if ($appEnv === null || $appEnv === false || $appEnv === '') {
         // قراءة APP_ENV من ملف .env يدوياً كخط دفاع أخير
-        $envFile = __DIR__ . '/.env';
+        $envFile = $baseDir . '/.env';
         if (file_exists($envFile)) {
             $envContent = file_get_contents($envFile);
             if (preg_match('/^APP_ENV\s*=\s*(.+)$/m', $envContent, $m)) {
@@ -88,17 +91,28 @@ if ($isHttpsProxy && ($uri === '/sw.js' || $uri === '/registerSW.js' || str_star
     return true;
 }
 
-// ── 2. Backend static files (sign-message.php, etc.) ────────
+// ── 2. Backend static files (whitelisted PHP files only) ─────
+// Only explicitly allowed PHP files can be executed directly via URL.
+// This prevents execution of debug scripts, uploaded files, or adminer.
+$allowedPhpFiles = [
+    '/sign-message.php',
+];
 if ($uri !== '/' && file_exists(__DIR__ . $uri) && is_file(__DIR__ . $uri)) {
     if (strtolower(pathinfo(__DIR__ . $uri, PATHINFO_EXTENSION)) === 'php') {
-        require __DIR__ . $uri;
+        if (in_array($uri, $allowedPhpFiles, true)) {
+            require __DIR__ . $uri;
+            return true;
+        }
+        // Block non-whitelisted PHP files
+        http_response_code(403);
+        echo '403 Forbidden';
         return true;
     }
     return false; // PHP built-in server يقدّم الملف العادي
 }
 
 // ── 3. Frontend static files (JS, CSS, images) ─────────────
-$frontendDist = __DIR__ . '/../frontend/dist';
+$frontendDist = $baseDir . '/../frontend/dist';
 $filePath = $frontendDist . $uri;
 
 if ($uri !== '/' && file_exists($filePath) && is_file($filePath)) {
@@ -128,7 +142,7 @@ if ($uri !== '/' && file_exists($filePath) && is_file($filePath)) {
 }
 
 // ── 3.5 Fallback to public directory for certificates etc. ──
-$publicPath = __DIR__ . '/../frontend/public' . $uri;
+$publicPath = $baseDir . '/../frontend/public' . $uri;
 if ($uri !== '/' && file_exists($publicPath) && is_file($publicPath)) {
     $ext = strtolower(pathinfo($publicPath, PATHINFO_EXTENSION));
     $mimeTypes = [

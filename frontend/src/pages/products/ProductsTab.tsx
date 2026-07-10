@@ -1,12 +1,12 @@
-// @ts-nocheck
 import { useState, useMemo, useEffect } from 'react'
-import { Pencil, Trash2, Search, X, SlidersHorizontal, AlertTriangle, Warehouse, Camera, Printer } from 'lucide-react'
+import { Pencil, Trash2, Search, X, SlidersHorizontal, AlertTriangle, Warehouse, Camera, Printer, Scale, Droplet, Layers, Box, Coins, Ban } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 import Pagination from '../../components/Pagination'
 import toast from 'react-hot-toast'
 import PrintLabelsModal from '../../components/products/PrintLabelsModal'
 import { extractApiError } from '../../utils/apiError'
 import type { Product } from '../../types/product.d'
+import IconBadge from '../../components/common/IconBadge'
 
 const STOCK_FILTERS = [
   { id: 'all', label: 'الكل' },
@@ -194,17 +194,17 @@ export default function ProductsTab({
     <>
       {/* Inventory widgets */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-        <StatCard icon={<Warehouse size={20} color="var(--secondary)" />}  label="إجمالي المنتجات"  value={formatNumber(allProducts.length)} />
-        <StatCard icon={<span style={{ fontSize: '1.1rem' }}>📦</span>}      label="إجمالي الوحدات"   value={formatNumber(totalUnits)} />
-        <StatCard icon={<span style={{ fontSize: '1.1rem' }}>💰</span>}      label="قيمة المخزون"    value={formatCurrency(stockValue)} />
+        <StatCard icon={<IconBadge icon={Warehouse} color="secondary" shape="circle" size={16} badgeSize={32} />}  label="إجمالي المنتجات"  value={formatNumber(allProducts.length)} />
+        <StatCard icon={<IconBadge icon={Box} color="primary" shape="circle" size={16} badgeSize={32} />}      label="إجمالي الوحدات"   value={formatNumber(totalUnits)} />
+        <StatCard icon={<IconBadge icon={Coins} color="warning" shape="circle" size={16} badgeSize={32} />}      label="قيمة المخزون"    value={formatCurrency(stockValue)} />
         <StatCard
-          icon={<AlertTriangle size={20} color={lowStock.length > 0 ? 'var(--warning)' : 'var(--text-muted)'} />}
+          icon={<IconBadge icon={AlertTriangle} color={lowStock.length > 0 ? 'warning' : 'muted'} shape="circle" size={16} badgeSize={32} />}
           label="مخزون منخفض"
           value={formatNumber(lowStock.length)}
           color={lowStock.length > 0 ? 'var(--warning)' : undefined}
         />
         <StatCard
-          icon={<span style={{ fontSize: '1.1rem' }}>🚫</span>}
+          icon={<IconBadge icon={Ban} color={outOfStock > 0 ? 'danger' : 'muted'} shape="circle" size={16} badgeSize={32} />}
           label="نفد المخزون"
           value={formatNumber(outOfStock)}
           color={outOfStock > 0 ? 'var(--danger)' : undefined}
@@ -352,7 +352,24 @@ export default function ProductsTab({
                   </td>
                   <td style={{ fontWeight: 600 }}>
                     {p.name}
-                    {parseInt(p.sell_by_weight) === 1 && <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', marginRight: '0.3rem' }}>⚖️ وزن</span>}
+                    {(p.unit_type === 'weight' || (p.sell_by_weight === 1 && !p.unit_type)) && (
+                      <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', marginRight: '0.3rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                        <IconBadge icon={Scale} color="primary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+                        وزن
+                      </span>
+                    )}
+                    {p.unit_type === 'liter' && (
+                      <span className="badge badge-green" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', marginRight: '0.3rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                        <IconBadge icon={Droplet} color="primary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+                        لتر
+                      </span>
+                    )}
+                    {(p.sizes || []).length > 0 && (
+                      <span className="badge badge-blue" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', marginRight: '0.3rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                        <IconBadge icon={Layers} color="secondary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.1rem' }} />
+                        {formatNumber((p.sizes || []).length)} مقاسات
+                      </span>
+                    )}
                     <div className="show-mobile" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                       {p.barcode}
                       {(p.additional_barcodes || []).length > 0 && ` (+${formatNumber((p.additional_barcodes || []).length)})`}
@@ -371,12 +388,13 @@ export default function ProductsTab({
                   <td className="hide-mobile">{formatCurrency(p.cost)}</td>
                   <td>
                     <span className={`badge ${p.quantity <= 0 ? 'badge-red' : p.quantity <= p.low_stock_threshold ? 'badge-yellow' : 'badge-green'}`}>
-                      {parseInt(p.sell_by_weight) === 1 ? `${parseFloat(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
+                      {p.unit_type === 'liter' ? `${parseFloat(p.quantity).toFixed(2)} لتر` : (p.unit_type === 'weight' || (p.sell_by_weight === 1 && !p.unit_type)) ? `${parseFloat(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
                     </span>
-                    {p.units_per_box > 1 && !parseInt(p.sell_by_weight) && (
+                    {p.units_per_box > 1 && (!p.unit_type || p.unit_type === 'piece') && (
                       <div style={{ marginTop: '0.3rem' }}>
-                        <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem' }} title="عدد القطع في الصندوق">
-                          📦 {formatNumber(p.units_per_box)}
+                        <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} title="عدد القطع في الصندوق">
+                          <IconBadge icon={Box} color="secondary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.15rem' }} />
+                          {formatNumber(p.units_per_box)}
                         </span>
                       </div>
                     )}

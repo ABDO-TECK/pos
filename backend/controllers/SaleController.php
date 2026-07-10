@@ -10,6 +10,8 @@ use App\Helpers\AuditLog;
 use App\Models\Invoice;
 use App\Services\AuthService;
 use App\Services\SaleService;
+use App\Requests\SaleRequest;
+use App\Requests\SaleStatusRequest;
 
 
 class SaleController extends Controller {
@@ -48,12 +50,9 @@ class SaleController extends Controller {
     }
 
     public function store() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'items'          => 'required',
-            'payment_method' => 'required',
-        ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors, ErrorCodes::VALIDATION_FAILED);
+        $request = new SaleRequest($this->getBody());
+        $request->validated();
+        $data = $this->getBody();
 
         if (empty($data['items']) || !is_array($data['items'])) {
             return Response::error('السلة فارغة', 400, null, ErrorCodes::EMPTY_CART);
@@ -93,10 +92,8 @@ class SaleController extends Controller {
     }
 
     public function updateStatus(string $id) {
-        $data = $this->getBody();
-        if (empty($data['status']) || !in_array($data['status'], ['completed', 'reserved', 'cancelled'])) {
-            return Response::error('حالة غير صالحة', 400, null, ErrorCodes::VALIDATION_FAILED);
-        }
+        $request = new SaleStatusRequest($this->getBody());
+        $data = $request->validated();
 
         $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);
         if (!$invoice) {

@@ -177,7 +177,13 @@ interface ReceiptSettings {
   taxRate?: number;
 }
 
-export function buildReceiptHTML(invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, change = 0, settings: ReceiptSettings = {}, paperSize = '80mm') {
+export function buildReceiptHTML(
+    invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, 
+    change = 0, 
+    settings: ReceiptSettings = {}, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
     const storeName  = settings.storeName  ?? 'سوبر ماركت'
     const taxEnabled = settings.taxEnabled !== false
     const taxRate    = settings.taxRate    ?? 15
@@ -186,19 +192,23 @@ export function buildReceiptHTML(invoice: Sale & { cashier_name?: string, amount
     const changeAmt = invoice.change_due ?? change
     const payLabel  = PAYMENT_LABELS[invoice.payment_method] ?? invoice.payment_method
 
+    const showQty = !options.hideQuantities
+    const showPrice = !options.hidePrices
+
     // ── Items rows — no currency symbol in table ──
     const itemRows = (invoice.items ?? []).map((item, i) => {
         const qty = parseFloat(item.quantity)
-        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
-        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : fn(item.quantity)
-        const nameStr = (item.product_name ?? item.name ?? '') + (isByWeight ? ' ⚖️' : '')
+        const unitType = item.unit_type ?? (parseInt(item.sell_by_weight) === 1 ? 'weight' : 'piece')
+        const isByWeight = unitType === 'weight'
+        const isByLiter = unitType === 'liter'
+        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
+        const nameStr = (item.product_name ?? item.name ?? '') + (item.size_name ? ` (${item.size_name})` : '')
         return `
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
-            <td>${qtyStr}</td>
-            <td>${fd2(item.price)}</td>
-            <td>${fd2(parseFloat(item.price) * qty)}</td>
+            ${showQty ? `<td>${qtyStr}</td>` : ''}
+            ${showPrice ? `<td>${fd2(item.price)}</td><td>${fd2(parseFloat(item.price) * qty)}</td>` : ''}
         </tr>`
     }).join('')
 
@@ -220,6 +230,20 @@ export function buildReceiptHTML(invoice: Sale & { cashier_name?: string, amount
         <div class="total-row grand"><span>متبقي آجلاً</span><span>${fc(amountDue)}</span></div>` : ''
 
     const a4Css = getA4OverrideCss(paperSize)
+
+    // Delivery info block
+    let deliveryInfoHtml = ''
+    if (invoice.driver_name || invoice.vehicle_number || invoice.delivery_date || invoice.delivery_notes) {
+        deliveryInfoHtml = `
+        <div class="invoice-details" style="border-top: 1px dashed #000; padding-top: 2mm; margin-top: 2mm; text-align: right;">
+            <div style="text-align: center; font-weight: bold; margin-bottom: 1.5mm; font-size: 3.5mm;">🚚 بيانات التسليم والشحن</div>
+            ${invoice.driver_name ? `<div style="margin-bottom: 0.5mm"><strong>اسم السائق:</strong> ${invoice.driver_name}</div>` : ''}
+            ${invoice.vehicle_number ? `<div style="margin-bottom: 0.5mm"><strong>رقم السيارة:</strong> ${invoice.vehicle_number}</div>` : ''}
+            ${invoice.delivery_date ? `<div style="margin-bottom: 0.5mm"><strong>تاريخ التسليم:</strong> ${fd(invoice.delivery_date)}</div>` : ''}
+            ${invoice.delivery_notes ? `<div style="white-space: pre-wrap; margin-top: 1mm;"><strong>ملاحظات التسليم:</strong><br/>${invoice.delivery_notes}</div>` : ''}
+        </div>
+        `
+    }
 
     return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -256,22 +280,24 @@ export function buildReceiptHTML(invoice: Sale & { cashier_name?: string, amount
             <tr>
                 <th>#</th>
                 <th>المنتج</th>
-                <th>الكمية</th>
-                <th>السعر</th>
-                <th>الإجمالي</th>
+                ${showQty ? '<th>الكمية</th>' : ''}
+                ${showPrice ? '<th>السعر</th><th>الإجمالي</th>' : ''}
             </tr>
         </thead>
         <tbody>${itemRows}</tbody>
     </table>
 
     <!-- Totals -->
+    ${showPrice ? `
     <div class="total-section">
         <div class="total-row"><span>المجموع الجزئي</span><span>${fc(invoice.subtotal)}</span></div>
         ${discountRow}${taxRow}
         <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
         ${cashRows}
         ${creditRows}
-    </div>
+    </div>` : ''}
+
+    ${deliveryInfoHtml}
 
     <!-- Footer -->
     <div class="invoice-footer">
@@ -287,8 +313,14 @@ export function buildReceiptHTML(invoice: Sale & { cashier_name?: string, amount
  * Open a new browser print window and print.
  * Works correctly from inside modals because the content is in a separate window.
  */
-export function browserPrint(invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, change: number, settings: ReceiptSettings, paperSize = '80mm') {
-    const html    = buildReceiptHTML(invoice, change, settings, paperSize)
+export function browserPrint(
+    invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, 
+    change: number, 
+    settings: ReceiptSettings, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
+    const html    = buildReceiptHTML(invoice, change, settings, paperSize, options)
     const win     = window.open('', '_blank', 'width=800,height=800,scrollbars=yes')
     if (!win) { alert('يرجى السماح بالنوافذ المنبثقة لهذا الموقع'); return }
     win.document.open()
@@ -299,25 +331,48 @@ export function browserPrint(invoice: Sale & { cashier_name?: string, amount_pai
 
 
 // ── Purchase Invoice printing ─────────────────────────────────────────────
-export function buildPurchaseReceiptHTML(invoice: PurchaseInvoice & { items_count?: number }, settings: ReceiptSettings = {}, paperSize = '80mm') {
+export function buildPurchaseReceiptHTML(
+    invoice: PurchaseInvoice & { items_count?: number }, 
+    settings: ReceiptSettings = {}, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
     const storeName  = settings.storeName  ?? 'سوبر ماركت'
+
+    const showQty = !options.hideQuantities
+    const showPrice = !options.hidePrices
 
     const itemRows = (invoice.items ?? []).map((item, i) => {
         const qty = parseFloat(item.quantity)
-        const isByWeight = parseInt(item.sell_by_weight) === 1 || (qty % 1 !== 0 && qty < 100)
-        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : fn(item.quantity)
-        const nameStr = (item.product_name ?? item.name ?? '') + (isByWeight ? ' ⚖️' : '')
+        const unitType = item.unit_type ?? (parseInt(item.sell_by_weight) === 1 ? 'weight' : 'piece')
+        const isByWeight = unitType === 'weight'
+        const isByLiter = unitType === 'liter'
+        const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
+        const nameStr = (item.product_name ?? item.name ?? '') + (item.size_name ? ` (${item.size_name})` : '')
         return `
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
-            <td>${qtyStr}</td>
-            <td>${fd2(item.cost)}</td>
-            <td>${fd2(parseFloat(item.cost) * qty)}</td>
+            ${showQty ? `<td>${qtyStr}</td>` : ''}
+            ${showPrice ? `<td>${fd2(item.cost)}</td><td>${fd2(parseFloat(item.cost) * qty)}</td>` : ''}
         </tr>`
     }).join('')
 
     const a4Css = getA4OverrideCss(paperSize)
+
+    // Delivery info block
+    let deliveryInfoHtml = ''
+    if (invoice.driver_name || invoice.vehicle_number || invoice.delivery_date || invoice.delivery_notes) {
+        deliveryInfoHtml = `
+        <div class="invoice-details" style="border-top: 1px dashed #000; padding-top: 2mm; margin-top: 2mm; text-align: right;">
+            <div style="text-align: center; font-weight: bold; margin-bottom: 1.5mm; font-size: 3.5mm;">🚚 بيانات التسليم</div>
+            ${invoice.driver_name ? `<div style="margin-bottom: 0.5mm"><strong>اسم السائق:</strong> ${invoice.driver_name}</div>` : ''}
+            ${invoice.vehicle_number ? `<div style="margin-bottom: 0.5mm"><strong>رقم السيارة:</strong> ${invoice.vehicle_number}</div>` : ''}
+            ${invoice.delivery_date ? `<div style="margin-bottom: 0.5mm"><strong>تاريخ التسليم:</strong> ${fd(invoice.delivery_date)}</div>` : ''}
+            ${invoice.delivery_notes ? `<div style="white-space: pre-wrap; margin-top: 1mm;"><strong>ملاحظات التسليم:</strong><br/>${invoice.delivery_notes}</div>` : ''}
+        </div>
+        `
+    }
 
     return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -349,25 +404,32 @@ export function buildPurchaseReceiptHTML(invoice: PurchaseInvoice & { items_coun
             <tr>
                 <th>#</th>
                 <th>المنتج</th>
-                <th>الكمية</th>
-                <th>التكلفة</th>
-                <th>الإجمالي</th>
+                ${showQty ? '<th>الكمية</th>' : ''}
+                ${showPrice ? '<th>التكلفة</th><th>الإجمالي</th>' : ''}
             </tr>
         </thead>
         <tbody>${itemRows}</tbody>
     </table>
 
+    ${showPrice ? `
     <div class="total-section">
         <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
         <div class="total-row"><span>عدد الأصناف</span><span>${fn(invoice.items_count)}</span></div>
-    </div>
+    </div>` : ''}
+
+    ${deliveryInfoHtml}
 </div>
 </body>
 </html>`
 }
 
-export function browserPrintPurchase(invoice: PurchaseInvoice & { items_count?: number }, settings: ReceiptSettings, paperSize = '80mm') {
-    const html    = buildPurchaseReceiptHTML(invoice, settings, paperSize)
+export function browserPrintPurchase(
+    invoice: PurchaseInvoice & { items_count?: number }, 
+    settings: ReceiptSettings, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
+    const html    = buildPurchaseReceiptHTML(invoice, settings, paperSize, options)
     const win     = window.open('', '_blank', 'width=800,height=800,scrollbars=yes')
     if (!win) { alert('يرجى السماح بالنوافذ المنبثقة لهذا الموقع'); return }
     win.document.open()

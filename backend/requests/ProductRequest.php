@@ -19,6 +19,10 @@ class ProductRequest extends FormRequest {
             'units_per_box'       => 'integer',
             'sell_by_weight'      => 'integer',
             'additional_barcodes' => 'array',
+            'unit_type'           => 'string',
+            'parent_product_id'   => 'integer',
+            'size_name'           => 'string',
+            'sizes'               => 'array',
         ];
     }
 }

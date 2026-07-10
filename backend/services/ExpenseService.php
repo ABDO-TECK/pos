@@ -75,13 +75,20 @@ class ExpenseService {
         if (!$this->categoryRepo->findById($id)) {
             return ['ok' => false, 'error' => 'التصنيف غير موجود', 'code' => 404];
         }
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
         try {
             $this->categoryRepo->delete($id);
+            $db->commit();
             return ['ok' => true];
         } catch (PDOException $e) {
+            $db->rollBack();
             if ($e->getCode() == 23000 || $e->getCode() === '23000') {
                 return ['ok' => false, 'error' => 'لا يمكن حذف هذا التصنيف لوجود مصروفات مرتبطة به', 'code' => 422];
             }
+            throw $e;
+        } catch (\Throwable $e) {
+            $db->rollBack();
             throw $e;
         }
     }

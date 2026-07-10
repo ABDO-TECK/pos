@@ -15,7 +15,17 @@ if (EnvLoader::get('APP_ENV', 'development') === 'production') {
         'DB_HOST',
         'DB_NAME',
         'DB_USER',
+        'DB_PASS',
     ]);
+    // تحذير أمني: استخدام root في الإنتاج
+    if (EnvLoader::get('DB_USER') === 'root') {
+        if (class_exists('App\Helpers\Logger')) {
+            \App\Helpers\Logger::warning(
+                '⚠️ SECURITY: Using root DB user in production is dangerous. '
+                . 'Create a dedicated database user with limited privileges.'
+            );
+        }
+    }
 }
 
 // ── Database ──────────────────────────────────────────────────
@@ -43,11 +53,12 @@ define('TAX_RATE', EnvLoader::getFloat('TAX_RATE', 0.15));
 
 // ── Frontend ──────────────────────────────────────────────────
 define('FRONTEND_URL', EnvLoader::get('FRONTEND_URL', 'http://localhost:5173'));
+define('INVOICE_DEFAULT_LIMIT', (int) EnvLoader::get('INVOICE_DEFAULT_LIMIT', '1000'));
 
 // ── Security ──────────────────────────────────────────────────
 define('ALLOW_WEB_RESTORE', EnvLoader::getBool('ALLOW_WEB_RESTORE', true));
 define('TRUSTED_PROXIES', array_map('trim', explode(',', EnvLoader::get('TRUSTED_PROXIES', '127.0.0.1,::1'))));
-define('DEFAULT_PASSWORD_HASH', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi');
+
 
 // ── Production Security Warnings ──────────────────────────────
 if (APP_ENV === 'production' && !EnvLoader::getBool('FORCE_HTTPS', false)) {

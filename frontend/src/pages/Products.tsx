@@ -29,6 +29,8 @@ const emptyProduct = {
   category_id: '',
   sell_by_weight: 0,
   barcode: '',
+  unit_type: 'piece',
+  sizes: [],
 }
 
 function TabBtn({ active, onClick, children }: any) {
@@ -105,7 +107,9 @@ export default function Products() {
       category_id: p.category_id ?? '',
       units_per_box: p.units_per_box ?? 1,
       sell_by_weight: p.sell_by_weight ?? 0,
+      unit_type: p.unit_type ?? (p.sell_by_weight === 1 ? 'weight' : 'piece'),
       barcodes: [p.barcode || '', ...extras],
+      sizes: p.sizes || [],
     })
     setEditProductId(p.id)
     setProductModal('edit')
@@ -221,7 +225,7 @@ export default function Products() {
       {/* ── Product Modal ── */}
       {productModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setProductModal(null)}>
-          <div className="modal" style={{ maxWidth: '520px' }}>
+          <div className="modal" style={{ maxWidth: '900px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
               <h2 style={{ fontWeight: 700 }}>{productModal === 'create' ? 'إضافة منتج جديد' : 'تعديل المنتج'}</h2>
               <button className="btn btn-ghost btn-icon" onClick={() => setProductModal(null)}><X size={18} /></button>

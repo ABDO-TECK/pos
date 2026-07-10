@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from 'react'
-import { X, CheckCircle2 } from 'lucide-react'
+import { X, CheckCircle2, Clock, DollarSign, User, Truck } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useSettingsStore from '../../store/settingsStore'
 import { formatCurrency, formatNumber, roundCurrency } from '../../utils/formatters'
@@ -26,6 +26,13 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const [deposit, setDeposit]             = useState(0)           // العربون
   const [newCustomerData, setNewCustomerData] = useState<any>(null)
 
+  // ── delivery states ──────────────────────────────────────────────
+  const [driverName, setDriverName] = useState('')
+  const [vehicleNumber, setVehicleNumber] = useState('')
+  const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0])
+  const [deliveryNotes, setDeliveryNotes] = useState('')
+  const [activeTab, setActiveTab] = useState('payment') // 'payment' | 'customer' | 'delivery'
+
   const handleCustomerSelect = (customerId: number | null, newCustomer: any) => {
     setSelectedCustomerId(customerId)
     setNewCustomerData(newCustomer)
@@ -47,8 +54,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
 
   useEffect(() => { setLocalAmountPaid(remainingToPay) }, [remainingToPay])
 
-  const [showCustomer, setShowCustomer] = useState(!!rebillingCustomerId)
-  const isCustomerNeeded = isCreditSale || showCustomer
+  // Customer section is always rendered in its tab
 
   // تحميل العملاء عند الحاجة (إما آجل أو أراد المستخدم ربط الفاتورة)
   // تم نقله إلى CustomerSection
@@ -99,6 +105,10 @@ export default function PaymentModal({ onClose, onSuccess }) {
       discount:       clampedDiscount,
       payment_method: paymentMethod,
       amount_paid:    finalAmountPaid,
+      driver_name:    driverName.trim() || undefined,
+      vehicle_number: vehicleNumber.trim() || undefined,
+      delivery_date:  deliveryDate || undefined,
+      delivery_notes: deliveryNotes.trim() || undefined,
       ...(customerId ? { customer_id: customerId } : {}),
       ...(newCustomer ? { new_customer: newCustomer } : {}),
       ...(isCreditSale ? { deposit } : {}),
@@ -112,12 +122,12 @@ export default function PaymentModal({ onClose, onSuccess }) {
       const { invoice, low_stock_alerts } = res.data.data
       toast.success(
         status === 'reserved'
-          ? `تم حجز الفاتورة بنجاح 🕒`
+          ? `تم حجز الفاتورة بنجاح`
           : rebillingInvoiceId
             ? `تم تحديث الفاتورة #${formatNumber(rebillingInvoiceId)}`
             : isCreditSale
-              ? `تم تسجيل البيع الآجل 📋 — المتبقي ${formatCurrency(amountDue)}`
-              : 'تمت عملية البيع بنجاح! 🎉',
+              ? `تم تسجيل البيع الآجل — المتبقي ${formatCurrency(amountDue)}`
+              : 'تمت عملية البيع بنجاح!',
         { duration: 3000 }
       )
       if (low_stock_alerts && low_stock_alerts.length > 0) {
@@ -141,7 +151,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: '520px' }}>
+      <div className="modal" style={{ maxWidth: '520px', width: '90%' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
@@ -165,72 +175,191 @@ export default function PaymentModal({ onClose, onSuccess }) {
           amountDue={amountDue}
         />
 
-        {/* Discount */}
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
-            الخصم (ج.م)
-          </label>
-          <input type="number" min={0} max={computedSubtotal} step="0.5" className="input"
-            value={localDiscount} onChange={e => setLocalDiscount(parseFloat(e.target.value) || 0)} />
+        {/* Tab Header */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border)',
+          marginBottom: '1rem',
+          gap: '0.25rem',
+          background: 'var(--bg)',
+          borderRadius: 'var(--radius)',
+          padding: '0.2rem',
+        }}>
+          <button
+            onClick={() => setActiveTab('payment')}
+            type="button"
+            className="btn"
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              background: activeTab === 'payment' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'payment' ? 'white' : 'var(--text)',
+              border: 'none',
+              borderRadius: 'calc(var(--radius) - 2px)',
+              justifyContent: 'center',
+              gap: '0.3rem',
+              transition: 'all 0.2s',
+              boxShadow: 'none'
+            }}
+          >
+            <DollarSign size={16} />
+            <span>الدفع والخصم</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('customer')}
+            type="button"
+            className="btn"
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              background: activeTab === 'customer' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'customer' ? 'white' : 'var(--text)',
+              border: 'none',
+              borderRadius: 'calc(var(--radius) - 2px)',
+              justifyContent: 'center',
+              gap: '0.3rem',
+              transition: 'all 0.2s',
+              boxShadow: 'none'
+            }}
+          >
+            <User size={16} />
+            <span>العميل والآجل</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('delivery')}
+            type="button"
+            className="btn"
+            style={{
+              flex: 1,
+              padding: '0.5rem',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              background: activeTab === 'delivery' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'delivery' ? 'white' : 'var(--text)',
+              border: 'none',
+              borderRadius: 'calc(var(--radius) - 2px)',
+              justifyContent: 'center',
+              gap: '0.3rem',
+              transition: 'all 0.2s',
+              boxShadow: 'none'
+            }}
+          >
+            <Truck size={16} />
+            <span>التوصيل والشحن</span>
+          </button>
         </div>
 
-        {/* Payment method */}
-        <PaymentMethodSelector paymentMethod={paymentMethod} onSelect={setPaymentMethod} />
+        {/* Tab Body */}
+        <div>
+          {activeTab === 'payment' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
+              {/* Discount */}
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
+                  الخصم (ج.م)
+                </label>
+                <input type="number" min={0} max={computedSubtotal} step="0.5" className="input"
+                  value={localDiscount} onChange={e => setLocalDiscount(parseFloat(e.target.value) || 0)} />
+              </div>
 
-        {/* Cash input */}
-        {currentMethod.cashInput && !isCreditSale && (
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>المبلغ المدفوع (ج.م)</label>
-            <input type="number" min={0} step="0.5" className="input input-lg"
-              value={localAmountPaid} onChange={e => setLocalAmountPaid(parseFloat(e.target.value) || 0)} />
-          </div>
-        )}
+              {/* Payment method */}
+              <PaymentMethodSelector paymentMethod={paymentMethod} onSelect={setPaymentMethod} />
 
-        {currentMethod.cashInput && !isCreditSale && (
-          <div 
-            className={computedChange > 0 ? styles.changeBoxActive : ""}
-            style={{
-            background: computedChange > 0 ? undefined : 'var(--bg)',
-            borderRadius: 'var(--radius)', padding: '0.75rem 1rem',
-            display: 'flex', justifyContent: 'space-between',
-            fontWeight: 700, fontSize: '1.05rem', marginBottom: '1rem',
-          }}>
-            <span>الباقي</span>
-            <span style={{ color: computedChange > 0 ? 'inherit' : 'var(--primary)' }}>{formatCurrency(computedChange)}</span>
-          </div>
-        )}
+              {/* Cash input */}
+              {currentMethod.cashInput && !isCreditSale && (
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>المبلغ المدفوع (ج.م)</label>
+                  <input type="number" min={0} step="0.5" className="input input-lg"
+                    value={localAmountPaid} onChange={e => setLocalAmountPaid(parseFloat(e.target.value) || 0)} />
+                </div>
+              )}
 
-        {/* خيار إضافة عميل للمبيعات النقدية */}
-        {!isCreditSale && (
-          <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <input 
-              type="checkbox" 
-              id="linkCustomer" 
-              checked={showCustomer} 
-              onChange={e => setShowCustomer(e.target.checked)} 
-              style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-            />
-            <label htmlFor="linkCustomer" style={{ fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
-              ربط الفاتورة بحساب عميل (لتسجيلها في كشف حسابه)
-            </label>
-          </div>
-        )}
+              {currentMethod.cashInput && !isCreditSale && (
+                <div 
+                  className={computedChange > 0 ? styles.changeBoxActive : ""}
+                  style={{
+                    background: computedChange > 0 ? undefined : 'var(--bg)',
+                    borderRadius: 'var(--radius)', padding: '0.75rem 1rem',
+                    display: 'flex', justifyContent: 'space-between',
+                    fontWeight: 700, fontSize: '1.05rem',
+                  }}
+                >
+                  <span>الباقي</span>
+                  <span style={{ color: computedChange > 0 ? 'inherit' : 'var(--primary)' }}>{formatCurrency(computedChange)}</span>
+                </div>
+              )}
+            </div>
+          )}
 
-        {/* ── قسم بيانات العميل (آجل أو كاش مرتبط) ────────────────────────── */}
-        {isCustomerNeeded && (
-          <CustomerSection
-            isCreditSale={isCreditSale}
-            rebillingCustomerId={rebillingCustomerId}
-            computedTotal={computedTotal}
-            amountDue={amountDue}
-            deposit={deposit}
-            onDepositChange={setDeposit}
-            onCustomerSelect={handleCustomerSelect}
-          />
-        )}
+          {activeTab === 'customer' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem', minHeight: '180px' }}>
+              <CustomerSection
+                isCreditSale={isCreditSale}
+                rebillingCustomerId={rebillingCustomerId}
+                computedTotal={computedTotal}
+                amountDue={amountDue}
+                deposit={deposit}
+                onDepositChange={setDeposit}
+                onCustomerSelect={handleCustomerSelect}
+              />
+            </div>
+          )}
+
+          {activeTab === 'delivery' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div className="resp-2col" style={{ gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>اسم السائق</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="مثال: محمد أحمد..."
+                    value={driverName}
+                    onChange={(e) => setDriverName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>رقم السيارة</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="مثال: أ ب ج 123..."
+                    value={vehicleNumber}
+                    onChange={(e) => setVehicleNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="resp-2col" style={{ gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>تاريخ التسليم</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>ملاحظات التسليم</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="طريقة الشحن، العنوان التفصيلي للتوصيل..."
+                    value={deliveryNotes}
+                    onChange={(e) => setDeliveryNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Checkout button */}
-        <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', width: '100%', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
           <button className={`btn ${isCreditSale ? 'btn-danger' : 'btn-primary'} btn-lg`}
             style={{ flex: 2, justifyContent: 'center', fontSize: '1.05rem' }}
             onClick={() => handleCheckout('completed')} disabled={loading}>
@@ -243,9 +372,10 @@ export default function PaymentModal({ onClose, onSuccess }) {
           </button>
           
           <button className="btn btn-warning btn-lg"
-            style={{ flex: 1, justifyContent: 'center', fontSize: '1rem' }}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', fontSize: '1rem' }}
             onClick={() => handleCheckout('reserved')} disabled={loading}>
-            حجز 🕒
+            <Clock size={18} />
+            حجز
           </button>
         </div>
       </div>

@@ -2,9 +2,10 @@
 
 use PHPUnit\Framework\TestCase;
 use App\Services\SaleService;
-use App\Models\Invoice;
-use App\Models\Product;
-use App\Models\Customer;
+use App\Repositories\InvoiceRepository;
+use App\Repositories\ProductRepository;
+use App\Repositories\CustomerRepository;
+use App\Repositories\InventoryEventRepository;
 
 class SaleControllerTest extends TestCase
 {
@@ -14,9 +15,11 @@ class SaleControllerTest extends TestCase
     {
         // يتطلب وجود قاعدة بيانات اختبارية تحتوي على منتجات
         $this->saleService = new SaleService(
-            $this->createMock(Invoice::class),
-            $this->createMock(Product::class),
-            $this->createMock(Customer::class)
+            $this->createMock(InvoiceRepository::class),
+            $this->createMock(ProductRepository::class),
+            $this->createMock(CustomerRepository::class),
+            $this->createMock(InventoryEventRepository::class),
+            $this->createMock(\PDO::class)
         );
     }
 

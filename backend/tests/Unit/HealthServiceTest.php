@@ -22,10 +22,10 @@ class HealthServiceTest extends TestCase
 
         $this->assertArrayHasKey('healthy', $result);
         $this->assertArrayHasKey('checks', $result);
-        $this->assertArrayHasKey('warnings', $result);
+        $this->assertArrayHasKey('status', $result);
+        $this->assertArrayHasKey('version', $result);
         $this->assertIsBool($result['healthy']);
         $this->assertIsArray($result['checks']);
-        $this->assertIsArray($result['warnings']);
     }
 
     public function testRunHealthCheckContainsAllCheckKeys()

@@ -99,7 +99,39 @@ async function initApp() {
       (window as any).WS_BASE_URL = 'ws://127.0.0.1:8090';
     }
   } else {
-    (window as any).WS_BASE_URL = 'ws://127.0.0.1:8090';
+    // We are running in a normal browser (phone/tablet or external access)
+    try {
+      const response = await fetch('/api/health');
+      if (response.ok) {
+        const health = await response.json();
+        const wsPort = health.ws_port || 8090;
+        
+        const host = window.location.hostname;
+        const protocol = window.location.protocol;
+        
+        if (protocol === 'https:') {
+          // HTTPS Mixed-Content: browser requires secure WebSockets (wss://).
+          // We route the secure WebSocket connection through the proxy on the same port!
+          const port = window.location.port ? `:${window.location.port}` : '';
+          (window as any).WS_BASE_URL = `wss://${host}${port}/ws`;
+        } else {
+          (window as any).WS_BASE_URL = `ws://${host}:${wsPort}`;
+        }
+        console.log('[Init] Remote WS base URL resolved:', (window as any).WS_BASE_URL);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (err) {
+      console.warn('[Init] Failed to fetch health check for dynamic WS port, falling back:', err);
+      const host = window.location.hostname;
+      const protocol = window.location.protocol;
+      if (protocol === 'https:') {
+        const port = window.location.port ? `:${window.location.port}` : '';
+        (window as any).WS_BASE_URL = `wss://${host}${port}/ws`;
+      } else {
+        (window as any).WS_BASE_URL = `ws://${host}:8090`;
+      }
+    }
   }
 
   ReactDOM.createRoot(document.getElementById('root')!).render(

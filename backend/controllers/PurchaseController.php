@@ -11,6 +11,8 @@ use App\Services\InventoryService;
 use App\Services\AuthService;
 use App\Services\SupplierService;
 use Throwable;
+use App\Requests\PurchaseRequest;
+use App\Requests\BulkPurchaseRequest;
 
 class PurchaseController extends Controller
 {
@@ -33,14 +35,8 @@ class PurchaseController extends Controller
 
     /** Single-item purchase (legacy) */
     public function purchase() {
-        $data   = $this->getBody();
-        $errors = $this->validate($data, [
-            'supplier_id' => 'required',
-            'product_id'  => 'required',
-            'quantity'    => 'required|numeric',
-            'cost'        => 'required|numeric',
-        ]);
-        if ($errors) return Response::error('فشل التحقق من صحة البيانات', 422, $errors, ErrorCodes::VALIDATION_FAILED);
+        $request = new PurchaseRequest($this->getBody());
+        $data = $request->validated();
 
         try {
             $result = $this->supplierService->recordSinglePurchase($data);
@@ -110,6 +106,8 @@ class PurchaseController extends Controller
 
     /** Bulk purchase — creates a purchase invoice + items */
     public function purchaseBulk() {
+        $request = new BulkPurchaseRequest($this->getBody());
+        $request->validated();
         $data   = $this->getBody();
         $auth   = $this->authService->user();
         $result = $this->inventoryService->processBulkPurchase($data, $auth);

@@ -62,7 +62,8 @@ class ProductController extends Controller {
 
     public function store() {
         try {
-            $request = new ProductRequest($this->getBody());
+            $body = $this->getBody();
+            $request = new ProductRequest($body);
             $data = $request->validated();
             
             $result = $this->productService->createProduct($data);
@@ -78,7 +79,8 @@ class ProductController extends Controller {
 
     public function update(string $id) {
         try {
-            $request = new ProductRequest($this->getBody());
+            $body = $this->getBody();
+            $request = new ProductRequest($body);
             $data = $request->validated();
 
             $result = $this->productService->updateProduct((int) $id, $data);

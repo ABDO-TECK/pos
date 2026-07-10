@@ -1,9 +1,9 @@
-
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { getProfitReport } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatPercent, formatShortDate } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
+import { Coins, Box, TrendingUp, TrendingDown, Sparkles, Percent, RefreshCw } from 'lucide-react'
 
 export default function ProfitTab() {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
@@ -32,20 +32,20 @@ export default function ProfitTab() {
           ))}
         </select>
         <input type="number" className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value))} />
-        <button className="btn btn-primary" onClick={loadProfit} disabled={loading}>
-          {loading ? <span className="spinner" /> : '🔄'} عرض
+        <button className="btn btn-primary" onClick={loadProfit} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          {loading ? <span className="spinner" /> : <RefreshCw size={14} />} عرض
         </button>
       </div>
 
       {profit && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
-            <SCard label="إجمالي الإيرادات" value={formatCurrency(profit.total_revenue)} color="var(--primary)" icon="💰" />
-            <SCard label="إجمالي التكاليف"  value={formatCurrency(profit.total_cost)}    color="var(--warning)"  icon="📦" />
-            <SCard label="إجمالي ربح المبيعات" value={formatCurrency(profit.total_profit)} color="var(--primary-d)" icon="📈" />
-            <SCard label="إجمالي المصروفات" value={formatCurrency(profit.total_expenses)} color="var(--danger)" icon="💸" />
-            <SCard label="صافي الربح الفعلي" value={formatCurrency(profit.net_profit)} color={profitColor(profit.net_profit)} icon="✨" />
-            <SCard label="هامش الربح الفعلي" value={formatPercent(profit.profit_margin)}   color={profit.profit_margin >= 0 ? 'var(--secondary)' : 'var(--danger)'} icon="%" />
+            <SCard label="إجمالي الإيرادات" value={formatCurrency(profit.total_revenue)} color="var(--primary)" icon={Coins} />
+            <SCard label="إجمالي التكاليف"  value={formatCurrency(profit.total_cost)}    color="var(--warning)"  icon={Box} />
+            <SCard label="إجمالي ربح المبيعات" value={formatCurrency(profit.total_profit)} color="var(--primary-d)" icon={TrendingUp} />
+            <SCard label="إجمالي المصروفات" value={formatCurrency(profit.total_expenses)} color="var(--danger)" icon={TrendingDown} />
+            <SCard label="صافي الربح الفعلي" value={formatCurrency(profit.net_profit)} color={profitColor(profit.net_profit)} icon={Sparkles} />
+            <SCard label="هامش الربح الفعلي" value={formatPercent(profit.profit_margin)}   color={profit.profit_margin >= 0 ? 'var(--secondary)' : 'var(--danger)'} icon={Percent} />
           </div>
 
           {profit.daily_breakdown?.length > 0 && (

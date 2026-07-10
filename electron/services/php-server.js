@@ -106,14 +106,15 @@ function startPhpServer(options = {}) {
         LOGS_PATH: getLogsDir(),
         API_PORT: String(selectedPort),
         PORT: String(selectedPort),
-        RUNTIME_METADATA_PATH: getRuntimeMetadataPath()
+        RUNTIME_METADATA_PATH: getRuntimeMetadataPath(),
+        RUNTIME_PORTS_PATH: getRuntimePortsPath()
       };
 
       console.log(`[PHP] Spawning PHP Server pointing to: ${pharPath}`);
       const sysTempDir = getTempDir();
       const args = [
         '-d', `sys_temp_dir=${sysTempDir}`,
-        '-S', `127.0.0.1:${selectedPort}`,
+        '-S', `0.0.0.0:${selectedPort}`,
         pharPath
       ];
 

@@ -15,6 +15,10 @@ declare global {
     low_stock_threshold?: number;
     created_at?: string;
     updated_at?: string;
+    unit_type?: 'piece' | 'weight' | 'liter';
+    parent_product_id?: number | null;
+    size_name?: string | null;
+    sizes?: Product[];
   }
 
   interface Category {

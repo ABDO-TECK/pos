@@ -95,6 +95,31 @@ class ProductRepository implements RepositoryInterface
         return $this->model->getLowStock();
     }
 
+    public function getTotalProductsCount(): int
+    {
+        return $this->model->getTotalProductsCount();
+    }
+
+    public function getLowStockProductsCount(): int
+    {
+        return $this->model->getLowStockProductsCount();
+    }
+
+    public function incrementQuantity(int $id, float $qty): void
+    {
+        $this->model->incrementQuantity($id, $qty);
+    }
+
+    public function decrementQuantity(int $id, float $qty): void
+    {
+        $this->model->decrementQuantity($id, $qty);
+    }
+
+    public function getLowStockByProductIds(array $ids): array
+    {
+        return $this->model->getLowStockByProductIds($ids);
+    }
+
     /** يُتيح الوصول للـ Model الأصلي عند الحاجة (backward compatibility) */
     public function getModel(): Product
     {

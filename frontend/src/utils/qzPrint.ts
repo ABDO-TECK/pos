@@ -48,12 +48,13 @@ function isElectron(): boolean {
 }
 
 function getCfg() {
-    const base = window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }
+    const base = { ...(window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }) }
     // QZ Tray يعمل على السيرفر المحلي (جهاز الكاشير الرئيسي).
     // لذلك نعتمد على الإعدادات القادمة من qz-config.js لكي يتمكن الهاتف من الطباعة عبر الـ IP.
-    return {
-        ...base,
+    if (base.host === 'pos-app' || !base.host) {
+        base.host = 'localhost';
     }
+    return base;
 }
 
 // ── Security setup (runs once) ─────────────────────────────────────────────
@@ -170,6 +171,7 @@ export async function connectQZ() {
             const qzErr: Error = new Error(info.message)
             qzErr.certUrl = info.certUrl
             qzErr.isQZError = true
+            qzErr.isRemoteQZ = true
             throw qzErr
         })
 

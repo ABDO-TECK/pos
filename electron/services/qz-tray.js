@@ -27,7 +27,10 @@ function startQZTray() {
       return;
     }
 
-    console.log('[QZ Tray] Starting...', { javaPath, qzTrayJar });
+    const path = require('path');
+    const qzTrayDir = path.dirname(qzTrayJar);
+
+    console.log('[QZ Tray] Starting...', { javaPath, qzTrayJar, qzTrayDir });
 
     qzProcess = spawn(javaPath, [
       '-Xms64m',
@@ -37,6 +40,7 @@ function startQZTray() {
       '--headless',    // بدون System Tray icon (لأن Electron له tray خاص)
     ], {
       windowsHide: true,
+      cwd: qzTrayDir,
       env: { ...process.env },
     });
 

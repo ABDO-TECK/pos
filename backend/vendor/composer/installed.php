@@ -3,7 +3,7 @@
         'name' => 'abdo-teck/pos-backend',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '3985739151a2de0dc6148033c77803721af34ae6',
+        'reference' => '76b7c61b7f5aa9b6afca445d41bb34479b6fb02e',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'abdo-teck/pos-backend' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '3985739151a2de0dc6148033c77803721af34ae6',
+            'reference' => '76b7c61b7f5aa9b6afca445d41bb34479b6fb02e',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

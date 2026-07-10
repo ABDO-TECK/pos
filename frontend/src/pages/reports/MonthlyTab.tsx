@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { getMonthlyReport } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatShortDate } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
+import { Coins, Box, TrendingUp, TrendingDown, Sparkles, FileText, RefreshCw } from 'lucide-react'
 
 export default function MonthlyTab() {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
@@ -31,20 +32,20 @@ export default function MonthlyTab() {
           ))}
         </select>
         <input type="number" className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value))} />
-        <button className="btn btn-primary" onClick={loadMonthly} disabled={loading}>
-          {loading ? <span className="spinner" /> : '🔄'} عرض
+        <button className="btn btn-primary" onClick={loadMonthly} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          {loading ? <span className="spinner" /> : <RefreshCw size={14} />} عرض
         </button>
       </div>
 
       {monthly && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
-            <SCard label="الإيرادات الشهرية" value={formatCurrency(monthly.total_revenue)} color="var(--primary)" icon="💰" />
-            <SCard label="إجمالي التكاليف" value={formatCurrency(monthly.total_cost ?? 0)} color="var(--warning)" icon="📦" title="تكلفة البضاعة المباعة — للشهر المختار" />
-            <SCard label="ربح المبيعات" value={formatCurrency(monthly.total_profit ?? 0)} color="var(--primary-d)" icon="📈" title="الإيرادات − التكاليف — للشهر المختار" />
-            <SCard label="المصروفات" value={formatCurrency(monthly.total_expenses ?? 0)} color="var(--danger)" icon="💸" />
-            <SCard label="صافي الربح الفعلي" value={formatCurrency(monthly.net_profit ?? 0)} color={profitColor(monthly.net_profit)} icon="✨" title="ربح المبيعات − المصروفات" />
-            <SCard label="الفواتير" value={formatNumber(monthly.total_invoices)} icon="🧾" />
+            <SCard label="الإيرادات الشهرية" value={formatCurrency(monthly.total_revenue)} color="var(--primary)" icon={Coins} />
+            <SCard label="إجمالي التكاليف" value={formatCurrency(monthly.total_cost ?? 0)} color="var(--warning)" icon={Box} title="تكلفة البضاعة المباعة — للشهر المختار" />
+            <SCard label="ربح المبيعات" value={formatCurrency(monthly.total_profit ?? 0)} color="var(--primary-d)" icon={TrendingUp} title="الإيرادات − التكاليف — للشهر المختار" />
+            <SCard label="المصروفات" value={formatCurrency(monthly.total_expenses ?? 0)} color="var(--danger)" icon={TrendingDown} />
+            <SCard label="صافي الربح الفعلي" value={formatCurrency(monthly.net_profit ?? 0)} color={profitColor(monthly.net_profit)} icon={Sparkles} title="ربح المبيعات − المصروفات" />
+            <SCard label="الفواتير" value={formatNumber(monthly.total_invoices)} icon={FileText} />
           </div>
 
           {monthly.daily_breakdown?.length > 0 && (

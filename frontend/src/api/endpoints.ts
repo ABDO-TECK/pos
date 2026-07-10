@@ -86,8 +86,9 @@ export const createBulkPurchase = (data: BulkPurchasePayload) => api.post<ApiRes
 export const getPurchaseInvoices = (params?: ApiQueryParams) => api.get<ApiResponse<PurchaseInvoice[]>>('/purchase-invoices', { params })
 export const getPurchaseInvoice  = (id: number | string)     => api.get<ApiResponse<PurchaseInvoice>>(`/purchase-invoices/${id}`)
 export const deletePurchaseInvoice = (id: number | string)   => api.delete<ApiResponse<null>>(`/purchase-invoices/${id}`)
-export const addSupplierPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/suppliers/${id}/payment`, data)
 export const updateSupplierLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/suppliers/ledger/${entryId}`, data)
+export const deleteSupplierLedgerEntry = (entryId: number | string) => api.delete<ApiResponse<LedgerEntry[]>>(`/suppliers/ledger/${entryId}`)
+export const addSupplierPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/suppliers/${id}/payment`, data)
 
 // Reports (profit)
 export const getProfitReport = (params?: ApiQueryParams) => api.get<ApiResponse<ProfitReport>>('/reports/profit', { params })
@@ -100,6 +101,7 @@ export const updateCustomer  = (id: number | string, data: Partial<Customer>)   
 export const deleteCustomer  = (id: number | string)         => api.delete<ApiResponse<null>>(`/customers/${id}`)
 export const addCustomerPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/customers/${id}/payment`, data)
 export const updateCustomerLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`, data)
+export const deleteCustomerLedgerEntry = (entryId: number | string) => api.delete<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`)
 
 // Health Check
 export const getHealthCheck = () => api.get('/health')

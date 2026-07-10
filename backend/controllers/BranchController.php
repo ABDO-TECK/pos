@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Helpers\Response;
 use App\Models\Branch;
+use App\Requests\BranchRequest;
 
 class BranchController extends Controller {
     private Branch $branchModel;
@@ -17,19 +18,15 @@ class BranchController extends Controller {
     }
 
     public function store() {
-        $data = $this->getBody();
-        if (empty($data['name'])) {
-            return Response::error('اسم الفرع مطلوب', 422);
-        }
+        $request = new BranchRequest($this->getBody());
+        $data = $request->validated();
         $id = $this->branchModel->create($data);
         return Response::success(['id' => $id], 'Branch created', 201);
     }
 
     public function update(string $id) {
-        $data = $this->getBody();
-        if (empty($data['name'])) {
-            return Response::error('اسم الفرع مطلوب', 422);
-        }
+        $request = new BranchRequest($this->getBody());
+        $data = $request->validated();
         $this->branchModel->update((int)$id, $data);
         return Response::success(null, 'Branch updated');
     }
