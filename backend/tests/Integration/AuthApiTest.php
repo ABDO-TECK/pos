@@ -30,6 +30,11 @@ class AuthApiTest extends TestCase
             ]);
 
         $userModelMock->expects($this->once())
+            ->method('getPasswordHashByEmail')
+            ->with('admin@pos.com')
+            ->willReturn($hashedPassword);
+
+        $userModelMock->expects($this->once())
             ->method('createToken')
             ->with(1)
             ->willReturn('fake_token_123');
@@ -73,6 +78,11 @@ class AuthApiTest extends TestCase
                 'password' => $hashedPassword,
                 'role' => 'admin',
             ]);
+
+        $userModelMock->expects($this->once())
+            ->method('getPasswordHashByEmail')
+            ->with('admin@pos.com')
+            ->willReturn($hashedPassword);
 
         $controller = $this->getMockBuilder(AuthController::class)
             ->setConstructorArgs([$userModelMock, $authServiceMock])

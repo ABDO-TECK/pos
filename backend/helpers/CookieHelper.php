@@ -22,9 +22,13 @@ class CookieHelper
         if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
             return true;
         }
-        // 2. فحص عبر Proxy/Load Balancer
+        // 2. فحص عبر Proxy/Load Balancer — only trust from configured proxies
         if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-            return true;
+            $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+            $trustedProxies = defined('TRUSTED_PROXIES') ? TRUSTED_PROXIES : ['127.0.0.1', '::1'];
+            if (in_array($remoteAddr, $trustedProxies, true)) {
+                return true;
+            }
         }
         // 3. فحص المنفذ
         if (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443) {

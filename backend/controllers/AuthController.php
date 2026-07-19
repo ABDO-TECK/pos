@@ -72,10 +72,12 @@ class AuthController extends Controller {
     }
 
     public function csrfCookie() {
-        $token = bin2hex(random_bytes(32));
-        // CSRF token يجب أن يكون httpOnly = false حتى يقرأه JavaScript
-        setcookie('XSRF-TOKEN', $token, CookieHelper::options(time() + TOKEN_LIFETIME, '/', false));
-        return Response::success(null, 'CSRF cookie set');
+        $nonce = bin2hex(random_bytes(32));
+        // Set cookie with the raw nonce (httpOnly = false so JS can read it for fingerprinting)
+        setcookie('XSRF-TOKEN', $nonce, CookieHelper::options(time() + TOKEN_LIFETIME, '/', false));
+        // Return the HMAC signature — this is what the frontend must send in X-XSRF-TOKEN header
+        $signature = hash_hmac('sha256', $nonce, \App\Middleware\CsrfMiddleware::getCsrfSecret());
+        return Response::success(['csrf_token' => $signature], 'CSRF cookie set');
     }
 
     public function me() {
@@ -110,7 +112,7 @@ class AuthController extends Controller {
 
         // 2. Issue a new refresh token
         $newRefreshToken = $this->userModel->createRefreshToken($record['user_id']);
-        setcookie('pos_refresh_token', $newRefreshToken, CookieHelper::options(time() + REFRESH_TOKEN_LIFETIME));
+        setcookie('pos_refresh_token', $newRefreshToken, CookieHelper::options(time() + REFRESH_TOKEN_LIFETIME, '/api/v1/refresh'));
 
         // 3. Issue a new access token
         $newToken = $this->userModel->createToken($record['user_id']);

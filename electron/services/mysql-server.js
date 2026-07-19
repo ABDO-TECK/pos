@@ -4,8 +4,10 @@ const net = require('net');
 const { getMysqlPaths } = require('../utils/paths');
 
 let mysqlProcess = null;
+let mysqlPort = null;
 
 function startMySQL(port) {
+  mysqlPort = port;
   return new Promise((resolve, reject) => {
     const { mysqldPath, dataDir, baseDir } = getMysqlPaths();
     const fs = require('fs');
@@ -107,11 +109,31 @@ function repairCorruptedTables(mysqlPath, port) {
 
 function stopMySQL() {
   return new Promise((resolve) => {
-    if (mysqlProcess) {
+    if (!mysqlProcess) {
+      resolve();
+      return;
+    }
+    const { baseDir } = getMysqlPaths();
+    const mysqladmin = path.join(baseDir, 'bin', 'mysqladmin.exe');
+    if (require('fs').existsSync(mysqladmin) && mysqlPort) {
+      console.log(`[MySQL] Requesting clean shutdown via mysqladmin on port ${mysqlPort}...`);
+      const { exec } = require('child_process');
+      exec(`"${mysqladmin}" -u root --port=${mysqlPort} shutdown`, { windowsHide: true }, (err) => {
+        if (err) {
+          console.warn('[MySQL] mysqladmin shutdown failed, falling back to process kill:', err.message);
+          if (mysqlProcess) {
+            mysqlProcess.kill();
+          }
+        }
+        mysqlProcess = null;
+        resolve();
+      });
+    } else {
+      console.log('[MySQL] Killing process directly...');
       mysqlProcess.kill();
       mysqlProcess = null;
+      setTimeout(resolve, 1000);
     }
-    setTimeout(resolve, 1000);
   });
 }
 

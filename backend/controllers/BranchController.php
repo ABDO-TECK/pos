@@ -25,9 +25,10 @@ class BranchController extends Controller {
     }
 
     public function update(string $id) {
+        $id = $this->resolveId($id);
         $request = new BranchRequest($this->getBody());
         $data = $request->validated();
-        $this->branchModel->update((int)$id, $data);
+        $this->branchModel->update($id, $data);
         return Response::success(null, 'Branch updated');
     }
 }

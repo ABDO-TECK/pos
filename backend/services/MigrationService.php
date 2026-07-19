@@ -17,13 +17,13 @@ class MigrationService {
     public function __construct() {
         $this->db = Database::getInstance();
         $pharRunning = \Phar::running(false);
+        $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? ($pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage');
+        $this->flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
+
         if ($pharRunning) {
-            $baseDir = dirname($pharRunning);
             $this->migrationsPath = 'phar://' . str_replace('\\', '/', $pharRunning) . '/database/migrations/';
-            $this->flagFile = $baseDir . '/storage/migrations_hash.flag';
         } else {
             $this->migrationsPath = realpath(__DIR__ . '/../../database/migrations/') . DIRECTORY_SEPARATOR;
-            $this->flagFile = __DIR__ . '/../storage/migrations_hash.flag';
         }
     }
 
@@ -101,12 +101,27 @@ class MigrationService {
     }
 
     private function computeHash(): string {
-        $files = glob($this->migrationsPath . '*.sql') ?: [];
-        sort($files);
+        if (!is_dir($this->migrationsPath)) {
+            return md5('');
+        }
+
+        $files = scandir($this->migrationsPath);
+        if ($files === false) {
+            return md5('');
+        }
+
+        $migrations = [];
+        foreach ($files as $file) {
+            if (pathinfo($file, PATHINFO_EXTENSION) === 'sql') {
+                $migrations[] = $file;
+            }
+        }
+        sort($migrations);
 
         $fingerprint = '';
-        foreach ($files as $file) {
-            $fingerprint .= basename($file) . ':' . filesize($file) . ':' . filemtime($file) . ';';
+        foreach ($migrations as $file) {
+            $fullPath = $this->migrationsPath . $file;
+            $fingerprint .= $file . ':' . filesize($fullPath) . ':' . filemtime($fullPath) . ';';
         }
 
         return md5($fingerprint);

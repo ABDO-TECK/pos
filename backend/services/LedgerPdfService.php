@@ -30,8 +30,9 @@ class LedgerPdfService
 
     public function createMpdf(): \Mpdf\Mpdf
     {
-        $tmpDir = __DIR__ . '/../storage/mpdf_tmp';
-        if (!is_dir($tmpDir)) mkdir($tmpDir, 0755, true);
+        $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (__DIR__ . '/../storage');
+        $tmpDir = $storageDir . '/mpdf_tmp';
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0755, true);
 
         return new \Mpdf\Mpdf([
             'mode'          => 'utf-8',

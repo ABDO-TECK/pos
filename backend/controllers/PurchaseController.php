@@ -68,14 +68,16 @@ class PurchaseController extends Controller
 
     /** Get single purchase invoice detail (like sales detail) */
     public function purchaseInvoiceDetail(string $id) {
-        $invoice = $this->supplierRepo->getPurchaseInvoice((int)$id);
+        $id = $this->resolveId($id);
+        $invoice = $this->supplierRepo->getPurchaseInvoice($id);
         if (!$invoice) return Response::notFound('Purchase invoice not found');
         return Response::success($invoice);
     }
 
     /** Delete a purchase invoice and restore stock */
     public function purchaseInvoiceDelete(string $id) {
-        $result = $this->inventoryService->deletePurchaseInvoice((int)$id);
+        $id = $this->resolveId($id);
+        $result = $this->inventoryService->deletePurchaseInvoice($id);
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -84,7 +86,7 @@ class PurchaseController extends Controller
                 : Response::serverError($result['error']);
         }
 
-        AuditLog::log($this->authService->id(), 'delete_purchase_invoice', 'purchase_invoice', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_purchase_invoice', 'purchase_invoice', $id);
 
         return Response::success(null, 'Purchase invoice deleted and stock restored');
     }

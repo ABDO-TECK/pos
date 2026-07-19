@@ -85,4 +85,19 @@ class ValidatorTest extends TestCase
         $this->assertArrayHasKey('email', $errors);
         $this->assertArrayHasKey('name', $errors);
     }
+
+    public function testArabicMinLengthFails(): void
+    {
+        // "أحمد" is 4 characters but 8 bytes.
+        // A min:6 check should fail because it has only 4 characters.
+        $errors = Validator::validate(['name' => 'أحمد'], ['name' => 'min:6']);
+        $this->assertArrayHasKey('name', $errors);
+    }
+
+    public function testArabicMinLengthPasses(): void
+    {
+        // "عبدالرحمن" is 9 characters. min:8 check should pass.
+        $errors = Validator::validate(['name' => 'عبدالرحمن'], ['name' => 'min:8']);
+        $this->assertEmpty($errors);
+    }
 }

@@ -84,6 +84,18 @@ class QueryBuilder
 
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
+        // Validate direction is strictly ASC or DESC
+        $direction = strtoupper(trim($direction));
+        if (!in_array($direction, ['ASC', 'DESC'], true)) {
+            throw new \InvalidArgumentException("Invalid ORDER BY direction: '{$direction}'. Must be ASC or DESC.");
+        }
+
+        // Validate column name: only allow alphanumeric, underscores, and dots (e.g. table.column or column)
+        // to prevent SQL injection via malicious column values.
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_.]*$/', $column)) {
+            throw new \InvalidArgumentException("Invalid ORDER BY column: '{$column}'.");
+        }
+
         $clone = clone $this;
         $clone->orderBy[] = "{$column} {$direction}";
         return $clone;

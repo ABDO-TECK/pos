@@ -20,7 +20,18 @@ class RateLimitStore
         if (self::$db !== null) return self::$db;
 
         try {
-            $dbPath = __DIR__ . '/../storage/rate_limit.sqlite';
+            if (defined('PHPUNIT_TEST_SUITE')) {
+                self::$db = new \PDO('sqlite::memory:');
+                self::$db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                self::$db->exec("CREATE TABLE IF NOT EXISTS rate_limits (
+                    key_name TEXT PRIMARY KEY,
+                    request_count INTEGER NOT NULL DEFAULT 1,
+                    expires_at INTEGER NOT NULL
+                )");
+                return self::$db;
+            }
+            $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (__DIR__ . '/../storage');
+            $dbPath = $storageDir . '/rate_limit.sqlite';
             $dir = dirname($dbPath);
             if (!is_dir($dir)) {
                 @mkdir($dir, 0755, true);

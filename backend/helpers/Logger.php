@@ -26,7 +26,7 @@ class Logger
     public const CRITICAL = 'CRITICAL';
 
     /** @var string مجلد الملفات */
-    private static string $logDir = __DIR__ . '/../logs';
+    private static string $logDir = '';
 
     /** @var int عدد الأيام التي يُحتفظ بملفاتها */
     private static int $retainDays = 30;
@@ -51,6 +51,19 @@ class Logger
      */
     private static function init(): void
     {
+        if (self::$logDir === '') {
+            $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH');
+            if (!$logsPath) {
+                $storageDir = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR');
+                if ($storageDir) {
+                    $logsPath = $storageDir . '/logs';
+                } else {
+                    $logsPath = __DIR__ . '/../logs';
+                }
+            }
+            self::$logDir = $logsPath;
+        }
+
         if (!is_dir(self::$logDir)) {
             @mkdir(self::$logDir, 0755, true);
         }

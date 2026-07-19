@@ -54,12 +54,14 @@ class AuthMiddleware {
         }
 
         // Compare expiry using UTC to avoid timezone mismatches between PHP and MySQL (timezone safety)
-        if ($row['expires_at']) {
-            $expiresAtUtc = new \DateTime($row['expires_at'], new \DateTimeZone('UTC'));
-            $nowUtc = new \DateTime('now', new \DateTimeZone('UTC'));
-            if ($expiresAtUtc < $nowUtc) {
-                return Response::unauthorized('Token expired');
-            }
+        // Treat NULL expires_at as expired — tokens must always have an expiry
+        if (!$row['expires_at']) {
+            return Response::unauthorized('Token expired');
+        }
+        $expiresAtUtc = new \DateTime($row['expires_at'], new \DateTimeZone('UTC'));
+        $nowUtc = new \DateTime('now', new \DateTimeZone('UTC'));
+        if ($expiresAtUtc < $nowUtc) {
+            return Response::unauthorized('Token expired');
         }
 
 

@@ -47,7 +47,7 @@ class HealthService
         }
 
         // ── 2. Storage Check ──
-        $storagePath = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR') ?? (__DIR__ . '/../storage');
+        $storagePath = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (__DIR__ . '/../storage');
         $storageWritable = false;
         if (is_dir($storagePath)) {
             $testFile = $storagePath . DIRECTORY_SEPARATOR . '.write-test-' . uniqid();
@@ -72,7 +72,7 @@ class HealthService
         }
 
         // ── 3. Logs Check ──
-        $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH') ?? (__DIR__ . '/../logs');
+        $logsPath = $_ENV['LOGS_PATH'] ?? (getenv('LOGS_PATH') ?: null) ?? (__DIR__ . '/../logs');
         $logsWritable = false;
         if (is_dir($logsPath)) {
             $testFile = $logsPath . DIRECTORY_SEPARATOR . '.write-test-' . uniqid();

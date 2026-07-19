@@ -41,7 +41,8 @@ class SupplierController extends Controller {
     }
 
     public function show(string $id) {
-        $data = $this->supplierRepo->getLedger((int)$id);
+        $id = $this->resolveId($id);
+        $data = $this->supplierRepo->getLedger($id);
         if (!$data['supplier']) {
             return Response::notFound('Supplier not found');
         }
@@ -66,16 +67,17 @@ class SupplierController extends Controller {
 
     public function update(string $id) {
         try {
+            $id = $this->resolveId($id);
             $request = new SupplierRequest($this->getBody());
             $data = $request->validated();
 
-            $supplier = $this->supplierRepo->findById((int)$id);
+            $supplier = $this->supplierRepo->findById($id);
             if (!$supplier) return Response::notFound('Supplier not found');
 
             $data['initial_balance'] = (float)($data['initial_balance'] ?? 0);
             return $this->withTransaction(function () use ($id, $data) {
-                $this->supplierRepo->update((int)$id, $data);
-                return Response::success($this->supplierRepo->findById((int)$id), 'Supplier updated');
+                $this->supplierRepo->update($id, $data);
+                return Response::success($this->supplierRepo->findById($id), 'Supplier updated');
             });
         } catch (ValidationException $e) {
             return Response::error('فشل التحقق من صحة البيانات', 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
@@ -83,10 +85,11 @@ class SupplierController extends Controller {
     }
 
     public function destroy(string $id) {
-        $supplier = $this->supplierRepo->findById((int)$id);
+        $id = $this->resolveId($id);
+        $supplier = $this->supplierRepo->findById($id);
         if (!$supplier) return Response::notFound('Supplier not found');
         return $this->withTransaction(function () use ($id) {
-            $this->supplierRepo->delete((int)$id);
+            $this->supplierRepo->delete($id);
             return Response::success(null, 'Supplier deleted');
         });
     }
@@ -99,12 +102,13 @@ class SupplierController extends Controller {
      * تسجيل دفعة (قيد دائن) في كشف حساب المورد
      */
     public function addPayment(string $id) {
-        $sid  = (int)$id;
-        $data = $this->getBody();
+        $id = $this->resolveId($id);
+        $request = new \App\Requests\PaymentRequest($this->getBody());
+        $data = $request->validated();
         $auth = $this->authService->user();
 
         try {
-            $ledger = $this->supplierService->addPayment($sid, $data, $auth);
+            $ledger = $this->supplierService->addPayment($id, $data, $auth);
             return Response::success($ledger, 'تم تسجيل الدفعة');
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
@@ -118,7 +122,8 @@ class SupplierController extends Controller {
      */
     public function updateLedgerEntry(string $entryId) {
         $eid  = (int)$entryId;
-        $data = $this->getBody();
+        $request = new \App\Requests\LedgerEntryRequest($this->getBody());
+        $data = $request->validated();
 
         try {
             $ledger = $this->supplierService->updateLedgerEntry($eid, $data);

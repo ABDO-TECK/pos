@@ -3,6 +3,7 @@ import { getSettings } from '../api/endpoints'
 
 interface SettingsState {
   storeName: string
+  storeLogo: string | null
   taxEnabled: boolean
   taxRate: number
   loyaltyEnabled: boolean
@@ -15,6 +16,7 @@ interface SettingsState {
 
 const useSettingsStore = create<SettingsState>((set) => ({
   storeName: 'سوبر ماركت',
+  storeLogo: null,
   taxEnabled: false,
   taxRate: 15,
   loyaltyEnabled: false,
@@ -28,6 +30,7 @@ const useSettingsStore = create<SettingsState>((set) => ({
       const s = res.data.data as any
       set({
         storeName:  s.store_name  ?? 'سوبر ماركت',
+        storeLogo:  s.store_logo  ?? null,
         taxEnabled: s.tax_enabled === '1' || s.tax_enabled === true,
         taxRate:    parseFloat(s.tax_rate ?? '15'),
         loyaltyEnabled: s.loyalty_enabled === '1' || s.loyalty_enabled === true,

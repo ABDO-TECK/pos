@@ -13,11 +13,17 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null
 }
 
+// CSRF HMAC signature storage — set by authStore after calling /csrf-cookie
+let csrfSignature: string | null = null
+export function setCsrfSignature(sig: string | null) { csrfSignature = sig }
+export function getCsrfSignature(): string | null { return csrfSignature }
+
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // Attach XSRF-TOKEN header for CSRF protection
-  const xsrf = getCookie('XSRF-TOKEN')
-  if (xsrf && config.headers) {
-    config.headers['X-XSRF-TOKEN'] = xsrf
+  // Attach CSRF HMAC signature in the X-XSRF-TOKEN header
+  // The server verifies: HMAC(cookie_nonce, server_secret) === this header value
+  const sig = getCsrfSignature()
+  if (sig && config.headers) {
+    config.headers['X-XSRF-TOKEN'] = sig
   }
 
   // Prepend dynamic API base URL if available in Electron runtime

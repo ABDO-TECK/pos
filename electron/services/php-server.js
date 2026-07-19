@@ -64,7 +64,7 @@ function startPhpServer(options = {}) {
       const portsPath = getRuntimePortsPath();
       let portsData = {
         apiPort: selectedPort,
-        apiBaseUrl: `http://127.0.0.1:${selectedPort}`,
+        apiBaseUrl: `http://localhost:${selectedPort}`,
         wsPort: null,
         wsBaseUrl: null,
         updatedAt: new Date().toISOString()
@@ -134,7 +134,7 @@ function startPhpServer(options = {}) {
       serverInfo = {
         pid: phpProcess.pid,
         port: selectedPort,
-        baseUrl: `http://127.0.0.1:${selectedPort}`,
+        baseUrl: `http://localhost:${selectedPort}`,
         pharPath: pharPath
       };
 

@@ -22,9 +22,9 @@ class SaleServiceTest extends TestCase
         $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
         $productRepoMock->expects($this->once())
-            ->method('findById')
-            ->with(1)
-            ->willReturn(['id' => 1, 'price' => 10.0, 'cost' => 5.0]);
+            ->method('findByIds')
+            ->with([1])
+            ->willReturn([1 => ['id' => 1, 'price' => 10.0, 'cost' => 5.0]]);
 
         $saleService = new SaleService($invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class));
 
@@ -49,9 +49,9 @@ class SaleServiceTest extends TestCase
         $inventoryEventMock = $this->createMock(InventoryEventRepository::class);
 
         $productRepoMock->expects($this->once())
-            ->method('findById')
-            ->with(999)
-            ->willReturn(null);
+            ->method('findByIds')
+            ->with([999])
+            ->willReturn([]);
 
         $saleService = new SaleService($invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class));
 
@@ -73,7 +73,7 @@ class SaleServiceTest extends TestCase
 
         // Partial mock to bypass getSettings and DB dependency
         $saleService = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock])
+            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
 
@@ -110,11 +110,11 @@ class SaleServiceTest extends TestCase
             ->willReturn(1);
 
         $productRepoMock->expects($this->once())
-            ->method('decrementQuantity')
-            ->with(1, 2.0);
+            ->method('batchDecrementQuantity')
+            ->with([['product_id' => 1, 'quantity' => 2.0]]);
 
         $saleService = $this->getMockBuilder(SaleService::class)
-            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock])
+            ->setConstructorArgs([$invoiceRepoMock, $productRepoMock, $customerRepoMock, $inventoryEventMock, $this->createMock(\PDO::class)])
             ->onlyMethods(['getSettings'])
             ->getMock();
 

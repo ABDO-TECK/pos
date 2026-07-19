@@ -35,8 +35,8 @@ class SaleServiceTest extends TestCase
 
     public function testEnrichItemsWithValidProducts()
     {
-        $this->productMock->method('findById')
-            ->willReturn(['id' => 1, 'price' => 10.50, 'cost' => 7.00]);
+        $this->productMock->method('findByIds')
+            ->willReturn([1 => ['id' => 1, 'price' => 10.50, 'cost' => 7.00]]);
 
         $items = [['product_id' => 1, 'quantity' => 3]];
         
@@ -50,8 +50,8 @@ class SaleServiceTest extends TestCase
 
     public function testEnrichItemsWithMissingProduct()
     {
-        $this->productMock->method('findById')
-            ->willReturn(null);
+        $this->productMock->method('findByIds')
+            ->willReturn([]);
 
         $items = [['product_id' => 999, 'quantity' => 1]];
 
@@ -73,8 +73,8 @@ class SaleServiceTest extends TestCase
 
     public function testEnrichItemsUsesCustomPrice()
     {
-        $this->productMock->method('findById')
-            ->willReturn(['id' => 1, 'price' => 10.00, 'cost' => 5.00]);
+        $this->productMock->method('findByIds')
+            ->willReturn([1 => ['id' => 1, 'price' => 10.00, 'cost' => 5.00]]);
 
         $items = [['product_id' => 1, 'quantity' => 1, 'price' => 8.00]];
 
@@ -157,10 +157,10 @@ class SaleServiceTest extends TestCase
 
     public function testEnrichItemsWithMultipleProducts()
     {
-        $this->productMock->method('findById')
-            ->willReturnMap([
-                [1, ['id' => 1, 'price' => 10, 'cost' => 5]],
-                [2, ['id' => 2, 'price' => 20, 'cost' => 12]],
+        $this->productMock->method('findByIds')
+            ->willReturn([
+                1 => ['id' => 1, 'price' => 10, 'cost' => 5],
+                2 => ['id' => 2, 'price' => 20, 'cost' => 12],
             ]);
 
         $items = [
@@ -311,9 +311,31 @@ class SaleServiceTest extends TestCase
         $this->assertEmpty($alerts);
     }
 
-    public function testGetInvoiceModelReturnsInvoice()
+    public function testGetInvoiceRepositoryReturnsRepository()
     {
-        $model = $this->service->getInvoiceModel();
-        $this->assertInstanceOf(InvoiceRepository::class, $model);
+        $repo = $this->service->getInvoiceRepository();
+        $this->assertInstanceOf(InvoiceRepository::class, $repo);
+    }
+
+    public function testCalculateTotalsOnUpdateCapsAmountPaid()
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+            
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '0']);
+
+        $items = [
+            ['price' => 45, 'quantity' => 1, 'unit_cost' => 20]
+        ];
+        $discount = 0;
+        $data = ['payment_method' => 'cash', 'amount_paid' => 110, 'invoice_id' => 3];
+
+        $totals = $service->calculateTotals($items, $discount, $data);
+
+        $this->assertEquals(45, $totals['total']);
+        $this->assertEquals(45, $totals['amount_paid']);
+        $this->assertEquals(0, $totals['change_due']);
     }
 }

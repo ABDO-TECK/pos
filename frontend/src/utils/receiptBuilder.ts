@@ -44,13 +44,13 @@ function ft(d) {
 }
 
 // ── CSS ──────────────────────────────────────────────────────────────────────
-const PRINT_CSS = `
+export const PRINT_CSS = `
 * { box-sizing: border-box; }
 body {
     font-family: Arial, Tahoma, 'DejaVu Sans', sans-serif;
     font-size: 9px;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.3;
     margin: 0; padding: 0;
     direction: rtl;
     unicode-bidi: embed;
@@ -64,47 +64,48 @@ body {
     max-width: 80mm;
     width: 100%;
     margin: 0 auto;
-    padding: 2mm;
+    padding: 1.5mm;
     text-align: right;
     display: inline-block;
 }
 .invoice-header {
     text-align: center;
-    margin-bottom: 2mm;
+    margin-bottom: 3mm;
     padding-bottom: 2mm;
     border-bottom: 1.5pt solid #000;
 }
 .invoice-header h2 {
-    font-size: 5mm;
-    margin: 0.5mm 0;
+    font-size: 4.8mm;
+    margin: 1mm 0;
     font-weight: 900;
     color: #000;
 }
 .invoice-title {
     font-weight: 900;
-    font-size: 3.5mm;
-    margin: 1mm 0 0;
+    font-size: 3.2mm;
+    margin: 1.5mm 0 0;
     text-align: center;
 }
 .invoice-details {
-    margin: 1.5mm 0;
+    margin: 2mm 0;
     padding-bottom: 1mm;
 }
 .info-row {
     display: flex;
     justify-content: space-between;
-    margin: 0.8mm 0;
-    font-size: 3mm;
+    margin: 1mm 0;
+    font-size: 2.8mm;
+    line-height: 1.3;
 }
 .info-row .lbl { font-weight: 900; white-space: nowrap; }
 .info-row .val { text-align: left; }
 .table {
     width: 100%;
     border-collapse: collapse;
-    margin: 1.5mm 0;
+    margin: 2mm 0;
 }
 .table th, .table td {
-    padding: 0.8mm 1mm;
+    padding: 1.2mm 1mm;
     font-size: 2.8mm;
     border: 1pt solid #000;
     text-align: center;
@@ -112,32 +113,36 @@ body {
     font-weight: 700;
     color: #000;
     background: #fff;
+    line-height: 1.3;
 }
 .table th { font-weight: 900; font-size: 2.8mm; }
 .table .name { text-align: right; max-width: 25mm; word-break: break-word; }
-.total-section { margin-top: 1mm; }
+.total-section { margin-top: 1.5mm; }
 .total-row {
     display: flex;
     justify-content: space-between;
-    margin: 0.8mm 0;
-    font-size: 3mm;
+    margin: 1.2mm 0;
+    font-size: 2.8mm;
     font-weight: 700;
     color: #000;
+    line-height: 1.3;
 }
 .total-row.grand {
-    font-size: 4mm;
+    font-size: 3.8mm;
     font-weight: 900;
     border-top: 1.5pt solid #000;
     border-bottom: 1.5pt solid #000;
-    padding: 1mm 0;
-    margin-top: 0.5mm;
+    padding: 1.2mm 0;
+    margin-top: 1.5mm;
+    margin-bottom: 1mm;
 }
 .invoice-footer {
     text-align: center;
-    margin-top: 2mm;
-    font-size: 3mm;
+    margin-top: 3.5mm;
+    font-size: 2.8mm;
     font-weight: 700;
     color: #000;
+    line-height: 1.4;
 }
 .invoice-footer p { margin: 0.5mm 0; }
 .no-print { display: none !important; }
@@ -149,9 +154,110 @@ body {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
-    .invoice-container { max-width: 80mm; width: 100%; margin: 0 auto; padding: 2mm; display: inline-block; text-align: right; }
+    .invoice-container { max-width: 80mm; width: 100%; margin: 0 auto; padding: 1.5mm; display: inline-block; text-align: right; }
     .no-print { display: none !important; }
 }
+`
+
+export const SCOPED_PRINT_CSS = `
+.thermal-preview * { box-sizing: border-box; }
+.thermal-preview {
+    font-family: Arial, Tahoma, 'DejaVu Sans', sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.3;
+    direction: rtl;
+    unicode-bidi: embed;
+    color: #000;
+    background: #fff;
+    width: 100%;
+    text-align: center;
+}
+.thermal-preview .invoice-container {
+    max-width: 80mm;
+    width: 100%;
+    margin: 0 auto;
+    padding: 1.5mm;
+    text-align: right;
+    display: inline-block;
+}
+.thermal-preview .invoice-header {
+    text-align: center;
+    margin-bottom: 3mm;
+    padding-bottom: 2mm;
+    border-bottom: 1.5pt solid #000;
+}
+.thermal-preview .invoice-header h2 {
+    font-size: 4.8mm;
+    margin: 1mm 0;
+    font-weight: 900;
+    color: #000;
+}
+.thermal-preview .invoice-title {
+    font-weight: 900;
+    font-size: 3.2mm;
+    margin: 1.5mm 0 0;
+    text-align: center;
+}
+.thermal-preview .invoice-details {
+    margin: 2mm 0;
+    padding-bottom: 1mm;
+}
+.thermal-preview .info-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 1mm 0;
+    font-size: 2.8mm;
+    line-height: 1.3;
+}
+.thermal-preview .info-row .lbl { font-weight: 900; white-space: nowrap; }
+.thermal-preview .info-row .val { text-align: left; }
+.thermal-preview .table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2mm 0;
+}
+.thermal-preview .table th, .thermal-preview .table td {
+    padding: 1.2mm 1mm;
+    font-size: 2.8mm;
+    border: 1pt solid #000;
+    text-align: center;
+    vertical-align: middle;
+    font-weight: 700;
+    color: #000;
+    background: #fff;
+    line-height: 1.3;
+}
+.thermal-preview .table th { font-weight: 900; font-size: 2.8mm; }
+.thermal-preview .table .name { text-align: right; max-width: 25mm; word-break: break-word; }
+.thermal-preview .total-section { margin-top: 1.5mm; }
+.thermal-preview .total-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 1.2mm 0;
+    font-size: 2.8mm;
+    font-weight: 700;
+    color: #000;
+    line-height: 1.3;
+}
+.thermal-preview .total-row.grand {
+    font-size: 3.8mm;
+    font-weight: 900;
+    border-top: 1.5pt solid #000;
+    border-bottom: 1.5pt solid #000;
+    padding: 1.2mm 0;
+    margin-top: 1.5mm;
+    margin-bottom: 1mm;
+}
+.thermal-preview .invoice-footer {
+    text-align: center;
+    margin-top: 3.5mm;
+    font-size: 2.8mm;
+    font-weight: 700;
+    color: #000;
+    line-height: 1.4;
+}
+.thermal-preview .invoice-footer p { margin: 0.5mm 0; }
 `
 
 function getA4OverrideCss(paperSize: string): string {
@@ -173,18 +279,19 @@ function getA4OverrideCss(paperSize: string): string {
 // ── HTML builder ────────────────────────────────────────────────────────────
 interface ReceiptSettings {
   storeName?: string;
+  storeLogo?: string | null;
   taxEnabled?: boolean;
   taxRate?: number;
 }
 
-export function buildReceiptHTML(
+export function buildReceiptInnerHTML(
     invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, 
     change = 0, 
     settings: ReceiptSettings = {}, 
-    paperSize = '80mm',
     options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
 ) {
     const storeName  = settings.storeName  ?? 'سوبر ماركت'
+    const storeLogo  = settings.storeLogo  ?? null
     const taxEnabled = settings.taxEnabled !== false
     const taxRate    = settings.taxRate    ?? 15
 
@@ -227,34 +334,16 @@ export function buildReceiptHTML(
     const amountDue = parseFloat(invoice.amount_due ?? (invoice.total - invoice.amount_paid))
     const creditRows = isCredit ? `
         ${parseFloat(invoice.amount_paid) > 0 ? `<div class="total-row"><span>عربون مدفوع</span><span>${fc(invoice.amount_paid)}</span></div>` : ''}
-        <div class="total-row grand"><span>متبقي آجلاً</span><span>${fc(amountDue)}</span></div>` : ''
+        <div class="total-row grand" style="border-top: none; margin-top: 0;"><span>متبقي آجلاً</span><span>${fc(amountDue)}</span></div>` : ''
 
-    const a4Css = getA4OverrideCss(paperSize)
+    const logoHtml = storeLogo ? `
+    <div style="text-align: center; margin-bottom: 2.5mm;">
+        <img src="${storeLogo}" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
+    </div>` : '';
 
-    // Delivery info block
-    let deliveryInfoHtml = ''
-    if (invoice.driver_name || invoice.vehicle_number || invoice.delivery_date || invoice.delivery_notes) {
-        deliveryInfoHtml = `
-        <div class="invoice-details" style="border-top: 1px dashed #000; padding-top: 2mm; margin-top: 2mm; text-align: right;">
-            <div style="text-align: center; font-weight: bold; margin-bottom: 1.5mm; font-size: 3.5mm;">🚚 بيانات التسليم والشحن</div>
-            ${invoice.driver_name ? `<div style="margin-bottom: 0.5mm"><strong>اسم السائق:</strong> ${invoice.driver_name}</div>` : ''}
-            ${invoice.vehicle_number ? `<div style="margin-bottom: 0.5mm"><strong>رقم السيارة:</strong> ${invoice.vehicle_number}</div>` : ''}
-            ${invoice.delivery_date ? `<div style="margin-bottom: 0.5mm"><strong>تاريخ التسليم:</strong> ${fd(invoice.delivery_date)}</div>` : ''}
-            ${invoice.delivery_notes ? `<div style="white-space: pre-wrap; margin-top: 1mm;"><strong>ملاحظات التسليم:</strong><br/>${invoice.delivery_notes}</div>` : ''}
-        </div>
-        `
-    }
-
-    return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>فاتورة #${fn(invoice.id)}</title>
-    <style>${PRINT_CSS} ${a4Css}</style>
-</head>
-<body>
+    return `
 <div class="invoice-container">
+    ${logoHtml}
 
     <!-- Header -->
     <div class="invoice-header">
@@ -297,14 +386,33 @@ export function buildReceiptHTML(
         ${creditRows}
     </div>` : ''}
 
-    ${deliveryInfoHtml}
-
     <!-- Footer -->
     <div class="invoice-footer">
         <p>شكراً لزيارتكم — نتمنى لكم تجربة ممتعة</p>
     </div>
+</div>`
+}
 
-</div>
+export function buildReceiptHTML(
+    invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, 
+    change = 0, 
+    settings: ReceiptSettings = {}, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
+    const inner = buildReceiptInnerHTML(invoice, change, settings, options)
+    const a4Css = getA4OverrideCss(paperSize)
+
+    return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فاتورة #${fn(invoice.id)}</title>
+    <style>${PRINT_CSS} ${a4Css}</style>
+</head>
+<body>
+${inner}
 </body>
 </html>`
 }
@@ -331,13 +439,13 @@ export function browserPrint(
 
 
 // ── Purchase Invoice printing ─────────────────────────────────────────────
-export function buildPurchaseReceiptHTML(
+export function buildPurchaseReceiptInnerHTML(
     invoice: PurchaseInvoice & { items_count?: number }, 
     settings: ReceiptSettings = {}, 
-    paperSize = '80mm',
     options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
 ) {
     const storeName  = settings.storeName  ?? 'سوبر ماركت'
+    const storeLogo  = settings.storeLogo  ?? null
 
     const showQty = !options.hideQuantities
     const showPrice = !options.hidePrices
@@ -358,32 +466,15 @@ export function buildPurchaseReceiptHTML(
         </tr>`
     }).join('')
 
-    const a4Css = getA4OverrideCss(paperSize)
+    const logoHtml = storeLogo ? `
+    <div style="text-align: center; margin-bottom: 2.5mm;">
+        <img src="${storeLogo}" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
+    </div>` : '';
 
-    // Delivery info block
-    let deliveryInfoHtml = ''
-    if (invoice.driver_name || invoice.vehicle_number || invoice.delivery_date || invoice.delivery_notes) {
-        deliveryInfoHtml = `
-        <div class="invoice-details" style="border-top: 1px dashed #000; padding-top: 2mm; margin-top: 2mm; text-align: right;">
-            <div style="text-align: center; font-weight: bold; margin-bottom: 1.5mm; font-size: 3.5mm;">🚚 بيانات التسليم</div>
-            ${invoice.driver_name ? `<div style="margin-bottom: 0.5mm"><strong>اسم السائق:</strong> ${invoice.driver_name}</div>` : ''}
-            ${invoice.vehicle_number ? `<div style="margin-bottom: 0.5mm"><strong>رقم السيارة:</strong> ${invoice.vehicle_number}</div>` : ''}
-            ${invoice.delivery_date ? `<div style="margin-bottom: 0.5mm"><strong>تاريخ التسليم:</strong> ${fd(invoice.delivery_date)}</div>` : ''}
-            ${invoice.delivery_notes ? `<div style="white-space: pre-wrap; margin-top: 1mm;"><strong>ملاحظات التسليم:</strong><br/>${invoice.delivery_notes}</div>` : ''}
-        </div>
-        `
-    }
-
-    return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>فاتورة مشتريات #${fn(invoice.id)}</title>
-    <style>${PRINT_CSS} ${a4Css}</style>
-</head>
-<body>
+    return `
 <div class="invoice-container">
+    ${logoHtml}
+
     <div class="invoice-header">
         <h2>${storeName}</h2>
         <div class="invoice-title">فاتورة مشتريات: #${fn(invoice.id)}</div>
@@ -416,9 +507,28 @@ export function buildPurchaseReceiptHTML(
         <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
         <div class="total-row"><span>عدد الأصناف</span><span>${fn(invoice.items_count)}</span></div>
     </div>` : ''}
+</div>`
+}
 
-    ${deliveryInfoHtml}
-</div>
+export function buildPurchaseReceiptHTML(
+    invoice: PurchaseInvoice & { items_count?: number }, 
+    settings: ReceiptSettings = {}, 
+    paperSize = '80mm',
+    options: { hidePrices?: boolean, hideQuantities?: boolean } = {}
+) {
+    const inner = buildPurchaseReceiptInnerHTML(invoice, settings, options)
+    const a4Css = getA4OverrideCss(paperSize)
+
+    return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فاتورة مشتريات #${fn(invoice.id)}</title>
+    <style>${PRINT_CSS} ${a4Css}</style>
+</head>
+<body>
+${inner}
 </body>
 </html>`
 }

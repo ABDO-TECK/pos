@@ -67,4 +67,18 @@ class QueryBuilderTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertEquals('Banana', $rows[0]['name']);
     }
+
+    public function testOrderByRejectsInvalidDirection()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $qb = new QueryBuilder($this->pdo);
+        $qb->table('items')->orderBy('id', 'INVALID');
+    }
+
+    public function testOrderByRejectsInjectionInColumn()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $qb = new QueryBuilder($this->pdo);
+        $qb->table('items')->orderBy('id; DROP TABLE items--', 'ASC');
+    }
 }

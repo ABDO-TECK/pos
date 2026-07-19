@@ -38,10 +38,11 @@ class InventoryController extends Controller {
     }
 
     public function adjust(string $id) {
+        $id = $this->resolveId($id);
         $request = new \App\Requests\InventoryAdjustRequest($this->getBody());
         $data = $request->validated();
 
-        $product = $this->productModel->findById((int)$id);
+        $product = $this->productModel->findById($id);
         if (!$product) return Response::notFound('Product not found');
 
         $newQty = (int)$data['quantity'];
@@ -51,9 +52,9 @@ class InventoryController extends Controller {
         $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');
         $stmt->execute([$newQty, $id]);
 
-        AuditLog::log($this->authService->id(), 'adjust_inventory', 'product', (int)$id, null, $data);
+        AuditLog::log($this->authService->id(), 'adjust_inventory', 'product', $id, null, $data);
 
-        return Response::success($this->productModel->findById((int)$id), 'Inventory adjusted');
+        return Response::success($this->productModel->findById($id), 'Inventory adjusted');
     }
 }
 

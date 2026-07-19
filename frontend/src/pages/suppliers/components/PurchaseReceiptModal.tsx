@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react'
 import { Printer, X, EyeOff, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { formatCurrency, formatNumber, formatDate } from '../../../utils/formatters'
-import { browserPrintPurchase, buildPurchaseReceiptHTML } from '../../../utils/receiptBuilder'
+import { browserPrintPurchase, buildPurchaseReceiptHTML, buildPurchaseReceiptInnerHTML, SCOPED_PRINT_CSS } from '../../../utils/receiptBuilder'
+import { formatNumber } from '../../../utils/formatters'
 import useSettingsStore from '../../../store/settingsStore'
 import {
   isQZAvailable,
@@ -23,8 +23,8 @@ interface PurchaseReceiptModalProps {
 }
 
 export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseReceiptModalProps) {
-  const { storeName } = useSettingsStore()
-  const settings = { storeName }
+  const { storeName, storeLogo } = useSettingsStore()
+  const settings = { storeName, storeLogo }
 
   // Print options state
   const [hidePrices, setHidePrices] = useState(false)
@@ -150,77 +150,15 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
           display: 'flex', justifyContent: 'center',
           marginBottom: '1rem'
         }}>
-          <div style={{
+          <div className="thermal-preview" style={{
             background: '#ffffff',
             width: '80mm',
             maxWidth: '100%',
-            padding: '4mm',
             boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-            fontFamily: "Arial, Tahoma, 'DejaVu Sans', sans-serif",
-            fontSize: '3mm', lineHeight: 1.2, color: '#000',
-            direction: 'rtl', textShadow: 'none',
+            direction: 'rtl',
           }}>
-            {/* Store details */}
-            <div style={{ textAlign: 'center', marginBottom: '2mm', paddingBottom: '2mm', borderBottom: '1.5pt solid #000' }}>
-              <h2 style={{ fontSize: '4.5mm', margin: '0.5mm 0', fontWeight: 900, color: '#000' }}>
-                {storeName || 'سوبر ماركت'}
-              </h2>
-              <div style={{ fontWeight: 900, fontSize: '3.5mm', marginTop: '1mm' }}>
-                فاتورة مشتريات رقم: #{formatNumber(invoice.id)}
-              </div>
-            </div>
-
-            {/* Details */}
-            <div style={{ margin: '1.5mm 0', paddingBottom: '1mm', fontSize: '2.8mm' }}>
-              <div><strong>التاريخ:</strong> {formatDate(invoice.created_at)}</div>
-              <div><strong>المورد:</strong> {invoice.supplier_name ?? ''}</div>
-            </div>
-
-            {/* Items Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '2mm', fontSize: '2.8mm' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #000', borderTop: '1px solid #000', fontWeight: 900 }}>
-                  <th style={{ textAlign: 'right', padding: '1mm 0' }}>#</th>
-                  <th style={{ textAlign: 'right', padding: '1mm 0' }}>الصنف</th>
-                  {!hideQuantities && <th style={{ textAlign: 'center', padding: '1mm 0' }}>الكمية</th>}
-                  {!hidePrices && <th style={{ textAlign: 'left', padding: '1mm 0' }}>التكلفة</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(invoice.items ?? []).map((item, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px dashed #ccc' }}>
-                    <td style={{ padding: '1mm 0' }}>{idx + 1}</td>
-                    <td style={{ padding: '1mm 0' }}>
-                      {item.product_name ?? item.name}
-                      {item.size_name && ` (${item.size_name})`}
-                    </td>
-                    {!hideQuantities && <td style={{ textAlign: 'center', padding: '1mm 0' }}>{formatNumber(item.quantity)}</td>}
-                    {!hidePrices && <td style={{ textAlign: 'left', padding: '1mm 0' }}>{formatCurrency(item.cost)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Summary */}
-            {!hidePrices && (
-              <div style={{ borderTop: '1.5pt solid #000', marginTop: '2mm', paddingTop: '1.5mm', fontSize: '3mm' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900 }}>
-                  <span>الإجمالي:</span>
-                  <span>{formatCurrency(invoice.total)}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Delivery Info Preview in Receipt */}
-            {(invoice.driver_name || invoice.vehicle_number || invoice.delivery_date || invoice.delivery_notes) && (
-              <div style={{ borderTop: '1px dashed #000', marginTop: '2mm', paddingTop: '2mm', fontSize: '2.8mm' }}>
-                <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: '1mm' }}>🚚 بيانات التسليم</div>
-                {invoice.driver_name && <div><strong>السائق:</strong> {invoice.driver_name}</div>}
-                {invoice.vehicle_number && <div><strong>السيارة:</strong> {invoice.vehicle_number}</div>}
-                {invoice.delivery_date && <div><strong>التاريخ:</strong> {formatDate(invoice.delivery_date)}</div>}
-                {invoice.delivery_notes && <div style={{ whiteSpace: 'pre-wrap' }}><strong>ملاحظات:</strong> {invoice.delivery_notes}</div>}
-              </div>
-            )}
+            <style>{SCOPED_PRINT_CSS}</style>
+            <div dangerouslySetInnerHTML={{ __html: buildPurchaseReceiptInnerHTML(invoice, settings, printOptions) }} />
           </div>
         </div>
 

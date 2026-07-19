@@ -23,13 +23,19 @@ require_once __DIR__ . '/vendor/autoload.php';
 // ── Auto-Migrate on Update (Self-Healing) ──────────────────────
 $pharRunning = \Phar::running(false);
 if ($pharRunning) {
-    $flagFile = dirname($pharRunning) . '/storage/migrations_hash.flag';
+    $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (dirname($pharRunning) . '/storage');
+    $flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
     if (!file_exists($flagFile) || filemtime($pharRunning) > filemtime($flagFile)) {
         try {
             require_once __DIR__ . '/Services/MigrationService.php';
             (new \App\Services\MigrationService())->runAllMigrations();
         } catch (\Throwable $e) {
-            // Suppress errors during boot-level auto-migration to avoid blocking index.php
+            // Log but do not block — the app should still boot even if migrations fail
+            Logger::warning('Auto-migration failed during boot', [
+                'error' => $e->getMessage(),
+                'file'  => $e->getFile(),
+                'line'  => $e->getLine(),
+            ]);
         }
     }
 }

@@ -169,6 +169,10 @@ function getRecoveryAuthPath() {
   return path.join(getConfigDir(), 'recovery_auth.json');
 }
 
+function getCookiesPath() {
+  return path.join(getConfigDir(), 'cookies.json');
+}
+
 function ensureRuntimeDirs() {
   const config = getConfigDir();
   const data = getDataDir();
@@ -216,5 +220,6 @@ module.exports = {
   getRuntimePortsPath,
   getEnvPath,
   getRecoveryAuthPath,
+  getCookiesPath,
   ensureRuntimeDirs
 };

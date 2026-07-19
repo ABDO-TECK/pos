@@ -51,7 +51,8 @@ class ProductController extends Controller {
         if ($id === 'barcode' && $barcode) {
             $product = $this->productModel->findByBarcode($barcode);
         } else {
-            $product = $this->productModel->findById((int) $id);
+            $id = $this->resolveId($id);
+            $product = $this->productModel->findById($id);
         }
 
         if (!$product) {
@@ -79,11 +80,12 @@ class ProductController extends Controller {
 
     public function update(string $id) {
         try {
+            $id = $this->resolveId($id);
             $body = $this->getBody();
             $request = new ProductRequest($body);
             $data = $request->validated();
 
-            $result = $this->productService->updateProduct((int) $id, $data);
+            $result = $this->productService->updateProduct($id, $data);
 
             if (!$result['ok']) {
                 $code = $result['code'] ?? 500;
@@ -91,7 +93,7 @@ class ProductController extends Controller {
                     ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
                     : Response::error($result['error'], $code, null, ErrorCodes::VALIDATION_FAILED);
             }
-            AuditLog::log($this->authService->id(), 'update_product', 'product', (int)$id, null, $data);
+            AuditLog::log($this->authService->id(), 'update_product', 'product', $id, null, $data);
             return Response::success($result['product'], 'Product updated');
         } catch (ValidationException $e) {
             return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
@@ -126,19 +128,21 @@ class ProductController extends Controller {
      * سجل تغييرات أسعار المنتج
      */
     public function priceHistory(string $id) {
-        $product = $this->productModel->findById((int) $id);
+        $id = $this->resolveId($id);
+        $product = $this->productModel->findById($id);
         if (!$product) {
             return Response::notFound('المنتج غير موجود');
         }
 
         $db = \App\Config\Database::getInstance();
-        $history = (new PriceHistory($db))->getByProductId((int) $id);
+        $history = (new PriceHistory($db))->getByProductId($id);
 
         return Response::success($history);
     }
 
     public function destroy(string $id) {
-        $result = $this->productService->deleteProduct((int) $id);
+        $id = $this->resolveId($id);
+        $result = $this->productService->deleteProduct($id);
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -146,7 +150,7 @@ class ProductController extends Controller {
                 ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
                 : Response::error($result['error'], $code, null, ErrorCodes::PRODUCT_IN_USE);
         }
-        AuditLog::log($this->authService->id(), 'delete_product', 'product', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_product', 'product', $id);
         return Response::success(null, 'Product deleted');
     }
 }

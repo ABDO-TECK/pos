@@ -9,6 +9,7 @@ use App\Repositories\CustomerRepository;
 use App\Requests\CustomerRequest;
 use App\Services\AuthService;
 use App\Services\CustomerService;
+use App\Helpers\Messages;
 use Throwable;
 
 
@@ -40,9 +41,10 @@ class CustomerController extends Controller {
         }
     }
 
-    /** GET /api/customers/{id} — بيانات العميل + كشف الحساب */
+    /** GET /api/customers/{id} — العميل + كشف الحساب */
     public function show(string $id) {
-        $data = $this->customerRepo->getLedger((int)$id);
+        $id = $this->resolveId($id);
+        $data = $this->customerRepo->getLedger($id);
         if (!$data['customer']) {
             return Response::notFound('العميل غير موجود');
         }
@@ -56,9 +58,9 @@ class CustomerController extends Controller {
             $data = $request->validated();
             
             $id = $this->service->createCustomer($data);
-            return Response::success($this->customerRepo->findById($id), 'تم إضافة العميل', 201);
+            return Response::success($this->customerRepo->findById($id), Messages::CUSTOMER_CREATED, 201);
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error(Messages::VALIDATION_FAILED, 422, $e->getErrors());
         }
     }
 
@@ -67,31 +69,31 @@ class CustomerController extends Controller {
     /** PUT /api/customers/{id} */
     public function update(string $id) {
         try {
+            $id = $this->resolveId($id);
             $request = new CustomerRequest($this->getBody());
             $data = $request->validated();
             
-            $cid = (int)$id;
-            if (!$this->customerRepo->findById($cid)) {
+            if (!$this->customerRepo->findById($id)) {
                 return Response::notFound('العميل غير موجود');
             }
-            return $this->withTransaction(function () use ($cid, $data) {
-                $this->customerRepo->update($cid, $data);
-                return Response::success($this->customerRepo->findById($cid), 'تم تحديث العميل');
+            return $this->withTransaction(function () use ($id, $data) {
+                $this->customerRepo->update($id, $data);
+                return Response::success($this->customerRepo->findById($id), Messages::CUSTOMER_UPDATED);
             });
         } catch (ValidationException $e) {
-            return Response::error('Validation failed', 422, $e->getErrors());
+            return Response::error(Messages::VALIDATION_FAILED, 422, $e->getErrors());
         }
     }
 
     /** DELETE /api/customers/{id} */
     public function destroy(string $id) {
-        $cid = (int)$id;
-        if (!$this->customerRepo->findById($cid)) {
+        $id = $this->resolveId($id);
+        if (!$this->customerRepo->findById($id)) {
             return Response::notFound('العميل غير موجود');
         }
-        return $this->withTransaction(function () use ($cid) {
-            $this->customerRepo->delete($cid);
-            return Response::success(null, 'تم حذف العميل');
+        return $this->withTransaction(function () use ($id) {
+            $this->customerRepo->delete($id);
+            return Response::success(null, Messages::CUSTOMER_DELETED);
         });
     }
 
@@ -101,14 +103,14 @@ class CustomerController extends Controller {
      * تسجيل دفعة (قيد دائن) في كشف حساب العميل
      */
     public function addPayment(string $id) {
-        $cid  = (int)$id;
+        $id = $this->resolveId($id);
         $request = new \App\Requests\PaymentRequest($this->getBody());
         $data = $request->validated();
         $auth = $this->authService->user();
 
         try {
-            $ledger = $this->service->addPayment($cid, $data, $auth);
-            return Response::success($ledger, 'تم تسجيل الدفعة');
+            $ledger = $this->service->addPayment($id, $data, $auth);
+            return Response::success($ledger, Messages::PAYMENT_RECORDED);
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
@@ -121,11 +123,12 @@ class CustomerController extends Controller {
      */
     public function updateLedgerEntry(string $entryId) {
         $eid  = (int)$entryId;
-        $data = $this->getBody();
+        $request = new \App\Requests\LedgerEntryRequest($this->getBody());
+        $data = $request->validated();
 
         try {
             $ledger = $this->service->updateLedgerEntry($eid, $data);
-            return Response::success($ledger, 'تم تحديث القيد');
+            return Response::success($ledger, Messages::LEDGER_ENTRY_UPDATED);
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);
@@ -140,7 +143,7 @@ class CustomerController extends Controller {
 
         try {
             $ledger = $this->service->deleteLedgerEntry($eid);
-            return Response::success($ledger, 'تم حذف القيد');
+            return Response::success($ledger, Messages::LEDGER_ENTRY_DELETED);
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             return $code === 404 ? Response::notFound($e->getMessage()) : Response::error($e->getMessage(), $code);

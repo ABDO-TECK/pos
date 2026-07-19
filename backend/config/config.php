@@ -15,7 +15,6 @@ if (EnvLoader::get('APP_ENV', 'development') === 'production') {
         'DB_HOST',
         'DB_NAME',
         'DB_USER',
-        'DB_PASS',
     ]);
     // تحذير أمني: استخدام root في الإنتاج
     if (EnvLoader::get('DB_USER') === 'root') {
@@ -39,7 +38,7 @@ define('DB_PERSISTENT', EnvLoader::getBool('DB_PERSISTENT', false));
 
 // ── Application ───────────────────────────────────────────────
 define('APP_ENV',   EnvLoader::get('APP_ENV', 'development'));
-define('APP_DEBUG', EnvLoader::getBool('APP_DEBUG', true));
+define('APP_DEBUG', EnvLoader::getBool('APP_DEBUG', false));
 
 // ── Auth ──────────────────────────────────────────────────────
 define('TOKEN_LIFETIME', EnvLoader::getInt('TOKEN_LIFETIME', 60 * 60));           // ساعة واحدة

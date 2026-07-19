@@ -151,6 +151,60 @@ class Product {
     }
 
     /**
+     * Batch-fetch multiple products by their IDs in a single query.
+     * Eliminates N+1 when enriching cart items or restoring invoice quantities.
+     *
+     * @param  int[]  $ids
+     * @return array<int, array>  Keyed by product ID for O(1) lookup
+     */
+    public function findByIds(array $ids): array {
+        if (empty($ids)) return [];
+        $ids = array_map('intval', $ids);
+        $ids = array_unique($ids);
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $this->db->prepare(
+            "SELECT p.*, c.name AS category_name
+             FROM products p
+             LEFT JOIN categories c ON c.id = p.category_id
+             WHERE p.id IN ($placeholders)"
+        );
+        $stmt->execute(array_values($ids));
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // Key by product ID for O(1) lookup
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['id']] = $row;
+        }
+        return $result;
+    }
+
+    /**
+     * Fetch only the current quantities for the given product IDs.
+     * Lightweight alternative to findByIds() when only quantity is needed.
+     *
+     * @param  int[]  $ids
+     * @return array<int, int>  product_id => quantity
+     */
+    public function getQuantitiesByIds(array $ids): array {
+        if (empty($ids)) return [];
+        $ids = array_map('intval', $ids);
+        $ids = array_unique($ids);
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $this->db->prepare(
+            "SELECT id, quantity FROM products WHERE id IN ($placeholders)"
+        );
+        $stmt->execute(array_values($ids));
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['id']] = (int) $row['quantity'];
+        }
+        return $result;
+    }
+
+    /**
      * Batch-load sizes for multiple parent products in a single query.
      * Eliminates the N+1 problem where each product triggers a separate SELECT.
      */
@@ -313,6 +367,45 @@ class Product {
 
     public function incrementQuantity(int $id, float $qty): void {
         $this->db->prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?')->execute([$qty, $id]);
+    }
+
+    /**
+     * Batch-decrement quantities for multiple products in a single query.
+     * Uses CASE WHEN to update all rows atomically.
+     *
+     * @param array $decrements Array of ['product_id' => int, 'quantity' => float]
+     */
+    public function batchDecrementQuantity(array $decrements): void
+    {
+        if (empty($decrements)) return;
+
+        $ids = [];
+        $cases = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($decrements as $item) {
+            $pidParam = ":pid_{$i}";
+            $qtyParam = ":qty_{$i}";
+            $wherePidParam = ":where_pid_{$i}";
+
+            $cases[] = "WHEN id = {$pidParam} THEN quantity - {$qtyParam}";
+            
+            $params[$pidParam] = (int) $item['product_id'];
+            $params[$qtyParam] = (float) $item['quantity'];
+            $params[$wherePidParam] = (int) $item['product_id'];
+
+            $ids[] = $wherePidParam;
+            $i++;
+        }
+
+        $sql = "UPDATE products SET quantity = CASE "
+             . implode(' ', $cases)
+             . " ELSE quantity END"
+             . " WHERE id IN (" . implode(',', $ids) . ")";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
     }
 
     public function getLowStock(array $filters = []): array {

@@ -60,11 +60,17 @@ class BackupService implements BackupServiceInterface {
 
         echo "-- POS Database Backup\n";
         echo "-- Generated: " . date('Y-m-d H:i:s') . "\n";
-        echo "-- Host: " . DB_HOST . " | Database: " . DB_NAME . "\n\n";
+        echo "-- POS System Database Backup\n\n";
         echo "SET FOREIGN_KEY_CHECKS=0;\n\n";
         flush();
 
         foreach ($tables as $table) {
+            // Validate table name to prevent SQL injection from a compromised DB
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+                echo "-- SKIPPED suspicious table name: " . addslashes($table) . "\n";
+                flush();
+                continue;
+            }
             // Table structure
             $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
             $ddl = $createStmt['Create Table'] ?? null;
@@ -151,15 +157,20 @@ class BackupService implements BackupServiceInterface {
         }
 
         // منع أوامر خطرة — قائمة موسعة
+        // Strip SQL comments FIRST to prevent bypass via DR/**/OP or DR--\nOP
+        $stripped = preg_replace('/\/\*.*?\*\//s', ' ', $content);   // block comments
+        $stripped = preg_replace('/--[^\n]*/', ' ', $stripped);       // line comments
+
         $dangerousPatterns = [
             '/\b(OUTFILE|DUMPFILE|LOAD_FILE|INTO\s+OUTFILE)\b/is',
             '/\b(GRANT|REVOKE|CREATE\s+USER|ALTER\s+USER|DROP\s+USER)\b/is',
             '/\b(LOAD\s+DATA|SOURCE)\b/is',
             '/\b(SLEEP|BENCHMARK|GET_LOCK)\b/is',
             '/\b(DROP\s+DATABASE)\b/is',
+            '/\b(SYSTEM|SHUTDOWN)\b/is',
         ];
         foreach ($dangerousPatterns as $pattern) {
-            if (preg_match($pattern, $content)) {
+            if (preg_match($pattern, $stripped)) {
                 return ['ok' => false, 'error' => 'الملف يحتوي على أوامر غير مسموحة', 'code' => 400];
             }
         }
@@ -220,16 +231,14 @@ class BackupService implements BackupServiceInterface {
 
         // حذف flag الـ Smart Skip
         $pharRunning = \Phar::running(false);
-        $flagFile = $pharRunning
-            ? dirname($pharRunning) . '/storage/migrations_hash.flag'
-            : realpath(__DIR__ . '/../storage/migrations_hash.flag');
+        $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? ($pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage');
+        $flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
         if ($flagFile && is_file($flagFile)) {
             @unlink($flagFile);
         }
 
         // تشغيل جميع الهجرات
         Database::resetInstance();
-        require_once __DIR__ . '/../core/Container.php';
         $container = new Container();
         $migrationService = $container->get(MigrationService::class);
         $migrationResult = $migrationService->runAllMigrations(true);
@@ -263,6 +272,11 @@ class BackupService implements BackupServiceInterface {
             fwrite($fh, "SET FOREIGN_KEY_CHECKS=0;\n\n");
 
             foreach ($tables as $table) {
+                // Validate table name to prevent SQL injection from a compromised DB
+                if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+                    fwrite($fh, "-- SKIPPED suspicious table name: " . addslashes($table) . "\n");
+                    continue;
+                }
                 $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
                 $ddl = $createStmt['Create Table'] ?? null;
                 if ($ddl === null && is_array($createStmt)) {
@@ -310,9 +324,13 @@ class BackupService implements BackupServiceInterface {
 
     /**
      * @deprecated Use generateBackupSqlToFile() instead to avoid OOM on large databases.
-     * Kept for backward compatibility with unit tests.
+     * @internal Kept only for backward compatibility with unit tests. Do NOT call from new code.
      */
     private function generateBackupSql(): string {
+        trigger_error(
+            'generateBackupSql() is deprecated — use generateBackupSqlToFile() instead',
+            E_USER_DEPRECATED
+        );
         $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
 
         $sql  = "-- POS Auto-Update Backup\n";
@@ -320,6 +338,10 @@ class BackupService implements BackupServiceInterface {
         $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
 
         foreach ($tables as $table) {
+            // Validate table name to prevent SQL injection from a compromised DB
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+                continue;
+            }
             $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
             $ddl = $createStmt['Create Table'] ?? null;
             if ($ddl === null && is_array($createStmt)) {

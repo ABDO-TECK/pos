@@ -92,7 +92,12 @@ class JobQueue
                 $service->createBackup();
             },
             'cleanup_old_logs' => function (array $p) {
-                $dir = __DIR__ . '/../logs/';
+                $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH');
+                if (!$logsPath) {
+                    $storageDir = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR');
+                    $logsPath = $storageDir ? $storageDir . '/logs' : __DIR__ . '/../logs';
+                }
+                $dir = rtrim($logsPath, '/\\') . '/';
                 $days = $p['days'] ?? 30;
                 $cutoff = strtotime("-{$days} days");
                 foreach (glob($dir . '*.log') as $file) {

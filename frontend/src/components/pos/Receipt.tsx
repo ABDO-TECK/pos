@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react'
 import { Printer, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { formatCurrency, formatNumber, formatPercent, formatDate } from '../../utils/formatters'
-import { browserPrint } from '../../utils/receiptBuilder'
+import { browserPrint, buildReceiptInnerHTML, SCOPED_PRINT_CSS } from '../../utils/receiptBuilder'
+import { formatNumber } from '../../utils/formatters'
 import useSettingsStore from '../../store/settingsStore'
 import {
     isQZAvailable,
@@ -14,10 +14,7 @@ import {
     getSavedPrinter,
     savePrinter,
 } from '../../utils/qzPrint'
-import { InfoRow } from './receipt/ReceiptHelpers'
 import QZStatusBar from './receipt/QZStatusBar'
-import ReceiptItemsTable from './receipt/ReceiptItemsTable'
-import ReceiptTotals from './receipt/ReceiptTotals'
 import PrinterPickerModal from './receipt/PrinterPickerModal'
 
 const METHOD_LABELS = {
@@ -36,8 +33,8 @@ interface ReceiptProps {
 }
 
 export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
-    const { storeName, taxEnabled, taxRate } = useSettingsStore()
-    const settings = { storeName, taxEnabled, taxRate }
+    const { storeName, storeLogo, taxEnabled, taxRate } = useSettingsStore()
+    const settings = { storeName, storeLogo, taxEnabled, taxRate }
 
     const [qzStatus,         setQzStatus]         = useState('idle')
     const [printers,         setPrinters]         = useState<any[]>([])
@@ -45,6 +42,8 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
     const [showPrinterPicker,setShowPrinterPicker] = useState(false)
     const [printing,         setPrinting]         = useState(false)
     const [remoteError,      setRemoteError]      = useState<any>(null)
+    const [hidePrices,       setHidePrices]       = useState(false)
+    const [hideQuantities,   setHideQuantities]   = useState(false)
 
     useEffect(() => {
         if (!isQZAvailable()) { setQzStatus('unavailable'); return }
@@ -89,7 +88,7 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
         if (!selectedPrinter) { setShowPrinterPicker(true); return }
         setPrinting(true)
         try {
-            await printInvoice(invoice, Number(change || 0), settings, selectedPrinter, paperSize)
+            await printInvoice(invoice, Number(change || 0), settings, selectedPrinter, paperSize, { hidePrices, hideQuantities })
             toast.success(`تمت الطباعة بنجاح (${paperSize})`)
         } catch (err: any) {
             toast.error('فشل الطباعة: ' + (err.message ?? ''))
@@ -99,8 +98,8 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
     }
 
     // ── Browser print — opens a new clean window (fixes blank-page issue) ──
-    const handleBrowserPrint = () => browserPrint(invoice, changeAmt, settings, '80mm')
-    const handleA4Print = () => browserPrint(invoice, changeAmt, settings, 'A4')
+    const handleBrowserPrint = () => browserPrint(invoice, changeAmt, settings, '80mm', { hidePrices, hideQuantities })
+    const handleA4Print = () => browserPrint(invoice, changeAmt, settings, 'A4', { hidePrices, hideQuantities })
 
     const handlePrinterSelect = (name: string) => {
         savePrinter(name)
@@ -131,6 +130,18 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
                     <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
                 </div>
 
+                {/* ── Print options ── */}
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }} onClick={() => setHidePrices(!hidePrices)}>
+                        <input type="checkbox" checked={hidePrices} readOnly style={{ pointerEvents: 'none', cursor: 'pointer' }} />
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>إخفاء الأسعار</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }} onClick={() => setHideQuantities(!hideQuantities)}>
+                        <input type="checkbox" checked={hideQuantities} readOnly style={{ pointerEvents: 'none', cursor: 'pointer' }} />
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>إخفاء الكميات</span>
+                    </div>
+                </div>
+
                 {/* ── Receipt preview (Matches Printed Version Exactly) ── */}
                 <div style={{
                     background: '#e5e7eb', padding: '1rem',
@@ -139,56 +150,15 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
                     display: 'flex', justifyContent: 'center'
                 }}>
                     {/* The 80mm Thermal Paper */}
-                    <div style={{
+                    <div className="thermal-preview" style={{
                         background: '#ffffff',
                         width: '80mm', // standard thermal size
                         maxWidth: '100%',
-                        padding: '4mm',
                         boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                        fontFamily: "Arial, Tahoma, 'DejaVu Sans', sans-serif",
-                        fontSize: '3mm', lineHeight: 1.2, color: '#000',
-                        direction: 'rtl', textShadow: 'none',
+                        direction: 'rtl',
                     }}>
-                        {/* Header */}
-                        <div style={{
-                            textAlign: 'center', marginBottom: '2mm',
-                            paddingBottom: '2mm', borderBottom: '1.5pt solid #000'
-                        }}>
-                            <h2 style={{ fontSize: '5mm', margin: '0.5mm 0', fontWeight: 900, color: '#000' }}>
-                                {storeName || 'سوبر ماركت'}
-                            </h2>
-                            <div style={{ fontWeight: 900, fontSize: '3.5mm', marginTop: '1mm' }}>
-                                فاتورة رقم: #{formatNumber(invoice.id)}
-                            </div>
-                        </div>
-
-                        {/* Details */}
-                        <div style={{ margin: '1.5mm 0', paddingBottom: '1mm' }}>
-                            <InfoRow label="التاريخ" value={formatDate(invoice.created_at)} />
-                            <InfoRow label="طريقة الدفع" value={METHOD_LABELS[invoice.payment_method as keyof typeof METHOD_LABELS] ?? invoice.payment_method} />
-                            <InfoRow label="الوقت" value={new Date(invoice.created_at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })} />
-                            <InfoRow label="الكاشير" value={invoice.cashier_name ?? '—'} />
-                        </div>
-
-                        {/* Items table */}
-                        <ReceiptItemsTable items={invoice.items} />
-
-                        {/* Totals */}
-                        <ReceiptTotals 
-                            invoice={invoice} 
-                            taxEnabled={taxEnabled} 
-                            taxRate={taxRate} 
-                            isCash={isCash} 
-                            changeAmt={changeAmt} 
-                        />
-
-                        {/* Footer */}
-                        <div style={{
-                            textAlign: 'center', marginTop: '2mm',
-                            fontSize: '3mm', fontWeight: 700, color: '#000'
-                        }}>
-                            <p style={{ margin: '0.5mm 0' }}>شكراً لزيارتكم — نتمنى لكم تجربة ممتعة</p>
-                        </div>
+                        <style>{SCOPED_PRINT_CSS}</style>
+                        <div dangerouslySetInnerHTML={{ __html: buildReceiptInnerHTML(invoice, Number(changeAmt || 0), settings, { hidePrices, hideQuantities }) }} />
                     </div>
                 </div>
 

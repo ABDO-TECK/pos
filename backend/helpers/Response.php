@@ -23,8 +23,20 @@ class Response {
     }
 
     public static function cacheable(mixed $data = null, int $ttl = 60, ?string $etag = null, array $extra = []): array {
+        // Build the full body first, so we can serialize once and reuse
+        $body = ['status' => 'success', 'message' => 'success'];
+        if ($data !== null) {
+            $body['data'] = $data;
+        }
+        foreach ($extra as $key => $value) {
+            $body[$key] = $value;
+        }
+
+        // Serialize to JSON once — used for both ETag and the response body
+        $jsonBody = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         if ($etag === null) {
-            $etag = md5(json_encode($data));
+            $etag = md5($jsonBody);
         }
 
         $ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
@@ -41,9 +53,13 @@ class Response {
             return $response;
         }
 
-        $response = self::success($data, 'success', 200, $extra);
-        $response['headers'] = $headers;
-        return $response;
+        // Return pre-encoded body as 'compressed_body' to skip re-encoding in Router::sendResponse()
+        return [
+            'status_code'     => 200,
+            'body'            => $body,
+            'compressed_body' => $jsonBody,
+            'headers'         => $headers,
+        ];
     }
 
     public static function error(string $message, int $status = 400, mixed $errors = null, ?string $errorCode = null): array {

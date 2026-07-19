@@ -4,6 +4,7 @@ namespace App\Middleware;
 
 use App\Helpers\Logger;
 use Throwable;
+use App\Middleware\Traits\ClientIpTrait;
 
 
 /**
@@ -16,6 +17,8 @@ use Throwable;
  */
 class RateLimiter
 {
+    use ClientIpTrait;
+
     private int    $maxRequests;
     private int    $windowSeconds;
 
@@ -66,15 +69,9 @@ class RateLimiter
 
         $db = RateLimitStore::getDB();
         if (!$db) {
-            // Fail closed: if rate limiting storage is unavailable, block the request
-            // to prevent abuse. This is safer than allowing unlimited requests.
-            Logger::warning('RateLimiter: storage unavailable, failing closed');
-            http_response_code(503);
-            echo json_encode([
-                'status'  => 'error',
-                'message' => 'الخدمة غير متوفرة مؤقتاً. يرجى المحاولة مرة أخرى.',
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
+            // Fail open: if rate limiting storage is unavailable, warn but proceed.
+            Logger::warning('RateLimiter: storage unavailable, failing open');
+            return;
         }
 
         try {
@@ -109,33 +106,15 @@ class RateLimiter
                    ->execute([':key' => $windowKey, ':exp' => $expiresAt]);
             }
         } catch (\Throwable $e) {
-            // fail open
-            Logger::error('RateLimiter SQLite error', ['error' => $e->getMessage()]);
+            // Fail open: log error but allow request to proceed.
+            Logger::error('RateLimiter SQLite error — failing open', ['error' => $e->getMessage()]);
+            return;
         }
     }
 
 
 
-    /**
-     * استخراج IP العميل الحقيقي (يدعم proxy).
-     */
-    private function getClientIp(): string
-    {
-        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $trustedProxies = defined('TRUSTED_PROXIES') ? TRUSTED_PROXIES : ['127.0.0.1', '::1'];
 
-        if (in_array($remoteAddr, $trustedProxies, true)) {
-            if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-                $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-                return trim($ips[0]);
-            }
-            if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
-                return trim($_SERVER['HTTP_X_REAL_IP']);
-            }
-        }
-        
-        return $remoteAddr;
-    }
 
     /**
      * تنظيف ملفات Rate Limit القديمة (يمكن استدعاؤها دورياً).

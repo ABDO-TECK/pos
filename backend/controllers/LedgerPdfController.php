@@ -34,7 +34,8 @@ class LedgerPdfController extends Controller {
     }
 
     public function customerPdf(string $id) {
-        $data = $this->customerModel->getLedger((int)$id);
+        $id = $this->resolveId($id);
+        $data = $this->customerModel->getLedger($id);
         if (!$data['customer']) { http_response_code(404); echo 'العميل غير موجود'; exit; }
 
         $customer    = $data['customer'];
@@ -53,7 +54,8 @@ class LedgerPdfController extends Controller {
     }
 
     public function supplierPdf(string $id) {
-        $data = $this->supplierModel->getLedger((int)$id);
+        $id = $this->resolveId($id);
+        $data = $this->supplierModel->getLedger($id);
         if (!$data['supplier']) { http_response_code(404); echo 'المورد غير موجود'; exit; }
 
         $supplier    = $data['supplier'];

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 // Register app scheme as privileged before app ready
 protocol.registerSchemesAsPrivileged([
@@ -47,7 +48,19 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   // ── Session Cookie Proxy ──
   const { session } = require('electron');
-  const sessionCookies = {};
+  const { getCookiesPath } = require('./utils/paths');
+  let sessionCookies = {};
+
+  // Restore session cookies from disk at startup
+  try {
+    const cookiesPath = getCookiesPath();
+    if (fs.existsSync(cookiesPath)) {
+      sessionCookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+      console.log('[CookieProxy] Restored cookies from disk');
+    }
+  } catch (err) {
+    console.error('[CookieProxy] Failed to restore cookies from disk:', err.message);
+  }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders };
@@ -78,6 +91,7 @@ app.whenReady().then(async () => {
             if (setCookieKey) {
               const setCookieHeaders = responseHeaders[setCookieKey];
               const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+              let hasChanged = false;
               cookies.forEach(c => {
                 const parts = c.split(';')[0].split('=');
                 if (parts.length === 2) {
@@ -88,12 +102,26 @@ app.whenReady().then(async () => {
                                    /Max-Age=0/i.test(c) || 
                                    /Max-Age=-/i.test(c);
                   if (isDelete) {
-                    delete sessionCookies[name];
+                    if (sessionCookies[name] !== undefined) {
+                      delete sessionCookies[name];
+                      hasChanged = true;
+                    }
                   } else {
-                    sessionCookies[name] = value;
+                    if (sessionCookies[name] !== value) {
+                      sessionCookies[name] = value;
+                      hasChanged = true;
+                    }
                   }
                 }
               });
+              if (hasChanged) {
+                try {
+                  fs.writeFileSync(getCookiesPath(), JSON.stringify(sessionCookies, null, 2));
+                  console.log('[CookieProxy] Saved updated cookies to disk');
+                } catch (writeErr) {
+                  console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
+                }
+              }
             }
           }
         }
@@ -135,6 +163,12 @@ app.whenReady().then(async () => {
             for (const [name, value] of Object.entries(sessionCookies)) {
               cookieList.push(`${name}=${value}`);
             }
+            // Clear any existing cookie headers case-insensitively to avoid duplicates
+            for (const key of Object.keys(requestHeaders)) {
+              if (key.toLowerCase() === 'cookie') {
+                delete requestHeaders[key];
+              }
+            }
             if (cookieList.length > 0) {
               requestHeaders['Cookie'] = cookieList.join('; ');
             }
@@ -150,7 +184,6 @@ app.whenReady().then(async () => {
   });
 
   // ── Register app:// protocol handler ──
-  const fs = require('fs');
   const { net } = require('electron');
   const url = require('url');
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { login as loginApi, logout as logoutApi, getCsrfCookie } from '../api/endpoints'
+import { setCsrfSignature } from '../api/axios'
 
 interface User {
   id: number;
@@ -32,7 +33,11 @@ const useAuthStore = create<AuthState>()(
       setHasHydrated: (val) => set({ _hasHydrated: val }),
 
       login: async (email, password) => {
-        try { await getCsrfCookie() } catch(e) {}
+        try {
+          const csrfRes = await getCsrfCookie()
+          const sig = csrfRes?.data?.data?.csrf_token ?? null
+          setCsrfSignature(sig)
+        } catch(e) {}
         const res = await loginApi({ email, password })
         const { user } = res.data.data as unknown as { user: User }
         set({ user, token: null, isAuthenticated: true })

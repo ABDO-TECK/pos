@@ -15,17 +15,33 @@ class HttpsMiddleware
     {
         $forceHttps = \App\Helpers\EnvLoader::getBool('FORCE_HTTPS', false);
 
+        // فحص هل الاتصال محلي (loopback)
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $isLoopback = false;
+        if (str_starts_with($host, '127.0.0.1') || str_starts_with($host, 'localhost') || str_starts_with($host, '[::1]')) {
+            $isLoopback = true;
+        }
+
         // فحص هل الاتصال HTTPS
         $isHttps = $this->isSecureConnection();
 
-        // إضافة HSTS header إذا كان الاتصال HTTPS (حتى بدون FORCE_HTTPS)
-        // يخبر المتصفح بعدم قبول HTTP لمدة سنة (31536000 ثانية)
-        if ($isHttps) {
+        if ($isLoopback) {
+            // إزالة HSTS المحفوظ محلياً لمنع توجيه طلبات المنافذ الأخرى تلقائياً إلى HTTPS
+            header('Strict-Transport-Security: max-age=0', true);
+        } elseif ($isHttps) {
+            // إضافة HSTS header إذا كان الاتصال HTTPS (حتى بدون FORCE_HTTPS)
+            // يخبر المتصفح بعدم قبول HTTP لمدة سنة (31536000 ثانية)
             header('Strict-Transport-Security: max-age=31536000; includeSubDomains', true);
         }
 
-        // تخطي إذا لم يتم تفعيل فرض HTTPS
-        if (!$forceHttps) {
+        // تخطي إذا لم يتم تفعيل فرض HTTPS أو كان الطلب محلياً (loopback)
+        if (!$forceHttps || $isLoopback) {
+            return $next();
+        }
+
+        // تخطي مسار فحص الجاهزية الداخلي لتسهيل التحقق من صحة النظام
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        if (str_ends_with(strtok($requestUri, '?'), '/api/health')) {
             return $next();
         }
 
@@ -52,9 +68,13 @@ class HttpsMiddleware
         if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
             return true;
         }
-        // 2. فحص عبر Proxy/Load Balancer
+        // 2. فحص عبر Proxy/Load Balancer — only trust from configured proxies
         if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-            return true;
+            $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+            $trustedProxies = defined('TRUSTED_PROXIES') ? TRUSTED_PROXIES : ['127.0.0.1', '::1'];
+            if (in_array($remoteAddr, $trustedProxies, true)) {
+                return true;
+            }
         }
         // 3. فحص المنفذ
         if (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443) {

@@ -44,6 +44,28 @@ class ProductRepository implements RepositoryInterface
         return $this->model->findById($id) ?: null;
     }
 
+    /**
+     * Batch-fetch multiple products by ID in a single query.
+     *
+     * @param  int[]  $ids
+     * @return array<int, array>  Keyed by product ID
+     */
+    public function findByIds(array $ids): array
+    {
+        return $this->model->findByIds($ids);
+    }
+
+    /**
+     * Fetch only quantities for multiple product IDs.
+     *
+     * @param  int[]  $ids
+     * @return array<int, int>  product_id => quantity
+     */
+    public function getQuantitiesByIds(array $ids): array
+    {
+        return $this->model->getQuantitiesByIds($ids);
+    }
+
     public function findByBarcode(string $barcode): ?array
     {
         return $this->model->findByBarcode($barcode) ?: null;
@@ -113,6 +135,11 @@ class ProductRepository implements RepositoryInterface
     public function decrementQuantity(int $id, float $qty): void
     {
         $this->model->decrementQuantity($id, $qty);
+    }
+
+    public function batchDecrementQuantity(array $decrements): void
+    {
+        $this->model->batchDecrementQuantity($decrements);
     }
 
     public function getLowStockByProductIds(array $ids): array

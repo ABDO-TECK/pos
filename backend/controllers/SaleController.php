@@ -34,7 +34,7 @@ class SaleController extends Controller {
             'search' => $this->getParam('search'),
         ];
 
-        $result = $this->saleService->getInvoiceModel()->all($filters);
+        $result = $this->saleService->getInvoiceRepository()->all($filters);
 
         if (isset($result['pagination'])) {
             return Response::success($result['data'], null, 200, ['pagination' => $result['pagination']]);
@@ -44,15 +44,15 @@ class SaleController extends Controller {
     }
 
     public function show(string $id) {
-        $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);
+        $id = $this->resolveId($id);
+        $invoice = $this->saleService->getInvoiceRepository()->findById($id);
         if (!$invoice) return Response::notFound('Invoice not found');
         return Response::success($invoice);
     }
 
     public function store() {
         $request = new SaleRequest($this->getBody());
-        $request->validated();
-        $data = $this->getBody();
+        $data = $request->validated();
 
         if (empty($data['items']) || !is_array($data['items'])) {
             return Response::error('السلة فارغة', 400, null, ErrorCodes::EMPTY_CART);
@@ -81,7 +81,7 @@ class SaleController extends Controller {
         }
 
         // 4. جلب الفاتورة الناتجة + تنبيهات المخزون
-        $invoice  = $this->saleService->getInvoiceModel()->findById($result['invoice_id']);
+        $invoice  = $this->saleService->getInvoiceRepository()->findById($result['invoice_id']);
         $lowStock = $this->saleService->getLowStockAlerts($enrichedItems);
 
         $isUpdate = $result['is_update'] ?? false;
@@ -92,15 +92,16 @@ class SaleController extends Controller {
     }
 
     public function updateStatus(string $id) {
+        $id = $this->resolveId($id);
         $request = new SaleStatusRequest($this->getBody());
         $data = $request->validated();
 
-        $invoice = $this->saleService->getInvoiceModel()->findById((int)$id);
+        $invoice = $this->saleService->getInvoiceRepository()->findById($id);
         if (!$invoice) {
             return Response::notFound('Invoice not found');
         }
 
-        $this->saleService->getInvoiceModel()->updateStatus((int)$id, $data['status']);
+        $this->saleService->getInvoiceRepository()->updateStatus($id, $data['status']);
         return Response::success(null, 'Invoice status updated successfully');
     }
 
@@ -108,7 +109,8 @@ class SaleController extends Controller {
      * Permanently delete invoice and its lines; restore product quantities to stock.
      */
     public function destroy(string $id) {
-        $result = $this->saleService->deleteInvoice((int) $id);
+        $id = $this->resolveId($id);
+        $result = $this->saleService->deleteInvoice($id);
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -117,7 +119,7 @@ class SaleController extends Controller {
                 : Response::serverError($result['error']);
         }
 
-        AuditLog::log($this->authService->id(), 'delete_invoice', 'invoice', (int)$id);
+        AuditLog::log($this->authService->id(), 'delete_invoice', 'invoice', $id);
 
         return Response::success(null, 'Invoice deleted');
     }

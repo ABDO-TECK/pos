@@ -48,7 +48,7 @@ function startWebSocketServer(options = {}) {
         apiPort: null,
         apiBaseUrl: null,
         wsPort: selectedPort,
-        wsBaseUrl: `ws://127.0.0.1:${selectedPort}`,
+        wsBaseUrl: `ws://localhost:${selectedPort}`,
         updatedAt: new Date().toISOString()
       };
 
@@ -58,7 +58,7 @@ function startWebSocketServer(options = {}) {
           portsData = {
             ...existing,
             wsPort: selectedPort,
-            wsBaseUrl: `ws://127.0.0.1:${selectedPort}`,
+            wsBaseUrl: `ws://localhost:${selectedPort}`,
             updatedAt: new Date().toISOString()
           };
         }

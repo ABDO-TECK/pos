@@ -17,6 +17,9 @@ use App\Services\AuthService;
  */
 class PermissionMiddleware
 {
+    /** APCu key that stores the current permission cache version number */
+    private const CACHE_VERSION_KEY = 'perm_cache_version';
+
     private AuthService $authService;
     private string $permission;
 
@@ -70,9 +73,21 @@ class PermissionMiddleware
 
     private function hasPermission(string $role, string $permission): bool
     {
-        static $cache = [];
-        $key = "{$role}:{$permission}";
-        if (isset($cache[$key])) return $cache[$key];
+        // Per-process cache (fast path for repeated checks in same request)
+        static $processCache = [];
+        $version = self::getCacheVersion();
+        $key = "perm:v{$version}:{$role}:{$permission}";
+        if (isset($processCache[$key])) return $processCache[$key];
+
+        // APCu cache (persists across requests, 5-minute TTL)
+        if (function_exists('apcu_fetch')) {
+            $success = false;
+            $cached = apcu_fetch($key, $success);
+            if ($success) {
+                $processCache[$key] = $cached;
+                return $cached;
+            }
+        }
 
         try {
             $db = Database::getInstance();
@@ -83,11 +98,55 @@ class PermissionMiddleware
                  LIMIT 1'
             );
             $stmt->execute([$role, $permission]);
-            $cache[$key] = (bool)$stmt->fetchColumn();
+            $result = (bool)$stmt->fetchColumn();
         } catch (\Throwable $e) {
             // إذا فشل الاستعلام (مثلاً الجداول غير موجودة) → ارفض الوصول
-            $cache[$key] = false;
+            $result = false;
         }
-        return $cache[$key];
+
+        // Store in both caches
+        $processCache[$key] = $result;
+        if (function_exists('apcu_store')) {
+            apcu_store($key, $result, 300); // 5 minutes
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the current cache version number.
+     * Starts at 1 if no version exists yet.
+     */
+    private static function getCacheVersion(): int
+    {
+        if (function_exists('apcu_fetch')) {
+            $success = false;
+            $version = apcu_fetch(self::CACHE_VERSION_KEY, $success);
+            if ($success) {
+                return (int) $version;
+            }
+        }
+        return 1;
+    }
+
+    /**
+     * Invalidate all cached permissions by bumping the version number.
+     * Old versioned keys will expire naturally via their 5-minute TTL.
+     * This is O(1) instead of scanning the entire APCu store.
+     */
+    public static function clearPermissionCache(): void
+    {
+        if (function_exists('apcu_inc')) {
+            try {
+                // apcu_inc atomically increments; if the key doesn't exist, create it at 2
+                $result = apcu_inc(self::CACHE_VERSION_KEY);
+                if ($result === false) {
+                    // Key didn't exist yet — initialize it
+                    apcu_store(self::CACHE_VERSION_KEY, 2, 0); // TTL=0 means never expire
+                }
+            } catch (\Throwable $e) {
+                // Silently ignore — cache will expire naturally via TTL
+            }
+        }
     }
 }

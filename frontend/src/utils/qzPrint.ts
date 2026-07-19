@@ -270,15 +270,15 @@ export async function printPDFBase64(base64Data: string, printerName: string | n
  * @param {object} settings     - { storeName, taxEnabled, taxRate }
  * @param {string} [printerName]
  */
-export async function printInvoice(invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, change = 0, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm') {
-    const html = buildReceiptHTML(invoice, change, settings, paperSize)
+export async function printInvoice(invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, change = 0, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm', options = {}) {
+    const html = buildReceiptHTML(invoice, change, settings, paperSize, options)
     await printHTML(html, printerName)
 }
 
 /**
  * Build and print a purchase invoice via QZ Tray.
  */
-export async function printPurchaseInvoice(invoice: PurchaseInvoice & { items_count?: number }, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm') {
-    const html = buildPurchaseReceiptHTML(invoice, settings, paperSize)
+export async function printPurchaseInvoice(invoice: PurchaseInvoice & { items_count?: number }, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm', options = {}) {
+    const html = buildPurchaseReceiptHTML(invoice, settings, paperSize, options)
     await printHTML(html, printerName)
 }

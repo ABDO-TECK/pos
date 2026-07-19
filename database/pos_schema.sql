@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS settings (
     `key` VARCHAR(100) NOT NULL PRIMARY KEY,
-    `value` TEXT NULL,
+    `value` MEDIUMTEXT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

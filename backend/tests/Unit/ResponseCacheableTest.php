@@ -16,7 +16,9 @@ class ResponseCacheableTest extends TestCase
     public function testCacheableReturns304WhenETagMatches()
     {
         $data = ['key' => 'value'];
-        $etag = md5(json_encode($data));
+        // ETag is now computed from the full response body, not just $data
+        $fullBody = ['status' => 'success', 'message' => 'success', 'data' => $data];
+        $etag = md5(json_encode($fullBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $_SERVER['HTTP_IF_NONE_MATCH'] = 'W/"' . $etag . '"';
         $response = Response::cacheable($data, 60);
         $this->assertEquals(304, $response['status_code']);

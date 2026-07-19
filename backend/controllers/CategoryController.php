@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Helpers\Response;
 use App\Services\CategoryService;
+use App\Helpers\Messages;
+use App\Helpers\Logger;
 
 class CategoryController extends Controller {
 
@@ -32,30 +34,35 @@ class CategoryController extends Controller {
 
         try {
             $result = $this->categoryService->createCategory($data);
-            return Response::success($result, 'Category created', 201);
+            return Response::success($result, Messages::CATEGORY_CREATED, 201);
         } catch (\Throwable $e) {
-            return Response::error('Failed to create category: ' . $e->getMessage(), 500);
+            Logger::error('Failed to create category', ['error' => $e->getMessage()]);
+            return Response::error(Messages::CATEGORY_CREATE_FAIL, 500);
         }
     }
 
     public function update(string $id) {
+        $id = $this->resolveId($id);
         $request = new \App\Requests\CategoryRequest($this->getBody());
         $data = $request->validated();
 
         try {
-            $result = $this->categoryService->updateCategory((int)$id, $data);
-            return Response::success($result, 'Category updated');
+            $result = $this->categoryService->updateCategory($id, $data);
+            return Response::success($result, Messages::CATEGORY_UPDATED);
         } catch (\Throwable $e) {
-            return Response::error('Failed to update category: ' . $e->getMessage(), 500);
+            Logger::error('Failed to update category', ['error' => $e->getMessage()]);
+            return Response::error(Messages::CATEGORY_UPDATE_FAIL, 500);
         }
     }
 
     public function destroy(string $id) {
+        $id = $this->resolveId($id);
         try {
-            $this->categoryService->deleteCategory((int)$id);
-            return Response::success(null, 'Category deleted');
+            $this->categoryService->deleteCategory($id);
+            return Response::success(null, Messages::CATEGORY_DELETED);
         } catch (\Throwable $e) {
-            return Response::error('Failed to delete category: ' . $e->getMessage(), 500);
+            Logger::error('Failed to delete category', ['error' => $e->getMessage()]);
+            return Response::error(Messages::CATEGORY_DELETE_FAIL, 500);
         }
     }
 }

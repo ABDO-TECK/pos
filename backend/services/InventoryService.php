@@ -124,26 +124,29 @@ class InventoryService implements InventoryServiceInterface
 
             // تسجيل قيود كشف حساب المورد
             $paymentType = $data['payment_type'] ?? 'cash';
-            if ($replaceInvoiceId === 0) {
-                if ($paymentType === 'credit') {
-                    $this->recordSupplierLedger(
-                        (int) $data['supplier_id'],
-                        $invoiceId,
-                        $grandTotal,
-                        (float) ($data['deposit'] ?? 0),
-                        $authUser,
-                        'credit'
-                    );
-                } elseif ($paymentType === 'cash') {
-                    $this->recordSupplierLedger(
-                        (int) $data['supplier_id'],
-                        $invoiceId,
-                        $grandTotal,
-                        $grandTotal,
-                        $authUser,
-                        'cash'
-                    );
-                }
+            if ($replaceInvoiceId > 0) {
+                // Delete old ledger entries linked to this invoice before writing the updated ones
+                $db->prepare('DELETE FROM supplier_ledger WHERE purchase_invoice_id = ?')->execute([$invoiceId]);
+            }
+
+            if ($paymentType === 'credit') {
+                $this->recordSupplierLedger(
+                    (int) $data['supplier_id'],
+                    $invoiceId,
+                    $grandTotal,
+                    (float) ($data['deposit'] ?? 0),
+                    $authUser,
+                    'credit'
+                );
+            } elseif ($paymentType === 'cash') {
+                $this->recordSupplierLedger(
+                    (int) $data['supplier_id'],
+                    $invoiceId,
+                    $grandTotal,
+                    $grandTotal,
+                    $authUser,
+                    'cash'
+                );
             }
 
             $db->commit();

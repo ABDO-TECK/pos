@@ -11,7 +11,7 @@ class UserUpdateRequest extends FormRequest {
             'email'     => 'required|email',
             'role'      => 'string',
             'is_active' => 'numeric',
-            'password'  => 'string',
+            'password'  => 'string|strong_password',
         ];
     }
 }

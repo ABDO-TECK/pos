@@ -73,14 +73,25 @@ class SaleService implements SaleServiceInterface
      */
     public function enrichItems(array $items): array
     {
-        $enriched = [];
+        // 1. Validate all items first (no DB calls)
+        $productIds = [];
         foreach ($items as $item) {
             if (empty($item['product_id']) || empty($item['quantity'])) {
                 return ['ok' => false, 'error' => 'Invalid item data', 'code' => 400];
             }
-            $product = $this->productRepo->findById((int) $item['product_id']);
+            $productIds[] = (int) $item['product_id'];
+        }
+
+        // 2. Batch-fetch all products in a single query (eliminates N+1)
+        $products = $this->productRepo->findByIds($productIds);
+
+        // 3. Enrich items using the pre-fetched product map
+        $enriched = [];
+        foreach ($items as $item) {
+            $pid = (int) $item['product_id'];
+            $product = $products[$pid] ?? null;
             if (!$product) {
-                return ['ok' => false, 'error' => "Product ID {$item['product_id']} not found", 'code' => 400];
+                return ['ok' => false, 'error' => "Product ID {$pid} not found", 'code' => 400];
             }
             // Use float for quantity to support sell-by-weight products (e.g. 0.5 kg)
             $enriched[] = [
@@ -116,6 +127,14 @@ class SaleService implements SaleServiceInterface
         $total      = round($taxable + $tax, 2);
         
         $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $total;
+        
+        $isUpdate = isset($data['invoice_id']) && (int)$data['invoice_id'] > 0;
+        $paymentMethod = $data['payment_method'] ?? 'cash';
+        if ($isUpdate && $paymentMethod !== 'credit') {
+            if ($amountPaid > $total) {
+                $amountPaid = $total;
+            }
+        }
         
         $changeDue  = max(0, round($amountPaid - $total, 2));
         $amountDue  = max(0, round($total - $amountPaid, 2));
@@ -164,11 +183,16 @@ class SaleService implements SaleServiceInterface
             $customerId = $totals['customer_id'];
 
             if ($replaceInvoiceId > 0) {
-                // مرتجع / إعادة فوترة
+                // Restore quantities for old invoice items
                 foreach ($existingInvoice['items'] as $old) {
                     $this->productRepo->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
-                    $updatedProduct = $this->productRepo->findById((int) $old['product_id']);
-                    $this->inventoryEventRepo->record((int) $old['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$old['quantity']);
+                }
+                // Batch-fetch updated quantities (eliminates N+1)
+                $oldProductIds = array_map(fn($old) => (int) $old['product_id'], $existingInvoice['items']);
+                $oldQuantities = $this->productRepo->getQuantitiesByIds($oldProductIds);
+                foreach ($existingInvoice['items'] as $old) {
+                    $pid = (int) $old['product_id'];
+                    $this->inventoryEventRepo->record($pid, 'delete', $oldQuantities[$pid] ?? 0, (int) $old['quantity']);
                 }
                 
                 // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
@@ -235,13 +259,16 @@ class SaleService implements SaleServiceInterface
             }
 
             // إضافة البنود وخصم المخزون
+            $decrements = [];
             foreach ($enrichedItems as $item) {
                 $this->invoiceRepo->addItem($invoiceId, $item);
-                $this->productRepo->decrementQuantity($item['product_id'], $item['quantity']);
+                $decrements[] = ['product_id' => $item['product_id'], 'quantity' => $item['quantity']];
                 // Calculate new quantity in PHP instead of an extra DB query per item
                 $newQuantity = (int)($item['product']['quantity'] ?? 0) - (int)$item['quantity'];
                 $this->inventoryEventRepo->record($item['product_id'], 'sale', $newQuantity, -$item['quantity']);
             }
+            // Batch-update all product quantities in a single query
+            $this->productRepo->batchDecrementQuantity($decrements);
 
             $this->db->commit();
 
@@ -321,10 +348,20 @@ class SaleService implements SaleServiceInterface
 
         $this->db->beginTransaction();
         try {
+            // 1. Increment all product quantities (N UPDATE queries — unavoidable)
             foreach ($invoice['items'] as $item) {
                 $this->productRepo->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
-                $updatedProduct = $this->productRepo->findById((int) $item['product_id']);
-                $this->inventoryEventRepo->record((int) $item['product_id'], 'delete', (int)$updatedProduct['quantity'], (int)$item['quantity']);
+            }
+
+            // 2. Batch-fetch updated quantities in a single SELECT (eliminates N findById calls)
+            $productIds = array_map(fn($item) => (int) $item['product_id'], $invoice['items']);
+            $quantities = $this->productRepo->getQuantitiesByIds($productIds);
+
+            // 3. Record inventory events using the pre-fetched quantities
+            foreach ($invoice['items'] as $item) {
+                $pid = (int) $item['product_id'];
+                $newQty = $quantities[$pid] ?? 0;
+                $this->inventoryEventRepo->record($pid, 'delete', $newQty, (int) $item['quantity']);
             }
             // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
             $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);
@@ -343,7 +380,7 @@ class SaleService implements SaleServiceInterface
 
     // ── Accessors ───────────────────────────────────────────
 
-    public function getInvoiceModel(): InvoiceRepository
+    public function getInvoiceRepository(): InvoiceRepository
     {
         return $this->invoiceRepo;
     }

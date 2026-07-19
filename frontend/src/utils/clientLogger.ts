@@ -26,9 +26,11 @@ const loggerApi = axios.create({
 })
 
 loggerApi.interceptors.request.use((config) => {
-  const xsrf = getCookie('XSRF-TOKEN')
-  if (xsrf && config.headers) {
-    config.headers['X-XSRF-TOKEN'] = xsrf
+  // Use CSRF HMAC signature from the main axios module
+  const { getCsrfSignature } = require('../api/axios')
+  const sig = getCsrfSignature()
+  if (sig && config.headers) {
+    config.headers['X-XSRF-TOKEN'] = sig
   }
   
   // Prepend dynamic API base URL if available in Electron runtime

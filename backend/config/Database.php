@@ -79,7 +79,7 @@ class Database {
             2002,  // Connection refused
         ];
 
-        $code = (int) $e->errorInfo[1] ?? 0;
+        $code = (int) ($e->errorInfo[1] ?? 0);
         if (in_array($code, $lostCodes, true)) {
             return true;
         }

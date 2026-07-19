@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Helpers\Response;
 use App\Repositories\UserRepository;
 use App\Services\AuthService;
+use App\Helpers\Messages;
 
 
 class UserController extends Controller {
@@ -38,18 +39,24 @@ class UserController extends Controller {
         return $this->withTransaction(function () use ($data) {
             $id   = $this->userRepo->create($data);
             $user = $this->userRepo->findById($id);
-            return Response::success($user, 'User created', 201);
+            return Response::success($user, Messages::USER_CREATED, 201);
         });
     }
 
     public function update(string $id) {
+        $id = $this->resolveId($id);
         $auth = $this->authService->user();
-        $isSelf = (int)$id === (int)$auth['id'];
+        $isSelf = $id === (int)$auth['id'];
         $isAdmin = $auth['role'] === 'admin';
 
         // Non-admin users can ONLY update their own profile
         if (!$isAdmin && !$isSelf) {
-            return Response::error('Access denied', 403);
+            \App\Helpers\Logger::warning('Unauthorized user update attempt', [
+                'attacker_id' => $auth['id'],
+                'target_id'   => $id,
+                'role'         => $auth['role'],
+            ]);
+            return Response::error(Messages::ACCESS_DENIED, 403);
         }
 
         $request = new \App\Requests\UserUpdateRequest($this->getBody());
@@ -63,19 +70,21 @@ class UserController extends Controller {
         }
 
         return $this->withTransaction(function () use ($id, $data) {
-            $this->userRepo->update((int)$id, $data);
-            return Response::success($this->userRepo->findById((int)$id), 'User updated');
+            $this->userRepo->update($id, $data);
+            \App\Middleware\PermissionMiddleware::clearPermissionCache();
+            return Response::success($this->userRepo->findById($id), Messages::USER_UPDATED);
         });
     }
 
     public function destroy(string $id) {
+        $id = $this->resolveId($id);
         $auth = $this->authService->user();
-        if ((int)$id === $auth['id']) {
-            return Response::error('لا يمكنك حذف حسابك الخاص', 400);
+        if ($id === $auth['id']) {
+            return Response::error(Messages::CANNOT_DELETE_SELF, 400);
         }
         return $this->withTransaction(function () use ($id) {
-            $this->userRepo->delete((int)$id);
-            return Response::success(null, 'User deleted');
+            $this->userRepo->delete($id);
+            return Response::success(null, Messages::USER_DELETED);
         });
     }
 }

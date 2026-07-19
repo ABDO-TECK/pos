@@ -31,7 +31,7 @@ class Validator {
 
             foreach ($ruleList as $r) {
                 // required
-                if ($r === 'required' && (empty($value) && $value !== 0 && $value !== '0' && $value !== 0.0)) {
+                if ($r === 'required' && ($value === null || $value === '' || (is_array($value) && count($value) === 0))) {
                     $errors[$field][] = "حقل {$field} مطلوب";
                     break; // لا حاجة لفحص باقي القواعد
                 }
@@ -44,7 +44,7 @@ class Validator {
                 // min:N (عدد الأحرف)
                 if (str_starts_with($r, 'min:')) {
                     $min = (int) substr($r, 4);
-                    if (strlen((string)$value) < $min) {
+                    if (mb_strlen((string)$value, 'UTF-8') < $min) {
                         $errors[$field][] = "{$field} يجب أن يكون {$min} أحرف على الأقل";
                     }
                 }
@@ -52,7 +52,7 @@ class Validator {
                 // max:N (عدد الأحرف)
                 elseif (str_starts_with($r, 'max:')) {
                     $max = (int) substr($r, 4);
-                    if (strlen((string)$value) > $max) {
+                    if (mb_strlen((string)$value, 'UTF-8') > $max) {
                         $errors[$field][] = "{$field} يجب ألا يتجاوز {$max} حرف";
                     }
                 }
@@ -124,8 +124,27 @@ class Validator {
 
                 // strong_password
                 elseif ($r === 'strong_password') {
-                    $weak = ['password', '123456', '12345678', 'qwerty', 'abc123', 'password1', 'admin', 'letmein', 'welcome', '111111', '000000'];
-                    if (in_array(strtolower((string)$value), $weak, true)) {
+                    $val = (string)$value;
+                    // 1. Minimum length
+                    if (mb_strlen($val, 'UTF-8') < 8) {
+                        $errors[$field][] = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.';
+                    }
+                    // 2. Must contain at least one digit
+                    if (!preg_match('/\d/', $val)) {
+                        $errors[$field][] = 'كلمة المرور يجب أن تحتوي على رقم واحد على الأقل.';
+                    }
+                    // 3. Must contain at least one letter (Latin or Arabic)
+                    if (!preg_match('/[a-zA-Z\p{Arabic}]/u', $val)) {
+                        $errors[$field][] = 'كلمة المرور يجب أن تحتوي على حرف واحد على الأقل.';
+                    }
+                    // 4. Common password blocklist
+                    $weak = [
+                        'password', '123456', '12345678', 'qwerty', 'abc123',
+                        'password1', 'admin', 'letmein', 'welcome', '111111',
+                        '000000', 'password123', 'admin123', '1234567890',
+                        'iloveyou', 'monkey', 'dragon', 'master', 'login'
+                    ];
+                    if (in_array(strtolower($val), $weak, true)) {
                         $errors[$field][] = 'كلمة المرور ضعيفة جداً. اختر كلمة مرور أقوى.';
                     }
                 }

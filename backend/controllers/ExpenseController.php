@@ -51,9 +51,10 @@ class ExpenseController extends Controller
 
     public function updateCategory(string $id): array
     {
+        $id = $this->resolveId($id);
         try {
             return $this->withTransaction(function () use ($id) {
-                $result = $this->expenseService->updateCategory((int)$id, $this->getBody());
+                $result = $this->expenseService->updateCategory($id, $this->getBody());
                 if (!$result['ok']) {
                     return Response::error($result['error'], $result['code']);
                 }
@@ -67,8 +68,9 @@ class ExpenseController extends Controller
 
     public function deleteCategory(string $id): array
     {
+        $id = $this->resolveId($id);
         try {
-            $result = $this->expenseService->deleteCategory((int)$id);
+            $result = $this->expenseService->deleteCategory($id);
             if (!$result['ok']) {
                 return Response::error($result['error'], $result['code']);
             }
@@ -127,7 +129,7 @@ class ExpenseController extends Controller
 
     public function updateExpense(string $id): array
     {
-        $id = (int)$id;
+        $id = $this->resolveId($id);
         try {
             $request = new ExpenseRequest($this->getBody());
             $data = $request->validated();
@@ -149,7 +151,7 @@ class ExpenseController extends Controller
 
     public function deleteExpense(string $id): array
     {
-        $id = (int)$id;
+        $id = $this->resolveId($id);
         if (!$this->expenseRepo->findById($id)) {
             return Response::notFound('المصروف غير موجود');
         }

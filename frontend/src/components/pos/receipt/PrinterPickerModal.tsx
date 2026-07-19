@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { X, Printer } from 'lucide-react'
+import styles from '../../QZPrinterUI.module.css'
 
 export default function PrinterPickerModal({ showPrinterPicker, setShowPrinterPicker, printers, selectedPrinter, handlePrinterSelect }) {
     if (!showPrinterPicker) return null
@@ -20,7 +21,7 @@ export default function PrinterPickerModal({ showPrinterPicker, setShowPrinterPi
                             <button
                                 key={p}
                                 onClick={() => handlePrinterSelect(p)}
-                                className={`qz-printer-item ${p === selectedPrinter ? 'selected' : ''}`}
+                                className={`${styles.qzPrinterItem} ${p === selectedPrinter ? styles.selected : ''}`}
                             >
                                 <Printer size={16} style={{ color: p === selectedPrinter ? 'var(--primary)' : 'var(--text-muted)' }} />
                                 {p}

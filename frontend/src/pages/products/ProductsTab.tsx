@@ -12,7 +12,6 @@ const STOCK_FILTERS = [
   { id: 'all', label: 'الكل' },
   { id: 'available', label: 'متوفر' },
   { id: 'low', label: 'مخزون منخفض' },
-  { id: 'low_available', label: 'منخفض (يوجد رصيد)' },
   { id: 'out', label: 'نفد المخزون' },
 ]
 
@@ -93,13 +92,6 @@ export default function ProductsTab({
         break
       case 'available':
         list = list.filter((p) => Number(p.quantity) > 0)
-        break
-      case 'low_available':
-        list = list.filter((p) => {
-          const qn = Number(p.quantity)
-          const th = Number(p.low_stock_threshold ?? 5)
-          return qn > 0 && qn <= th
-        })
         break
       default:
         break

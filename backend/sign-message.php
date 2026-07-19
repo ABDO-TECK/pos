@@ -59,6 +59,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// ── Security: restrict to localhost only ───────────────────────────────────
+// This endpoint signs arbitrary data with the private key and must not be
+// accessible from remote clients. Only local processes (QZ Tray) should call it.
+$remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+if (!in_array($remoteAddr, ['127.0.0.1', '::1'], true)) {
+    http_response_code(403);
+    echo 'Access denied: localhost only';
+    exit(1);
+}
+
 // ── Key file path ──────────────────────────────────────────────────────────
 // Read from .env first; fall back to known locations.
 $envKeyPath = EnvLoader::get('QZ_PRIVATE_KEY_PATH', '');
@@ -88,7 +98,14 @@ if ($KEY === null) {
 }
 
 // ── Sign the request ───────────────────────────────────────────────────────
-$req        = $_GET['request'] ?? '';
+$req = $_GET['request'] ?? '';
+
+if ($req === '' || strlen($req) > 2048) {
+    http_response_code(400);
+    echo 'Invalid request parameter';
+    exit(1);
+}
+
 $privateKey = openssl_get_privatekey(file_get_contents($KEY));
 
 if (!$privateKey) {

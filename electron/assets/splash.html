@@ -93,5 +93,13 @@
   <div class="loader-container">
     <div class="loader"></div>
   </div>
+  <script>
+    // Listen for status updates from main process via secure IPC
+    if (window.splashAPI && window.splashAPI.onStatusUpdate) {
+      window.splashAPI.onStatusUpdate(function(message) {
+        document.getElementById('status').textContent = message;
+      });
+    }
+  </script>
 </body>
 </html>

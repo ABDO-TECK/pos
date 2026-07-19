@@ -10,7 +10,7 @@ namespace App\Helpers;
  * PHP Object Injection الأمنية.
  */
 class Cache {
-    private static string $dir = __DIR__ . '/../storage/cache/';
+    private static string $dir = '';
     private static ?\Redis $redis = null;
     private static bool $redisChecked = false;
 
@@ -36,6 +36,14 @@ class Cache {
     }
 
     public static function init(): void {
+        if (self::$dir === '') {
+            $storageDir = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR');
+            if ($storageDir) {
+                self::$dir = $storageDir . '/cache/';
+            } else {
+                self::$dir = __DIR__ . '/../storage/cache/';
+            }
+        }
         if (!function_exists('apcu_fetch') && self::getRedis() === null && !is_dir(self::$dir)) {
             @mkdir(self::$dir, 0755, true);
         }
@@ -152,6 +160,7 @@ class Cache {
     }
 
     private static function path(string $key): string {
+        self::init();
         return self::$dir . md5($key) . '.cache';
     }
 }

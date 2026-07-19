@@ -3,6 +3,7 @@
 namespace App\Middleware;
 
 use App\Helpers\Logger;
+use App\Middleware\Traits\ClientIpTrait;
 
 /**
  * LoginRateLimiter — حماية من Brute Force لصفحة الدخول.
@@ -11,6 +12,7 @@ use App\Helpers\Logger;
  */
 class LoginRateLimiter
 {
+    use ClientIpTrait;
     private int $maxAttempts;
     private int $windowSeconds;
 
@@ -28,7 +30,7 @@ class LoginRateLimiter
 
     public function check(): void
     {
-        $ip  = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $ip = $this->getClientIp();
         $now = time();
 
         // 1. APCu (أسرع)
@@ -67,7 +69,9 @@ class LoginRateLimiter
                    ->execute([':key' => $key, ':exp' => $now + $this->windowSeconds + 10]);
             }
         } catch (\Throwable $e) {
-            // fail open
+            // Fail open: log the error but allow login request to proceed.
+            Logger::error('LoginRateLimiter SQLite error — failing open', ['error' => $e->getMessage()]);
+            return;
         }
     }
 

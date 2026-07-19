@@ -16,6 +16,26 @@ abstract class Controller {
     }
 
     /**
+     * Validate and cast a route parameter to a positive integer.
+     * Throws ValidationException if the value is not a valid numeric ID.
+     *
+     * @param string $value The raw route parameter value
+     * @param string $name  The parameter name for error messages (default: 'id')
+     * @return int The validated integer ID
+     * @throws ValidationException If the value is not a positive integer
+     */
+    protected function resolveId(string $value, string $name = 'id'): int
+    {
+        if (!ctype_digit($value)) {
+            throw new ValidationException(
+                [$name => ["{$name} must be a valid positive integer"]],
+                'Invalid route parameter'
+            );
+        }
+        return (int) $value;
+    }
+
+    /**
      * التحقق من صحة البيانات — يدعم القواعد التالية:
      *  required    — الحقل مطلوب (لا يقبل فارغ أو null)
      *  min:N       — الحد الأدنى لعدد الأحرف
@@ -87,9 +107,5 @@ abstract class Controller {
             $db->rollBack();
             throw $e;
         }
-    }
-
-    protected function sanitize(mixed $value): string {
-        return htmlspecialchars(strip_tags(trim((string)$value)), ENT_QUOTES, 'UTF-8');
     }
 }
