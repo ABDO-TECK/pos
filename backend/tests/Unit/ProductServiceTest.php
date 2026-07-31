@@ -3,10 +3,12 @@
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use App\Config\Database;
 use App\Services\ProductService;
 use App\Repositories\ProductRepository;
 use App\Models\PriceHistory;
 use App\Services\AuthService;
+use PDO;
 
 class ProductServiceTest extends TestCase
 {
@@ -135,6 +137,35 @@ class ProductServiceTest extends TestCase
         $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
 
         $this->assertTrue($result['ok']);
+    }
+
+    public function testUpdateProductWithoutSizesDoesNotSynchronizeSizeChildren(): void
+    {
+        $databaseProperty = (new \ReflectionClass(Database::class))->getProperty('instance');
+        $previousConnection = $databaseProperty->getValue();
+        $databaseProperty->setValue(null, new PDO('sqlite::memory:'));
+
+        try {
+            $existingProduct = ['id' => 1, 'name' => 'Old', 'barcode' => '12345', 'price' => 10, 'cost' => 5];
+            $updatedProduct = ['id' => 1, 'name' => 'New Name', 'barcode' => '12345', 'price' => 15, 'cost' => 5];
+            $this->productRepoMock->expects($this->exactly(2))
+                ->method('findById')
+                ->with(1)
+                ->willReturnOnConsecutiveCalls($existingProduct, $updatedProduct);
+            $this->productRepoMock->expects($this->once())
+                ->method('update')
+                ->with(1, ['name' => 'New Name', 'price' => 15, 'barcode' => '12345']);
+            $this->productRepoMock->expects($this->once())
+                ->method('syncAdditionalBarcodes')
+                ->with(1, []);
+            $this->productRepoMock->expects($this->never())->method('delete');
+
+            $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
+
+            $this->assertTrue($result['ok']);
+        } finally {
+            $databaseProperty->setValue(null, $previousConnection);
+        }
     }
 
     public function testCatalogSnapshotUsesCursorWithoutCountAndResumes(): void

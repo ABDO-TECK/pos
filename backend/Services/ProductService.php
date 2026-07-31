@@ -158,17 +158,16 @@ class ProductService implements ProductServiceInterface
             $this->productRepo->syncAdditionalBarcodes($id, $extras);
 
             // مزامنة المقاسات
-            $existingSizeIds = [];
-            $stmt = $db->prepare(
-                'SELECT id FROM products
-                 WHERE parent_product_id = ? AND branch_id = ? AND deleted_at IS NULL'
-            );
-            $stmt->execute([$id, \App\Services\AuthService::getGlobalBranchId()]);
-            $existingSizeIds = $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+            // Partial product updates must preserve size children unless sizes are supplied explicitly.
+            if (array_key_exists('sizes', $data) && is_array($data['sizes'])) {
+                $stmt = $db->prepare(
+                    'SELECT id FROM products
+                     WHERE parent_product_id = ? AND branch_id = ? AND deleted_at IS NULL'
+                );
+                $stmt->execute([$id, \App\Services\AuthService::getGlobalBranchId()]);
+                $existingSizeIds = $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+                $keepSizeIds = [];
 
-            $keepSizeIds = [];
-
-            if (isset($data['sizes']) && is_array($data['sizes'])) {
                 foreach ($data['sizes'] as $size) {
                     $sizeBarcode = trim($size['barcode'] ?? '');
                     $isSizeAutoBarcode = ($sizeBarcode === '');
@@ -225,12 +224,12 @@ class ProductService implements ProductServiceInterface
                         $keepSizeIds[] = $newSizeId;
                     }
                 }
-            }
 
-            // حذف المقاسات الملغاة
-            $toDeleteIds = array_diff($existingSizeIds, $keepSizeIds);
-            foreach ($toDeleteIds as $delId) {
-                $this->productRepo->delete($delId);
+                // حذف المقاسات الملغاة
+                $toDeleteIds = array_diff($existingSizeIds, $keepSizeIds);
+                foreach ($toDeleteIds as $delId) {
+                    $this->productRepo->delete($delId);
+                }
             }
 
             $db->commit();

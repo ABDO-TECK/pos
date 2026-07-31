@@ -44,7 +44,7 @@ class Cache {
                 self::$dir = __DIR__ . '/../storage/cache/';
             }
         }
-        if (!function_exists('apcu_fetch') && self::getRedis() === null && !is_dir(self::$dir)) {
+        if (!is_dir(self::$dir)) {
             @mkdir(self::$dir, 0755, true);
         }
     }
@@ -61,7 +61,7 @@ class Cache {
         }
 
         // 2. APCu
-        if (function_exists('apcu_fetch')) {
+        if (self::apcuAvailable()) {
             $success = false;
             $data = apcu_fetch('pos_cache_' . $key, $success);
             if ($success) return $data;
@@ -100,8 +100,7 @@ class Cache {
         }
 
         // 2. APCu
-        if (function_exists('apcu_store')) {
-            apcu_store('pos_cache_' . $key, $value, $ttl);
+        if (self::apcuAvailable() && apcu_store('pos_cache_' . $key, $value, $ttl)) {
             return;
         }
 
@@ -118,7 +117,7 @@ class Cache {
     public static function forget(string $key): void {
         $redis = self::getRedis();
         if ($redis) { try { $redis->del($key); } catch (\Throwable $e) {} }
-        if (function_exists('apcu_delete')) apcu_delete('pos_cache_' . $key);
+        if (self::apcuAvailable() && function_exists('apcu_delete')) apcu_delete('pos_cache_' . $key);
         $file = self::path($key);
         if (file_exists($file)) @unlink($file);
     }
@@ -126,7 +125,7 @@ class Cache {
     public static function flush(): void {
         $redis = self::getRedis();
         if ($redis) { try { $redis->flushDB(); } catch (\Throwable $e) {} }
-        if (function_exists('apcu_clear_cache')) apcu_clear_cache();
+        if (self::apcuAvailable() && function_exists('apcu_clear_cache')) apcu_clear_cache();
         self::init();
         array_map('unlink', glob(self::$dir . '*.cache') ?: []);
     }
@@ -162,5 +161,13 @@ class Cache {
     private static function path(string $key): string {
         self::init();
         return self::$dir . md5($key) . '.cache';
+    }
+
+    private static function apcuAvailable(): bool {
+        if (!function_exists('apcu_fetch') || !function_exists('apcu_store')) {
+            return false;
+        }
+
+        return !function_exists('apcu_enabled') || apcu_enabled();
     }
 }
