@@ -8,10 +8,8 @@
 -- Default branch
 INSERT IGNORE INTO branches (id, name) VALUES (1, 'الفرع الرئيسي');
 
--- Default admin user (password: password) — ⚠️ يجب تغييرها فوراً
-INSERT IGNORE INTO users (name, email, password, role, force_password_change) VALUES
-('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
-('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
+-- Interactive users are intentionally not seeded. Create the first administrator
+-- locally with backend/cli/bootstrap-admin.php and a unique password.
 
 -- Default settings
 INSERT IGNORE INTO settings (`key`, `value`) VALUES

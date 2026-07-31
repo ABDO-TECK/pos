@@ -6,6 +6,7 @@ interface Props {
   taxEnabled: boolean
   taxRate: number
   tax: number
+  shippingCost: number
   total: number
   rebillingAmountPaid: number
   remainingToPay: number
@@ -15,12 +16,13 @@ interface Props {
 }
 
 export default function PaymentSummary(props: Props) {
-  const { subtotal, discount, taxEnabled, taxRate, tax, total, rebillingAmountPaid, remainingToPay, isCreditSale, deposit, amountDue } = props
+  const { subtotal, discount, taxEnabled, taxRate, tax, shippingCost, total, rebillingAmountPaid, remainingToPay, isCreditSale, deposit, amountDue } = props
   return (
     <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '1rem', marginBottom: '1rem' }}>
       <Row label="المجموع الجزئي" value={formatCurrency(subtotal)} />
       {discount > 0 && <Row label="الخصم" value={`- ${formatCurrency(discount)}`} />}
       {taxEnabled && <Row label={`ضريبة (${formatPercent(taxRate)})`} value={formatCurrency(tax)} />}
+      {shippingCost > 0 && <Row label="تكلفة الشحن" value={formatCurrency(shippingCost)} />}
       <div style={{ borderTop: '2px solid var(--border)', margin: '0.5rem 0' }} />
       <Row label="الإجمالي" value={formatCurrency(total)} bold />
       {rebillingAmountPaid > 0 && <Row label="مدفوع مسبقاً (عربون)" value={`- ${formatCurrency(rebillingAmountPaid)}`} color="var(--primary)" />}

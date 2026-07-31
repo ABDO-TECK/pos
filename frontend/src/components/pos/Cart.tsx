@@ -142,7 +142,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
               overflowWrap: 'anywhere',
             }}
           >
-            {item.name} {item.size_name ? `(${item.size_name})` : ''}
+            {item.name}
             {isByWeight && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>(وزن)</span>}
             {isByLiter && <span style={{ fontSize: '0.65rem', color: 'var(--primary)', marginRight: '0.3rem' }}>(لتر)</span>}
           </div>

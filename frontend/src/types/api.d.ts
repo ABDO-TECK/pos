@@ -12,7 +12,21 @@ declare global {
     success: boolean;
     data: T;
     message?: string;
-    pagination?: { page: number; limit: number; total: number; pages: number };
+    requires_reauthentication?: boolean;
+    catalog_scope?: string;
+    catalog_version?: number;
+    pagination?: {
+      type?: 'page' | 'cursor';
+      page?: number;
+      limit: number;
+      total?: number;
+      pages?: number;
+      has_more?: boolean;
+      truncated?: boolean;
+      mode?: 'snapshot' | 'delta';
+      reset?: boolean;
+      next_checkpoint?: string;
+    };
   }
 
   interface ApiQueryParams {
@@ -33,6 +47,7 @@ declare global {
     order?: 'asc' | 'desc';
     barcode?: string;
     brand?: string;
+    checkpoint?: string;
   }
 }
 

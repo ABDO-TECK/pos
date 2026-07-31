@@ -44,6 +44,21 @@ class ProductRepository implements RepositoryInterface
         return $this->model->findById($id) ?: null;
     }
 
+    public function getCatalogSnapshotPage(int $afterId, int $limit): array
+    {
+        return $this->model->getCatalogSnapshotPage($afterId, $limit);
+    }
+
+    public function getCatalogVersion(): int
+    {
+        return $this->model->getCatalogVersion();
+    }
+
+    public function getCatalogChangePage(int $afterSequence, int $limit): array
+    {
+        return $this->model->getCatalogChangePage($afterSequence, $limit);
+    }
+
     /**
      * Batch-fetch multiple products by ID in a single query.
      *

@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, CheckCircle2, Clock, DollarSign, User, Truck } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useSettingsStore from '../../store/settingsStore'
@@ -12,28 +11,47 @@ import PaymentMethodSelector, { PAYMENT_METHODS } from './payment/PaymentMethodS
 import CustomerSection from './payment/CustomerSection'
 import styles from './PaymentModal.module.css'
 import { extractApiError } from '../../utils/apiError'
+import useAuthStore from '../../store/authStore'
 
-export default function PaymentModal({ onClose, onSuccess }) {
-  const { items, setPaymentMethod, setAmountPaid, setDiscount, paymentMethod, rebillingInvoiceId, rebillingCustomerId, rebillingAmountPaid } = useCartStore()
+interface PaymentModalProps {
+  onClose: () => void
+  onSuccess: (invoice: NonNullable<Sale['invoice']>, change: number) => void
+}
+
+export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) {
+  const {
+    items,
+    setPaymentMethod,
+    setAmountPaid,
+    setDiscount,
+    paymentMethod,
+    rebillingInvoiceId,
+    rebillingCustomerId,
+    rebillingAmountPaid,
+    rebillingPaymentMethod,
+    rebillingShippingCost,
+  } = useCartStore()
   const { taxEnabled, taxRate } = useSettingsStore()
+  const authenticatedUser = useAuthStore((state) => state.user)
 
   const [loading, setLoading]                 = useState(false)
   const [localDiscount, setLocalDiscount]     = useState(0)
   const [localAmountPaid, setLocalAmountPaid] = useState(0)
+  const idempotencyKey = useRef(globalThis.crypto.randomUUID())
 
   // ── آجل states ──────────────────────────────────────────────
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(rebillingCustomerId ?? null)
   const [deposit, setDeposit]             = useState(0)           // العربون
-  const [newCustomerData, setNewCustomerData] = useState<any>(null)
+  const [newCustomerData, setNewCustomerData] = useState<NewCustomerPayload | null>(null)
 
   // ── delivery states ──────────────────────────────────────────────
   const [driverName, setDriverName] = useState('')
-  const [vehicleNumber, setVehicleNumber] = useState('')
+  const [shippingCost, setShippingCost] = useState(Math.max(0, rebillingShippingCost))
   const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0])
   const [deliveryNotes, setDeliveryNotes] = useState('')
-  const [activeTab, setActiveTab] = useState('payment') // 'payment' | 'customer' | 'delivery'
+  const [activeTab, setActiveTab] = useState<'payment' | 'customer' | 'delivery'>('payment')
 
-  const handleCustomerSelect = (customerId: number | null, newCustomer: any) => {
+  const handleCustomerSelect = (customerId: number | null, newCustomer: NewCustomerPayload | null) => {
     setSelectedCustomerId(customerId)
     setNewCustomerData(newCustomer)
   }
@@ -45,10 +63,16 @@ export default function PaymentModal({ onClose, onSuccess }) {
   const clampedDiscount  = Math.min(localDiscount, computedSubtotal)
   const computedTaxable  = computedSubtotal - clampedDiscount
   const computedTax      = roundCurrency(computedTaxable * rate)
-  const computedTotal    = roundCurrency(computedTaxable + computedTax)
-  const computedChange   = Math.max(0, localAmountPaid - (computedTotal - rebillingAmountPaid))
-  const remainingToPay   = roundCurrency(Math.max(0, computedTotal - rebillingAmountPaid))
-  const amountDue        = isCreditSale ? Math.max(0, computedTotal - deposit - rebillingAmountPaid) : 0
+  const computedTotal    = roundCurrency(computedTaxable + computedTax + shippingCost)
+  // An invoice edit replaces its payment details. Preserve an earlier payment
+  // only while the original payment method remains selected. For example,
+  // changing cash to credit must not turn the old cash amount into a deposit.
+  const appliedPreviousPayment = rebillingInvoiceId && paymentMethod === rebillingPaymentMethod
+    ? Math.max(0, rebillingAmountPaid)
+    : 0
+  const computedChange   = Math.max(0, localAmountPaid - (computedTotal - appliedPreviousPayment))
+  const remainingToPay   = roundCurrency(Math.max(0, computedTotal - appliedPreviousPayment))
+  const amountDue        = isCreditSale ? Math.max(0, computedTotal - deposit - appliedPreviousPayment) : 0
 
   const currentMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod) ?? PAYMENT_METHODS[0]
 
@@ -77,7 +101,7 @@ export default function PaymentModal({ onClose, onSuccess }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   })
 
-  const handleCheckout = async (status = 'completed') => {
+  const handleCheckout = async (status: SaleCreatePayload['status'] = 'completed') => {
     if (items.length === 0) return
 
     if (currentMethod.cashInput && localAmountPaid < remainingToPay) {
@@ -86,8 +110,8 @@ export default function PaymentModal({ onClose, onSuccess }) {
     }
 
     // التحقق من بيانات العميل (مطلوب في الآجل، واختياري في الكاش)
-    let customerId: number | null = selectedCustomerId
-    let newCustomer: any = newCustomerData
+    const customerId = selectedCustomerId
+    const newCustomer = newCustomerData
     if (isCreditSale && !customerId && !newCustomer) {
       toast.error('اختر عميلاً أو أنشئ جديداً')
       return
@@ -95,18 +119,19 @@ export default function PaymentModal({ onClose, onSuccess }) {
 
     setDiscount(clampedDiscount)
     const finalAmountPaid = status === 'reserved' 
-      ? (isCreditSale ? deposit : 0) 
-      : (isCreditSale ? (deposit + rebillingAmountPaid) : (currentMethod.cashInput ? (localAmountPaid + rebillingAmountPaid) : computedTotal))
+      ? (isCreditSale ? deposit + appliedPreviousPayment : 0)
+      : (isCreditSale ? (deposit + appliedPreviousPayment) : (currentMethod.cashInput ? (localAmountPaid + appliedPreviousPayment) : computedTotal))
     
     setAmountPaid(finalAmountPaid)
 
-    const salePayload = {
+    const salePayload: SaleCreatePayload = {
+      idempotency_key: idempotencyKey.current,
       items:          items.map(i => ({ product_id: i.id, quantity: i.quantity, price: i.price })),
       discount:       clampedDiscount,
       payment_method: paymentMethod,
       amount_paid:    finalAmountPaid,
       driver_name:    driverName.trim() || undefined,
-      vehicle_number: vehicleNumber.trim() || undefined,
+      shipping_cost:  shippingCost,
       delivery_date:  deliveryDate || undefined,
       delivery_notes: deliveryNotes.trim() || undefined,
       ...(customerId ? { customer_id: customerId } : {}),
@@ -118,8 +143,11 @@ export default function PaymentModal({ onClose, onSuccess }) {
 
     setLoading(true)
     try {
-      const res = await createSale(salePayload as any)
+      const res = await createSale(salePayload)
       const { invoice, low_stock_alerts } = res.data.data
+      if (!invoice) {
+        throw new Error('Sale response did not include an invoice')
+      }
       toast.success(
         status === 'reserved'
           ? `تم حجز الفاتورة بنجاح`
@@ -131,14 +159,21 @@ export default function PaymentModal({ onClose, onSuccess }) {
         { duration: 3000 }
       )
       if (low_stock_alerts && low_stock_alerts.length > 0) {
-        low_stock_alerts.forEach((p: any) =>
+        low_stock_alerts.forEach((p) =>
           toast(`تحذير: ${p.name} — كمية منخفضة (${formatNumber(p.quantity)})`, { icon: '⚠️', duration: 5000 })
         )
       }
       onSuccess(invoice, isCreditSale ? 0 : computedChange)
     } catch (err) {
       if (!navigator.onLine) {
-        await savePendingSale(salePayload)
+        if (!authenticatedUser || authenticatedUser.branch_id <= 0) {
+          toast.error('Cannot save this sale offline because the current user or branch is unavailable')
+          return
+        }
+        await savePendingSale({ ...salePayload }, {
+          ownerUserId: authenticatedUser.id,
+          branchId: authenticatedUser.branch_id,
+        })
         toast('لا يوجد إنترنت — تم حفظ العملية للمزامنة لاحقًا', { icon: '📴', duration: 5000 })
         onClose()
       } else {
@@ -167,8 +202,9 @@ export default function PaymentModal({ onClose, onSuccess }) {
           taxEnabled={taxEnabled}
           taxRate={taxRate}
           tax={computedTax}
+          shippingCost={shippingCost}
           total={computedTotal}
-          rebillingAmountPaid={rebillingAmountPaid}
+          rebillingAmountPaid={appliedPreviousPayment}
           remainingToPay={remainingToPay}
           isCreditSale={isCreditSale}
           deposit={deposit}
@@ -323,13 +359,15 @@ export default function PaymentModal({ onClose, onSuccess }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>رقم السيارة</label>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>تكلفة الشحن (ج.م)</label>
                   <input
-                    type="text"
+                    type="number"
+                    min={0}
+                    step="0.5"
                     className="input"
-                    placeholder="مثال: أ ب ج 123..."
-                    value={vehicleNumber}
-                    onChange={(e) => setVehicleNumber(e.target.value)}
+                    placeholder="0.00"
+                    value={shippingCost || ''}
+                    onChange={(e) => setShippingCost(Math.max(0, parseFloat(e.target.value) || 0))}
                   />
                 </div>
               </div>

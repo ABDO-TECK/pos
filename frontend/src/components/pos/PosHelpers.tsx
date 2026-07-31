@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import IconBadge from '../common/IconBadge'
 
 interface CartHeaderProps {
-  items: Array<{ product_id: number; quantity: number; price: number }>
+  items: ReadonlyArray<unknown>
   clearCart: () => void
   itemCount: number
 }
@@ -19,7 +19,7 @@ interface CartTotalsProps {
 }
 
 interface ProductCardProps {
-  product: { id: number; name: string; price: number; quantity: number; barcode: string; low_stock_threshold?: number; units_per_box?: number; sell_by_weight?: number; unit_type?: string; sizes?: any[] }
+  product: Product
   onAdd: (e: React.MouseEvent<HTMLButtonElement>) => void
 }
 

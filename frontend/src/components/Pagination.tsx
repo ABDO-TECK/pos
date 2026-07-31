@@ -1,8 +1,12 @@
-// @ts-nocheck
-import React from 'react'
 import styles from './Pagination.module.css'
 
-export default function Pagination({ current, total, onPage }) {
+interface PaginationProps {
+  current: number
+  total: number
+  onPage: (page: number) => void
+}
+
+export default function Pagination({ current, total, onPage }: PaginationProps) {
   if (total <= 1) return null;
 
   return (

@@ -6,6 +6,7 @@ use App\Core\Autoloader;
 use App\Core\Container;
 use App\Core\Router;
 use App\Core\ValidationException;
+use App\Core\HttpException;
 use App\Helpers\Response;
 use App\Helpers\Logger;
 use App\Middleware\RateLimiter;
@@ -28,15 +29,36 @@ if ($pharRunning) {
     if (!file_exists($flagFile) || filemtime($pharRunning) > filemtime($flagFile)) {
         try {
             require_once __DIR__ . '/Services/MigrationService.php';
-            (new \App\Services\MigrationService())->runAllMigrations();
+            $migrationResult = (new \App\Services\MigrationService())->runAllMigrations();
+            if (!empty($migrationResult['errors'])) {
+                throw new \RuntimeException(implode('; ', $migrationResult['errors']));
+            }
         } catch (\Throwable $e) {
-            // Log but do not block — the app should still boot even if migrations fail
-            Logger::warning('Auto-migration failed during boot', [
+            Logger::error('Auto-migration failed during boot', [
                 'error' => $e->getMessage(),
                 'file'  => $e->getFile(),
                 'line'  => $e->getLine(),
             ]);
+            http_response_code(503);
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database upgrade failed; service is unavailable.',
+                'data' => null,
+                'errors' => ['code' => 'MIGRATION_FAILED'],
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
         }
+    }
+} else {
+    // Development mode: run pending migrations on boot (hash-checked to avoid overhead)
+    try {
+        require_once __DIR__ . '/Services/MigrationService.php';
+        (new \App\Services\MigrationService())->runAllMigrations();
+    } catch (\Throwable $e) {
+        Logger::error('Dev auto-migration failed during boot', [
+            'error' => $e->getMessage(),
+        ]);
     }
 }
 
@@ -65,6 +87,7 @@ header('Content-Type: application/json; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin-when-cross-origin');
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
 
 
 
@@ -74,10 +97,22 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 //   - ReadRateLimiter:   200/دقيقة (GET)    — per-user أو per-IP
 //   - WriteRateLimiter:  60/دقيقة  (POST/PUT) — per-user أو per-IP
 //   - DeleteRateLimiter: 30/دقيقة  (DELETE)   — per-user أو per-IP
-(new RateLimiter(200, 60))->check();
+(new RateLimiter(200, 60))->check('coarse_public_ip', null);
 
 // ── Error handling ─────────────────────────────────────────────
 set_exception_handler(function (Throwable $e) {
+    if ($e instanceof HttpException) {
+        $resp = Response::error(
+            $e->getMessage(),
+            $e->getStatusCode(),
+            $e->getErrors(),
+            $e->getErrorCode()
+        );
+        http_response_code($e->getStatusCode());
+        echo json_encode($resp['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return;
+    }
+
     if ($e instanceof ValidationException) {
         $resp = Response::error($e->getMessage(), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
         http_response_code(422);

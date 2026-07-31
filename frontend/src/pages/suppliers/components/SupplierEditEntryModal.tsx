@@ -1,11 +1,21 @@
-// @ts-nocheck
+import type { Dispatch, SetStateAction } from 'react'
 import { X, Edit2 } from 'lucide-react'
+import type { SupplierEntryForm, SupplierLedgerEntry } from './SupplierLedgerTable'
+
+interface SupplierEditEntryModalProps {
+  editEntryModal: SupplierLedgerEntry | null
+  setEditEntryModal: Dispatch<SetStateAction<SupplierLedgerEntry | null>>
+  editEntryForm: SupplierEntryForm
+  setEditEntryForm: Dispatch<SetStateAction<SupplierEntryForm>>
+  handleEditEntry: () => void
+  editEntryLoading: boolean
+}
 
 export default function SupplierEditEntryModal({
   editEntryModal, setEditEntryModal,
   editEntryForm, setEditEntryForm,
   handleEditEntry, editEntryLoading
-}) {
+}: SupplierEditEntryModalProps) {
   if (!editEntryModal) return null
 
   return (
@@ -23,7 +33,7 @@ export default function SupplierEditEntryModal({
               {[
                 { id: 'credit', label: 'دائن (مستحق له)', color: 'var(--secondary)', bg: 'rgba(59,130,246,.1)' },
                 { id: 'debit',  label: 'مدين (دفعة)',     color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-              ].map(d => (
+              ].map((d) => (
                 <button key={d.id} type="button" onClick={() => setEditEntryForm(f => ({ ...f, type: d.id }))}
                   style={{
                     flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,

@@ -1,31 +1,55 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import { Trash2, ShoppingCart, Check, Package } from 'lucide-react'
 import BarcodeInput from '../../components/pos/BarcodeInput'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
-import { getSuppliers, getProducts, createBulkPurchase, getPurchaseInvoice } from '../../api/endpoints'
+import { getSuppliers, createBulkPurchase, getPurchaseInvoice } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
+import { extractApiError } from '../../utils/apiError'
 import ReceiveGoodsProductCard from './components/ReceiveGoodsProductCard'
 import ReceiveGoodsCartLine from './components/ReceiveGoodsCartLine'
 import ReceiveConfirmModal from './components/ReceiveConfirmModal'
 import PurchaseReceiptModal from './components/PurchaseReceiptModal'
 import styles from '../Suppliers.module.css'
 
+type ReceivingProduct = Product & { scanned_as_box?: boolean }
+
+interface ReceiveCartLine {
+  product: ReceivingProduct
+  quantity: number
+  cost: number
+}
+
+interface DeliveryData {
+  driver_name?: string
+  vehicle_number?: string
+  delivery_date?: string
+  delivery_notes?: string
+}
+
+interface ReceiveGoodsProps {
+  cart: ReceiveCartLine[]
+  setCart: Dispatch<SetStateAction<ReceiveCartLine[]>>
+  supplierId: string
+  setSupplierId: Dispatch<SetStateAction<string>>
+  invoiceId: number | null
+  setInvoiceId: Dispatch<SetStateAction<number | null>>
+}
+
 /* ──────────────────────────── Receive Goods (POS-like) ── */
-export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }) {
-  const [suppliers, setSuppliers]     = useState<any[]>([])
-  const [allProducts, setAllProducts] = useState<any[]>([])
+export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }: ReceiveGoodsProps) {
+  const [suppliers, setSuppliers]     = useState<Supplier[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [search, setSearch]           = useState('')
   const [loading, setLoading]         = useState(false)
   const [confirming, setConfirming]   = useState(false)
   const [mobileTab, setMobileTab]     = useState('products')
-  const [paymentType, setPaymentType] = useState('cash')  // 'cash' | 'credit'
+  const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash')
   const [deposit, setDeposit]         = useState(0)
 
   // ── Modals states ──────────────────────────────────────────────────
   const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [invoiceToPrint, setInvoiceToPrint]     = useState<any>(null)
+  const [invoiceToPrint, setInvoiceToPrint]     = useState<PurchaseInvoice | null>(null)
 
   const q = search.trim().toLowerCase()
   const products = q
@@ -40,31 +64,34 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
   const selectedSupplier = suppliers.find(s => String(s.id) === String(supplierId))
 
   useEffect(() => {
+    let fetchInFlight = false
     const fetchAll = (isInitial = false) => {
-      getSuppliers().then(r => { const d = r.data.data as any; setSuppliers(Array.isArray(d) ? d : (d?.data ?? [])) }).catch(() => {})
+      if (fetchInFlight) return
+      fetchInFlight = true
+      getSuppliers().then((response) => setSuppliers(response.data.data ?? [])).catch(() => {})
       if (isInitial) setLoading(true)
-      getProducts({ limit: 9999 })
-        .then((r) => {
-          const raw = r.data.data as any; const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
+      useProductStore.getState().fetchProducts({}, true)
+        .then((list) => {
           setAllProducts(list)
           useProductStore.getState().setProducts(list)
         })
-        .catch((err) => {
+        .catch(() => {
           if (isInitial) toast.error('فشل تحميل المنتجات')
         })
         .finally(() => {
+          fetchInFlight = false
           if (isInitial) setLoading(false)
         })
     }
     
     fetchAll(true)
-    const intervalId = setInterval(() => fetchAll(false), 10000)
+    const intervalId = setInterval(() => fetchAll(false), 30000)
     return () => clearInterval(intervalId)
   }, [])
 
   /* ── Cart helpers ── */
-  const addToCart = (product) => {
-    let targetProduct = product
+  const addToCart = (product: ReceivingProduct) => {
+    let targetProduct: ReceivingProduct = product
     if (product.sizes && product.sizes.length > 0) {
       targetProduct = {
         ...product.sizes[0],
@@ -73,7 +100,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       }
     }
 
-    const unitsPerBox = Math.max(1, parseInt(targetProduct.units_per_box) || 1)
+    const unitsPerBox = Math.max(1, Number.parseInt(String(targetProduct.units_per_box)) || 1)
     const qtyToAdd = targetProduct.scanned_as_box ? unitsPerBox : 1
 
     setCart((prev) => {
@@ -89,16 +116,16 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           product: targetProduct,
           quantity: qtyToAdd,
           cost:
-            parseFloat(targetProduct.cost) > 0
-              ? parseFloat(targetProduct.cost)
-              : parseFloat(targetProduct.price) || 0,
+            Number(targetProduct.cost) > 0
+              ? Number(targetProduct.cost)
+              : Number(targetProduct.price) || 0,
         },
       ]
     })
     toast.success(targetProduct.name, { duration: 700 })
   }
 
-  const switchCartLineProduct = (oldProductId, newProduct, parentProduct) => {
+  const switchCartLineProduct = (oldProductId: number, newProduct: Product, parentProduct?: Product) => {
     setCart((prev) => {
       const targetProduct = {
         ...newProduct,
@@ -118,9 +145,9 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           )
           .filter((c) => c.product.id !== oldProductId)
       } else {
-        const cost = parseFloat(targetProduct.cost) > 0
-          ? parseFloat(targetProduct.cost)
-          : parseFloat(targetProduct.price) || 0
+        const cost = Number(targetProduct.cost) > 0
+          ? Number(targetProduct.cost)
+          : Number(targetProduct.price) || 0
         return prev.map((c) =>
           c.product.id === oldProductId
             ? { ...c, product: targetProduct, cost }
@@ -130,27 +157,27 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     })
   }
 
-  const updateLineQuantity = (productId, qty) => {
-    const q = Math.max(0.001, parseFloat(qty) || 0.001)
+  const updateLineQuantity = (productId: number, qty: string | number) => {
+    const q = Math.max(0.001, Number.parseFloat(String(qty)) || 0.001)
     setCart((prev) =>
       prev.map((c) => (c.product.id === productId ? { ...c, quantity: q } : c))
     )
   }
 
-  const updateLineCost = (productId, raw) => {
-    const v = parseFloat(raw)
+  const updateLineCost = (productId: number, raw: string | number) => {
+    const v = Number.parseFloat(String(raw))
     const cost = Number.isFinite(v) && v >= 0 ? v : 0
     setCart((prev) =>
       prev.map((c) => (c.product.id === productId ? { ...c, cost } : c))
     )
   }
 
-  const removeFromCart = (id) => setCart(prev => prev.filter(c => c.product.id !== id))
+  const removeFromCart = (id: number) => setCart((previous) => previous.filter((line) => line.product.id !== id))
 
   const cartTotal = cart.reduce((s, c) => s + c.cost * c.quantity, 0)
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0)
 
-  const handleConfirm = async (deliveryData: any = {}) => {
+  const handleConfirm = async (deliveryData: DeliveryData = {}) => {
     if (!supplierId) { toast.error('يرجى اختيار مورد'); return }
     if (cart.length === 0) { toast.error('السلة فارغة'); return }
     setConfirming(true)
@@ -158,14 +185,14 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       const amountDue = paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : 0
       const res = await createBulkPurchase({
         replace_invoice_id: invoiceId,
-        supplier_id: parseInt(supplierId),
+        supplier_id: Number.parseInt(supplierId, 10),
         items: cart.map(c => ({ product_id: c.product.id, quantity: c.quantity, cost: c.cost, update_cost: true })),
         payment_type: paymentType,
         deposit: paymentType === 'credit' ? deposit : 0,
         ...deliveryData
       })
 
-      const createdInvoiceId = res.data.data?.invoice_id
+      const createdInvoiceId = res.data.data?.invoice_id ?? res.data.data?.id
 
       toast.success(
         invoiceId ? 'تم تحديث الفاتورة والمخزون'
@@ -193,10 +220,8 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       }
 
       // ── تحديث فوري للمنتجات (تجاوز الكاش) ──────────────────
-      getProducts({ limit: 9999, _t: Date.now() })
-        .then((r) => {
-          const raw = r.data?.data as any
-          const list = Array.isArray(raw) ? raw : (raw?.data ?? [])
+      useProductStore.getState().fetchProducts({}, true)
+        .then((list) => {
           if (list.length > 0) {
             setAllProducts(list)
             useProductStore.getState().setProducts(list)
@@ -205,7 +230,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
         })
         .catch(() => { /* silent */ })
     } catch (err) {
-      toast.error(err.response?.data?.message ?? 'فشل تسجيل الشراء')
+      toast.error(extractApiError(err, 'فشل تسجيل الشراء'))
     } finally {
       setConfirming(false)
     }
@@ -339,7 +364,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
         <BarcodeInput
           onFilterChange={setSearch}
           allowOutOfStock
-          onAddProduct={(p) => { addToCart(p); setMobileTab('cart') }}
+          onAddProduct={(product: Product) => { addToCart(product); setMobileTab('cart') }}
         />
       </div>
 

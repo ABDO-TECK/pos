@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 
 import { useNavigate } from 'react-router-dom'
@@ -18,7 +17,7 @@ import TotalRow from '../components/common/TotalRow'
 import { extractApiError } from '../utils/apiError'
 import SaleDetailModal from './sales/SaleDetailModal'
 
-const METHOD_LABELS = {
+const METHOD_LABELS: Record<string, string> = {
   cash:          'نقدي',
   card:          'بطاقة',
   vodafone_cash: 'فودافون كاش',
@@ -27,16 +26,23 @@ const METHOD_LABELS = {
   credit:        'آجل',
 }
 
+interface SalesFilters {
+  date: string
+  month: string
+  year: string
+  search: string
+}
+
 export default function Sales() {
-  const [sales, setSales]       = useState<any[]>([])
+  const [sales, setSales]       = useState<Sale[]>([])
   const [loading, setLoading]   = useState(false)
-  const [selected, setSelected] = useState<any>(null)
+  const [selected, setSelected] = useState<Sale | null>(null)
   const [detailLoading, setDL]  = useState(false)
   const [deleting, setDeleting]  = useState(false)
-  const [filters, setFilters]   = useState({ date: '', month: '', year: '', search: '' })
+  const [filters, setFilters]   = useState<SalesFilters>({ date: '', month: '', year: '', search: '' })
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages]   = useState(1)
-  const searchTimer             = useRef<any>(null)
+  const searchTimer             = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentYear             = new Date().getFullYear()
   const yearOptions             = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i)
   const settings                = useSettingsStore()
@@ -47,7 +53,7 @@ export default function Sales() {
   const isAdmin                 = user?.role === 'admin'
   const qz = useQZPrinter()
 
-  const load = async (f = filters, p = 1) => {
+  const load = async (f: SalesFilters = filters, p = 1) => {
     setLoading(true)
     try {
       const params: Record<string, string | number> = { page: p, limit: 15 }
@@ -73,14 +79,16 @@ export default function Sales() {
 
   useEffect(() => {
     load(filters, 1)
-    return () => clearTimeout(searchTimer.current)
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current)
+    }
   }, [])
 
-  const handleFilter = (key, val) => {
+  const handleFilter = (key: keyof SalesFilters, val: string) => {
     const next = { ...filters, [key]: val }
     setFilters(next)
     setCurrentPage(1)
-    clearTimeout(searchTimer.current)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => load(next, 1), 400)
   }
 
@@ -91,7 +99,7 @@ export default function Sales() {
     load(cleared, 1)
   }
 
-  const openDetail = async (id) => {
+  const openDetail = async (id: number) => {
     setDL(true)
     try {
       const res = await getSale(id)
@@ -102,12 +110,19 @@ export default function Sales() {
   }
 
   const handleReturnToCart = () => {
-    const items = selected?.items ?? []
-    if (!items.length) {
+    if (!selected?.items?.length) {
       toast.error('لا توجد أصناف في الفاتورة')
       return
     }
-    mergeInvoiceLines(items, selected.id, selected.customer_id, parseFloat(selected.amount_paid) || 0)
+    const items = selected.items
+    mergeInvoiceLines(
+      items,
+      selected.id,
+      selected.customer_id,
+      Number(selected.amount_paid) || 0,
+      selected.payment_method,
+      Number(selected.shipping_cost) || 0,
+    )
     toast.success('تمت إضافة أصناف الفاتورة إلى السلة — انتقل إلى نقطة البيع')
     setSelected(null)
     navigate('/')
@@ -123,7 +138,7 @@ export default function Sales() {
       setSelected(null)
       load(filters, currentPage)
     } catch (err) {
-      toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
+      toast.error(extractApiError(err, 'فشل حذف الفاتورة'))
     } finally {
       setDeleting(false)
     }
@@ -214,7 +229,7 @@ export default function Sales() {
             <Pagination 
               current={currentPage} 
               total={totalPages} 
-              onPage={(p) => load(filters, p)} 
+              onPage={(page: number) => load(filters, page)}
             />
           </div>
         )}
@@ -239,7 +254,7 @@ export default function Sales() {
         <QZPrinterPicker
           printers={qz.printers}
           selectedPrinter={qz.selectedPrinter}
-          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onSelect={(name: string) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
           onClose={() => qz.setShowPrinterPicker(false)}
         />
       )}

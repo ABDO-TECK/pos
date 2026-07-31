@@ -1,13 +1,16 @@
 import { create } from 'zustand'
-import { getProducts, getCategories, getProductByBarcode } from '../api/endpoints'
+import axios from 'axios'
+import { getProducts, getProductCatalogPage, getCategories, getProductByBarcode } from '../api/endpoints'
 import {
-  saveProductsToIDB,
+  applyProductCatalogPage,
+  getProductCatalogState,
   getProductsFromIDB,
   getProductByBarcodeFromIDB,
 } from '../utils/idb'
+import useAuthStore from './authStore'
 
 /** مدة صلاحية الكاش: 5 ثواني (بدلاً من 5 دقائق لتحديث المخزون بسرعة) */
-const CACHE_TTL_MS = 5 * 1000
+const CACHE_TTL_MS = 30 * 1000
 
 interface FetchParams {
   search?: string;
@@ -52,25 +55,80 @@ const useProductStore = create<ProductState>((set, get) => ({
 
     set({ loading: true })
     try {
-      const res = await getProducts(params)
-      // Fallback in case res.data is the array directly, or res.data.data is undefined
-      let products = res.data?.data as Product[]
-      if (!products) {
-        products = Array.isArray(res.data) ? res.data : []
+      const isFullCatalogSync = !params.search && !params.category_id && !params.low_stock && params.page === undefined
+      let products: Product[]
+      if (isFullCatalogSync) {
+        const branchId = useAuthStore.getState().user?.branch_id
+        const expectedScope = branchId === undefined ? '' : `branch:${branchId}`
+        const cacheState = expectedScope
+          ? await getProductCatalogState(expectedScope)
+          : { checkpoint: null, complete: false }
+        let checkpoint = cacheState.checkpoint ?? undefined
+        let resolvedScope = expectedScope
+        let retriedWithoutCheckpoint = false
+        let hasMore = true
+        const seenCheckpoints = new Set<string>()
+
+        while (hasMore) {
+          let page: ProductCatalogPage
+          try {
+            page = await getProductCatalogPage(checkpoint)
+          } catch (error: unknown) {
+            if (
+              checkpoint
+              && !retriedWithoutCheckpoint
+              && axios.isAxiosError(error)
+              && error.response?.status === 422
+            ) {
+              checkpoint = undefined
+              retriedWithoutCheckpoint = true
+              continue
+            }
+            throw error
+          }
+
+          const nextCheckpoint = page.pagination.nextCheckpoint
+          if (!nextCheckpoint) {
+            throw new Error('Product catalog sync response is missing its next checkpoint')
+          }
+          if (hasMore && seenCheckpoints.has(nextCheckpoint)) {
+            throw new Error('Product catalog sync response repeated a checkpoint')
+          }
+          seenCheckpoints.add(nextCheckpoint)
+          resolvedScope = page.scope
+          if (branchId === undefined && page.scope.startsWith('branch:')) {
+            const resolvedBranchId = Number(page.scope.slice('branch:'.length))
+            const currentUser = useAuthStore.getState().user
+            if (currentUser && Number.isInteger(resolvedBranchId) && resolvedBranchId > 0) {
+              useAuthStore.getState().setUser({ ...currentUser, branch_id: resolvedBranchId })
+            }
+          }
+          await applyProductCatalogPage({
+            products: page.products,
+            scope: page.scope,
+            checkpoint: nextCheckpoint,
+            version: page.version,
+            reset: page.pagination.reset,
+            snapshotComplete: page.pagination.mode === 'snapshot' && !page.pagination.hasMore,
+          })
+          checkpoint = nextCheckpoint
+          hasMore = page.pagination.hasMore
+        }
+        products = await getProductsFromIDB(resolvedScope)
+      } else {
+        const res = await getProducts({ page: 1, limit: 500, ...params })
+        products = Array.isArray(res.data.data) ? res.data.data : []
       }
       set({ products, loading: false, lastFetched: Date.now() })
 
-      // حفظ في IDB عند تحميل كل المنتجات (بدون فلتر)
-      if (!params.search && !params.category_id) {
-        saveProductsToIDB(products).catch(() => {
-          // تجاهل أخطاء IDB — ليست حرجة
-        })
-      }
       return products
     } catch (err: unknown) {
       // Fallback إلى IndexedDB عند فقد الشبكة
       try {
-        const cached = await getProductsFromIDB()
+        const branchId = useAuthStore.getState().user?.branch_id
+        const cached = branchId === undefined
+          ? []
+          : await getProductsFromIDB(`branch:${branchId}`)
         if (cached && cached.length > 0) {
           set({ products: cached, loading: false })
           console.info('[ProductStore] Loaded from offline cache:', cached.length, 'products')

@@ -21,9 +21,9 @@ $router->delete('/api/purchase-invoices/{id}', [PurchaseController::class, 'purc
 
 // Bulk Purchases & Payments
 $router->post('/api/purchases/bulk', [PurchaseController::class, 'purchaseBulk', [AuthMiddleware::class, PermissionMiddleware::require('purchases.create')]]);
-$router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class]]);
-$router->put('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'updateLedgerEntry', [AuthMiddleware::class]]);
-$router->delete('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'deleteLedgerEntry', [AuthMiddleware::class]]);
+$router->post('/api/suppliers/{id}/payment', [SupplierController::class, 'addPayment', [AuthMiddleware::class, PermissionMiddleware::require('suppliers.payment')]]);
+$router->put('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'updateLedgerEntry', [AuthMiddleware::class, PermissionMiddleware::require('suppliers.ledger.update')]]);
+$router->delete('/api/suppliers/ledger/{entryId}', [SupplierController::class, 'deleteLedgerEntry', [AuthMiddleware::class, PermissionMiddleware::require('suppliers.ledger.delete')]]);
 
 // Ledger PDF
 $router->get('/api/suppliers/{id}/pdf', [LedgerPdfController::class, 'supplierPdf', [AuthMiddleware::class]]);

@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import SystemHealth from './SystemHealth'
-import { getHealthCheck } from '../../api/endpoints'
+import { getHealthDiagnostics } from '../../api/endpoints'
 
 vi.mock('../../api/endpoints', () => ({
-  getHealthCheck: vi.fn(),
+  getHealthDiagnostics: vi.fn(),
 }))
 
-const mockedGetHealthCheck = vi.mocked(getHealthCheck)
+const mockedGetHealthDiagnostics = vi.mocked(getHealthDiagnostics)
 
 describe('SystemHealth', () => {
   let container: HTMLDivElement
@@ -32,7 +32,7 @@ describe('SystemHealth', () => {
   })
 
   it('sets a local last check timestamp after a successful health fetch', async () => {
-    mockedGetHealthCheck.mockResolvedValue({
+    mockedGetHealthDiagnostics.mockResolvedValue({
       data: {
         status: 'ok',
         critical_failed: false,

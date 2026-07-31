@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { Component, ReactNode } from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { logError } from '../../utils/clientLogger'
 
 interface Props {
@@ -21,11 +20,11 @@ export default class ErrorBoundary extends Component<Props, State> {
     this.state = { hasError: false, error: null }
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error }
   }
 
-  componentDidCatch(error, errorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('[ErrorBoundary]', error, errorInfo)
 
     // إرسال الخطأ إلى الباك إند عبر clientLogger

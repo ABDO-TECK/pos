@@ -1,11 +1,26 @@
-// @ts-nocheck
+import type { Dispatch, SetStateAction } from 'react'
 import { X, Edit2 } from 'lucide-react'
+
+interface CustomerEditEntryForm {
+  type: string
+  amount: string
+  description: string
+}
+
+interface CustomerEditEntryModalProps {
+  editEntryModal: CustomerLedgerRow | null
+  setEditEntryModal: (entry: CustomerLedgerRow | null) => void
+  editEntryForm: CustomerEditEntryForm
+  setEditEntryForm: Dispatch<SetStateAction<CustomerEditEntryForm>>
+  handleEditEntry: () => void
+  editEntryLoading: boolean
+}
 
 export default function CustomerEditEntryModal({
   editEntryModal, setEditEntryModal,
   editEntryForm, setEditEntryForm,
   handleEditEntry, editEntryLoading
-}) {
+}: CustomerEditEntryModalProps) {
   if (!editEntryModal) return null
 
   return (

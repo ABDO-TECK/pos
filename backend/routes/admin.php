@@ -37,12 +37,12 @@ $router->post('/api/admin/backup/schedule', [BackupController::class, 'schedule'
 
 // Expenses
 $router->get('/api/expense-categories',         [ExpenseController::class, 'getCategories', [AuthMiddleware::class]]);
-$router->post('/api/expense-categories',        [ExpenseController::class, 'createCategory', [AuthMiddleware::class]]);
-$router->put('/api/expense-categories/{id}',    [ExpenseController::class, 'updateCategory', [AuthMiddleware::class]]);
+$router->post('/api/expense-categories',        [ExpenseController::class, 'createCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.manage')]]);
+$router->put('/api/expense-categories/{id}',    [ExpenseController::class, 'updateCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.manage')]]);
 $router->delete('/api/expense-categories/{id}', [ExpenseController::class, 'deleteCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.delete')]]);
 $router->get('/api/expenses',         [ExpenseController::class, 'getExpenses', [AuthMiddleware::class]]);
-$router->post('/api/expenses',        [ExpenseController::class, 'createExpense', [AuthMiddleware::class]]);
-$router->put('/api/expenses/{id}',    [ExpenseController::class, 'updateExpense', [AuthMiddleware::class]]);
+$router->post('/api/expenses',        [ExpenseController::class, 'createExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.create')]]);
+$router->put('/api/expenses/{id}',    [ExpenseController::class, 'updateExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.update')]]);
 $router->delete('/api/expenses/{id}', [ExpenseController::class, 'deleteExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.delete')]]);
 
 // Health

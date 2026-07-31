@@ -1,6 +1,5 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
-import { X, CheckCircle2, Trash2, Calendar, Clock } from 'lucide-react'
+import { X, CheckCircle2, Trash2, Clock } from 'lucide-react'
 import { getSales, getSale, deleteSale } from '../../api/endpoints'
 import { formatCurrency, formatShortDate } from '../../utils/formatters'
 import toast from 'react-hot-toast'
@@ -8,8 +7,13 @@ import { useConfirmStore } from '../../store/confirmStore'
 import { DEFAULT_PAGE_SIZE } from '../../api/constants'
 import IconBadge from '../common/IconBadge'
 
-export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
-  const [invoices, setInvoices] = useState<any[]>([])
+interface ReservedInvoicesModalProps {
+  onClose: () => void
+  onResumeSale: (invoice: Sale) => void
+}
+
+export default function ReservedInvoicesModal({ onClose, onResumeSale }: ReservedInvoicesModalProps) {
+  const [invoices, setInvoices] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
   const { confirm } = useConfirmStore()
 
@@ -18,8 +22,8 @@ export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
     try {
       // Get sales with status reserved
       const res = await getSales({ status: 'reserved', limit: DEFAULT_PAGE_SIZE })
-      setInvoices((res.data.data as any)?.data || (res.data.data as any) || [])
-    } catch (err) {
+      setInvoices(res.data.data)
+    } catch {
       toast.error('فشل تحميل الفواتير المحجوزة')
     } finally {
       setLoading(false)
@@ -30,24 +34,24 @@ export default function ReservedInvoicesModal({ onClose, onResumeSale }) {
     loadReserved()
   }, [])
 
-  const handleCancel = async (id) => {
+  const handleCancel = async (id: number) => {
     if (!(await confirm('هل أنت متأكد من إلغاء هذه الفاتورة المحجوزة واسترداد المخزون؟'))) return
     try {
       await deleteSale(id)
       toast.success('تم إلغاء الفاتورة وإرجاع المنتجات')
       loadReserved()
-    } catch (err) {
+    } catch {
       toast.error('فشل إلغاء الفاتورة')
     }
   }
 
-  const handleComplete = async (invoice) => {
+  const handleComplete = async (invoice: Sale) => {
     try {
       setLoading(true)
       const res = await getSale(invoice.id)
       const fullInvoice = res.data.data
       onResumeSale(fullInvoice)
-    } catch (err) {
+    } catch {
       toast.error('فشل تحميل تفاصيل الفاتورة')
     } finally {
       setLoading(false)

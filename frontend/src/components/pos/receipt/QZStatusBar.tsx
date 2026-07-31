@@ -1,8 +1,15 @@
-// @ts-nocheck
 import { Settings } from 'lucide-react'
 
-export default function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }) {
-    const cfg = {
+interface QZStatusBarProps {
+    status: string
+    printer: string
+    onPickPrinter?: () => void
+    remoteError?: { message: string; certUrl: string } | null
+    onRetry?: () => void
+}
+
+export default function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }: QZStatusBarProps) {
+    const cfg: Record<string, { bg: string; text: string; label: string }> = {
         idle:        { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray: جاري التحميل…' },
         connecting:  { bg: '#fef9c3', text: '#854d0e', label: 'QZ Tray: جاري الاتصال…' },
         ready:       { bg: '#dcfce7', text: '#166534',

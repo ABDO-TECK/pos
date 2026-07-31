@@ -1,13 +1,27 @@
-// @ts-nocheck
 import { X, Printer } from 'lucide-react'
+import type { Dispatch, MouseEvent, SetStateAction } from 'react'
 import styles from '../../QZPrinterUI.module.css'
 
-export default function PrinterPickerModal({ showPrinterPicker, setShowPrinterPicker, printers, selectedPrinter, handlePrinterSelect }) {
+interface PrinterPickerModalProps {
+    showPrinterPicker: boolean
+    setShowPrinterPicker: Dispatch<SetStateAction<boolean>>
+    printers: readonly string[]
+    selectedPrinter: string
+    handlePrinterSelect: (printer: string) => void
+}
+
+export default function PrinterPickerModal({
+    showPrinterPicker,
+    setShowPrinterPicker,
+    printers,
+    selectedPrinter,
+    handlePrinterSelect,
+}: PrinterPickerModalProps) {
     if (!showPrinterPicker) return null
 
     return (
         <div className="modal-overlay" style={{ zIndex: 1100 }}
-            onClick={(e) => e.target === e.currentTarget && setShowPrinterPicker(false)}>
+            onClick={(event: MouseEvent<HTMLDivElement>) => event.target === event.currentTarget && setShowPrinterPicker(false)}>
             <div className="modal" style={{ maxWidth: '380px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontWeight: 700 }}>اختر الطابعة</h3>

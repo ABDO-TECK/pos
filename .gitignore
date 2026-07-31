@@ -31,8 +31,10 @@ backend/cache/
 backend/logs/
 backend/*.log
 backend/.env
+backend/storage/.csrf_secret
 backend/.phpunit.result.cache
 backend/vendor/
+backend/backend.phar
 backend/adminer.php
 backend/adminer-local.php
 composer.phar
@@ -59,7 +61,7 @@ desktop.ini
 
 # ── Electron / Desktop Build ────────────────────────────
 node_modules/
-package-lock.json
+.npm-cache*/
 out/
 dist-electron/
 portable/

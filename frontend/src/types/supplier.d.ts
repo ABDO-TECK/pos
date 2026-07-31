@@ -14,10 +14,17 @@ declare global {
     quantity: number;
     unit_cost: number;
     subtotal: number;
+    cost?: number;
+    name?: string;
+    product_barcode?: string;
+    size_name?: string;
+    unit_type?: 'piece' | 'weight' | 'liter';
+    sell_by_weight?: number;
   }
 
   interface PurchaseInvoice {
     id: number;
+    invoice_id?: number;
     supplier_id: number;
     supplier_name?: string;
     user_id: number;
@@ -29,6 +36,7 @@ declare global {
     delivery_date?: string | null;
     delivery_notes?: string | null;
     items?: PurchaseItem[];
+    items_count?: number;
     created_at?: string;
   }
 

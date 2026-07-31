@@ -12,6 +12,7 @@ $router->delete('/api/categories/{id}', [CategoryController::class, 'destroy', [
 
 // Products
 $router->get('/api/products',        [ProductController::class, 'index',   [AuthMiddleware::class]]);
+$router->get('/api/products/sync',   [ProductController::class, 'catalogSync', [AuthMiddleware::class]]);
 $router->get('/api/products/{id}',   [ProductController::class, 'show',    [AuthMiddleware::class]]);
 $router->get('/api/products/{id}/price-history', [ProductController::class, 'priceHistory', [AuthMiddleware::class]]);
 $router->post('/api/products',       [ProductController::class, 'store',   [AuthMiddleware::class, PermissionMiddleware::require('products.create')]]);

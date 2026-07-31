@@ -1,0 +1,275 @@
+<?php
+
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+
+class Customer {
+    private PDO $db;
+
+    public function __construct(PDO $db) {
+        $this->db = $db;
+    }
+
+    /** جميع العملاء مع رصيدهم الحالي — مع دعم pagination اختياري */
+    public function all(array $filters = []): array {
+        $where  = ['c.deleted_at IS NULL'];
+        $params = [];
+
+        if (!empty($filters['search'])) {
+            $where[]          = '(c.name LIKE :search OR c.phone LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $whereClause = implode(' AND ', $where);
+
+        // ── Pagination الإجباري ──
+        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : 1;
+        $limit = isset($filters['limit']) ? max(1, min(1000, (int) $filters['limit'])) : 1000;
+
+        $countSql = "SELECT COUNT(*) FROM customers c WHERE $whereClause";
+        $countStmt = $this->db->prepare($countSql);
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $offset = ($page - 1) * $limit;
+        $sql = "SELECT c.*,
+            COALESCE(SUM(CASE WHEN cl.type = \"debit\"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
+            COALESCE(SUM(CASE WHEN cl.type = \"credit\" THEN cl.amount ELSE 0 END), 0) AS total_credit
+         FROM customers c
+         LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
+         WHERE $whereClause
+         GROUP BY c.id
+         ORDER BY c.name ASC
+         LIMIT :pag_limit OFFSET :pag_offset";
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$r) {
+            $r['balance'] = round(
+                (float)$r['initial_balance'] + (float)$r['total_debit'] - (float)$r['total_credit'],
+                2
+            );
+        }
+        unset($r);
+
+        return [
+            'data' => $rows,
+            'pagination' => [
+                'page'  => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'pages' => (int) ceil($total / $limit),
+            ],
+        ];
+
+    }
+
+    public function findById(int $id): ?array {
+        $stmt = $this->db->prepare(
+            'SELECT c.*,
+                COALESCE(SUM(CASE WHEN cl.type = "debit"  THEN cl.amount ELSE 0 END), 0) AS total_debit,
+                COALESCE(SUM(CASE WHEN cl.type = "credit" THEN cl.amount ELSE 0 END), 0) AS total_credit
+             FROM customers c
+             LEFT JOIN customer_ledger cl ON cl.customer_id = c.id
+             WHERE c.id = ?
+             GROUP BY c.id'
+        );
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        if (!$row) return null;
+        $row['balance'] = round(
+            (float)$row['initial_balance'] + (float)$row['total_debit'] - (float)$row['total_credit'],
+            2
+        );
+        return $row;
+    }
+
+    public function create(array $data): int {
+        $stmt = $this->db->prepare(
+            'INSERT INTO customers (name, phone, address, initial_balance)
+             VALUES (:name, :phone, :address, :initial_balance)'
+        );
+        $stmt->execute([
+            'name'            => $data['name'],
+            'phone'           => $data['phone'] ?? null,
+            'address'         => $data['address'] ?? null,
+            'initial_balance' => (float)($data['initial_balance'] ?? 0),
+        ]);
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function update(int $id, array $data): void {
+        $stmt = $this->db->prepare(
+            'UPDATE customers SET
+                name = :name,
+                phone = :phone,
+                address = :address,
+                initial_balance = :initial_balance
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'name'            => $data['name'],
+            'phone'           => $data['phone'] ?? null,
+            'address'         => $data['address'] ?? null,
+            'initial_balance' => (float)($data['initial_balance'] ?? 0),
+            'id'              => $id,
+        ]);
+    }
+
+    public function delete(int $id): void {
+        $this->db->prepare('UPDATE customers SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
+    }
+
+    /**
+     * كشف حساب العميل — مع الرصيد المتراكم لكل سطر
+     * @return array{entries: list<array>, balance: float}
+     */
+    public function getLedger(int $customerId): array {
+        $customer = $this->findById($customerId);
+        if (!$customer) return ['entries' => [], 'balance' => 0];
+
+        $limit = 500;
+        $summaryStmt = $this->db->prepare(
+            'SELECT COUNT(*) AS total_entries,
+                    COALESCE(SUM(CASE WHEN type = "debit" THEN amount ELSE -amount END), 0) AS net_change
+             FROM customer_ledger
+             WHERE customer_id = ?'
+        );
+        $summaryStmt->execute([$customerId]);
+        $summary = $summaryStmt->fetch() ?: ['total_entries' => 0, 'net_change' => 0];
+        $totalEntries = (int) $summary['total_entries'];
+
+        // Load only the latest bounded window, then restore chronological order.
+        $stmt = $this->db->prepare(
+            'SELECT recent.* FROM (
+                SELECT cl.*,
+                u.name AS created_by_name,
+                i.id AS inv_id
+                FROM customer_ledger cl
+                LEFT JOIN users u ON u.id = cl.created_by
+                LEFT JOIN invoices i ON i.id = cl.invoice_id
+                WHERE cl.customer_id = ?
+                ORDER BY cl.created_at DESC, cl.id DESC
+                LIMIT 500
+             ) recent
+             ORDER BY recent.created_at ASC, recent.id ASC'
+        );
+        $stmt->execute([$customerId]);
+        $rows = $stmt->fetchAll();
+
+        $entries    = [];
+        $initBal = (float)$customer['initial_balance'];
+        $recentChange = 0.0;
+        foreach ($rows as $row) {
+            $recentChange += $row['type'] === 'debit' ? (float) $row['amount'] : -(float) $row['amount'];
+        }
+        $totalBalance = $initBal + (float) $summary['net_change'];
+        $runningBal = $totalBalance - $recentChange;
+
+        if ($totalEntries > $limit) {
+            $entries[] = [
+                'id' => null,
+                'date' => $rows[0]['created_at'] ?? $customer['created_at'],
+                'description' => 'رصيد افتتاحي قبل أحدث 500 قيد',
+                'debit' => $runningBal > 0 ? $runningBal : 0,
+                'credit' => $runningBal < 0 ? abs($runningBal) : 0,
+                'balance' => round($runningBal, 2),
+                'type' => 'opening',
+            ];
+        } elseif ($initBal != 0) {
+            $runningBal = $initBal;
+            $entries[] = [
+                'id'          => null,
+                'date'        => $customer['created_at'],
+                'description' => 'رصيد مبدئي',
+                'debit'       => $initBal > 0 ? $initBal : 0,
+                'credit'      => $initBal < 0 ? abs($initBal) : 0,
+                'balance'     => round($runningBal, 2),
+                'type'        => 'initial',
+            ];
+        }
+
+        foreach ($rows as $row) {
+            $debit  = $row['type'] === 'debit'  ? (float)$row['amount'] : 0;
+            $credit = $row['type'] === 'credit' ? (float)$row['amount'] : 0;
+            $runningBal += $debit - $credit;
+
+            $entries[] = [
+                'id'          => (int)$row['id'],
+                'date'        => $row['created_at'],
+                'description' => $row['description'],
+                'debit'       => $debit,
+                'credit'      => $credit,
+                'balance'     => round($runningBal, 2),
+                'type'        => $row['type'],
+                'invoice_id'  => $row['invoice_id'],
+            ];
+        }
+
+        return [
+            'customer' => $customer,
+            'entries'  => $entries,
+            'balance'  => round($totalBalance, 2),
+            'total_entries' => $totalEntries,
+            'truncated' => $totalEntries > $limit,
+        ];
+    }
+
+    /** إضافة قيد في كشف الحساب */
+    public function addLedgerEntry(array $data): int {
+        $stmt = $this->db->prepare(
+            'INSERT INTO customer_ledger (customer_id, type, amount, description, invoice_id, created_by)
+             VALUES (:customer_id, :type, :amount, :description, :invoice_id, :created_by)'
+        );
+        $stmt->execute([
+            'customer_id' => $data['customer_id'],
+            'type'        => $data['type'],
+            'amount'      => (float)$data['amount'],
+            'description' => $data['description'] ?? null,
+            'invoice_id'  => $data['invoice_id'] ?? null,
+            'created_by'  => $data['created_by'] ?? null,
+        ]);
+        return (int) $this->db->lastInsertId();
+    }
+
+    /** تعديل قيد في كشف الحساب */
+    public function updateLedgerEntry(int $entryId, array $data): void {
+        $stmt = $this->db->prepare(
+            'UPDATE customer_ledger SET
+                type = :type,
+                amount = :amount,
+                description = :description
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            'type'        => $data['type'],
+            'amount'      => (float)$data['amount'],
+            'description' => $data['description'] ?? null,
+            'id'          => $entryId,
+        ]);
+    }
+
+    /** الحصول على قيد واحد */
+    public function getLedgerEntry(int $entryId): ?array {
+        $stmt = $this->db->prepare('SELECT * FROM customer_ledger WHERE id = ?');
+        $stmt->execute([$entryId]);
+        return $stmt->fetch() ?: null;
+    }
+
+    /** حذف قيد من كشف الحساب */
+    public function deleteLedgerEntry(int $entryId): void {
+        $stmt = $this->db->prepare('DELETE FROM customer_ledger WHERE id = ?');
+        $stmt->execute([$entryId]);
+    }
+}
+

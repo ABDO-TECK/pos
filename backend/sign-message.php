@@ -25,6 +25,8 @@ require_once __DIR__ . '/Helpers/EnvLoader.php';
 use App\Helpers\EnvLoader;
 $envPath = getenv('ENV_PATH') ?: $baseDir . '/.env';
 EnvLoader::load($envPath);
+require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/Config/config.php';
 
 // Allow CORS — restricted to known origins only (security fix)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -43,8 +45,7 @@ $allowedSignOrigins = [
 // Also allow LAN IPs for thermal printing from tablets on local network
 $signOriginAllowed = in_array($origin, $allowedSignOrigins, true);
 if (!$signOriginAllowed && $origin !== '') {
-    $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$#';
-    $signOriginAllowed = preg_match($lanPattern, $origin) === 1;
+    $signOriginAllowed = \App\Helpers\NetworkHelper::isLanOrigin($origin);
 }
 if ($signOriginAllowed && $origin !== '') {
     header("Access-Control-Allow-Origin: $origin");
@@ -68,6 +69,47 @@ if (!in_array($remoteAddr, ['127.0.0.1', '::1'], true)) {
     echo 'Access denied: localhost only';
     exit(1);
 }
+
+// The embedded HTTPS proxy reaches PHP over loopback, so REMOTE_ADDR alone is
+// not an authentication boundary in LAN mode. Require a live POS access token
+// before exposing the signing oracle.
+$accessToken = $_COOKIE['pos_token'] ?? '';
+if ($accessToken === '') {
+    $authorization = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (str_starts_with($authorization, 'Bearer ')) {
+        $accessToken = substr($authorization, 7);
+    }
+}
+
+if ($accessToken === '') {
+    http_response_code(401);
+    echo 'Authentication required';
+    exit(1);
+}
+
+$db = \App\Config\Database::getInstance();
+$authStatement = $db->prepare(
+    'SELECT t.user_id
+     FROM tokens t
+     JOIN users u ON u.id = t.user_id
+     WHERE t.token = ?
+       AND t.expires_at IS NOT NULL
+       AND t.expires_at > UTC_TIMESTAMP()
+       AND u.is_active = 1
+       AND u.force_password_change = 0
+     LIMIT 1'
+);
+$authStatement->execute([hash('sha256', $accessToken)]);
+$authenticatedUserId = $authStatement->fetchColumn();
+if ($authenticatedUserId === false) {
+    http_response_code(401);
+    echo 'Invalid authentication token';
+    exit(1);
+}
+
+// Bound use of the signing oracle per authenticated user. This remains
+// effective when the Electron HTTPS proxy makes every request appear local.
+(new \App\Middleware\RateLimiter(120, 60))->check('qz_sign', (int) $authenticatedUserId);
 
 // ── Key file path ──────────────────────────────────────────────────────────
 // Read from .env first; fall back to known locations.
@@ -106,7 +148,14 @@ if ($req === '' || strlen($req) > 2048) {
     exit(1);
 }
 
-$privateKey = openssl_get_privatekey(file_get_contents($KEY));
+$privateKeyContents = file_get_contents($KEY);
+if ($privateKeyContents === false) {
+    http_response_code(500);
+    echo 'Error loading private key';
+    exit(1);
+}
+
+$privateKey = openssl_get_privatekey($privateKeyContents);
 
 if (!$privateKey) {
     http_response_code(500);

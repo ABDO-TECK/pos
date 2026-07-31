@@ -1,21 +1,35 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react'
-import { X, CheckCircle2, Truck, DollarSign, Calendar, FileText } from 'lucide-react'
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { X, CheckCircle2, Truck, DollarSign, FileText } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
 import CreditPurchaseSection from './CreditPurchaseSection'
 import toast from 'react-hot-toast'
 
+interface ReceiveCartLine {
+  product: Pick<Product, 'name'> & { size_name?: string | null }
+  quantity: number
+  cost: number
+}
+
+interface DeliveryData {
+  driver_name?: string
+  vehicle_number?: string
+  delivery_date?: string
+  delivery_notes?: string
+}
+
+type PurchasePaymentType = 'cash' | 'credit'
+
 interface ReceiveConfirmModalProps {
-  supplier: any
-  cart: any[]
+  supplier: Supplier | undefined
+  cart: ReceiveCartLine[]
   cartTotal: number
   cartCount: number
-  paymentType: string
-  setPaymentType: (val: string) => void
+  paymentType: PurchasePaymentType
+  setPaymentType: Dispatch<SetStateAction<PurchasePaymentType>>
   deposit: number
   setDeposit: (val: number) => void
   onClose: () => void
-  onConfirm: (deliveryData: any) => void
+  onConfirm: (deliveryData: DeliveryData) => void
   loading: boolean
 }
 
@@ -39,19 +53,7 @@ export default function ReceiveConfirmModal({
   const [deliveryNotes, setDeliveryNotes] = useState('')
   const [activeTab, setActiveTab] = useState<'items' | 'payment' | 'delivery'>('items')
 
-  // F12 key shortcut to trigger confirm
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F12' && !loading) {
-        e.preventDefault()
-        handleSubmit()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [loading, driverName, vehicleNumber, deliveryDate, deliveryNotes, paymentType, deposit])
-
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (paymentType === 'credit' && deposit >= cartTotal) {
       toast.error('العربون يجب أن يكون أقل من إجمالي الفاتورة في الشراء الآجل')
       return
@@ -62,7 +64,19 @@ export default function ReceiveConfirmModal({
       delivery_date: deliveryDate || undefined,
       delivery_notes: deliveryNotes.trim() || undefined,
     })
-  }
+  }, [cartTotal, deliveryDate, deliveryNotes, deposit, driverName, onConfirm, paymentType, vehicleNumber])
+
+  // F12 key shortcut to trigger confirm
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F12' && !loading) {
+        e.preventDefault()
+        handleSubmit()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleSubmit, loading])
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>

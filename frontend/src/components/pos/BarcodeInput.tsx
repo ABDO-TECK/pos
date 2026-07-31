@@ -1,14 +1,18 @@
-// @ts-nocheck
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, type ChangeEvent, type KeyboardEvent, type ComponentType } from 'react'
 import { Scan, Camera } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
 import { extractApiError } from '../../utils/apiError'
 
+type BarcodeScannerProps = { onResult: (text: string) => void; onClose: () => void }
+
 const beep = () => {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const AudioContextConstructor = window.AudioContext
+      ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextConstructor) return
+    const ctx = new AudioContextConstructor()
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
@@ -31,9 +35,9 @@ const SCANNER_DEBOUNCE = 280
  * @param {(product: object) => void} [props.onAddProduct] — بدل الإضافة الافتراضية للسلة (مثلاً استلام بضاعة)
  * @param {boolean} [props.allowOutOfStock] — السماح بإضافة منتج نافد المخزون (للموردين)
  */
-export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: (value: string) => void, onAddProduct?: (product: { id: number; name: string; price: number; quantity: number; barcode: string }) => void, allowOutOfStock?: boolean }) {
-  const inputRef      = useRef<any>(null)
-  const debounceTimer = useRef<any>(null)
+export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: (value: string) => void, onAddProduct?: (product: Product) => void, allowOutOfStock?: boolean }) {
+  const inputRef      = useRef<HTMLInputElement>(null)
+  const debounceTimer = useRef<number>(0)
   const lastTypeTime  = useRef(0)
   const typeCount     = useRef(0)
   const busyRef       = useRef(false)
@@ -41,19 +45,18 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
   const [value, setValue]     = useState('')
   const [loading, setLoading] = useState(false)
   const [showCameraScanner, setShowCameraScanner] = useState(false)
-  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState<any>(null)
+  const [BarcodeScannerLazy, setBarcodeScannerLazy] = useState<ComponentType<BarcodeScannerProps> | null>(null)
 
   const addItem       = useCartStore((s) => s.addItem)
   const findByBarcode = useProductStore((s) => s.findByBarcode)
-  const addFn         = onAddProduct ?? addItem
 
   const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
 
   // إعادة التركيز عند النقر خارج حقول الإدخال (لا نسرق التركيز من مودال أو حقل آخر)
   useEffect(() => {
     if (!isDesktop) return;
-    const refocus = (e) => {
-      const tag = e.target.tagName
+    const refocus = (e: globalThis.MouseEvent) => {
+      const tag = e.target instanceof HTMLElement ? e.target.tagName : ''
       if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return
       inputRef.current?.focus()
     }
@@ -62,7 +65,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     return () => document.removeEventListener('click', refocus)
   }, [isDesktop])
 
-  const handleSearch = useCallback(async (barcode) => {
+  const handleSearch = useCallback(async (barcode: string) => {
     const trimmed = barcode.trim()
     if (!trimmed) return
 
@@ -78,7 +81,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     const snapshot = trimmed
 
     setLoading(true)
-    let product: any = null
+    let product: Product | null = null
     try {
       product = await findByBarcode(trimmed)
     } finally {
@@ -89,7 +92,20 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
       if (!allowOutOfStock && product.quantity <= 0) {
         toast.error(`${product.name} — نفد من المخزون`, { icon: '⚠️' })
       } else {
-        addFn(product)
+        if (onAddProduct) {
+          onAddProduct(product)
+        } else {
+          addItem({
+            id: product.id,
+            name: product.name,
+            barcode: product.barcode,
+            price: product.price,
+            units_per_box: product.units_per_box,
+            sell_by_weight: product.sell_by_weight,
+            unit_type: product.unit_type,
+            size_name: product.size_name,
+          })
+        }
         beep()
         toast.success(product.name, { duration: 1200, icon: '✅' })
       }
@@ -116,9 +132,9 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
         debounceTimer.current = setTimeout(() => handleSearch(rest), SCANNER_DEBOUNCE)
       }
     })
-  }, [addFn, allowOutOfStock, findByBarcode, onFilterChange])
+  }, [addItem, allowOutOfStock, findByBarcode, isDesktop, onAddProduct, onFilterChange])
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const newVal = e.target.value
     setValue(newVal)
     onFilterChange?.(newVal)
@@ -145,7 +161,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     }
   }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       clearTimeout(debounceTimer.current)
       handleSearch(value)
@@ -167,7 +183,7 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     } catch (err) { toast.error(extractApiError(err, 'تعذر تحميل ماسح الباركود')) }
   }
 
-  const handleCameraScan = (text) => {
+  const handleCameraScan = (text: string) => {
     setShowCameraScanner(false)
     setValue(text)
     onFilterChange?.(text)

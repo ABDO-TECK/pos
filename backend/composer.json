@@ -12,7 +12,6 @@
         }
     },
     "require": {
-        "mpdf/mpdf": "^8.3",
-        "cboden/ratchet": "^0.4.4"
+        "mpdf/mpdf": "^8.3"
     }
 }

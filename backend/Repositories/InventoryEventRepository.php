@@ -39,7 +39,7 @@ class InventoryEventRepository implements RepositoryInterface
         throw new \BadMethodCallException('Method not supported on log repository.');
     }
 
-    public function record(int $productId, string $action, int $newQuantity, int $delta = 0): void
+    public function record(int $productId, string $action, float $newQuantity, float $delta = 0.0): void
     {
         $this->model->record($productId, $action, $newQuantity, $delta);
     }

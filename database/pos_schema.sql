@@ -63,6 +63,18 @@ CREATE TABLE IF NOT EXISTS product_barcodes (
         REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Monotonic change sequence used by resumable offline catalog sync.
+-- Triggers are installed by migration 043 after the base schema is loaded.
+CREATE TABLE IF NOT EXISTS product_catalog_changes (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    branch_id INT NOT NULL,
+    product_id INT NOT NULL,
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_catalog_changes_branch_sequence (branch_id, id),
+    KEY idx_catalog_changes_product (product_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ============================================================
 -- Branches (Multi-branch support)
 -- ============================================================
@@ -352,8 +364,8 @@ CREATE TABLE IF NOT EXISTS inventory_events (
     id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     product_id INT UNSIGNED NOT NULL,
     action     ENUM('sale','purchase','adjust','delete') NOT NULL,
-    quantity   INT NOT NULL COMMENT 'الكمية الجديدة بعد التغيير',
-    delta      INT NOT NULL DEFAULT 0 COMMENT 'مقدار التغيير (+ أو -)',
+    quantity   DECIMAL(12,3) NOT NULL COMMENT 'الكمية الجديدة بعد التغيير',
+    delta      DECIMAL(12,3) NOT NULL DEFAULT 0 COMMENT 'مقدار التغيير (+ أو -)',
     branch_id  INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_created (created_at),
@@ -417,11 +429,8 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 -- Default branch
 INSERT IGNORE INTO branches (id, name) VALUES (1, 'الفرع الرئيسي');
 
--- Default admin user (password: password) — ⚠️ يجب تغييرها فوراً عند أول دخول
--- force_password_change=1 يفرض تغيير كلمة المرور عند أول تسجيل دخول
-INSERT INTO users (name, email, password, role, force_password_change) VALUES
-('Admin', 'admin@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1),
-('Cashier', 'cashier@pos.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cashier', 1);
+-- Interactive users are intentionally not seeded. Create the first administrator
+-- locally with backend/cli/bootstrap-admin.php and a unique password.
 
 -- Default settings
 INSERT IGNORE INTO settings (`key`, `value`) VALUES

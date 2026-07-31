@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * receiptBuilder.js
  * Builds a complete, print-ready HTML invoice string.
@@ -6,7 +5,7 @@
  * Layout and CSS are taken directly from qz_tray/print-invoice.css.
  */
 
-const PAYMENT_LABELS = {
+const PAYMENT_LABELS: Record<string, string> = {
     cash:          'نقدي',
     card:          'بطاقة ائتمان',
     vodafone_cash: 'فودافون كاش',
@@ -17,26 +16,30 @@ const PAYMENT_LABELS = {
 
 const AR = 'ar-EG-u-nu-latn'
 
-function fc(n) {
-    return new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(n ?? 0)
+function numeric(value: unknown): number {
+    const parsed = Number(value ?? 0)
+    return Number.isFinite(parsed) ? parsed : 0
 }
-function fn(n) {
-    return new Intl.NumberFormat(AR).format(n ?? 0)
+function fc(n: unknown): string {
+    return new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(numeric(n))
+}
+function fn(n: unknown): string {
+    return new Intl.NumberFormat(AR).format(numeric(n))
 }
 // number with 2 decimal places, no currency symbol (for table cells)
-function fd2(n) {
-    return new Intl.NumberFormat(AR, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n ?? 0)
+function fd2(n: unknown): string {
+    return new Intl.NumberFormat(AR, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric(n))
 }
-function fp(n) {
-    return `${new Intl.NumberFormat(AR).format(n ?? 0)}%`
+function fp(n: unknown): string {
+    return `${new Intl.NumberFormat(AR).format(numeric(n))}%`
 }
-function fd(d) {
+function fd(d: string | number | Date | null | undefined): string {
     if (!d) return ''
     return new Intl.DateTimeFormat(AR, {
         year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date(d))
 }
-function ft(d) {
+function ft(d: string | number | Date | null | undefined): string {
     if (!d) return ''
     return new Intl.DateTimeFormat(AR, {
         hour: '2-digit', minute: '2-digit',
@@ -284,6 +287,22 @@ interface ReceiptSettings {
   taxRate?: number;
 }
 
+function escapeHtml(value: unknown): string {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+}
+
+function safeImageSource(value: unknown): string {
+    const source = String(value ?? '')
+    return /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(source)
+        ? source.replace(/\s+/g, '')
+        : ''
+}
+
 export function buildReceiptInnerHTML(
     invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, 
     change = 0, 
@@ -304,41 +323,50 @@ export function buildReceiptInnerHTML(
 
     // ── Items rows — no currency symbol in table ──
     const itemRows = (invoice.items ?? []).map((item, i) => {
-        const qty = parseFloat(item.quantity)
-        const unitType = item.unit_type ?? (parseInt(item.sell_by_weight) === 1 ? 'weight' : 'piece')
+        const qty = numeric(item.quantity)
+        const unitType = item.unit_type ?? (numeric(item.sell_by_weight) === 1 ? 'weight' : 'piece')
         const isByWeight = unitType === 'weight'
         const isByLiter = unitType === 'liter'
         const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
-        const nameStr = (item.product_name ?? item.name ?? '') + (item.size_name ? ` (${item.size_name})` : '')
+        const rawName = String(item.product_name ?? item.name ?? '')
+        const rawSize = String(item.size_name ?? '').trim()
+        const includesSize = rawSize !== ''
+            && rawName.toLocaleLowerCase().includes(rawSize.toLocaleLowerCase())
+        const nameStr = escapeHtml(rawName)
+            + (rawSize && !includesSize ? ` (${escapeHtml(rawSize)})` : '')
         return `
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
             ${showQty ? `<td>${qtyStr}</td>` : ''}
-            ${showPrice ? `<td>${fd2(item.price)}</td><td>${fd2(parseFloat(item.price) * qty)}</td>` : ''}
+            ${showPrice ? `<td>${fd2(item.price ?? item.unit_price)}</td><td>${fd2(numeric(item.price ?? item.unit_price) * qty)}</td>` : ''}
         </tr>`
     }).join('')
 
     // ── Totals ──
-    const discountRow = parseFloat(invoice.discount) > 0
+    const discountRow = numeric(invoice.discount) > 0
         ? `<div class="total-row discount"><span>الخصم</span><span>- ${fc(invoice.discount)}</span></div>` : ''
 
-    const taxRow = taxEnabled && parseFloat(invoice.tax) > 0
+    const taxRow = taxEnabled && numeric(invoice.tax) > 0
         ? `<div class="total-row"><span>ضريبة القيمة المضافة (${fp(taxRate)})</span><span>${fc(invoice.tax)}</span></div>` : ''
 
+    const shippingRow = numeric(invoice.shipping_cost) > 0
+        ? `<div class="total-row"><span>تكلفة الشحن</span><span>${fc(invoice.shipping_cost)}</span></div>` : ''
+
     const cashRows = isCash ? `
-        <div class="total-row"><span>المبلغ المدفوع</span><span>${fc(invoice.amount_paid)}</span></div>
+        <div class="total-row"><span>المبلغ المدفوع</span><span>${fc(invoice.amount_paid ?? invoice.paid_amount)}</span></div>
         <div class="total-row"><span>المبلغ المسترد</span><span>${fc(changeAmt)}</span></div>` : ''
 
     const isCredit = invoice.payment_method === 'credit'
-    const amountDue = parseFloat(invoice.amount_due ?? (invoice.total - invoice.amount_paid))
+    const amountDue = numeric(invoice.amount_due ?? invoice.due_amount ?? (numeric(invoice.total ?? invoice.net_amount) - numeric(invoice.amount_paid ?? invoice.paid_amount)))
     const creditRows = isCredit ? `
-        ${parseFloat(invoice.amount_paid) > 0 ? `<div class="total-row"><span>عربون مدفوع</span><span>${fc(invoice.amount_paid)}</span></div>` : ''}
+        ${numeric(invoice.amount_paid ?? invoice.paid_amount) > 0 ? `<div class="total-row"><span>عربون مدفوع</span><span>${fc(invoice.amount_paid ?? invoice.paid_amount)}</span></div>` : ''}
         <div class="total-row grand" style="border-top: none; margin-top: 0;"><span>متبقي آجلاً</span><span>${fc(amountDue)}</span></div>` : ''
 
-    const logoHtml = storeLogo ? `
+    const safeLogo = safeImageSource(storeLogo)
+    const logoHtml = safeLogo ? `
     <div style="text-align: center; margin-bottom: 2.5mm;">
-        <img src="${storeLogo}" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
+        <img src="${safeLogo}" alt="" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
     </div>` : '';
 
     return `
@@ -347,7 +375,7 @@ export function buildReceiptInnerHTML(
 
     <!-- Header -->
     <div class="invoice-header">
-        <h2> ${storeName}</h2>
+        <h2> ${escapeHtml(storeName)}</h2>
         <div class="invoice-title">فاتورة رقم: #${fn(invoice.id)}</div>
     </div>
 
@@ -355,11 +383,11 @@ export function buildReceiptInnerHTML(
     <div class="invoice-details">
         <div class="info-row">
             <span><span class="lbl">التاريخ:</span> ${fd(invoice.created_at)}</span>
-            <span><span class="lbl">طريقة الدفع:</span> ${payLabel}</span>
+            <span><span class="lbl">طريقة الدفع:</span> ${escapeHtml(payLabel)}</span>
         </div>
         <div class="info-row">
             <span><span class="lbl">الوقت:</span> ${ft(invoice.created_at)}</span>
-            <span><span class="lbl">الكاشير:</span> ${invoice.cashier_name ?? ''}</span>
+            <span><span class="lbl">الكاشير:</span> ${escapeHtml(invoice.cashier_name)}</span>
         </div>
     </div>
 
@@ -379,9 +407,9 @@ export function buildReceiptInnerHTML(
     <!-- Totals -->
     ${showPrice ? `
     <div class="total-section">
-        <div class="total-row"><span>المجموع الجزئي</span><span>${fc(invoice.subtotal)}</span></div>
-        ${discountRow}${taxRow}
-        <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
+        <div class="total-row"><span>المجموع الجزئي</span><span>${fc(invoice.subtotal ?? invoice.total_amount)}</span></div>
+        ${discountRow}${taxRow}${shippingRow}
+        <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total ?? invoice.net_amount)}</span></div>
         ${cashRows}
         ${creditRows}
     </div>` : ''}
@@ -451,24 +479,26 @@ export function buildPurchaseReceiptInnerHTML(
     const showPrice = !options.hidePrices
 
     const itemRows = (invoice.items ?? []).map((item, i) => {
-        const qty = parseFloat(item.quantity)
-        const unitType = item.unit_type ?? (parseInt(item.sell_by_weight) === 1 ? 'weight' : 'piece')
+        const qty = numeric(item.quantity)
+        const unitType = item.unit_type ?? (numeric(item.sell_by_weight) === 1 ? 'weight' : 'piece')
         const isByWeight = unitType === 'weight'
         const isByLiter = unitType === 'liter'
         const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
-        const nameStr = (item.product_name ?? item.name ?? '') + (item.size_name ? ` (${item.size_name})` : '')
+        const nameStr = escapeHtml(item.product_name ?? item.name ?? '')
+            + (item.size_name ? ` (${escapeHtml(item.size_name)})` : '')
         return `
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
             ${showQty ? `<td>${qtyStr}</td>` : ''}
-            ${showPrice ? `<td>${fd2(item.cost)}</td><td>${fd2(parseFloat(item.cost) * qty)}</td>` : ''}
+            ${showPrice ? `<td>${fd2(item.cost ?? item.unit_cost)}</td><td>${fd2(numeric(item.cost ?? item.unit_cost) * qty)}</td>` : ''}
         </tr>`
     }).join('')
 
-    const logoHtml = storeLogo ? `
+    const safeLogo = safeImageSource(storeLogo)
+    const logoHtml = safeLogo ? `
     <div style="text-align: center; margin-bottom: 2.5mm;">
-        <img src="${storeLogo}" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
+        <img src="${safeLogo}" alt="" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
     </div>` : '';
 
     return `
@@ -476,7 +506,7 @@ export function buildPurchaseReceiptInnerHTML(
     ${logoHtml}
 
     <div class="invoice-header">
-        <h2>${storeName}</h2>
+        <h2>${escapeHtml(storeName)}</h2>
         <div class="invoice-title">فاتورة مشتريات: #${fn(invoice.id)}</div>
     </div>
 
@@ -486,7 +516,7 @@ export function buildPurchaseReceiptInnerHTML(
             <span><span class="lbl">الوقت:</span> ${ft(invoice.created_at)}</span>
         </div>
         <div class="info-row" style="justify-content: center; margin-top: 2mm">
-            <span><span class="lbl">المورد:</span> ${invoice.supplier_name ?? ''}</span>
+            <span><span class="lbl">المورد:</span> ${escapeHtml(invoice.supplier_name)}</span>
         </div>
     </div>
 

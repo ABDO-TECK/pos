@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ChangeEvent } from 'react'
 
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { getUsers, createUser, updateUser, deleteUser } from '../api/endpoints'
@@ -10,15 +9,30 @@ import toast from 'react-hot-toast'
 import { useConfirmStore } from '../store/confirmStore'
 import { extractApiError } from '../utils/apiError'
 
-const emptyForm = { name: '', email: '', password: '', role: 'cashier', is_active: 1 }
+type UserForm = Pick<User, 'name' | 'email' | 'role'> & {
+  password: string
+  current_password: string
+  is_active: 0 | 1
+}
+
+type UserTextField = 'name' | 'email' | 'password' | 'current_password' | 'role'
+
+const emptyForm: UserForm = {
+  name: '',
+  email: '',
+  password: '',
+  current_password: '',
+  role: 'cashier',
+  is_active: 1,
+}
 
 export default function Users() {
-  const [users, setUsers] = useState<any[]>([])
-  const [modal, setModal] = useState<any>(null)
+  const [users, setUsers] = useState<User[]>([])
+  const [modal, setModal] = useState<'form' | null>(null)
   const [form, setForm] = useState(emptyForm)
-  const [editId, setEditId] = useState<any>(null)
+  const [editId, setEditId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
-  const { user: me, setUser } = useAuthStore()
+  const { user: me, setUser, requireReauthentication } = useAuthStore()
   const { confirm } = useConfirmStore()
 
   const load = async () => {
@@ -29,24 +43,58 @@ export default function Users() {
   useEffect(() => { load() }, [])
 
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal('form') }
-  const openEdit = (u) => { setForm({ ...u, password: '' }); setEditId(u.id); setModal('form') }
+  const openEdit = (user: User) => {
+    setForm({
+      name: user.name,
+      email: user.email,
+      password: '',
+      current_password: '',
+      role: user.role,
+      is_active: user.is_active ?? 1,
+    })
+    setEditId(user.id)
+    setModal('form')
+  }
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      if (editId) { 
-        await updateUser(editId, form as any); 
-        toast.success('تم التحديث');
-        if (editId === me?.id) setUser({ ...me, ...form } as any)
+      if (editId) {
+        const payload: UserUpdatePayload = {
+          name: form.name,
+          email: form.email,
+          role: form.role,
+          is_active: form.is_active,
+        }
+        if (form.password !== '') {
+          payload.password = form.password
+          if (editId === me?.id) payload.current_password = form.current_password
+        }
+        const response = await updateUser(editId, payload)
+        toast.success('تم التحديث')
+        if (response.data.requires_reauthentication) {
+          await requireReauthentication()
+          return
+        }
+        if (editId === me?.id) setUser({ ...me, ...response.data.data })
       }
-      else { await createUser(form as any); toast.success('تم إنشاء الحساب') }
+      else {
+        await createUser({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          role: form.role,
+          is_active: form.is_active,
+        })
+        toast.success('تم إنشاء الحساب')
+      }
       setModal(null)
       load()
     } catch (err) { toast.error(extractApiError(err, 'خطأ')) }
     finally { setSaving(false) }
   }
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = async (id: number, name: string) => {
     if (id === me?.id) { toast.error('لا يمكنك حذف حسابك الخاص'); return }
     if (!(await confirm(`حذف "${name}"؟`))) return
     await deleteUser(id)
@@ -54,7 +102,11 @@ export default function Users() {
     load()
   }
 
-  const f = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm((p) => ({ ...p, [k]: e.target.value })) })
+  const fieldProps = (key: UserTextField) => ({
+    value: form[key],
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((previous) => ({ ...previous, [key]: event.target.value })),
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -102,29 +154,43 @@ export default function Users() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>الاسم *</label>
-                <input className="input" {...f('name')} />
+                <input className="input" {...fieldProps('name')} />
               </div>
               <div>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>البريد الإلكتروني *</label>
-                <input className="input" type="email" {...f('email')} />
+                <input className="input" type="email" {...fieldProps('email')} />
               </div>
               <div>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
                   كلمة المرور {editId ? '(اتركها فارغة لعدم التغيير)' : '*'}
                 </label>
-                <input className="input" type="password" {...f('password')} />
+                <input className="input" type="password" {...fieldProps('password')} />
               </div>
+              {editId === me?.id && form.password !== '' && (
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
+                    كلمة المرور الحالية *
+                  </label>
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    {...fieldProps('current_password')}
+                  />
+                </div>
+              )}
               <div className="resp-2col">
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>الدور</label>
-                  <select className="input" {...f('role')}>
+                  <select className="input" {...fieldProps('role')}>
                     <option value="cashier">كاشير</option>
                     <option value="admin">مدير</option>
                   </select>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>الحالة</label>
-                  <select className="input" value={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: parseInt(e.target.value) }))}>
+                  <select className="input" value={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: parseInt(e.target.value) as 0 | 1 }))}>
                     <option value={1}>نشط</option>
                     <option value={0}>موقوف</option>
                   </select>

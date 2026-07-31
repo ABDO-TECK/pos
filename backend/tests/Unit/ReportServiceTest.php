@@ -38,10 +38,21 @@ class ReportServiceTest extends TestCase
         $summaryData = [
             'total_sales' => 1000.00,
             'total_profit' => 300.00,
-            'total_invoices' => 10
+            'total_invoices' => 1205
         ];
-        $invoices = [
-            ['id' => 1, 'total' => 100.00]
+        $invoicePage = [
+            'data' => [
+                ['id' => 1105, 'total' => 100.00]
+            ],
+            'pagination' => [
+                'type' => 'page',
+                'page' => 12,
+                'limit' => 100,
+                'total' => 1205,
+                'pages' => 13,
+                'has_more' => true,
+                'truncated' => true,
+            ],
         ];
 
         $this->invoiceMock->method('getDailySummary')
@@ -49,17 +60,20 @@ class ReportServiceTest extends TestCase
             ->willReturn($summaryData);
 
         $this->invoiceMock->method('all')
-            ->with(['date' => $date])
-            ->willReturn($invoices);
+            ->with(['date' => $date, 'page' => 12, 'limit' => 100])
+            ->willReturn($invoicePage);
 
         $this->expenseMock->method('getTotalExpensesForDate')
             ->with($date)
             ->willReturn(50.00);
 
-        $result = $this->service->getDailySummary($date);
+        $result = $this->service->getDailySummary($date, 12, 100);
 
         $this->assertEquals($date, $result['date']);
-        $this->assertEquals($invoices, $result['invoices']);
+        $this->assertEquals($invoicePage['data'], $result['invoices']);
+        $this->assertEquals(1205, $result['pagination']['total']);
+        $this->assertTrue($result['pagination']['has_more']);
+        $this->assertEquals(1205, $result['summary']['total_invoices']);
         $this->assertEquals(50.00, $result['summary']['total_expenses']);
         $this->assertEquals(250.00, $result['summary']['net_profit']); // 300 - 50
     }

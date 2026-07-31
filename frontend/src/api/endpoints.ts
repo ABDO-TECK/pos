@@ -18,6 +18,40 @@ export const deleteCategory = (id: number | string) => api.delete<ApiResponse<nu
 
 // Products
 export const getProducts = (params?: ApiQueryParams) => api.get<ApiResponse<Product[]>>('/products', { params })
+export async function getProductCatalogPage(
+  checkpoint?: string,
+  pageSize = 500,
+): Promise<ProductCatalogPage> {
+  const limit = Math.max(1, Math.min(500, Math.trunc(pageSize)))
+  const response = await api.get<ApiResponse<Product[]>>('/products/sync', {
+    params: { checkpoint, limit },
+  })
+  const pagination = response.data.pagination
+  if (
+    !response.data.catalog_scope
+    || response.data.catalog_version === undefined
+    || pagination?.type !== 'cursor'
+    || !pagination.mode
+    || !pagination.next_checkpoint
+  ) {
+    throw new Error('Invalid product catalog sync response')
+  }
+
+  return {
+    products: Array.isArray(response.data.data) ? response.data.data : [],
+    scope: response.data.catalog_scope,
+    version: response.data.catalog_version,
+    pagination: {
+      type: 'cursor',
+      mode: pagination.mode,
+      limit: pagination.limit,
+      hasMore: pagination.has_more === true,
+      truncated: pagination.truncated === true,
+      reset: pagination.reset === true,
+      nextCheckpoint: pagination.next_checkpoint,
+    },
+  }
+}
 export const getProduct = (id: number | string) => api.get<ApiResponse<Product>>(`/products/${id}`)
 export const getProductByBarcode = (barcode: string) =>
   api.get<ApiResponse<Product>>('/products/barcode', { params: { barcode } })
@@ -26,7 +60,7 @@ export const updateProduct = (id: number | string, data: Partial<Product>) => ap
 export const deleteProduct = (id: number | string) => api.delete<ApiResponse<null>>(`/products/${id}`)
 
 // Sales
-export const createSale = (data: Partial<Sale>) => api.post<ApiResponse<Sale>>('/sales', data)
+export const createSale = (data: SaleCreatePayload) => api.post<ApiResponse<Sale>>('/sales', data)
 export const getSales = (params?: ApiQueryParams) => api.get<ApiResponse<Sale[]>>('/sales', { params })
 export const getSale = (id: number | string) => api.get<ApiResponse<Sale>>(`/sales/${id}`)
 export const updateSaleStatus = (id: number | string, data: { status: string }) => api.put<ApiResponse<null>>(`/sales/${id}/status`, data)
@@ -55,7 +89,7 @@ export const getReportSummary = () => api.get<ApiResponse<ReportSummary>>('/repo
 // Users
 export const getUsers = (params?: ApiQueryParams) => api.get<ApiResponse<User[]>>('/users', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
 export const createUser = (data: Partial<User>) => api.post<ApiResponse<User>>('/users', data)
-export const updateUser = (id: number | string, data: Partial<User>) => api.put<ApiResponse<User>>(`/users/${id}`, data)
+export const updateUser = (id: number | string, data: UserUpdatePayload) => api.put<ApiResponse<User>>(`/users/${id}`, data)
 export const deleteUser = (id: number | string) => api.delete<ApiResponse<null>>(`/users/${id}`)
 
 // Settings
@@ -95,15 +129,27 @@ export const getProfitReport = (params?: ApiQueryParams) => api.get<ApiResponse<
 
 // Customers
 export const getCustomers    = (params?: ApiQueryParams)           => api.get<ApiResponse<Customer[]>>('/customers', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
-export const getCustomer     = (id: number | string)         => api.get<ApiResponse<Customer>>(`/customers/${id}`)
+export const getCustomer     = (id: number | string)         => api.get<ApiResponse<CustomerLedgerData>>(`/customers/${id}`)
 export const createCustomer  = (data: Partial<Customer>)       => api.post<ApiResponse<Customer>>('/customers', data)
 export const updateCustomer  = (id: number | string, data: Partial<Customer>)   => api.put<ApiResponse<Customer>>(`/customers/${id}`, data)
 export const deleteCustomer  = (id: number | string)         => api.delete<ApiResponse<null>>(`/customers/${id}`)
-export const addCustomerPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<LedgerEntry[]>>(`/customers/${id}/payment`, data)
-export const updateCustomerLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`, data)
-export const deleteCustomerLedgerEntry = (entryId: number | string) => api.delete<ApiResponse<LedgerEntry[]>>(`/customers/ledger/${entryId}`)
+export const addCustomerPayment = (id: number | string, data: PaymentPayload) => api.post<ApiResponse<CustomerLedgerData>>(`/customers/${id}/payment`, data)
+export const updateCustomerLedgerEntry = (entryId: number | string, data: PaymentPayload) => api.put<ApiResponse<CustomerLedgerData>>(`/customers/ledger/${entryId}`, data)
+export const deleteCustomerLedgerEntry = (entryId: number | string) => api.delete<ApiResponse<CustomerLedgerData>>(`/customers/ledger/${entryId}`)
 
 // Health Check
 export const getHealthCheck = () => api.get('/health')
+export interface HealthDiagnostics {
+  status: 'ok' | 'degraded' | 'failed'
+  critical_failed: boolean
+  version: string
+  checks: {
+    database: { status: string; latency_ms?: number | null }
+    disk: { status: string; free_gb: number; total_gb: number; used_percent: number }
+    memory: { status: string; usage_mb: number; peak_mb: number; limit: string }
+    php: { status: string; version: string; extensions: Record<string, boolean> }
+  }
+}
+export const getHealthDiagnostics = () => api.get<HealthDiagnostics>('/health/diagnostics')
 export const getHealthMetrics = () => api.get('/health/metrics')
 export const getNetworkInfo = () => api.get<ApiResponse<{ ips: string[]; port: string; protocol: string }>>('/system/network-info')

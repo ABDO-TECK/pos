@@ -1,12 +1,27 @@
-// @ts-nocheck
 import { X, PlusCircle } from 'lucide-react'
 import { formatCurrency } from '../../../utils/formatters'
+
+type PaymentType = 'credit' | 'debit'
+
+interface CustomerPaymentModalProps {
+  payModal: boolean
+  setPayModal: (open: boolean) => void
+  ledgerData: Pick<CustomerLedgerData, 'balance'> | null
+  payType: string
+  setPayType: (type: PaymentType) => void
+  payAmount: string
+  setPayAmount: (amount: string) => void
+  payDesc: string
+  setPayDesc: (description: string) => void
+  handlePayment: () => void
+  payLoading: boolean
+}
 
 export default function CustomerPaymentModal({
   payModal, setPayModal, ledgerData,
   payType, setPayType, payAmount, setPayAmount,
   payDesc, setPayDesc, handlePayment, payLoading
-}) {
+}: CustomerPaymentModalProps) {
   if (!payModal) return null
 
   return (
@@ -26,10 +41,10 @@ export default function CustomerPaymentModal({
           <div>
             <label className="label">نوع الدفعة</label>
             <div style={{ display: 'flex', gap: '0.35rem' }}>
-              {[
+              {([
                 { id: 'credit', label: 'استلام دفعة من العميل', color: 'var(--primary)', bg: 'rgba(34,197,94,.1)' },
                 { id: 'debit',  label: 'دفع مبلغ للعميل',      color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-              ].map(d => (
+              ] as const).map(d => (
                 <button key={d.id} type="button" onClick={() => setPayType(d.id)}
                   style={{
                     flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,

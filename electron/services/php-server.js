@@ -28,6 +28,13 @@ function resolveBackendPharPath() {
   return path.join(getBackendDir(), 'backend.phar');
 }
 
+function resolveBackendEntryPath() {
+  const { getBackendDir, isPackaged } = require('../utils/paths');
+  return isPackaged()
+    ? resolveBackendPharPath()
+    : path.join(getBackendDir(), 'router.php');
+}
+
 function getPhpServerInfo() {
   return serverInfo;
 }
@@ -48,12 +55,16 @@ function stopPHP() {
 function startPhpServer(options = {}) {
   return new Promise(async (resolve, reject) => {
     try {
-      const { getPhpPath, getConfigDir, getDataDir, getBackupsDir, getLogsDir, getTempDir, getEnvPath, getRuntimePortsPath, getRuntimeMetadataPath } = require('../utils/paths');
+      const { getPhpPath, getBackendDir, getConfigDir, getDataDir, getBackupsDir, getLogsDir, getTempDir, getEnvPath, getRuntimePortsPath, getRuntimeMetadataPath } = require('../utils/paths');
       const phpBin = getPhpPath();
-      const pharPath = resolveBackendPharPath();
+      const backendEntryPath = resolveBackendEntryPath();
 
       const preferredPort = options.preferredPort || 8080;
       const mysqlPort = options.mysqlPort || 3307;
+      const dbCredentials = options.dbCredentials;
+      if (!dbCredentials?.user || !dbCredentials?.password) {
+        throw new Error('Dedicated database credentials are required');
+      }
 
       console.log(`[PHP] Finding available port starting from preferred port ${preferredPort}...`);
       const selectedPort = await findAvailablePort(preferredPort);
@@ -62,26 +73,11 @@ function startPhpServer(options = {}) {
 
       // Write runtime_ports.json
       const portsPath = getRuntimePortsPath();
-      let portsData = {
+      const portsData = {
         apiPort: selectedPort,
         apiBaseUrl: `http://localhost:${selectedPort}`,
-        wsPort: null,
-        wsBaseUrl: null,
         updatedAt: new Date().toISOString()
       };
-      
-      try {
-        if (fs.existsSync(portsPath)) {
-          const existing = JSON.parse(fs.readFileSync(portsPath, 'utf8'));
-          portsData = {
-            ...portsData,
-            wsPort: existing.wsPort !== undefined ? existing.wsPort : null,
-            wsBaseUrl: existing.wsBaseUrl !== undefined ? existing.wsBaseUrl : null
-          };
-        }
-      } catch (err) {
-        console.warn(`[PHP] Could not read existing ports for merging:`, err.message);
-      }
       
       try {
         fs.writeFileSync(portsPath, JSON.stringify(portsData, null, 2));
@@ -96,12 +92,13 @@ function startPhpServer(options = {}) {
         DB_HOST: '127.0.0.1',
         DB_PORT: String(mysqlPort),
         DB_NAME: 'pos_db',
-        DB_USER: 'root',
-        DB_PASS: '',
+        DB_USER: dbCredentials.user,
+        DB_PASS: dbCredentials.password,
         ENABLE_AUTO_UPDATE: 'true',
         PHP_CLI_SERVER_WORKERS: '4',
         ENV_PATH: getEnvPath(),
         APP_STORAGE_DIR: getDataDir(),
+        QZ_PRIVATE_KEY_PATH: path.join(getBackendDir(), 'storage', 'private-key.pem'),
         DB_BACKUP_DIR: getBackupsDir(),
         LOGS_PATH: getLogsDir(),
         API_PORT: String(selectedPort),
@@ -110,12 +107,12 @@ function startPhpServer(options = {}) {
         RUNTIME_PORTS_PATH: getRuntimePortsPath()
       };
 
-      console.log(`[PHP] Spawning PHP Server pointing to: ${pharPath}`);
+      console.log(`[PHP] Spawning PHP Server pointing to: ${backendEntryPath}`);
       const sysTempDir = getTempDir();
       const args = [
         '-d', `sys_temp_dir=${sysTempDir}`,
-        '-S', `0.0.0.0:${selectedPort}`,
-        pharPath
+        '-S', `127.0.0.1:${selectedPort}`,
+        backendEntryPath
       ];
 
       phpProcess = spawn(phpBin, args, { env, windowsHide: true });
@@ -135,7 +132,8 @@ function startPhpServer(options = {}) {
         pid: phpProcess.pid,
         port: selectedPort,
         baseUrl: `http://localhost:${selectedPort}`,
-        pharPath: pharPath
+        backendEntryPath,
+        pharPath: backendEntryPath
       };
 
       // wait for PHP readiness (simple HTTP ping)
@@ -160,8 +158,8 @@ function startPhpServer(options = {}) {
 }
 
 // Wrapper for existing code
-async function startPHP(port, mysqlPort) {
-  const info = await startPhpServer({ preferredPort: port, mysqlPort });
+async function startPHP(port, mysqlPort, dbCredentials) {
+  const info = await startPhpServer({ preferredPort: port, mysqlPort, dbCredentials });
   return info;
 }
 
@@ -251,6 +249,7 @@ function getLastHealthResponse() {
 module.exports = {
   findAvailablePort,
   resolveBackendPharPath,
+  resolveBackendEntryPath,
   startPhpServer,
   stopPhpServer,
   getPhpServerInfo,

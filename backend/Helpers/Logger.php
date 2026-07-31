@@ -1,0 +1,345 @@
+<?php
+
+namespace App\Helpers;
+
+
+/**
+ * Logger — نظام تسجيل أحداث بمستويات متعددة.
+ *
+ * يكتب إلى ملفات يومية في مجلد logs/ مع دعم:
+ * - مستويات: DEBUG, INFO, WARNING, ERROR, CRITICAL
+ * - تدوير تلقائي للملفات (يحتفظ بآخر 30 يومًا)
+ * - سياق إضافي (context array)
+ * - تنسيق موحّد لكل سطر
+ *
+ * الاستخدام:
+ *   Logger::info('عملية بيع جديدة', ['invoice_id' => 42]);
+ *   Logger::error('فشل الاتصال بقاعدة البيانات', ['host' => 'localhost']);
+ */
+class Logger
+{
+    private const REDACTED_KEYS = [
+        'authorization',
+        'cookie',
+        'password',
+        'current_password',
+        'token',
+        'access_token',
+        'refresh_token',
+        'secret',
+        'api_key',
+    ];
+    /** مستويات التسجيل */
+    public const DEBUG    = 'DEBUG';
+    public const INFO     = 'INFO';
+    public const WARNING  = 'WARNING';
+    public const ERROR    = 'ERROR';
+    public const CRITICAL = 'CRITICAL';
+
+    /** @var string مجلد الملفات */
+    private static string $logDir = '';
+
+    /** @var int عدد الأيام التي يُحتفظ بملفاتها */
+    private static int $retainDays = 30;
+
+    /** @var int الحد الأقصى لحجم ملف اللوج (5 ميجابايت) */
+    private static int $maxFileSize = 5 * 1024 * 1024;
+
+    /** @var string|null الحد الأدنى للتسجيل (null = تسجيل كل شيء) */
+    private static ?string $minLevel = null;
+
+    /** @var array<string, string> مسار ملف التدوير النشط لكل يوم */
+    private static array $activeLogPaths = [];
+
+    /** ترتيب المستويات (للمقارنة) */
+    private const LEVEL_ORDER = [
+        self::DEBUG    => 0,
+        self::INFO     => 1,
+        self::WARNING  => 2,
+        self::ERROR    => 3,
+        self::CRITICAL => 4,
+    ];
+
+    /**
+     * تهيئة مجلد الملفات (يُستدعى تلقائيًا).
+     */
+    private static function init(): void
+    {
+        if (self::$logDir === '') {
+            $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH');
+            if (!$logsPath) {
+                $storageDir = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR');
+                if ($storageDir) {
+                    $logsPath = $storageDir . '/logs';
+                } else {
+                    $logsPath = __DIR__ . '/../logs';
+                }
+            }
+            self::$logDir = $logsPath;
+        }
+
+        if (!is_dir(self::$logDir)) {
+            @mkdir(self::$logDir, 0755, true);
+        }
+    }
+
+    public static function getLogDirectory(): string
+    {
+        self::init();
+        return self::$logDir;
+    }
+
+    /**
+     * تعيين الحد الأدنى للتسجيل.
+     * مثال: Logger::setMinLevel(Logger::WARNING) → يُسجَّل WARNING + ERROR + CRITICAL فقط.
+     */
+    public static function setMinLevel(string $level): void
+    {
+        self::$minLevel = $level;
+    }
+
+    /**
+     * تسجيل رسالة بمستوى محدد.
+     */
+    public static function log(string $level, string $message, array $context = []): void
+    {
+        // فحص الحد الأدنى
+        if (self::$minLevel !== null) {
+            $minOrder = self::LEVEL_ORDER[self::$minLevel] ?? 0;
+            $curOrder = self::LEVEL_ORDER[$level] ?? 0;
+            if ($curOrder < $minOrder) {
+                return;
+            }
+        }
+
+        self::init();
+
+        $date     = date('Y-m-d');
+        $time     = date('Y-m-d H:i:s');
+        $filePath = self::resolveLogPath($date);
+
+        // بناء السطر بتنسيق JSON (Structured Logging)
+        $message = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $message) ?? $message;
+        $context = self::redactContext($context);
+        $logData = [
+            'timestamp' => $time,
+            'level'     => $level,
+            'message'   => $message,
+            'context'   => $context
+        ];
+        $line = json_encode($logData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+        // كتابة ذرية (مع قفل)
+        @file_put_contents($filePath, $line, FILE_APPEND | LOCK_EX);
+
+        // أيضًا إرسال إلى error_log للتوافق مع أدوات المراقبة
+        if (in_array($level, [self::ERROR, self::CRITICAL], true)) {
+            $contextStr = !empty($context) ? ' - Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+            error_log("[POS][{$level}] {$message}{$contextStr}");
+        }
+    }
+
+    public static function redactContext(array $context): array
+    {
+        foreach ($context as $key => $value) {
+            $normalizedKey = strtolower((string) $key);
+            if (in_array($normalizedKey, self::REDACTED_KEYS, true)
+                || str_ends_with($normalizedKey, '_token')
+                || str_ends_with($normalizedKey, '_secret')) {
+                $context[$key] = '[REDACTED]';
+                continue;
+            }
+
+            if (is_array($value)) {
+                $context[$key] = self::redactContext($value);
+            } elseif (is_string($value)) {
+                $context[$key] = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value) ?? $value;
+            }
+        }
+
+        return $context;
+    }
+
+    // ── Shorthand methods ─────────────────────────────────────────
+
+    public static function debug(string $message, array $context = []): void
+    {
+        self::log(self::DEBUG, $message, $context);
+    }
+
+    public static function info(string $message, array $context = []): void
+    {
+        self::log(self::INFO, $message, $context);
+    }
+
+    public static function warning(string $message, array $context = []): void
+    {
+        self::log(self::WARNING, $message, $context);
+    }
+
+    public static function error(string $message, array $context = []): void
+    {
+        self::log(self::ERROR, $message, $context);
+    }
+
+    public static function critical(string $message, array $context = []): void
+    {
+        self::log(self::CRITICAL, $message, $context);
+    }
+
+    // ── Maintenance ───────────────────────────────────────────────
+
+    /**
+     * تحديد مسار ملف اللوج مع تدوير تلقائي عند تجاوز الحد.
+     * pos-2026-05-05.log → pos-2026-05-05.1.log → pos-2026-05-05.2.log ...
+     */
+    private static function resolveLogPath(string $date): string
+    {
+        if (isset(self::$activeLogPaths[$date])) {
+            $cachedPath = self::$activeLogPaths[$date];
+            if (self::hasCapacity($cachedPath)) {
+                return $cachedPath;
+            }
+
+            $rotationIndex = self::rotationIndex($cachedPath) + 1;
+            return self::$activeLogPaths[$date] = self::findAvailableRotation($date, $rotationIndex);
+        }
+
+        $basePath = self::$logDir . "/pos-{$date}.log";
+
+        // إذا كان الملف أصغر من الحد، استخدمه مباشرة
+        if (self::hasCapacity($basePath)) {
+            return self::$activeLogPaths[$date] = $basePath;
+        }
+
+        // يتم المسح مرة واحدة فقط لكل عملية/يوم، ثم يُحفظ الملف النشط في الذاكرة.
+        $rotationIndex = 0;
+        $rotationPath = null;
+        foreach (self::uniqueFiles([
+            self::$logDir . "/pos-{$date}.*.log",
+        ]) as $file) {
+            $index = self::rotationIndex($file);
+            if ($index > $rotationIndex) {
+                $rotationIndex = $index;
+                $rotationPath = $file;
+            }
+        }
+
+        if ($rotationPath !== null && self::hasCapacity($rotationPath)) {
+            return self::$activeLogPaths[$date] = $rotationPath;
+        }
+
+        return self::$activeLogPaths[$date] = self::findAvailableRotation($date, $rotationIndex + 1);
+    }
+
+    private static function findAvailableRotation(string $date, int $rotationIndex): string
+    {
+        do {
+            $path = self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
+            if (self::hasCapacity($path)) {
+                return $path;
+            }
+            $rotationIndex++;
+        } while (true);
+    }
+
+    private static function hasCapacity(string $path): bool
+    {
+        if (!is_file($path)) {
+            return true;
+        }
+
+        clearstatcache(true, $path);
+        $size = filesize($path);
+        return $size !== false && $size < self::$maxFileSize;
+    }
+
+    private static function rotationIndex(string $path): int
+    {
+        return preg_match('/\.(\d+)\.log$/', basename($path), $matches)
+            ? (int) $matches[1]
+            : 0;
+    }
+
+    /**
+     * حذف ملفات اللوج القديمة (أقدم من $retainDays يوم).
+     * يمكن استدعاؤها دوريًا أو ضمن Migrations.
+     */
+    public static function cleanup(?string $logDir = null, ?int $retainDays = null): int
+    {
+        self::init();
+        $deleted = 0;
+        $directory = $logDir ?? self::$logDir;
+        $files = self::getLogFiles($directory);
+        $cutoff = time() - (($retainDays ?? self::$retainDays) * 86400);
+
+        foreach ($files as $file) {
+            $modifiedAt = filemtime($file);
+            if ($modifiedAt !== false && $modifiedAt < $cutoff && @unlink($file)) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getLogFiles(?string $logDir = null, bool $newestFirst = false): array
+    {
+        self::init();
+        $directory = rtrim($logDir ?? self::$logDir, '/\\');
+        $files = self::uniqueFiles([
+            $directory . '/pos-*.log',
+            $directory . '/pos-*.*.log',
+        ]);
+
+        if ($newestFirst) {
+            usort($files, static function (string $left, string $right): int {
+                $leftParts = self::logFileSortParts($left);
+                $rightParts = self::logFileSortParts($right);
+                return $rightParts <=> $leftParts;
+            });
+        }
+
+        return $files;
+    }
+
+    /**
+     * @param list<string> $patterns
+     * @return list<string>
+     */
+    private static function uniqueFiles(array $patterns): array
+    {
+        $unique = [];
+        foreach ($patterns as $pattern) {
+            foreach (glob($pattern) ?: [] as $file) {
+                if (!is_file($file)) {
+                    continue;
+                }
+
+                $canonicalPath = realpath($file) ?: $file;
+                $key = DIRECTORY_SEPARATOR === '\\'
+                    ? strtolower($canonicalPath)
+                    : $canonicalPath;
+                $unique[$key] = $canonicalPath;
+            }
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * @return array{0: string, 1: int, 2: string}
+     */
+    private static function logFileSortParts(string $path): array
+    {
+        $name = basename($path);
+        if (preg_match('/^pos-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$/', $name, $matches)) {
+            return [$matches[1], isset($matches[2]) ? (int) $matches[2] : 0, $name];
+        }
+
+        return ['', 0, $name];
+    }
+}

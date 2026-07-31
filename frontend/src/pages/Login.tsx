@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Store, Eye, EyeOff, Moon, Sun } from 'lucide-react'
@@ -9,7 +8,7 @@ import styles from './Login.module.css'
 import { extractApiError } from '../utils/apiError'
 
 export default function Login() {
-  const [form, setForm] = useState({ email: 'admin@pos.com', password: 'password' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const { login, isAuthenticated, _hasHydrated } = useAuthStore()
@@ -62,7 +61,7 @@ export default function Login() {
             <input
               type="email" className="input" required
               value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="admin@pos.com"
+              placeholder="name@example.com"
             />
           </div>
 
@@ -91,10 +90,6 @@ export default function Login() {
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1.5rem' }}>
-          Admin: admin@pos.com / password<br />
-          Cashier: cashier@pos.com / password
-        </p>
       </div>
     </div>
   )

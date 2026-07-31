@@ -12,7 +12,7 @@ services:
       - DB_HOST=db
       - DB_NAME=pos_db
       - DB_USER=${DB_USER:-pos_user}
-      - DB_PASS=${DB_PASS:-secret}
+      - DB_PASS=${DB_PASS:?DB_PASS environment variable is required}
       - APP_ENV=production
       - APP_DEBUG=false
       - DB_PERSISTENT=true
@@ -22,7 +22,7 @@ services:
       - REDIS_HOST=${REDIS_HOST:-}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
-      - TOKEN_LIFETIME=${TOKEN_LIFETIME:-604800}
+      - TOKEN_LIFETIME=${TOKEN_LIFETIME:-14400}
       - LOW_STOCK_THRESHOLD=${LOW_STOCK_THRESHOLD:-5}
       - TAX_RATE=${TAX_RATE:-0.15}
       - QZ_PRIVATE_KEY_PATH=${QZ_PRIVATE_KEY_PATH:-}
@@ -44,15 +44,15 @@ services:
       - "127.0.0.1:3307:3306"
     environment:
       - MYSQL_DATABASE=pos_db
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-secret}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD environment variable is required}
       - MYSQL_USER=${DB_USER:-pos_user}
-      - MYSQL_PASSWORD=${DB_PASS:-secret}
+      - MYSQL_PASSWORD=${DB_PASS:?DB_PASS environment variable is required}
     volumes:
       - db_data:/var/lib/mysql
       - ./database/pos_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-secret}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5

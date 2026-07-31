@@ -705,7 +705,30 @@ function Invoke-FrontendBuild {
     }
 }
 
+function Invoke-LockedDependencyInstall {
+    Invoke-Checked 'Installing locked Composer quality dependencies' {
+        Push-Location (Join-Path $RepoRoot 'backend')
+        try { composer install --prefer-dist --no-interaction --no-progress } finally { Pop-Location }
+    }
+    Invoke-Checked 'Installing locked root npm dependencies' { Push-Location $RepoRoot; try { npm ci } finally { Pop-Location } }
+    Invoke-Checked 'Installing locked frontend npm dependencies' { Push-Location (Join-Path $RepoRoot 'frontend'); try { npm ci } finally { Pop-Location } }
+}
+
+function Invoke-ComposerProductionInstall {
+    Invoke-Checked 'Installing locked Composer production dependencies' {
+        Push-Location (Join-Path $RepoRoot 'backend')
+        try { composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress } finally { Pop-Location }
+    }
+}
+
+function Assert-PharBuildExtensions {
+    $required = @('phar', 'openssl', 'mbstring', 'dom', 'zlib')
+    $missing = @($required | Where-Object { & php -r "exit(extension_loaded('$($_)') ? 0 : 1);" 2>$null; $LASTEXITCODE -ne 0 })
+    if ($missing.Count -gt 0) { Stop-Release "PHP is missing required PHAR build extensions: $($missing -join ', ')" }
+}
+
 function Invoke-PharBuild {
+    Assert-PharBuildExtensions
     Invoke-Checked 'Building backend/backend.phar' { php -d phar.readonly=0 build-phar.php }
     if (-not $DryRun) {
         Assert-FileExists $PharPath 'backend/backend.phar'
@@ -1034,6 +1057,9 @@ function Confirm-ReleasePlan {
 }
 
 function Invoke-BuildPipeline {
+    Invoke-LockedDependencyInstall
+    Invoke-Checked 'Running quality checks' { npm run quality }
+    Invoke-ComposerProductionInstall
     Invoke-FrontendBuild
     Invoke-PharBuild
     Invoke-ElectronBuild

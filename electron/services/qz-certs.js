@@ -110,7 +110,10 @@ function installSSLcertSilently(qzTrayDir, javaPath, flagPath) {
     // تشغيل QZ Tray كمسؤول لتوليد وتثبيت الشهادة بصمت، ثم التأكيد بإضافتها للنظام كـ Enterprise Root
     // ثم استخدام icacls لمنح صلاحيات القراءة والكتابة لجميع المستخدمين على مجلدات QZ لتجنب AccessDeniedException
     const qzWinDir = qzTrayDir.replace(/\//g, '\\');
-    const command = `"${javaWinPath}" -jar "${qzTrayJarPath}" certgen --host localhost && certutil -addstore -enterprise -f root "C:\\ProgramData\\qz\\ssl\\root-ca.crt" && icacls "C:\\ProgramData\\qz" /grant "*S-1-1-0:(OI)(CI)F" /T && icacls "${qzWinDir}" /grant "*S-1-1-0:(OI)(CI)F" /T`;
+    // QZ only needs read/execute access after this elevated setup. Granting
+    // Everyone full control would let an unprivileged user replace keys or
+    // executable files.
+    const command = `"${javaWinPath}" -jar "${qzTrayJarPath}" certgen --host localhost && certutil -addstore -enterprise -f root "C:\\ProgramData\\qz\\ssl\\root-ca.crt" && icacls "C:\\ProgramData\\qz" /inheritance:e /grant:r "*S-1-5-32-545:(OI)(CI)RX" /T && icacls "${qzWinDir}" /inheritance:e /grant:r "*S-1-5-32-545:(OI)(CI)RX" /T`;
     
     const options = {
       name: 'POS System Installer'

@@ -1,7 +1,17 @@
-// @ts-nocheck
+import type { Dispatch, SetStateAction } from 'react'
 import { formatCurrency } from '../../../utils/formatters'
 
-export default function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposit, cartTotal }) {
+type PurchasePaymentType = 'cash' | 'credit'
+
+interface CreditPurchaseSectionProps {
+  paymentType: PurchasePaymentType
+  setPaymentType: Dispatch<SetStateAction<PurchasePaymentType>>
+  deposit: number
+  setDeposit: (deposit: number) => void
+  cartTotal: number
+}
+
+export default function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposit, cartTotal }: CreditPurchaseSectionProps) {
   const amountDue = paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : 0
 
   return (
@@ -12,10 +22,10 @@ export default function CreditPurchaseSection({ paymentType, setPaymentType, dep
       padding: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.5rem',
     }}>
       <div style={{ display: 'flex', gap: '0.35rem' }}>
-        {[
+        {([
           { id: 'cash', label: '💵 نقدي' },
           { id: 'credit', label: '⏳ آجل' },
-        ].map(m => (
+        ] as const).map((m) => (
           <button key={m.id} onClick={() => setPaymentType(m.id)}
             style={{
               flex: 1, padding: '0.35rem', fontSize: '0.82rem', fontWeight: 600,

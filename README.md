@@ -40,7 +40,7 @@
 
 ### 💻 تطبيق سطح المكتب (Desktop App)
 - **الإطار:** Electron 30.0
-- **إدارة الخدمات:** تشغيل (PHP Server، MySQL المدمج، HTTPS Proxy، WebSocket) في الخلفية.
+- **إدارة الخدمات:** تشغيل (PHP Server، MySQL المدمج، HTTPS Proxy) في الخلفية.
 - **التحديث التلقائي:** عبر GitHub Releases (electron-updater).
 
 ---
@@ -122,14 +122,37 @@ npm run electron:build
 
 ---
 
-## 🔑 بيانات الدخول الافتراضية
+## 🔑 إنشاء مدير النظام الأول
 
-| الدور (Role) | البريد الإلكتروني (Email) | كلمة المرور الافتراضية |
-|--------------|---------------------------|-------------------------|
-| مدير النظام | admin@pos.com             | password                |
+لا يزرع النظام حسابات تفاعلية أو كلمات مرور افتراضية. بعد تهيئة قاعدة البيانات،
+شغّل أداة bootstrap محلياً على جهاز الخادم. الأداة تتطلب كلمة مرور فريدة من
+14 محرفاً على الأقل، وترفض التنفيذ إذا كان هناك مدير نشط بالفعل.
 
-> [!WARNING]
-> النظام يجبر المستخدم على تغيير كلمة المرور الافتراضية عند تسجيل الدخول لأول مرة لضمان الأمان.
+PowerShell:
+
+```powershell
+$env:INITIAL_ADMIN_EMAIL = Read-Host 'Admin email'
+$env:INITIAL_ADMIN_NAME = Read-Host 'Admin name'
+$securePassword = Read-Host 'Admin password (14+ characters)' -AsSecureString
+$env:INITIAL_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $securePassword).Password
+C:\xampp\php\php.exe backend\cli\bootstrap-admin.php
+Remove-Item Env:INITIAL_ADMIN_EMAIL, Env:INITIAL_ADMIN_NAME, Env:INITIAL_ADMIN_PASSWORD
+```
+
+Bash:
+
+```bash
+read -r -p 'Admin email: ' INITIAL_ADMIN_EMAIL
+read -r -p 'Admin name: ' INITIAL_ADMIN_NAME
+read -r -s -p 'Admin password (14+ characters): ' INITIAL_ADMIN_PASSWORD
+echo
+export INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
+php backend/cli/bootstrap-admin.php
+unset INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
+```
+
+نفّذ هذا الإجراء من طرفية محلية موثوقة، ولا تضع بيانات المدير في ملف `.env`
+أو سجل أو سكربت محفوظ.
 
 ---
 

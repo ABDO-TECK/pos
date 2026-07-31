@@ -1,10 +1,18 @@
-// @ts-nocheck
+import type { MouseEventHandler } from 'react';
 import { Phone, Trash2, Edit2, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import useSettingsStore from '../../store/settingsStore';
 
-export default function CustomerCard({ customer, active, onClick, onEdit, onDelete }) {
-  const balance = parseFloat(customer.balance) || 0;
+interface CustomerCardProps {
+  customer: Customer;
+  active: boolean;
+  onClick: MouseEventHandler<HTMLDivElement>;
+  onEdit: MouseEventHandler<HTMLButtonElement>;
+  onDelete?: MouseEventHandler<HTMLButtonElement>;
+}
+
+export default function CustomerCard({ customer, active, onClick, onEdit, onDelete }: CustomerCardProps) {
+  const balance = Number(customer.balance) || 0;
   return (
     <div
       onClick={onClick}

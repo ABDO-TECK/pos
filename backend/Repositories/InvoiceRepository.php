@@ -24,6 +24,16 @@ class InvoiceRepository implements RepositoryInterface
         return $this->model->findById($id);
     }
 
+    public function findByIdForUpdate(int $id): ?array
+    {
+        return $this->model->findByIdForUpdate($id);
+    }
+
+    public function findHeaderForUpdate(int $id): ?array
+    {
+        return $this->model->findHeaderForUpdate($id);
+    }
+
     public function getItems(int $invoiceId): array
     {
         return $this->model->getItems($invoiceId);
@@ -32,6 +42,34 @@ class InvoiceRepository implements RepositoryInterface
     public function create(array $data): int
     {
         return $this->model->create($data);
+    }
+
+    public function claimIdempotency(string $key, string $requestHash): void
+    {
+        $this->model->claimIdempotency($key, $requestHash);
+    }
+
+    public function findIdempotency(string $key): ?array
+    {
+        return $this->model->findIdempotency($key);
+    }
+
+    public function completeIdempotency(
+        string $key,
+        string $requestHash,
+        int $invoiceId,
+        int $responseCode,
+        string $responseMessage,
+        string $responseJson
+    ): void {
+        $this->model->completeIdempotency(
+            $key,
+            $requestHash,
+            $invoiceId,
+            $responseCode,
+            $responseMessage,
+            $responseJson
+        );
     }
 
     public function addItem(int $invoiceId, array $item): void
@@ -62,6 +100,11 @@ class InvoiceRepository implements RepositoryInterface
     public function delete(int $id): void
     {
         $this->model->delete($id);
+    }
+
+    public function deleteLocked(int $id): int
+    {
+        return $this->model->deleteLocked($id);
     }
 
     public function getDailySummary(string $date): array
