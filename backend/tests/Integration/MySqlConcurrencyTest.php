@@ -16,7 +16,7 @@ require_once __DIR__ . '/Support/MySqlTestEnvironment.php';
 final class MySqlConcurrencyTest extends TestCase
 {
     private static string $database;
-    private static PDO $pdo;
+    private static ?PDO $pdo = null;
 
     /** @var list<MySqlWorkerProcess> */
     private array $workers = [];
@@ -37,7 +37,7 @@ final class MySqlConcurrencyTest extends TestCase
 
     public static function tearDownAfterClass(): void
     {
-        unset(self::$pdo);
+        self::$pdo = null;
         if (isset(self::$database)) {
             MySqlTestEnvironment::dropDatabase(self::$database);
         }

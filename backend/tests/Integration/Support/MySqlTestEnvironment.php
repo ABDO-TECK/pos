@@ -265,12 +265,23 @@ final class MySqlTestEnvironment
             throw new RuntimeException(sprintf('Unable to read migration %s.', $relativePath));
         }
 
-        $statements = preg_split('/;\s*(?:\r?\n|$)/u', trim($sql)) ?: [];
-        foreach ($statements as $statement) {
-            if (trim($statement) !== '') {
-                $pdo->exec($statement);
-            }
+        foreach (self::splitMigrationStatements($sql) as $statement) {
+            $pdo->exec($statement);
         }
+    }
+
+    /** @return list<string> */
+    public static function splitMigrationStatements(string $sql): array
+    {
+        $withoutLineComments = preg_replace('/^\s*(?:--|#).*$(?:\R|$)/mu', '', $sql);
+        if ($withoutLineComments === null) {
+            throw new RuntimeException('Unable to parse migration SQL comments.');
+        }
+
+        return array_values(array_filter(
+            array_map('trim', preg_split('/;\s*(?:\r?\n|$)/u', $withoutLineComments) ?: []),
+            static fn (string $statement): bool => $statement !== '',
+        ));
     }
 
     /** @return array<string,string> */

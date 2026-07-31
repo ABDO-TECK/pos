@@ -42,7 +42,7 @@ final class MySqlMigrationTest extends TestCase
             self::assertSame([
                 'idempotency_key' => 'ascii_bin',
                 'request_hash' => 'ascii_bin',
-            ], array_column($collations->fetchAll(), 'collation_name', 'column_name'));
+            ], $collations->fetchAll(PDO::FETCH_KEY_PAIR));
 
             $triggerCount = $pdo->prepare(
                 'SELECT COUNT(*) FROM information_schema.triggers
