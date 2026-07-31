@@ -1,72 +1,75 @@
 {
-    "name":  "pos-desktop",
-    "version":  "1.1.35",
-    "description":  "POS Desktop Application",
-    "author":  "POS Developer",
-    "main":  "electron/main.js",
-    "scripts":  {
-                    "electron:dev":  "electron .",
-                    "build:phar":  "php -d phar.readonly=0 build-phar.php \u0026\u0026 git add -f backend/backend.phar",
-                    "electron:build":  "npm run build:phar \u0026\u0026 electron-builder --win --publish never",
-                    "electron:publish":  "npm run build:phar \u0026\u0026 electron-builder --win --publish always",
-                    "frontend:build":  "cd frontend \u0026\u0026 npm run build"
-                },
-    "build":  {
-                  "appId":  "com.abdoteck.pos",
-                  "productName":  "POS System",
-                  "directories":  {
-                                      "output":  "dist-electron"
-                                  },
-                  "win":  {
-                              "target":  "nsis",
-                              "icon":  "electron/assets/icon.ico"
-                          },
-                  "nsis":  {
-                               "oneClick":  false,
-                               "allowToChangeInstallationDirectory":  true,
-                               "createDesktopShortcut":  true,
-                               "createStartMenuShortcut":  true,
-                               "shortcutName":  "POS System"
-                           },
-                  "files":  [
-                                "electron/**/*",
-                                "backend/backend.phar",
-                                "backend/certs/**/*",
-                                "database/pos_schema.sql",
-                                "frontend/dist/**/*",
-                                "frontend/public/**/*",
-                                "version.json"
-                            ],
-                  "extraResources":  [
-                                         {
-                                             "from":  "portable",
-                                             "to":  "portable",
-                                             "filter":  [
-                                                            "**/*"
-                                                        ]
-                                         }
-                                     ],
-                  "asar":  true,
-                  "asarUnpack":  [
-                                     "backend/backend.phar",
-                                     "backend/certs/**/*",
-                                     "database/pos_schema.sql",
-                                     "frontend/dist/**/*",
-                                     "frontend/public/**/*"
-                                 ],
-                  "publish":  {
-                                  "provider":  "github",
-                                  "owner":  "ABDO-TECK",
-                                  "repo":  "pos"
-                              }
-              },
-    "devDependencies":  {
-                            "electron":  "^30.0.0",
-                            "electron-builder":  "^25.1.0"
-                        },
-    "dependencies":  {
-                         "electron-updater":  "^6.1.8",
-                         "node-forge":  "^1.4.0",
-                         "sudo-prompt":  "^9.2.1"
-                     }
+    "name": "pos-desktop",
+    "version": "1.1.35",
+    "description": "POS Desktop Application",
+    "author": "POS Developer",
+    "main": "electron/main.js",
+    "scripts": {
+        "electron:dev": "electron .",
+        "test:electron": "node --test electron/tests/ipc-surface.test.js",
+        "build:phar": "php -d phar.readonly=0 build-phar.php",
+        "electron:build": "npm run build:phar && electron-builder --win --publish never",
+        "electron:publish": "npm run build:phar && electron-builder --win --publish always",
+        "frontend:build": "cd frontend && npm run build",
+        "quality": "node scripts/quality.mjs",
+        "test:quality": "node --test scripts/quality.test.mjs"
+    },
+    "build": {
+        "appId": "com.abdoteck.pos",
+        "productName": "POS System",
+        "directories": {
+            "output": "dist-electron"
+        },
+        "win": {
+            "target": "nsis",
+            "icon": "electron/assets/icon.ico"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "POS System"
+        },
+        "files": [
+            "electron/**/*",
+            "backend/backend.phar",
+            "backend/certs/**/*",
+            "database/pos_schema.sql",
+            "frontend/dist/**/*",
+            "frontend/public/**/*",
+            "version.json"
+        ],
+        "extraResources": [
+            {
+                "from": "portable",
+                "to": "portable",
+                "filter": [
+                    "**/*"
+                ]
+            }
+        ],
+        "asar": true,
+        "asarUnpack": [
+            "backend/backend.phar",
+            "backend/certs/**/*",
+            "database/pos_schema.sql",
+            "frontend/dist/**/*",
+            "frontend/public/**/*"
+        ],
+        "publish": {
+            "provider": "github",
+            "owner": "ABDO-TECK",
+            "repo": "pos"
+        }
+    },
+    "devDependencies": {
+        "electron": "^43.2.0",
+        "electron-builder": "^26.15.3"
+    },
+    "dependencies": {
+        "electron-updater": "^6.8.9",
+        "node-forge": "^1.4.0",
+        "sudo-prompt": "^9.2.1"
+    }
 }

@@ -1,5 +1,32 @@
 # Release Process
 
+## Reproducible release contract
+
+From a checkout with PHP, Composer, Node.js, and Windows build tools installed:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 -Mode build -NonInteractive
+```
+
+This installs locked Composer development dependencies from
+`backend/composer.lock` so the quality suite can run, executes `npm ci` from
+both package-lock files, and runs all quality checks. It then reinstalls locked
+Composer production dependencies with `--no-dev`, builds the frontend and
+production PHAR, and creates the NSIS Electron installer. A failed command
+stops the pipeline with a non-zero exit code. Secrets are never embedded;
+publishing uses only the `GH_TOKEN` environment variable.
+
+`backend/backend.phar` is generated and is not tracked by Git. Publish/store it
+with the installer release assets and its trusted SHA-512 value. Verify the
+embedded PHAR signature with the build PHP runtime:
+
+```powershell
+php --% -r "$p='backend/backend.phar'; $f=new Phar($p); $s=$f->getSignature(); if ($s['hash_type'] !== 'SHA-512') { exit(1); } echo $s['hash'], PHP_EOL;"
+```
+
+Compare that output with the value published for the release. SHA-512 verifies
+integrity, not publisher authenticity.
+
 Use `scripts/release.ps1` to prepare POS desktop releases. A valid release keeps the Electron runtime version, backend update metadata, PHAR, installer, and GitHub Release artifacts in sync.
 
 ## GUI Release Manager

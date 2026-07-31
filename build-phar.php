@@ -26,6 +26,8 @@ if (!is_dir(dirname($pharFile))) {
 
 $phar = new Phar($tempPharFile, 0, 'backend.phar');
 $phar->startBuffering();
+$addedFileCount = 0;
+$addedMigrationCount = 0;
 
 // 1. Walk through the backend directory and compile it
 $backendDir = __DIR__ . '/backend';
@@ -40,10 +42,8 @@ $excludePatterns = [
     '/^docs/',
     '/^swagger/',
     '/^logs/',
-    '/^storage\/cache/',
-    '/^storage\/logs/',
-    '/^storage\/backups/',
-    '/^storage\/runtime/',
+    // Runtime state and generated credentials must never be packaged.
+    '/^storage\//',
     '/^\.env/',
     '/^\.env\.example/',
     '/^adminer\.php/',
@@ -56,8 +56,17 @@ $excludePatterns = [
     '/^\.git/',
     '/^\.github/',
     '/^vendor\/phpunit/',
+    '/^vendor\/nikic\/php-parser/',
+    '/^vendor\/phar-io/',
+    '/^vendor\/sebastian/',
+    '/^vendor\/symfony\/finder/',
+    '/^vendor\/symfony\/polyfill-ctype/',
+    '/^vendor\/symfony\/yaml/',
+    '/^vendor\/theseer/',
     '/^vendor\/zircote/',
     '/^vendor\/bin/',
+    '/^vendor\/.*\/(?:tests?|\.github)\//',
+    '/^vendor\/.*\/(?:docs?|examples?)\//',
 ];
 
 function getFilteredAutoloadFile($filePath, $relativePath, $backendDir) {
@@ -125,9 +134,13 @@ function getFilteredAutoloadFile($filePath, $relativePath, $backendDir) {
         $normalized = str_replace('\\', '/', $path);
         return (
             strpos($normalized, '/phpunit/') !== false ||
+            strpos($normalized, '/nikic/php-parser/') !== false ||
             strpos($normalized, '/zircote/') !== false ||
             strpos($normalized, '/sebastian/') !== false ||
             strpos($normalized, '/phar-io/') !== false ||
+            strpos($normalized, '/symfony/finder/') !== false ||
+            strpos($normalized, '/symfony/polyfill-ctype/') !== false ||
+            strpos($normalized, '/symfony/yaml/') !== false ||
             strpos($normalized, '/theseer/') !== false
         );
     };
@@ -308,9 +321,9 @@ foreach ($iterator as $file) {
         }
 
         if (!$exclude) {
-            echo "Adding: " . $relativePath . "\n";
             $targetPath = getFilteredAutoloadFile($filePath, $relativePath, $backendDir);
             $phar->addFile($targetPath, $relativePath);
+            $addedFileCount++;
             if ($targetPath !== $filePath) {
                 unlink($targetPath); // Clean up the temp file
             }
@@ -339,8 +352,8 @@ if (is_dir($migrationsDir)) {
                 $rel = str_replace($migrationsDir . DIRECTORY_SEPARATOR, '', $filePath);
             }
             $relativePath = 'database/migrations/' . str_replace('\\', '/', $rel);
-            echo "Adding migration: " . $relativePath . "\n";
             $phar->addFile($filePath, $relativePath);
+            $addedMigrationCount++;
         }
     }
 }
@@ -378,11 +391,11 @@ if (php_sapi_name() === 'cli') {
         exit(0);
     }
 
-    if (\$argc > 1 && \$argv[1] === 'websocket-server') {
+    if (\$argc > 1 && \$argv[1] === 'cleanup-logs') {
         unset(\$argv[1]);
         \$argv = array_values(\$argv);
         \$argc = count(\$argv);
-        require 'phar://backend.phar/cli/websocket-server.php';
+        require 'phar://backend.phar/cli/cleanup-logs.php';
         exit(0);
     }
 
@@ -411,4 +424,4 @@ if (file_exists($pharFile)) {
 }
 rename($tempPharFile, $pharFile);
 
-echo "backend.phar with SHA-512 integrity check generated successfully!\n";
+echo "backend.phar generated successfully ({$addedFileCount} backend files, {$addedMigrationCount} migrations; SHA-512 integrity check).\n";
