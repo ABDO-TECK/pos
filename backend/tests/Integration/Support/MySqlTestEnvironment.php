@@ -301,20 +301,70 @@ final class MySqlTestEnvironment
     public static function waitForLockWait(PDO $pdo, int $connectionId, float $timeoutSeconds = 8.0): void
     {
         $deadline = microtime(true) + $timeoutSeconds;
-        $statement = $pdo->prepare(
-            'SELECT trx_state FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = ?'
-        );
+        $probes = [];
+        $unavailableProbes = [];
+        foreach (self::lockWaitProbeQueries() as $name => $query) {
+            try {
+                $probes[$name] = $pdo->prepare($query);
+            } catch (\Throwable $exception) {
+                $unavailableProbes[] = sprintf('%s: %s', $name, $exception->getMessage());
+            }
+        }
+        if ($probes === []) {
+            throw new RuntimeException(
+                'No MySQL lock-wait probe is available. ' . implode(' | ', $unavailableProbes)
+            );
+        }
+
         do {
-            $statement->execute([$connectionId]);
-            if ($statement->fetchColumn() === 'LOCK WAIT') {
-                return;
+            foreach ($probes as $name => $statement) {
+                try {
+                    $statement->execute([$connectionId]);
+                    if ((bool) $statement->fetchColumn()) {
+                        return;
+                    }
+                } catch (\Throwable $exception) {
+                    unset($probes[$name]);
+                    $unavailableProbes[] = sprintf('%s: %s', $name, $exception->getMessage());
+                }
+            }
+            if ($probes === []) {
+                throw new RuntimeException(
+                    'MySQL lock-wait probes became unavailable. ' . implode(' | ', $unavailableProbes)
+                );
             }
             usleep(20_000);
         } while (microtime(true) < $deadline);
 
         throw new RuntimeException(
-            sprintf('Connection %d did not enter an InnoDB row-lock wait within %.1f seconds.', $connectionId, $timeoutSeconds)
+            sprintf(
+                'Connection %d did not enter a MySQL row-lock wait within %.1f seconds. Probes: %s',
+                $connectionId,
+                $timeoutSeconds,
+                implode(', ', array_keys($probes))
+            )
         );
+    }
+
+    /** @return array<string,string> */
+    public static function lockWaitProbeQueries(): array
+    {
+        return [
+            'performance_schema.data_lock_waits' =>
+                'SELECT EXISTS(
+                    SELECT 1
+                    FROM performance_schema.data_lock_waits AS lock_wait
+                    INNER JOIN performance_schema.threads AS waiting_thread
+                        ON waiting_thread.THREAD_ID = lock_wait.REQUESTING_THREAD_ID
+                    WHERE waiting_thread.PROCESSLIST_ID = ?
+                )',
+            'information_schema.innodb_trx' =>
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM information_schema.innodb_trx
+                    WHERE trx_mysql_thread_id = ? AND trx_state = 'LOCK WAIT'
+                )",
+        ];
     }
 
     /** @param list<string> $statements */
