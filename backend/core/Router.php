@@ -52,30 +52,37 @@ class Router {
         // ── API Versioning ────────────────────────────────────────
         // يستخرج رقم النسخة من المسار (مثل: /api/v1/products → v1)
         // - v1: يُوجَّه إلى routes/api.php (الافتراضي)
-        // - v2+: مستقبلاً يمكن إضافة ملف routes/api_v2.php
-        // نحتفظ برقم النسخة كـ header في الـ response
-        $apiVersion = 'v1'; // الإصدار الافتراضي
-        if (preg_match('#^/api/(v(\d+))/#', $uri, $vMatch)) {
-            $apiVersion = $vMatch[1];
-            $this->apiVersion = $apiVersion;
+        // أي نسخة مرقمة غير مدعومة تُرفض حتى يوجد لها Router مستقل.
+        // X-API-Version يعبّر دائماً عن النسخة التي خدمت الاستجابة فعلياً.
+        if (preg_match('#^/api/(v\d+)(?:/|$)#', $uri, $vMatch)) {
+            $requestedVersion = $vMatch[1];
+            if ($requestedVersion !== $this->apiVersion) {
+                $this->sendResponse(Response::error(
+                    'Unsupported API version',
+                    404,
+                    [
+                        'requested_version' => $requestedVersion,
+                        'supported_versions' => [$this->apiVersion],
+                    ],
+                    \App\Helpers\ErrorCodes::UNSUPPORTED_API_VERSION
+                ));
+                return;
+            }
         }
-        // حالياً كل النسخ توجَّه لنفس الـ routes (v1 فقط)
-        // عند إضافة v2: أضف شرط هنا لتحميل ملف routes مختلف
-        $uri = preg_replace('#^/api/v\d+/#', '/api/', $uri);
+        // فقط v1 تُطبّع إلى المسارات المسجلة حالياً.
+        $uri = preg_replace('#^/api/v1(?=/|$)#', '/api', $uri);
+        header('X-API-Version: ' . $this->apiVersion);
 
         foreach ($this->routes as $route) {
             $params = $this->match($route['method'], $route['path'], $method, $uri);
             if ($params !== null) {
+                if ($this->expectsJsonBody($method)) {
+                    RequestBody::readJson();
+                }
+
                 [$controllerClass, $action, $middlewares] = $this->parseHandler($route['handler']);
                 
-                // Inject global middlewares
-                array_unshift($middlewares, CsrfMiddleware::class);
-                array_unshift($middlewares, \App\Middleware\TimingMiddleware::class);
-                array_unshift($middlewares, \App\Middleware\CompressionMiddleware::class);
-                array_unshift($middlewares, \App\Middleware\HttpsMiddleware::class);
-                array_unshift($middlewares, \App\Middleware\DeleteRateLimiter::class);
-                array_unshift($middlewares, \App\Middleware\WriteRateLimiter::class);
-                array_unshift($middlewares, \App\Middleware\ReadRateLimiter::class);
+                $middlewares = $this->prepareMiddlewares($middlewares);
 
                 $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
                     $controller = $this->container->get($controllerClass);
@@ -144,6 +151,59 @@ class Router {
         $action          = $handler[1];
         $middlewares     = $handler[2] ?? [];
         return [$controllerClass, $action, $middlewares];
+    }
+
+    /**
+     * Keep authenticated rate limits behind authentication so their keys can be
+     * user-scoped. Public routes intentionally fall back to IP-scoped limits.
+     */
+    private function prepareMiddlewares(array $routeMiddlewares): array
+    {
+        $requestMiddleware = [
+            \App\Middleware\HttpsMiddleware::class,
+            \App\Middleware\CompressionMiddleware::class,
+            \App\Middleware\TimingMiddleware::class,
+            CsrfMiddleware::class,
+        ];
+        $rateLimiters = [
+            \App\Middleware\ReadRateLimiter::class,
+            \App\Middleware\WriteRateLimiter::class,
+            \App\Middleware\DeleteRateLimiter::class,
+        ];
+
+        $authIndex = array_search(
+            \App\Middleware\AuthMiddleware::class,
+            $routeMiddlewares,
+            true
+        );
+
+        if ($authIndex === false) {
+            return array_merge($requestMiddleware, $rateLimiters, $routeMiddlewares);
+        }
+
+        return array_merge(
+            $requestMiddleware,
+            array_slice($routeMiddlewares, 0, $authIndex + 1),
+            $rateLimiters,
+            array_slice($routeMiddlewares, $authIndex + 1)
+        );
+    }
+
+    private function expectsJsonBody(string $method): bool
+    {
+        if (!in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+            return false;
+        }
+
+        $contentType = trim((string) ($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? ''));
+        if ($contentType === '') {
+            return true;
+        }
+
+        return preg_match(
+            '#^application/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)#i',
+            $contentType
+        ) === 1;
     }
 
     private function runMiddlewares(array $middlewares, callable $final): mixed {

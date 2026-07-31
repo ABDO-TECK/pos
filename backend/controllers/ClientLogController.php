@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Helpers\Logger;
 use App\Helpers\Response;
+use App\Requests\ClientLogIndexRequest;
+use App\Services\ClientLogReader;
 
 
 /**
@@ -16,6 +18,10 @@ use App\Helpers\Response;
  */
 class ClientLogController extends Controller
 {
+    public function __construct(private readonly ClientLogReader $reader)
+    {
+    }
+
     /**
      * POST /api/client-log
      *
@@ -30,23 +36,28 @@ class ClientLogController extends Controller
     {
         $data = $this->getBody();
         $logs = $data['logs'] ?? [$data]; // يدعم الـ Batch و الـ Single (للتوافق)
+        if (!is_array($logs)) {
+            return Response::error('Invalid log payload', 422);
+        }
+        $logs = array_slice(array_values($logs), 0, 50);
 
         foreach ($logs as $logData) {
-            if (empty($logData['level']) || empty($logData['message'])) {
+            if (!is_array($logData) || empty($logData['level']) || empty($logData['message'])) {
                 continue;
             }
 
             $level   = strtoupper($logData['level'] ?? 'ERROR');
-            $message = '[CLIENT] ' . ($logData['message'] ?? 'Unknown error');
+            $message = '[CLIENT] ' . mb_substr((string) ($logData['message'] ?? 'Unknown error'), 0, 2000);
 
             $context = [];
             if (!empty($logData['context']) && is_array($logData['context'])) {
                 $allowed = ['url', 'stack', 'component', 'userAgent', 'timestamp', 'userId', 'extra'];
                 foreach ($allowed as $key) {
                     if (isset($logData['context'][$key])) {
-                        $context[$key] = is_string($logData['context'][$key])
-                            ? mb_substr($logData['context'][$key], 0, 2000)
-                            : $logData['context'][$key];
+                        $encoded = is_string($logData['context'][$key])
+                            ? $logData['context'][$key]
+                            : json_encode($logData['context'][$key], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $context[$key] = mb_substr((string) $encoded, 0, 2000);
                     }
                 }
             }
@@ -71,37 +82,14 @@ class ClientLogController extends Controller
      */
     public function index()
     {
-        $limit = (int)($_GET['limit'] ?? 100);
-        $level = strtolower($_GET['level'] ?? 'all');
-        $logDir = __DIR__ . '/../../logs';
-        
-        $logs = [];
-        $files = glob($logDir . '/client-*.log');
-        rsort($files); // أحدث الملفات أولاً
+        $query = (new ClientLogIndexRequest($_GET))->normalized();
+        $result = $this->reader->paginate($query['level'], $query['limit'], $query['cursor']);
 
-        foreach ($files as $file) {
-            $lines = file($file);
-            if ($lines === false) continue;
-            
-            $lines = array_reverse($lines); // الأحدث أولاً
-            foreach ($lines as $line) {
-                if (preg_match('/\[(.*?)\] \[(.*?)\] (.*?) (\{.*\})/', $line, $matches)) {
-                    $logLevel = strtolower($matches[2]);
-                    if ($level !== 'all' && strpos($logLevel, $level) === false) continue;
-
-                    $logs[] = [
-                        'id' => md5($line),
-                        'created_at' => $matches[1],
-                        'level' => $matches[2],
-                        'message' => $matches[3],
-                        'context' => $matches[4],
-                    ];
-
-                    if (count($logs) >= $limit) break 2;
-                }
-            }
-        }
-
-        return Response::success($logs);
+        return Response::success(
+            $result['data'],
+            'success',
+            200,
+            ['pagination' => $result['pagination']]
+        );
     }
 }

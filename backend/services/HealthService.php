@@ -13,6 +13,18 @@ use Throwable;
  */
 class HealthService
 {
+    /**
+     * Minimal public liveness payload. Deep checks are intentionally excluded.
+     */
+    public function getLiveness(): array
+    {
+        return [
+            'status' => 'ok',
+            'critical_failed' => false,
+            'version' => $this->getVersionIdentifier(),
+        ];
+    }
+
     // ── Basic health check ──────────────────────────────────
 
     /**
@@ -97,17 +109,7 @@ class HealthService
         }
 
         // ── 4. Version Check ──
-        $version = '1.1.32';
-        $versionFile = __DIR__ . '/../version.json';
-        if (!file_exists($versionFile)) {
-            $versionFile = __DIR__ . '/../../../version.json';
-        }
-        if (file_exists($versionFile)) {
-            $versionData = json_decode(file_get_contents($versionFile), true);
-            if (isset($versionData['version'])) {
-                $version = $versionData['version'];
-            }
-        }
+        $version = $this->getVersionIdentifier();
         $checks['version'] = [
             'status'   => 'ok',
             'severity' => 'info',
@@ -374,6 +376,26 @@ class HealthService
         ];
     }
 
+    /** Resolve a bounded, display-safe application version identifier. */
+    private function getVersionIdentifier(): string
+    {
+        foreach ([__DIR__ . '/../version.json', __DIR__ . '/../../version.json'] as $versionFile) {
+            if (!is_file($versionFile)) {
+                continue;
+            }
+
+            $versionData = json_decode((string) @file_get_contents($versionFile), true);
+            if (is_array($versionData) && isset($versionData['version']) && is_string($versionData['version'])) {
+                $candidate = trim($versionData['version']);
+                if (preg_match('/^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/', $candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return 'unknown';
+    }
+
     // ── Advanced metrics ────────────────────────────────────
 
     /**
@@ -418,17 +440,29 @@ class HealthService
         // ── 3. Today's Activity ──
         try {
             $today = date('Y-m-d');
+            $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
+            $branchId = \App\Services\AuthService::getGlobalBranchId();
 
-            $stmt = $db->prepare("SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = ? AND deleted_at IS NULL");
-            $stmt->execute([$today]);
+            $stmt = $db->prepare(
+                'SELECT COUNT(*) FROM invoices
+                 WHERE branch_id = ? AND created_at >= ? AND created_at < ? AND deleted_at IS NULL'
+            );
+            $stmt->execute([$branchId, $today, $tomorrow]);
             $metrics['today']['sales_count'] = (int)$stmt->fetchColumn();
 
-            $stmt = $db->prepare("SELECT COALESCE(SUM(total), 0) FROM invoices WHERE DATE(created_at) = ? AND deleted_at IS NULL AND status = 'completed'");
-            $stmt->execute([$today]);
+            $stmt = $db->prepare(
+                "SELECT COALESCE(SUM(total), 0) FROM invoices
+                 WHERE branch_id = ? AND created_at >= ? AND created_at < ?
+                   AND deleted_at IS NULL AND status = 'completed'"
+            );
+            $stmt->execute([$branchId, $today, $tomorrow]);
             $metrics['today']['sales_total'] = round((float)$stmt->fetchColumn(), 2);
 
-            $stmt = $db->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE DATE(expense_date) = ?");
-            $stmt->execute([$today]);
+            $stmt = $db->prepare(
+                'SELECT COALESCE(SUM(amount), 0) FROM expenses
+                 WHERE branch_id = ? AND expense_date >= ? AND expense_date < ?'
+            );
+            $stmt->execute([$branchId, $today, $tomorrow]);
             $metrics['today']['expenses_total'] = round((float)$stmt->fetchColumn(), 2);
         } catch (Throwable $e) {
             $metrics['today']['error'] = $e->getMessage();

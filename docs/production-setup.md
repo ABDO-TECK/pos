@@ -24,6 +24,42 @@ npm ci
 npm run build
 ```
 
+## Cleanup scheduling for non-Electron deployments
+
+Run `backend/cli/cleanup-logs.php` from an absolute path as a dedicated,
+least-privileged service account. Do not run it as root or from an Electron
+scheduler. The account needs write access only to `backend/logs`.
+
+Linux systemd service and timer:
+
+```ini
+# /etc/systemd/system/pos-log-cleanup.service
+[Service]
+User=pos
+Group=pos
+WorkingDirectory=/var/www/pos/backend
+ExecStart=/usr/bin/php /var/www/pos/backend/cli/cleanup-logs.php
+NoNewPrivileges=true
+PrivateTmp=true
+```
+
+```ini
+# /etc/systemd/system/pos-log-cleanup.timer
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+Cron alternative: `15 2 * * * pos /usr/bin/php /var/www/pos/backend/cli/cleanup-logs.php`.
+
+Windows Task Scheduler: run daily at 02:15 as a dedicated service account,
+with Start in `C:\pos\backend`, using
+`C:\PHP\php.exe C:\pos\backend\cli\cleanup-logs.php`; grant that account
+write access only to `C:\pos\backend\logs` and read/execute access to the
+application, never to `.env`.
+
 سيتم إنشاء مجلد `frontend-dist/` الذي يحتوي على ملفات الإنتاج الجاهزة (HTML, JS, CSS).
 
 > **ملاحظة:** Vite proxy يعمل فقط في بيئة التطوير (`npm run dev`). في الإنتاج يجب استخدام Apache VirtualHost لتوجيه الطلبات.

@@ -9,6 +9,7 @@ import useThemeStore from './store/themeStore'
 import ConfirmModal from './components/common/ConfirmModal'
 import ForcePasswordChangeModal from './components/common/ForcePasswordChangeModal'
 import { useInventorySSE } from './hooks/useInventorySSE'
+import { ConflictResolutionDialog } from './components/ConflictResolutionDialog'
 
 /**
  * Retry wrapper for lazy imports — handles transient network/SSL failures.
@@ -104,8 +105,9 @@ function AppShell() {
       <ForcePasswordChangeModal />
       <ConfirmModal />
       <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
+      <ConflictResolutionDialog />
       <SettingsLoader />
-      {/* SSE disabled — WebSocket handles real-time updates */}
+      <SSELoader />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Login />} />

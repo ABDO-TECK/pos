@@ -53,6 +53,10 @@ class SettingsController extends Controller {
                 }
             }
 
+            // Clear cache before re-fetching to ensure fresh data in the response.
+            // The event dispatch also clears cache (via CacheSubscriber), but clearing
+            // explicitly here guarantees correct ordering regardless of listener execution.
+            Cache::forget('settings_all');
             \App\Helpers\EventDispatcher::dispatch('settings.updated');
             return Response::success($this->all(), 'Settings updated');
         });

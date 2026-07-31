@@ -8,6 +8,7 @@ interface User {
   name: string;
   email: string;
   role: string;
+  branch_id: number;
   force_password_change?: number;
 }
 
@@ -19,7 +20,17 @@ interface AuthState {
   setHasHydrated: (val: boolean) => void;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  requireReauthentication: () => Promise<void>;
   setUser: (user: User | null) => void;
+}
+
+async function clearOfflineCache(): Promise<void> {
+  try {
+    const { clearAllCache } = await import('../utils/idb')
+    await clearAllCache()
+  } catch (error) {
+    console.error('Failed to clear IDB cache on logout', error)
+  }
 }
 
 const useAuthStore = create<AuthState>()(
@@ -46,16 +57,14 @@ const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try { await logoutApi() } catch (err) { }
-        
-        // Clear IndexedDB cache to prevent ghost offline data
-        try {
-          const { clearAllCache } = await import('../utils/idb')
-          await clearAllCache()
-        } catch (e) {
-          console.error('Failed to clear IDB cache on logout', e)
-        }
-
+        await clearOfflineCache()
         set({ user: null, token: null, isAuthenticated: false })
+      },
+
+      requireReauthentication: async () => {
+        await clearOfflineCache()
+        set({ user: null, token: null, isAuthenticated: false })
+        window.location.assign('/login')
       },
 
       setUser: (user) => set({ user }),

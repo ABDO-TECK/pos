@@ -17,10 +17,8 @@ class HttpsMiddleware
 
         // فحص هل الاتصال محلي (loopback)
         $host = $_SERVER['HTTP_HOST'] ?? '';
-        $isLoopback = false;
-        if (str_starts_with($host, '127.0.0.1') || str_starts_with($host, 'localhost') || str_starts_with($host, '[::1]')) {
-            $isLoopback = true;
-        }
+        $hostName = strtolower(preg_replace('/:\d+$/', '', $host));
+        $isLoopback = in_array($hostName, ['127.0.0.1', 'localhost', '[::1]'], true);
 
         // فحص هل الاتصال HTTPS
         $isHttps = $this->isSecureConnection();
@@ -50,7 +48,18 @@ class HttpsMiddleware
         }
 
         // إعادة التوجيه إلى HTTPS (301 Permanent Redirect)
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $frontendUrl = defined('FRONTEND_URL') ? FRONTEND_URL : 'https://localhost';
+        $host = parse_url($frontendUrl, PHP_URL_HOST);
+        $port = parse_url($frontendUrl, PHP_URL_PORT);
+        if (!is_string($host) || $host === '') {
+            throw new \RuntimeException('FRONTEND_URL must contain a valid host');
+        }
+        if (str_contains($host, ':')) {
+            $host = '[' . trim($host, '[]') . ']';
+        }
+        if (is_int($port) && !in_array($port, [80, 443], true)) {
+            $host .= ':' . $port;
+        }
         $uri  = $_SERVER['REQUEST_URI'] ?? '/';
         $url  = 'https://' . $host . $uri;
 

@@ -14,9 +14,13 @@ class Validator {
      *  email       — بريد إلكتروني صالح
      *  in:a,b,c    — يجب أن يكون ضمن قائمة محددة
      *  array       — يجب أن يكون مصفوفة
+     *  min_items:N — الحد الأدنى لعدد عناصر المصفوفة
+     *  max_items:N — الحد الأقصى لعدد عناصر المصفوفة
      *  min_value:N — الحد الأدنى للقيمة الرقمية
      *  max_value:N — الحد الأقصى للقيمة الرقمية
      *  string      — يجب أن يكون نص
+     *  uuid        — UUID canonical (versions 1-5)
+     *  uuid_v4     — UUID version 4 canonical
      *  date        — تاريخ صالح Y-m-d
      *
      * @param array $data    البيانات المُراد التحقق منها
@@ -42,7 +46,23 @@ class Validator {
                 }
 
                 // min:N (عدد الأحرف)
-                if (str_starts_with($r, 'min:')) {
+                if (str_starts_with($r, 'min_items:')) {
+                    $minItems = (int) substr($r, 10);
+                    if (is_array($value) && count($value) < $minItems) {
+                        $errors[$field][] = "{$field} must contain at least {$minItems} items";
+                    }
+                }
+
+                // max_items:N (array length)
+                elseif (str_starts_with($r, 'max_items:')) {
+                    $maxItems = (int) substr($r, 10);
+                    if (is_array($value) && count($value) > $maxItems) {
+                        $errors[$field][] = "{$field} must not contain more than {$maxItems} items";
+                    }
+                }
+
+                // min:N (string length)
+                elseif (str_starts_with($r, 'min:')) {
                     $min = (int) substr($r, 4);
                     if (mb_strlen((string)$value, 'UTF-8') < $min) {
                         $errors[$field][] = "{$field} يجب أن يكون {$min} أحرف على الأقل";
@@ -77,9 +97,33 @@ class Validator {
                     $errors[$field][] = "{$field} يجب أن يكون نصاً";
                 }
 
+                elseif ($r === 'uuid' && (
+                    !is_string($value)
+                    || !preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i', $value)
+                )) {
+                    $errors[$field][] = "{$field} must be a valid UUID";
+                }
+
+                elseif ($r === 'uuid_v4' && (
+                    !is_string($value)
+                    || !preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i', $value)
+                )) {
+                    $errors[$field][] = "{$field} must be a valid UUID v4";
+                }
+
                 // array
                 elseif ($r === 'array' && !is_array($value)) {
                     $errors[$field][] = "{$field} يجب أن يكون مصفوفة";
+                }
+
+                // data_image — restricted image data URL (PNG/JPEG/WebP only)
+                elseif ($r === 'data_image') {
+                    $validImage = is_string($value)
+                        && preg_match('#^data:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)$#i', $value, $matches)
+                        && base64_decode(preg_replace('/\s+/', '', $matches[1]), true) !== false;
+                    if (!$validImage) {
+                        $errors[$field][] = "{$field} يجب أن يكون صورة PNG أو JPEG أو WebP صالحة";
+                    }
                 }
 
                 // date (Y-m-d أو Y-m-d\TH:i أو Y-m-d H:i:s)

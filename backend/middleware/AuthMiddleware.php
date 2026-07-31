@@ -41,12 +41,18 @@ class AuthMiddleware {
         }
 
         if (!empty($row['force_password_change'])) {
-            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+            $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
             $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
-            // Allow user to update themselves or logout — match any URI prefix variation
             $userId = $row['user_id'];
-            $isUpdatingSelf = ($requestMethod === 'PUT' && preg_match('#/users/' . $userId . '($|\?)#', $requestUri));
-            $isLoggingOut = ($requestMethod === 'POST' && strpos($requestUri, '/logout') !== false);
+
+            // Normalize URI: strip /pos/backend and /api/v1 prefixes for consistent matching
+            $normalizedUri = preg_replace('#^/pos/backend#', '', $requestUri);
+            $normalizedUri = preg_replace('#^/api/v\d+/#', '/api/', $normalizedUri);
+
+            // Allow: PUT /api/users/{self_id} (password change)
+            $isUpdatingSelf = ($requestMethod === 'PUT' && $normalizedUri === '/api/users/' . $userId);
+            // Allow: POST /api/logout
+            $isLoggingOut = ($requestMethod === 'POST' && $normalizedUri === '/api/logout');
             
             if (!$isUpdatingSelf && !$isLoggingOut) {
                 return Response::error('يجب تغيير كلمة المرور الافتراضية أولاً', 403, ['force_password_change' => true]);

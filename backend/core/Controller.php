@@ -6,9 +6,7 @@ namespace App\Core;
 abstract class Controller {
 
     protected function getBody(): array {
-        $raw = file_get_contents('php://input');
-        $data = json_decode($raw, true);
-        return is_array($data) ? $data : [];
+        return RequestBody::readJson();
     }
 
     protected function getParam(string $key, mixed $default = null): mixed {

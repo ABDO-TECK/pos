@@ -7,11 +7,12 @@ use App\Core\FormRequest;
 class UserUpdateRequest extends FormRequest {
     public function rules(): array {
         return [
-            'name'      => 'required|string',
+            'name'      => 'required|string|max:150',
             'email'     => 'required|email',
-            'role'      => 'string',
-            'is_active' => 'numeric',
-            'password'  => 'string|strong_password',
+            'role'      => 'in:admin,cashier',
+            'is_active' => 'numeric|in:0,1',
+            'password'  => 'string|max:256|strong_password',
+            'current_password' => 'string|max:256',
         ];
     }
 }

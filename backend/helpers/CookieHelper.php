@@ -66,4 +66,17 @@ class CookieHelper
             'samesite' => $sameSite,
         ];
     }
+
+    /**
+     * Expire both authentication cookies after a security-sensitive session reset.
+     */
+    public static function clearAuthCookies(): void
+    {
+        setcookie('pos_token', '', self::options(time() - 3600));
+        setcookie(
+            'pos_refresh_token',
+            '',
+            self::options(time() - 3600, '/api/v1/refresh')
+        );
+    }
 }

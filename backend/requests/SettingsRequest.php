@@ -13,7 +13,7 @@ class SettingsRequest extends FormRequest {
             'loyalty_enabled' => 'in:0,1',
             'loyalty_points_per_rial' => 'numeric',
             'loyalty_rial_per_point' => 'numeric',
-            'store_logo' => 'nullable|string',
+            'store_logo' => 'nullable|string|max:3000000|data_image',
         ];
     }
 }

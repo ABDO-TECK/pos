@@ -100,4 +100,51 @@ class ValidatorTest extends TestCase
         $errors = Validator::validate(['name' => 'عبدالرحمن'], ['name' => 'min:8']);
         $this->assertEmpty($errors);
     }
+
+    public function testArrayItemBoundsPassAtLimits(): void
+    {
+        $errors = Validator::validate(
+            ['items' => [1, 2]],
+            ['items' => 'array|min_items:2|max_items:2']
+        );
+
+        $this->assertEmpty($errors);
+    }
+
+    public function testArrayItemBoundsRejectTooFewAndTooMany(): void
+    {
+        $tooFew = Validator::validate(['items' => []], ['items' => 'array|min_items:1']);
+        $tooMany = Validator::validate(['items' => [1, 2]], ['items' => 'array|max_items:1']);
+
+        $this->assertArrayHasKey('items', $tooFew);
+        $this->assertArrayHasKey('items', $tooMany);
+    }
+
+    public function testArrayItemRulesDoNotCountNonArrays(): void
+    {
+        $errors = Validator::validate(
+            ['items' => 'not-an-array'],
+            ['items' => 'array|min_items:1|max_items:2']
+        );
+
+        $this->assertCount(1, $errors['items']);
+    }
+
+    public function testUuidV4RuleAcceptsCanonicalVersionFourUuid(): void
+    {
+        $errors = Validator::validate(
+            ['key' => '01932f9e-bb6f-4ce0-935d-6f179b69aa08'],
+            ['key' => 'required|uuid_v4']
+        );
+        $this->assertEmpty($errors);
+    }
+
+    public function testUuidV4RuleRejectsOtherUuidVersions(): void
+    {
+        $errors = Validator::validate(
+            ['key' => '01932f9e-bb6f-1ce0-935d-6f179b69aa08'],
+            ['key' => 'required|uuid_v4']
+        );
+        $this->assertArrayHasKey('key', $errors);
+    }
 }

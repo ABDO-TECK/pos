@@ -5,6 +5,7 @@
  * يتم تخزين الأخطاء مؤقتاً في ذاكرة المتصفح وإرسالها كل 5 ثوانٍ.
  */
 import axios from 'axios'
+import { getCsrfSignature } from '../api/axios'
 
 interface ClientLogEntry {
   level: 'error' | 'warning' | 'info'
@@ -27,14 +28,13 @@ const loggerApi = axios.create({
 
 loggerApi.interceptors.request.use((config) => {
   // Use CSRF HMAC signature from the main axios module
-  const { getCsrfSignature } = require('../api/axios')
   const sig = getCsrfSignature()
   if (sig && config.headers) {
     config.headers['X-XSRF-TOKEN'] = sig
   }
   
   // Prepend dynamic API base URL if available in Electron runtime
-  const dynamicBase = (window as any).API_BASE_URL
+  const dynamicBase = window.API_BASE_URL
   if (dynamicBase) {
     config.baseURL = `${dynamicBase}/api/v1`
   }
@@ -148,7 +148,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (queue.length === 0) return
 
-    const rawBase = (window as any).API_BASE_URL || ''
+    const rawBase = window.API_BASE_URL || ''
     const url = `${rawBase}/api/v1/client-log`
     const batch = queue.splice(0, MAX_QUEUE)
     try {

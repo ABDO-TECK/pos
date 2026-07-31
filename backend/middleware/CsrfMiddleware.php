@@ -61,16 +61,70 @@ class CsrfMiddleware {
     
     /**
      * Retrieve the CSRF HMAC secret.
-     * Uses CSRF_SECRET from .env if set, otherwise derives one from DB credentials.
+     * Priority: CSRF_SECRET env var → auto-generated file → runtime generation.
+     * The auto-generated secret is persisted to a file so it survives process restarts
+     * but is unique per deployment (not derivable from known config values).
      */
     public static function getCsrfSecret(): string
     {
+        // 1. Explicit env var has highest priority
         $secret = \App\Helpers\EnvLoader::get('CSRF_SECRET', '');
-        if ($secret === '') {
-            // Derive a stable, deployment-unique secret from DB config
-            $secret = hash('sha256', DB_HOST . DB_NAME . DB_USER . DB_PASS . '__csrf_salt__');
+        if ($secret !== '') {
+            return $secret;
         }
-        return $secret;
+
+        // 2. Auto-generated persistent secret file
+        $pharRunning = \Phar::running(false);
+        $storageDir = $_ENV['APP_STORAGE_DIR']
+            ?? (getenv('APP_STORAGE_DIR') ?: null)
+            ?? ($pharRunning ? dirname($pharRunning) . '/storage' : dirname(__DIR__) . '/storage');
+        $secretFile = rtrim($storageDir, '/\\') . '/.csrf_secret';
+
+        // Read existing secret
+        if (is_file($secretFile)) {
+            $stored = @file_get_contents($secretFile);
+            if ($stored !== false) {
+                $stored = trim($stored);
+                if (strlen($stored) >= 32) {
+                    return $stored;
+                }
+            }
+        }
+
+        // 3. Generate and persist under an exclusive lock so concurrent first
+        // requests cannot issue signatures from different secrets.
+        $dir = dirname($secretFile);
+        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Unable to create CSRF secret directory');
+        }
+
+        $handle = fopen($secretFile, 'c+');
+        if ($handle === false || !flock($handle, LOCK_EX)) {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            throw new \RuntimeException('Unable to lock CSRF secret file');
+        }
+
+        try {
+            rewind($handle);
+            $stored = trim((string) stream_get_contents($handle));
+            if (strlen($stored) >= 32) {
+                return $stored;
+            }
+
+            $secret = bin2hex(random_bytes(32));
+            ftruncate($handle, 0);
+            rewind($handle);
+            if (fwrite($handle, $secret) !== strlen($secret) || !fflush($handle)) {
+                throw new \RuntimeException('Unable to persist CSRF secret');
+            }
+            @chmod($secretFile, 0600);
+            return $secret;
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     private function getHeaderToken(): string {

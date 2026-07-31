@@ -64,14 +64,26 @@ class PermissionMiddleware
         }
 
         // فحص الصلاحية من قاعدة البيانات
-        if (!$this->hasPermission($user['role'], $this->permission)) {
+        if (!self::allows($this->authService, $this->permission)) {
             return Response::forbidden("ليس لديك صلاحية: {$this->permission}");
         }
 
         return $next();
     }
 
-    private function hasPermission(string $role, string $permission): bool
+    public static function allows(AuthService $authService, string $permission): bool
+    {
+        $user = $authService->user();
+        if (!$user) {
+            return false;
+        }
+        if ($user['role'] === 'admin') {
+            return true;
+        }
+        return self::roleHasPermission($user['role'], $permission);
+    }
+
+    private static function roleHasPermission(string $role, string $permission): bool
     {
         // Per-process cache (fast path for repeated checks in same request)
         static $processCache = [];

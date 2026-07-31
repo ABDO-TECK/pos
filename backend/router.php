@@ -11,16 +11,51 @@
 if (
     (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') &&
     isset($_SERVER['HTTP_X_FORWARDED_PROTO']) &&
-    strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https'
+    strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https' &&
+    in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)
 ) {
     $_SERVER['HTTPS'] = 'on';
     $_SERVER['SERVER_PORT'] = $_SERVER['HTTP_X_FORWARDED_PORT'] ?? '443';
 }
 
-$uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
 
 $pharRunning = Phar::running(false);
 $baseDir = $pharRunning ? dirname($pharRunning) : __DIR__;
+
+/**
+ * Resolve a requested static path and prove that it remains inside its root.
+ *
+ * @param list<string> $allowedExtensions
+ */
+function resolveStaticFile(string $root, string $uri, array $allowedExtensions): ?string
+{
+    if (
+        str_contains($uri, "\0")
+        || str_contains($uri, '\\')
+        || preg_match('#(?:^|/)\.{1,2}(?:/|$)#', $uri)
+    ) {
+        return null;
+    }
+
+    $rootPath = realpath($root);
+    if ($rootPath === false) {
+        return null;
+    }
+
+    $candidate = realpath($rootPath . DIRECTORY_SEPARATOR . ltrim($uri, '/'));
+    if ($candidate === false || !is_file($candidate)) {
+        return null;
+    }
+
+    $prefix = strtolower($rootPath . DIRECTORY_SEPARATOR);
+    if (!str_starts_with(strtolower($candidate), $prefix)) {
+        return null;
+    }
+
+    $extension = strtolower(pathinfo($candidate, PATHINFO_EXTENSION));
+    return in_array($extension, $allowedExtensions, true) ? $candidate : null;
+}
 
 // ── 0.1 حماية الملفات الحساسة (.env, .git, logs, storage) ──────
 // حظر أي طلب مباشر لملفات البيئة أو الملفات الحساسة
@@ -97,25 +132,20 @@ if ($isHttpsProxy && ($uri === '/sw.js' || $uri === '/registerSW.js' || str_star
 $allowedPhpFiles = [
     '/sign-message.php',
 ];
-if ($uri !== '/' && file_exists(__DIR__ . $uri) && is_file(__DIR__ . $uri)) {
-    if (strtolower(pathinfo(__DIR__ . $uri, PATHINFO_EXTENSION)) === 'php') {
-        if (in_array($uri, $allowedPhpFiles, true)) {
-            require __DIR__ . $uri;
-            return true;
-        }
-        // Block non-whitelisted PHP files
-        http_response_code(403);
-        echo '403 Forbidden';
-        return true;
-    }
-    return false; // PHP built-in server يقدّم الملف العادي
+if (in_array($uri, $allowedPhpFiles, true)) {
+    require __DIR__ . $uri;
+    return true;
 }
 
 // ── 3. Frontend static files (JS, CSS, images) ─────────────
 $frontendDist = $baseDir . '/../frontend/dist';
-$filePath = $frontendDist . $uri;
+$filePath = resolveStaticFile(
+    $frontendDist,
+    $uri,
+    ['html', 'js', 'css', 'json', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'woff', 'woff2', 'ttf', 'webmanifest', 'webp', 'txt']
+);
 
-if ($uri !== '/' && file_exists($filePath) && is_file($filePath)) {
+if ($uri !== '/' && $filePath !== null) {
     $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
     $mimeTypes = [
         'html' => 'text/html; charset=UTF-8',
@@ -142,8 +172,12 @@ if ($uri !== '/' && file_exists($filePath) && is_file($filePath)) {
 }
 
 // ── 3.5 Fallback to public directory for certificates etc. ──
-$publicPath = $baseDir . '/../frontend/public' . $uri;
-if ($uri !== '/' && file_exists($publicPath) && is_file($publicPath)) {
+$publicPath = resolveStaticFile(
+    $baseDir . '/../frontend/public',
+    $uri,
+    ['txt', 'js', 'json', 'png', 'jpg', 'jpeg', 'webp', 'svg', 'ico', 'woff', 'woff2', 'ttf']
+);
+if ($uri !== '/' && $publicPath !== null) {
     $ext = strtolower(pathinfo($publicPath, PATHINFO_EXTENSION));
     $mimeTypes = [
         'txt'  => 'text/plain; charset=UTF-8',

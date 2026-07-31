@@ -3,6 +3,7 @@
 namespace App\Middleware;
 
 use App\Helpers\EnvLoader;
+use App\Helpers\NetworkHelper;
 
 /**
  * CorsMiddleware — يعالج طلبات Cross-Origin Resource Sharing.
@@ -37,10 +38,7 @@ class CorsMiddleware
 
             // السماح بأصل من IP الشبكة المحلية (LAN) في وضع التطوير
             if (!$originAllowed && $origin !== '') {
-                $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
-                if (preg_match($lanPattern, $origin) === 1) {
-                    $originAllowed = true;
-                }
+                $originAllowed = NetworkHelper::isLanOrigin($origin);
             }
 
             // السماح بطلبات بدون Origin
@@ -64,10 +62,7 @@ class CorsMiddleware
 
             // Also allow local network (LAN) access in production if explicitly configured
             if (!$originAllowed && $origin !== '' && EnvLoader::getBool('CORS_ALLOW_LAN', false)) {
-                $lanPattern = '#^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$#';
-                if (preg_match($lanPattern, $origin) === 1) {
-                    $originAllowed = true;
-                }
+                $originAllowed = NetworkHelper::isLanOrigin($origin);
             }
         }
 

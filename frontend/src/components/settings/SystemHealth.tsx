@@ -1,18 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Activity, Database, HardDrive, Cpu, RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
-import { getHealthCheck } from '../../api/endpoints'
+import { getHealthDiagnostics, type HealthDiagnostics } from '../../api/endpoints'
 import styles from './SystemHealth.module.css'
 
-interface HealthData {
-  status: 'healthy' | 'unhealthy'
-  checks: {
-    database: { status: string; latency_ms: number | null }
-    disk: { status: string; free_gb: number; total_gb: number; used_percent: number }
-    memory: { status: string; usage_mb: number; peak_mb: number; limit: string }
-    php: { version: string; extensions: Record<string, boolean> }
-  }
-  timestamp: string
-}
+type HealthData = HealthDiagnostics & { timestamp: string }
 
 function StatusIcon({ status }: { status: string }) {
   if (status === 'ok' || status === 'connected') return <CheckCircle2 size={16} style={{ color: 'var(--primary)' }} />
@@ -29,11 +20,11 @@ export default function SystemHealth() {
     setLoading(true)
     setError('')
     try {
-      const res = await getHealthCheck()
-      const healthData = res.data.data ?? (res.data as any)
+      const res = await getHealthDiagnostics()
+      const healthData = res.data
       setData({
         ...healthData,
-        timestamp: healthData?.timestamp ?? new Date().toISOString(),
+        timestamp: new Date().toISOString(),
       })
     } catch (err) { setError('فشل الاتصال بالخادم')
     } finally {
@@ -116,8 +107,8 @@ export default function SystemHealth() {
         <div className={styles.footer}>
           آخر فحص: {data.timestamp ? new Date(data.timestamp).toLocaleString('ar-EG') : 'غير معروف'}
           {' — '}
-          الحالة العامة: <strong style={{ color: data.status === 'healthy' || data.status === 'ok' ? 'var(--primary)' : 'var(--danger)' }}>
-            {(data.status === 'healthy' || data.status === 'ok') ? '✓ سليم' : '⚠ يحتاج انتباه'}
+          الحالة العامة: <strong style={{ color: data.status === 'ok' ? 'var(--primary)' : 'var(--danger)' }}>
+            {data.status === 'ok' ? '✓ سليم' : '⚠ يحتاج انتباه'}
           </strong>
         </div>
       )}

@@ -8,6 +8,12 @@ use App\Helpers\Logger;
 
 class AuditLog
 {
+    private const SENSITIVE_KEYS = [
+        'password',
+        'current_password',
+        'password_confirmation',
+    ];
+
     /**
      * تسجيل عملية في سجل التدقيق.
      *
@@ -27,6 +33,8 @@ class AuditLog
     ): void {
         try {
             $db   = Database::getInstance();
+            $oldValue = self::withoutSensitiveFields($oldValue);
+            $newValue = self::withoutSensitiveFields($newValue);
 
             $stmt = $db->prepare(
                 'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
@@ -46,5 +54,29 @@ class AuditLog
             // لا نوقف التطبيق إذا فشل التسجيل — نسجل في Logger فقط
             Logger::error('Audit log failed', ['error' => $e->getMessage()]);
         }
+    }
+
+    private static function withoutSensitiveFields(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        $sanitized = [];
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $normalizedKey = strtolower($key);
+                if (
+                    in_array($normalizedKey, self::SENSITIVE_KEYS, true)
+                    || str_ends_with($normalizedKey, '_password')
+                ) {
+                    continue;
+                }
+            }
+
+            $sanitized[$key] = self::withoutSensitiveFields($item);
+        }
+
+        return $sanitized;
     }
 }

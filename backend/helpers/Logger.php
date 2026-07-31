@@ -18,6 +18,17 @@ namespace App\Helpers;
  */
 class Logger
 {
+    private const REDACTED_KEYS = [
+        'authorization',
+        'cookie',
+        'password',
+        'current_password',
+        'token',
+        'access_token',
+        'refresh_token',
+        'secret',
+        'api_key',
+    ];
     /** مستويات التسجيل */
     public const DEBUG    = 'DEBUG';
     public const INFO     = 'INFO';
@@ -36,6 +47,9 @@ class Logger
 
     /** @var string|null الحد الأدنى للتسجيل (null = تسجيل كل شيء) */
     private static ?string $minLevel = null;
+
+    /** @var array<string, string> مسار ملف التدوير النشط لكل يوم */
+    private static array $activeLogPaths = [];
 
     /** ترتيب المستويات (للمقارنة) */
     private const LEVEL_ORDER = [
@@ -69,6 +83,12 @@ class Logger
         }
     }
 
+    public static function getLogDirectory(): string
+    {
+        self::init();
+        return self::$logDir;
+    }
+
     /**
      * تعيين الحد الأدنى للتسجيل.
      * مثال: Logger::setMinLevel(Logger::WARNING) → يُسجَّل WARNING + ERROR + CRITICAL فقط.
@@ -99,6 +119,8 @@ class Logger
         $filePath = self::resolveLogPath($date);
 
         // بناء السطر بتنسيق JSON (Structured Logging)
+        $message = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $message) ?? $message;
+        $context = self::redactContext($context);
         $logData = [
             'timestamp' => $time,
             'level'     => $level,
@@ -115,6 +137,27 @@ class Logger
             $contextStr = !empty($context) ? ' - Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
             error_log("[POS][{$level}] {$message}{$contextStr}");
         }
+    }
+
+    public static function redactContext(array $context): array
+    {
+        foreach ($context as $key => $value) {
+            $normalizedKey = strtolower((string) $key);
+            if (in_array($normalizedKey, self::REDACTED_KEYS, true)
+                || str_ends_with($normalizedKey, '_token')
+                || str_ends_with($normalizedKey, '_secret')) {
+                $context[$key] = '[REDACTED]';
+                continue;
+            }
+
+            if (is_array($value)) {
+                $context[$key] = self::redactContext($value);
+            } elseif (is_string($value)) {
+                $context[$key] = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value) ?? $value;
+            }
+        }
+
+        return $context;
     }
 
     // ── Shorthand methods ─────────────────────────────────────────
@@ -152,47 +195,151 @@ class Logger
      */
     private static function resolveLogPath(string $date): string
     {
+        if (isset(self::$activeLogPaths[$date])) {
+            $cachedPath = self::$activeLogPaths[$date];
+            if (self::hasCapacity($cachedPath)) {
+                return $cachedPath;
+            }
+
+            $rotationIndex = self::rotationIndex($cachedPath) + 1;
+            return self::$activeLogPaths[$date] = self::findAvailableRotation($date, $rotationIndex);
+        }
+
         $basePath = self::$logDir . "/pos-{$date}.log";
 
         // إذا كان الملف أصغر من الحد، استخدمه مباشرة
-        if (!file_exists($basePath) || filesize($basePath) < self::$maxFileSize) {
-            return $basePath;
+        if (self::hasCapacity($basePath)) {
+            return self::$activeLogPaths[$date] = $basePath;
         }
 
-        // ابحث عن أعلى رقم تدوير موجود
-        $rotationIndex = 1;
-        while (file_exists(self::$logDir . "/pos-{$date}.{$rotationIndex}.log")) {
-            $currentPath = self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
-            if (filesize($currentPath) < self::$maxFileSize) {
-                return $currentPath;
+        // يتم المسح مرة واحدة فقط لكل عملية/يوم، ثم يُحفظ الملف النشط في الذاكرة.
+        $rotationIndex = 0;
+        $rotationPath = null;
+        foreach (self::uniqueFiles([
+            self::$logDir . "/pos-{$date}.*.log",
+        ]) as $file) {
+            $index = self::rotationIndex($file);
+            if ($index > $rotationIndex) {
+                $rotationIndex = $index;
+                $rotationPath = $file;
+            }
+        }
+
+        if ($rotationPath !== null && self::hasCapacity($rotationPath)) {
+            return self::$activeLogPaths[$date] = $rotationPath;
+        }
+
+        return self::$activeLogPaths[$date] = self::findAvailableRotation($date, $rotationIndex + 1);
+    }
+
+    private static function findAvailableRotation(string $date, int $rotationIndex): string
+    {
+        do {
+            $path = self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
+            if (self::hasCapacity($path)) {
+                return $path;
             }
             $rotationIndex++;
+        } while (true);
+    }
+
+    private static function hasCapacity(string $path): bool
+    {
+        if (!is_file($path)) {
+            return true;
         }
 
-        return self::$logDir . "/pos-{$date}.{$rotationIndex}.log";
+        clearstatcache(true, $path);
+        $size = filesize($path);
+        return $size !== false && $size < self::$maxFileSize;
+    }
+
+    private static function rotationIndex(string $path): int
+    {
+        return preg_match('/\.(\d+)\.log$/', basename($path), $matches)
+            ? (int) $matches[1]
+            : 0;
     }
 
     /**
      * حذف ملفات اللوج القديمة (أقدم من $retainDays يوم).
      * يمكن استدعاؤها دوريًا أو ضمن Migrations.
      */
-    public static function cleanup(): int
+    public static function cleanup(?string $logDir = null, ?int $retainDays = null): int
     {
         self::init();
         $deleted = 0;
-        $files   = array_merge(
-            glob(self::$logDir . '/pos-*.log') ?: [],
-            glob(self::$logDir . '/pos-*.*.log') ?: []
-        );
-        $cutoff  = time() - (self::$retainDays * 86400);
+        $directory = $logDir ?? self::$logDir;
+        $files = self::getLogFiles($directory);
+        $cutoff = time() - (($retainDays ?? self::$retainDays) * 86400);
 
         foreach ($files as $file) {
-            if (filemtime($file) < $cutoff) {
-                @unlink($file);
+            $modifiedAt = filemtime($file);
+            if ($modifiedAt !== false && $modifiedAt < $cutoff && @unlink($file)) {
                 $deleted++;
             }
         }
 
         return $deleted;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getLogFiles(?string $logDir = null, bool $newestFirst = false): array
+    {
+        self::init();
+        $directory = rtrim($logDir ?? self::$logDir, '/\\');
+        $files = self::uniqueFiles([
+            $directory . '/pos-*.log',
+            $directory . '/pos-*.*.log',
+        ]);
+
+        if ($newestFirst) {
+            usort($files, static function (string $left, string $right): int {
+                $leftParts = self::logFileSortParts($left);
+                $rightParts = self::logFileSortParts($right);
+                return $rightParts <=> $leftParts;
+            });
+        }
+
+        return $files;
+    }
+
+    /**
+     * @param list<string> $patterns
+     * @return list<string>
+     */
+    private static function uniqueFiles(array $patterns): array
+    {
+        $unique = [];
+        foreach ($patterns as $pattern) {
+            foreach (glob($pattern) ?: [] as $file) {
+                if (!is_file($file)) {
+                    continue;
+                }
+
+                $canonicalPath = realpath($file) ?: $file;
+                $key = DIRECTORY_SEPARATOR === '\\'
+                    ? strtolower($canonicalPath)
+                    : $canonicalPath;
+                $unique[$key] = $canonicalPath;
+            }
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * @return array{0: string, 1: int, 2: string}
+     */
+    private static function logFileSortParts(string $path): array
+    {
+        $name = basename($path);
+        if (preg_match('/^pos-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$/', $name, $matches)) {
+            return [$matches[1], isset($matches[2]) ? (int) $matches[2] : 0, $name];
+        }
+
+        return ['', 0, $name];
     }
 }

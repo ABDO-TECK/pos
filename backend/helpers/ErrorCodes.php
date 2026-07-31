@@ -18,6 +18,9 @@ class ErrorCodes
     public const UNAUTHORIZED      = 'ERR_UNAUTHORIZED';
     public const FORBIDDEN         = 'ERR_FORBIDDEN';
     public const SERVER_ERROR      = 'ERR_SERVER_ERROR';
+    public const MALFORMED_JSON    = 'ERR_MALFORMED_JSON';
+    public const PAYLOAD_TOO_LARGE = 'ERR_PAYLOAD_TOO_LARGE';
+    public const UNSUPPORTED_API_VERSION = 'ERR_UNSUPPORTED_API_VERSION';
 
     // ==========================================
     // أخطاء متعلقة بالمنتجات والمخزون
@@ -33,6 +36,7 @@ class ErrorCodes
     public const INVOICE_NOT_FOUND     = 'ERR_INVOICE_NOT_FOUND';
     public const EMPTY_CART            = 'ERR_EMPTY_CART';
     public const INVALID_PAYMENT       = 'ERR_INVALID_PAYMENT';
+    public const IDEMPOTENCY_CONFLICT  = 'ERR_IDEMPOTENCY_CONFLICT';
 
     // ==========================================
     // أخطاء متعلقة بالعملاء والموردين

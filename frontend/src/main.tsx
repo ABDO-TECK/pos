@@ -1,14 +1,41 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import './store/themeStore'
 import App from './App'
 import './i18n'
-// @ts-ignore
 import './styles/_index.css'
 import { initOfflineSync } from './utils/offlineSync.js'
 import { logError, flushNow } from './utils/clientLogger'
+import useAuthStore from './store/authStore'
 
-initOfflineSync()
+export function OfflineSyncManager() {
+  const hasHydrated = useAuthStore((state) => state._hasHydrated)
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const user = useAuthStore((state) => state.user)
+
+  useEffect(() => {
+    if (
+      !hasHydrated
+      || !isAuthenticated
+      || !user
+      || user.id <= 0
+      || !Number.isInteger(user.branch_id)
+      || user.branch_id <= 0
+    ) {
+      return
+    }
+
+    const owner = { ownerUserId: user.id, branchId: user.branch_id }
+    return initOfflineSync(owner, () => {
+      const current = useAuthStore.getState()
+      return current.isAuthenticated
+        && current.user?.id === owner.ownerUserId
+        && current.user.branch_id === owner.branchId
+    })
+  }, [hasHydrated, isAuthenticated, user])
+
+  return null
+}
 
 // ── تسجيل أخطاء JavaScript غير المعالجة ────────────────────────
 window.addEventListener('error', (event) => {
@@ -51,7 +78,7 @@ if (!isAppProtocol && 'serviceWorker' in navigator) {
       onOfflineReady() {
         console.log('[SW] App ready to work offline');
       },
-      onRegisterError(error) {
+      onRegisterError(error: unknown) {
         console.error('[SW] Service Worker registration failed:', error);
       }
     });
@@ -61,7 +88,7 @@ if (!isAppProtocol && 'serviceWorker' in navigator) {
 }
 
 // منع تغيير الأرقام في حقول الإدخال عبر تحريك بكرة الماوس (scroll)
-document.addEventListener('wheel', (e) => {
+document.addEventListener('wheel', () => {
   const activeElement = document.activeElement as HTMLInputElement | null;
   if (activeElement?.type === 'number') {
     activeElement.blur()
@@ -69,73 +96,21 @@ document.addEventListener('wheel', (e) => {
 })
 
 async function initApp() {
-  if (window.posRuntime) {
-    if (typeof window.posRuntime.getApiBaseUrl === 'function') {
-      try {
-        const url = await window.posRuntime.getApiBaseUrl();
-        if (url) {
-          (window as any).API_BASE_URL = url;
-          console.log('[Init] Dynamic API base URL resolved:', url);
-        }
-      } catch (err) {
-        console.warn('[Init] Failed to resolve dynamic API base URL:', err);
-      }
-    }
-
-    if (typeof (window.posRuntime as any).getWsBaseUrl === 'function') {
-      try {
-        const wsUrl = await (window.posRuntime as any).getWsBaseUrl();
-        if (wsUrl) {
-          (window as any).WS_BASE_URL = wsUrl;
-          console.log('[Init] Dynamic WS base URL resolved:', wsUrl);
-        } else {
-          (window as any).WS_BASE_URL = 'ws://127.0.0.1:8090';
-        }
-      } catch (err) {
-        console.warn('[Init] Failed to resolve dynamic WS base URL:', err);
-        (window as any).WS_BASE_URL = 'ws://127.0.0.1:8090';
-      }
-    } else {
-      (window as any).WS_BASE_URL = 'ws://127.0.0.1:8090';
-    }
-  } else {
-    // We are running in a normal browser (phone/tablet or external access)
+  if (typeof window.posRuntime?.getApiBaseUrl === 'function') {
     try {
-      const response = await fetch('/api/health');
-      if (response.ok) {
-        const health = await response.json();
-        const wsPort = health.ws_port || 8090;
-        
-        const host = window.location.hostname;
-        const protocol = window.location.protocol;
-        
-        if (protocol === 'https:') {
-          // HTTPS Mixed-Content: browser requires secure WebSockets (wss://).
-          // We route the secure WebSocket connection through the proxy on the same port!
-          const port = window.location.port ? `:${window.location.port}` : '';
-          (window as any).WS_BASE_URL = `wss://${host}${port}/ws`;
-        } else {
-          (window as any).WS_BASE_URL = `ws://${host}:${wsPort}`;
-        }
-        console.log('[Init] Remote WS base URL resolved:', (window as any).WS_BASE_URL);
-      } else {
-        throw new Error(`HTTP ${response.status}`);
+      const url = await window.posRuntime.getApiBaseUrl()
+      if (url) {
+        window.API_BASE_URL = url
+        console.log('[Init] Dynamic API base URL resolved:', url)
       }
     } catch (err) {
-      console.warn('[Init] Failed to fetch health check for dynamic WS port, falling back:', err);
-      const host = window.location.hostname;
-      const protocol = window.location.protocol;
-      if (protocol === 'https:') {
-        const port = window.location.port ? `:${window.location.port}` : '';
-        (window as any).WS_BASE_URL = `wss://${host}${port}/ws`;
-      } else {
-        (window as any).WS_BASE_URL = `ws://${host}:8090`;
-      }
+      console.warn('[Init] Failed to resolve dynamic API base URL:', err)
     }
   }
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
+      <OfflineSyncManager />
       <App />
     </React.StrictMode>
   )

@@ -194,8 +194,8 @@ class BackupService implements BackupServiceInterface {
         }
         $mysqli->set_charset('utf8mb4');
 
-        // تعطيل الوضع الصارم لتجنب أخطاء "Data truncated"
-        $mysqli->query("SET sql_mode=''");
+        // Relax strict mode only where needed — keep basic safety checks active
+        $mysqli->query("SET sql_mode='NO_ENGINE_SUBSTITUTION'");
         $mysqli->query("SET FOREIGN_KEY_CHECKS=0");
 
         if (!$mysqli->multi_query($sqlContent)) {
@@ -320,59 +320,5 @@ class BackupService implements BackupServiceInterface {
         } finally {
             fclose($fh);
         }
-    }
-
-    /**
-     * @deprecated Use generateBackupSqlToFile() instead to avoid OOM on large databases.
-     * @internal Kept only for backward compatibility with unit tests. Do NOT call from new code.
-     */
-    private function generateBackupSql(): string {
-        trigger_error(
-            'generateBackupSql() is deprecated — use generateBackupSqlToFile() instead',
-            E_USER_DEPRECATED
-        );
-        $tables = $this->getDb()->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
-
-        $sql  = "-- POS Auto-Update Backup\n";
-        $sql .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
-        $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
-
-        foreach ($tables as $table) {
-            // Validate table name to prevent SQL injection from a compromised DB
-            if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
-                continue;
-            }
-            $createStmt = $this->getDb()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_ASSOC);
-            $ddl = $createStmt['Create Table'] ?? null;
-            if ($ddl === null && is_array($createStmt)) {
-                $vals = array_values($createStmt);
-                $ddl  = $vals[1] ?? '';
-            }
-            if (!$ddl) {
-                throw new RuntimeException("تعذر قراءة هيكل الجدول: $table");
-            }
-
-            $sql .= "-- Table: $table\n";
-            $sql .= "DROP TABLE IF EXISTS `$table`;\n";
-            $sql .= $ddl . ";\n\n";
-
-            $rows = $this->getDb()->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
-            if (!empty($rows)) {
-                $columns = '`' . implode('`, `', array_keys($rows[0])) . '`';
-                $sql .= "INSERT INTO `$table` ($columns) VALUES\n";
-                $values = [];
-                foreach ($rows as $row) {
-                    $escaped = array_map(function ($v) {
-                        return $v === null ? 'NULL' : $this->getDb()->quote((string)$v);
-                    }, array_values($row));
-                    $values[] = '(' . implode(', ', $escaped) . ')';
-                }
-                $sql .= implode(",\n", $values) . ";\n\n";
-            }
-        }
-
-        $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
-        
-        return $sql;
     }
 }

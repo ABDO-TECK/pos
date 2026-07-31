@@ -169,8 +169,11 @@ class MigrationService {
                 $errorInfo = $e->errorInfo ?? [];
                 $errno = $errorInfo[1] ?? $e->getCode();
 
-                // 1060: Duplicate column, 1061: Duplicate key, 1050: Table exists, 1068: Multiple primary key, 1005: Can't create table (often duplicate foreign key)
-                $ignorable = [1060, 1061, 1050, 1068, 1005];
+                // Ignore only explicit duplicate-object errors and privilege
+                // errors for optional features (EVENT scheduler, GLOBAL vars).
+                // Error 1005 is intentionally not ignored because it also
+                // represents broken foreign keys and other real schema failures.
+                $ignorable = [1060, 1061, 1050, 1068, 1826, 1227, 1044];
                 if (in_array((int) $errno, $ignorable, true)) {
                     // خطأ متوقع ومتجاهل — نستمر بالأمر التالي
                     continue;

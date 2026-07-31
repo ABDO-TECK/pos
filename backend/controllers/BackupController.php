@@ -42,6 +42,12 @@ class BackupController extends Controller {
             return Response::error('استعادة النسخة الاحتياطية من الويب معطلة لأسباب أمنية. يرجى استخدام سطر الأوامر (CLI).', 403);
         }
 
+        // Extra safety: never allow web restore in production regardless of ALLOW_WEB_RESTORE
+        if (defined('APP_ENV') && APP_ENV === 'production') {
+            \App\Helpers\Logger::warning('Web restore attempted in production — blocked');
+            return Response::error('استعادة النسخة الاحتياطية غير مسموحة في بيئة الإنتاج. استخدم CLI بدلاً من ذلك.', 403);
+        }
+
         // 1. التحقق من صحة الملف
         $validation = $this->backupService->validateUploadedSqlFile($_FILES['sql_file'] ?? []);
         if (!$validation['ok']) {

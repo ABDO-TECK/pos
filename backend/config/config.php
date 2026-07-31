@@ -55,7 +55,7 @@ define('FRONTEND_URL', EnvLoader::get('FRONTEND_URL', 'http://localhost:5173'));
 define('INVOICE_DEFAULT_LIMIT', (int) EnvLoader::get('INVOICE_DEFAULT_LIMIT', '1000'));
 
 // ── Security ──────────────────────────────────────────────────
-define('ALLOW_WEB_RESTORE', EnvLoader::getBool('ALLOW_WEB_RESTORE', true));
+define('ALLOW_WEB_RESTORE', EnvLoader::getBool('ALLOW_WEB_RESTORE', false));
 define('TRUSTED_PROXIES', array_map('trim', explode(',', EnvLoader::get('TRUSTED_PROXIES', '127.0.0.1,::1'))));
 
 
@@ -74,6 +74,21 @@ if (APP_ENV === 'production' && !EnvLoader::getBool('SECURE_COOKIES', false)) {
         \App\Helpers\Logger::warning(
             '⚠️ SECURITY: SECURE_COOKIES is disabled in production. '
             . 'Set SECURE_COOKIES=true in .env for secure cookies.'
+        );
+    }
+}
+
+if (EnvLoader::getBool('POS_LAN_ENABLED', false)) {
+    $missingSecurityControls = [];
+    if (!EnvLoader::getBool('FORCE_HTTPS', false)) {
+        $missingSecurityControls[] = 'FORCE_HTTPS=true';
+    }
+    if (!EnvLoader::getBool('SECURE_COOKIES', false)) {
+        $missingSecurityControls[] = 'SECURE_COOKIES=true';
+    }
+    if ($missingSecurityControls !== []) {
+        throw new \RuntimeException(
+            'LAN mode requires: ' . implode(', ', $missingSecurityControls)
         );
     }
 }
