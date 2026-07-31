@@ -38,7 +38,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: pdo_mysql
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip
           coverage: none
 
       - name: Install root dependencies from lockfile
@@ -46,6 +46,9 @@ jobs:
 
       - name: Install frontend dependencies from lockfile
         run: npm --prefix frontend ci
+
+      - name: Install backend dependencies from lockfile
+        run: composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
 
       - name: Run repository quality gates including disposable-MySQL migrations and concurrency
         env:

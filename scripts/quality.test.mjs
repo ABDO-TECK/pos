@@ -77,6 +77,17 @@ test('root package lock is not ignored', () => {
   assert.equal(activeRules.includes('package-lock.json'), false)
 })
 
+test('CI installs the locked backend dependencies before skipping local installs', () => {
+  const workflow = readFileSync(path.join(repoRoot, '.github/workflows/quality.yml'), 'utf8')
+
+  assert.match(
+    workflow,
+    /composer install --working-dir=backend --no-interaction --prefer-dist --no-progress/u,
+  )
+  assert.match(workflow, /node scripts\/quality\.mjs --skip-install --require-mysql/u)
+  assert.match(workflow, /extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip/u)
+})
+
 test('Electron manifest, lock, and hardened renderer APIs stay compatible', () => {
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
   const lock = JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'))
