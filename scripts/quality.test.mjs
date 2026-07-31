@@ -88,6 +88,31 @@ test('CI installs the locked backend dependencies before skipping local installs
   assert.match(workflow, /extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip/u)
 })
 
+test('backend configuration files use the Linux-correct Config path casing', () => {
+  const trackedPaths = execFileSync(
+    'git',
+    ['ls-files', '-z', 'backend/Config'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  )
+    .split('\0')
+    .filter(Boolean)
+    .sort()
+
+  assert.deepEqual(trackedPaths, [
+    'backend/Config/Database.php',
+    'backend/Config/bindings.php',
+    'backend/Config/config.php',
+  ])
+  assert.match(
+    readFileSync(path.join(repoRoot, 'backend/Config/config.php'), 'utf8'),
+    /namespace App\\Config;/u,
+  )
+  assert.match(
+    readFileSync(path.join(repoRoot, 'backend/cli/bootstrap-admin.php'), 'utf8'),
+    /require dirname\(__DIR__\) \. '\/Config\/config\.php';/u,
+  )
+})
+
 test('Electron manifest, lock, and hardened renderer APIs stay compatible', () => {
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
   const lock = JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'))
