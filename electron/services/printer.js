@@ -3,7 +3,11 @@ const { BrowserWindow } = require('electron');
 async function printHTML(htmlContent, options = {}) {
   const printWin = new BrowserWindow({
     show: false,
-    webPreferences: { nodeIntegration: false }
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    }
   });
 
   await printWin.loadURL(

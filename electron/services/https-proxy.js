@@ -2,10 +2,8 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const net = require('net');
 
 let proxyServer = null;
-let targetWsPort = null;
 
 /**
  * Get the SSL directory path. In production (packaged), we use the
@@ -61,9 +59,8 @@ function generateCertificate(certPath, keyPath) {
   }
 }
 
-function startHttpsProxy(phpPort, httpsPort, wsPort) {
+function startHttpsProxy(phpPort, httpsPort) {
   return new Promise((resolve) => {
-    targetWsPort = wsPort;
     const sslDir = getSslDir();
     const keyPath = path.join(sslDir, 'server.key');
     const certPath = path.join(sslDir, 'server.crt');
@@ -136,26 +133,9 @@ function startHttpsProxy(phpPort, httpsPort, wsPort) {
         });
       });
 
-      // WebSocket upgrade support — required for Service Worker & HMR
-      proxyServer.on('upgrade', (req, socket, head) => {
-        const targetPort = targetWsPort || phpPort;
-        const proxySocket = net.connect(targetPort, '127.0.0.1', () => {
-          // Reconstruct the HTTP upgrade request
-          const reqLine = `${req.method} ${req.url} HTTP/1.1\r\n`;
-          const headers = Object.entries(req.headers)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join('\r\n');
-          proxySocket.write(reqLine + headers + '\r\n\r\n');
-          if (head && head.length) proxySocket.write(head);
-          proxySocket.pipe(socket);
-          socket.pipe(proxySocket);
-        });
-        proxySocket.on('error', () => socket.end());
-        socket.on('error', () => proxySocket.end());
-      });
-
-      proxyServer.listen(httpsPort, '0.0.0.0', () => {
-        console.log(`[HTTPS] Proxy running on 0.0.0.0:${httpsPort}`);
+      const listenHost = process.env.POS_LAN_ENABLED === 'true' ? '0.0.0.0' : '127.0.0.1';
+      proxyServer.listen(httpsPort, listenHost, () => {
+        console.log(`[HTTPS] Proxy running on ${listenHost}:${httpsPort}`);
         resolve();
       });
     } catch (err) {

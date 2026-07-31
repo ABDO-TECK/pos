@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const net = require('net');
+const crypto = require('crypto');
 const { getMysqlPaths } = require('../utils/paths');
 
 let mysqlProcess = null;
@@ -77,8 +78,15 @@ async function initDatabase(port) {
       // إصلاح الجداول التالفة ("doesn't exist in engine")
       repairCorruptedTables(mysqlPath, port);
     }
+    const appPassword = crypto.randomBytes(32).toString('hex');
+    execSync(
+      `"${mysqlPath}" -u root --port=${port} -e "GRANT ALL PRIVILEGES ON pos_db.* TO 'pos_app'@'127.0.0.1' IDENTIFIED BY '${appPassword}'"`,
+      { windowsHide: true }
+    );
+    return { user: 'pos_app', password: appPassword };
   } catch (e) {
     console.error('[MySQL Init]', e.message);
+    throw e;
   }
 }
 

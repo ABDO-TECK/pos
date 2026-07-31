@@ -1,17 +1,27 @@
 declare global {
+  interface QZPortConfiguration {
+    secure: number[];
+    insecure: number[];
+  }
+
   interface QZConfig {
     host?: string;
     signUrl?: string;
     certUrl?: string;
-    port?: { host: string; port: number } | number;
+    port?: QZPortConfiguration;
     keepAlive?: number;
     retries?: number;
     delay?: number;
   }
 
+  interface QZPromiseResolver<TValue> {
+    (resolve: { (): void; (value: TValue): void }, reject: (reason?: unknown) => void): void;
+  }
+
   interface QZSecurity {
-    setCertificatePromise: (promise: (resolve: (cert: string) => void, reject: (err: Error) => void) => void) => void;
-    setSignaturePromise: (promise: (toSign: string) => (resolve: (signature: string) => void, reject: (err: Error) => void) => void) => void;
+    setCertificatePromise: (promise: QZPromiseResolver<string>) => void;
+    setSignaturePromise: (promise: (toSign: string) => QZPromiseResolver<string>) => void;
+    setSignatureAlgorithm: (algorithm: 'SHA1' | 'SHA256' | 'SHA512') => void;
   }
 
   interface QZPrinters {
@@ -20,16 +30,40 @@ declare global {
   }
 
   interface QZConfigs {
-    create: (printer: string, options?: any) => any;
+    create: (printer: string, options?: QZPrintOptions) => QZPrinterConfig;
+  }
+
+  interface QZPrintOptions {
+    orientation?: 'portrait' | 'landscape';
+    margins?: number;
+    altPrinting?: boolean;
+    encoding?: string;
+  }
+
+  interface QZPrinterConfig {
+    getPrinter: () => string | { name?: string; file?: string; host?: string; port?: string };
+    getOptions: () => QZPrintOptions;
+  }
+
+  interface QZHtmlPrintData {
+    type: 'html';
+    format: 'plain';
+    data: string;
+  }
+
+  interface QZPdfPrintData {
+    type: 'pdf';
+    format: 'base64';
+    data: string;
   }
 
   interface QZPrint {
-    print: (config: any, data: any[]) => Promise<void>;
+    print: (config: QZPrinterConfig, data: Array<QZHtmlPrintData | QZPdfPrintData>) => Promise<void>;
   }
 
   interface QZWebsocket {
-    connect: (config?: QZConfig) => Promise<void>;
-    disconnect: () => Promise<void>;
+    connect: (config?: QZConfig) => Promise<null>;
+    disconnect: () => Promise<null>;
     isActive: () => boolean;
   }
 
@@ -37,7 +71,7 @@ declare global {
     security: QZSecurity;
     printers: QZPrinters;
     configs: QZConfigs;
-    print: QZPrint;
+    print: QZPrint['print'];
     websocket: QZWebsocket;
   }
 }

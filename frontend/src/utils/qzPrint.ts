@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * qzPrint.js — QZ Tray integration for the POS React app
  *
@@ -19,21 +18,35 @@
 
 import { buildReceiptHTML, buildPurchaseReceiptHTML } from './receiptBuilder'
 
+export type QZStatus = 'idle' | 'connecting' | 'ready' | 'error' | 'unavailable'
+
+export interface QZRemoteErrorDetails {
+    message: string
+    certUrl: string
+}
+
+export type QZPrintResult =
+    | { ok: true; error?: undefined }
+    | { ok: false; error: string }
+
+type ReceiptSettings = Parameters<typeof buildReceiptHTML>[2]
+type ReceiptPrintOptions = Parameters<typeof buildReceiptHTML>[4]
+
+interface QZRemoteError extends Error, QZRemoteErrorDetails {
+    isQZError: true
+    isRemoteQZ: true
+}
+
 declare global {
   interface Window {
     qz: QZ;
     QZ_CONFIG?: QZConfig;
-    electronAPI?: {
-      getQZCert?: () => Promise<string | null>;
-      signQZMessage?: (data: string) => Promise<string | null>;
-      [key: string]: unknown;
-    };
   }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function getQZ() {
+function getQZ(): QZ {
     if (typeof window === 'undefined' || typeof window.qz === 'undefined') {
         throw new Error('مكتبة QZ Tray غير محملة. تأكد من تشغيل QZ Tray على جهازك.')
     }
@@ -41,14 +54,21 @@ function getQZ() {
 }
 
 /** هل نحن داخل Electron؟ */
-function isElectron(): boolean {
-    return typeof window !== 'undefined'
-        && typeof window.electronAPI !== 'undefined'
-        && typeof window.electronAPI.getQZCert === 'function'
+function getElectronQZApi(): ElectronAPI | undefined {
+    return typeof window === 'undefined' ? undefined : window.electronAPI
 }
 
-function getCfg() {
-    const base = { ...(window.QZ_CONFIG ?? { host: 'localhost', signUrl: '/pos/backend/sign-message.php', certUrl: '/digital-certificate.txt' }) }
+function getCfg(): Required<Pick<QZConfig, 'host' | 'signUrl' | 'certUrl'>> & Omit<QZConfig, 'host' | 'signUrl' | 'certUrl'> {
+    const configured = window.QZ_CONFIG
+    const base = {
+        host: configured?.host ?? 'localhost',
+        signUrl: configured?.signUrl ?? '/pos/backend/sign-message.php',
+        certUrl: configured?.certUrl ?? '/digital-certificate.txt',
+        port: configured?.port,
+        keepAlive: configured?.keepAlive,
+        retries: configured?.retries,
+        delay: configured?.delay,
+    }
     // QZ Tray يعمل على السيرفر المحلي (جهاز الكاشير الرئيسي).
     // لذلك نعتمد على الإعدادات القادمة من qz-config.js لكي يتمكن الهاتف من الطباعة عبر الـ IP.
     if (base.host === 'pos-app' || !base.host) {
@@ -59,16 +79,15 @@ function getCfg() {
 
 // ── Security setup (runs once) ─────────────────────────────────────────────
 
-let _securitySet = false
-
-function ensureSecurity() {
+function ensureSecurity(): void {
     const qz  = getQZ()
     const cfg = getCfg()
+    const electronApi = getElectronQZApi()
 
-    if (isElectron()) {
+    if (electronApi?.getQZCert && electronApi.signQZMessage) {
         // ═══ Electron Mode: الشهادة والتوقيع عبر IPC ═══
-        qz.security.setCertificatePromise((resolve: (cert: string) => void, _reject: (err: Error) => void) => {
-            window.electronAPI!.getQZCert!()
+        qz.security.setCertificatePromise((resolve) => {
+            electronApi.getQZCert()
                 .then((cert: string | null) => {
                     if (cert) { resolve(cert) }
                     else {
@@ -81,17 +100,20 @@ function ensureSecurity() {
 
         qz.security.setSignatureAlgorithm('SHA512')
 
-        qz.security.setSignaturePromise((toSign: string) => (resolve: (signature: string) => void, _reject: (err: Error) => void) => {
-            window.electronAPI!.signQZMessage!(toSign)
-                .then((sig: string | null) => { resolve(sig || undefined) })
+        qz.security.setSignaturePromise((toSign) => (resolve) => {
+            electronApi.signQZMessage(toSign)
+                .then((sig: string | null) => {
+                    if (sig) resolve(sig)
+                    else resolve()
+                })
                 .catch(() => { resolve() })
         })
     } else {
         // ═══ Browser Mode: الطريقة القديمة (fetch) — Fallback للمتصفح العادي ═══
-        qz.security.setCertificatePromise((resolve: (cert: string) => void, _reject: (err: Error) => void) => {
-            fetch(cfg.certUrl!, { cache: 'no-store', headers: { 'Content-Type': 'text/plain' } })
+        qz.security.setCertificatePromise((resolve) => {
+            fetch(cfg.certUrl, { cache: 'no-store', headers: { 'Content-Type': 'text/plain' } })
                 .then((r: Response) => {
-                    if (r.ok) { r.text().then(resolve) }
+                    if (r.ok) { r.text().then((certificate) => resolve(certificate)) }
                     else { console.warn('[QZ] digital-certificate.txt not found — unsigned mode'); resolve() }
                 })
                 .catch(() => { console.warn('[QZ] Could not fetch certificate — unsigned mode'); resolve() })
@@ -99,31 +121,35 @@ function ensureSecurity() {
 
         qz.security.setSignatureAlgorithm('SHA512')
 
-        qz.security.setSignaturePromise((toSign: string) => (resolve: (signature: string) => void, _reject: (err: Error) => void) => {
+        qz.security.setSignaturePromise((toSign) => (resolve) => {
             fetch(`${cfg.signUrl}?request=${encodeURIComponent(toSign)}`, {
                 cache: 'no-store', credentials: 'include',
                 headers: { 'Content-Type': 'text/plain' },
             })
                 .then((r: Response) => {
-                    if (r.ok) { r.text().then((t: string) => { resolve(t || undefined) }) }
+                    if (r.ok) {
+                        r.text().then((signature) => {
+                            if (signature) resolve(signature)
+                            else resolve()
+                        })
+                    }
                     else { console.warn('[QZ] sign-message returned', r.status, '— unsigned mode'); resolve() }
                 })
                 .catch(() => { resolve() })
         })
     }
 
-    _securitySet = true
 }
 
 // ── Connection management ──────────────────────────────────────────────────
 
-let _connecting = null  // in-flight promise guard
+let _connecting: Promise<true> | null = null  // in-flight promise guard
 
 /**
  * رسالة تعليمات واضحة عند فشل الاتصال من جهاز خارجي.
  * السبب الأكثر شيوعاً: المتصفح لم يقبل شهادة QZ Tray بعد.
  */
-function buildQZError(host: string) {
+function buildQZError(host: string): QZRemoteErrorDetails {
     return {
         message: [
             'لا يمكن الاتصال بـ QZ Tray على هذا الجهاز.',
@@ -139,7 +165,24 @@ function buildQZError(host: string) {
     }
 }
 
-export async function connectQZ() {
+function createQZRemoteError(details: QZRemoteErrorDetails): QZRemoteError {
+    const remoteDetails: QZRemoteErrorDetails & Pick<QZRemoteError, 'isQZError' | 'isRemoteQZ'> = {
+        certUrl: details.certUrl,
+        message: details.message,
+        isQZError: true,
+        isRemoteQZ: true,
+    }
+    return Object.assign(new Error(details.message), remoteDetails)
+}
+
+export function isQZRemoteError(error: unknown): error is QZRemoteError {
+    return error instanceof Error
+        && Reflect.get(error, 'isQZError') === true
+        && Reflect.get(error, 'isRemoteQZ') === true
+        && typeof Reflect.get(error, 'certUrl') === 'string'
+}
+
+export async function connectQZ(): Promise<true> {
     const qz  = getQZ()
     const cfg = getCfg()
 
@@ -148,10 +191,9 @@ export async function connectQZ() {
     if (_connecting) return _connecting
 
     // Re-apply security every time (QZ Tray resets callbacks after disconnect)
-    _securitySet = false
     ensureSecurity()
 
-    const connectOpts = {
+    const connectOpts: QZConfig = {
         host:      cfg.host,   // Use the dynamic host configured in qz-config.js (e.g. server IP)
         port:      cfg.port ?? { secure: [8181, 8282, 8383, 8484], insecure: [8182, 8283, 8384, 8485] },
         keepAlive: cfg.keepAlive ?? 60,
@@ -161,35 +203,32 @@ export async function connectQZ() {
 
     console.info(`[QZ] Connecting to QZ Tray on ${cfg.host} ports=${JSON.stringify(connectOpts.port)}`)
 
-    _connecting = qz.websocket
+    const connectingPromise = qz.websocket
         .connect(connectOpts)
-        .then(() => { _connecting = null; return true })
-        .catch(err => {
+        .then((): true => { _connecting = null; return true })
+        .catch(() => {
             _connecting = null
             const info = buildQZError(cfg.host ?? 'localhost')
             console.error(`[QZ] ${info.message}`)
-            const qzErr: Error = new Error(info.message)
-            qzErr.certUrl = info.certUrl
-            qzErr.isQZError = true
-            qzErr.isRemoteQZ = true
-            throw qzErr
+            throw createQZRemoteError(info)
         })
 
-    return _connecting
+    _connecting = connectingPromise
+    return connectingPromise
 }
 
-export function disconnectQZ() {
+export function disconnectQZ(): void {
     try {
         const qz = getQZ()
         if (qz.websocket.isActive()) qz.websocket.disconnect()
     } catch { /* ignore */ }
 }
 
-export function isQZAvailable() {
+export function isQZAvailable(): boolean {
     return typeof window !== 'undefined' && typeof window.qz !== 'undefined'
 }
 
-export function isQZConnected() {
+export function isQZConnected(): boolean {
     try { return getQZ().websocket.isActive() } catch { return false }
 }
 
@@ -197,17 +236,18 @@ export function isQZConnected() {
 
 const STORAGE_KEY = 'pos_qz_printer'
 
-export function getSavedPrinter() {
+export function getSavedPrinter(): string | null {
     try { return localStorage.getItem(STORAGE_KEY) || null } catch { return null }
 }
 
-export function savePrinter(name) {
+export function savePrinter(name: string): void {
     try { localStorage.setItem(STORAGE_KEY, name) } catch { /* ignore */ }
 }
 
-export async function listPrinters() {
+export async function listPrinters(): Promise<string[]> {
     await connectQZ()
-    return getQZ().printers.find()
+    const printers = await getQZ().printers.find()
+    return Array.isArray(printers) ? printers : [printers]
 }
 
 // ── Core print function ────────────────────────────────────────────────────
@@ -217,7 +257,7 @@ export async function listPrinters() {
  * @param {string} html  - Complete HTML string to print
  * @param {string} [printerName] - Override printer (otherwise uses saved or prompts)
  */
-export async function printHTML(html: string, printerName: string | null = null) {
+export async function printHTML(html: string, printerName: string | null = null): Promise<void> {
     await connectQZ()
     const qz = getQZ()
 
@@ -243,7 +283,7 @@ export async function printHTML(html: string, printerName: string | null = null)
  * @param {string} base64Data  - Base64 encoded PDF string
  * @param {string} [printerName] - Override printer
  */
-export async function printPDFBase64(base64Data: string, printerName: string | null = null) {
+export async function printPDFBase64(base64Data: string, printerName: string | null = null): Promise<void> {
     await connectQZ()
     const qz = getQZ()
 
@@ -270,7 +310,14 @@ export async function printPDFBase64(base64Data: string, printerName: string | n
  * @param {object} settings     - { storeName, taxEnabled, taxRate }
  * @param {string} [printerName]
  */
-export async function printInvoice(invoice: Sale & { cashier_name?: string, amount_paid?: number, change_due?: number, items_count?: number }, change = 0, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm', options = {}) {
+export async function printInvoice(
+    invoice: Sale & { cashier_name?: string; amount_paid?: number; change_due?: number; items_count?: number },
+    change = 0,
+    settings: ReceiptSettings = {},
+    printerName: string | null = null,
+    paperSize = '80mm',
+    options: ReceiptPrintOptions = {},
+): Promise<void> {
     const html = buildReceiptHTML(invoice, change, settings, paperSize, options)
     await printHTML(html, printerName)
 }
@@ -278,7 +325,13 @@ export async function printInvoice(invoice: Sale & { cashier_name?: string, amou
 /**
  * Build and print a purchase invoice via QZ Tray.
  */
-export async function printPurchaseInvoice(invoice: PurchaseInvoice & { items_count?: number }, settings: ReceiptSettings = {}, printerName: string | null = null, paperSize = '80mm', options = {}) {
+export async function printPurchaseInvoice(
+    invoice: PurchaseInvoice & { items_count?: number },
+    settings: ReceiptSettings = {},
+    printerName: string | null = null,
+    paperSize = '80mm',
+    options: ReceiptPrintOptions = {},
+): Promise<void> {
     const html = buildPurchaseReceiptHTML(invoice, settings, paperSize, options)
     await printHTML(html, printerName)
 }

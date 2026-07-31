@@ -78,10 +78,7 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
         } catch (err) {  /* ignore */ }
     }
 
-    if (!invoice) return null
-
-    const isCash    = invoice.payment_method === 'cash'
-    const changeAmt = invoice.change_due ?? change
+    const changeAmt = invoice?.change_due ?? change
 
     // ── QZ Tray print ──
     const handleQZPrint = async (paperSize = '80mm') => {
@@ -119,6 +116,8 @@ export default function Receipt({ invoice, change, onClose }: ReceiptProps) {
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [onClose, showPrinterPicker])
+
+    if (!invoice) return null
 
     return (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>

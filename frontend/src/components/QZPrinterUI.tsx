@@ -1,14 +1,45 @@
-// @ts-nocheck
 /**
  * QZPrinterUI — Reusable UI components for QZ Tray integration.
  * Includes: QZStatusBar, QZPrinterPicker, and QZPrintButton.
  */
 import { Printer, Settings, X } from 'lucide-react'
+import type { CSSProperties, MouseEvent } from 'react'
 import styles from './QZPrinterUI.module.css'
 
+interface QZStatusBarProps {
+    status: string
+    printer: string
+    onPickPrinter?: () => void
+    remoteError?: { message: string; certUrl: string } | null
+    onRetry?: () => void
+}
+
+interface QZPrinterPickerProps {
+    printers: readonly string[]
+    selectedPrinter: string
+    onSelect: (printer: string) => void
+    onClose: () => void
+}
+
+type PrintHandler = {
+    handlePrint(paperSize?: string): void | Promise<void>
+}['handlePrint']
+
+interface QZPrintButtonProps {
+    qzReady: boolean
+    printing: boolean
+    onQZPrint: PrintHandler
+    onBrowserPrint: PrintHandler
+    onPickPrinter?: () => void
+    multiSize?: boolean
+    label?: string
+    size?: string
+    style?: CSSProperties
+}
+
 /** Status indicator bar */
-export function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }) {
-    const cfg = {
+export function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRetry }: QZStatusBarProps) {
+    const cfg: Record<string, { bg: string; text: string; label: string }> = {
         idle:        { bg: '#f3f4f6', text: '#6b7280', label: 'QZ Tray: جاري التحميل…' },
         connecting:  { bg: '#fef9c3', text: '#854d0e', label: 'QZ Tray: جاري الاتصال…' },
         ready:       { bg: '#dcfce7', text: '#166534',
@@ -73,10 +104,10 @@ export function QZStatusBar({ status, printer, onPickPrinter, remoteError, onRet
 }
 
 /** Printer picker modal */
-export function QZPrinterPicker({ printers, selectedPrinter, onSelect, onClose }) {
+export function QZPrinterPicker({ printers, selectedPrinter, onSelect, onClose }: QZPrinterPickerProps) {
     return (
         <div className="modal-overlay" style={{ zIndex: 1100 }}
-            onClick={(e) => e.target === e.currentTarget && onClose()}>
+            onClick={(event: MouseEvent<HTMLDivElement>) => event.target === event.currentTarget && onClose()}>
             <div className="modal" style={{ maxWidth: '380px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontWeight: 700 }}>اختر الطابعة</h3>
@@ -122,7 +153,7 @@ export function QZPrintButton({
     label = 'طباعة',
     size = 'sm',
     style = {},
-}) {
+}: QZPrintButtonProps) {
     if (qzReady) {
         return (
             <div style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center', ...style }}>

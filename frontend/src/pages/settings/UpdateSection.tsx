@@ -53,7 +53,7 @@ export default function UpdateSection() {
         return
       }
       if (data && (data as any).updates_unreachable) {
-        toast.error(formatUpdateError(data as Record<string, unknown>))
+        toast.error(formatUpdateError(data as unknown as Record<string, unknown>))
         return
       }
       if (data?.has_update) {

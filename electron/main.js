@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -16,7 +16,6 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const { startPHP, stopPHP } = require('./services/php-server');
-const { startWebSocketServer, stopWebSocketServer } = require('./services/websocket-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
 const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
@@ -31,8 +30,40 @@ let mainWindow = null;
 let tray = null;
 let phpPort = 8080;
 let mysqlPort = 3307; // Bundled MySQL port
+let dbCredentials = null;
 let lastStartupError = null;
 let splash = null;
+const PERSISTED_COOKIE_NAMES = new Set(['pos_token', 'pos_refresh_token', 'XSRF-TOKEN']);
+
+function assertTrustedAppRenderer(event) {
+  const senderUrl = event.senderFrame?.url || '';
+  if (!senderUrl.startsWith('app://pos-app/')) {
+    throw new Error('Untrusted renderer');
+  }
+}
+
+function assertRecoveryRenderer(event) {
+  const senderUrl = event.senderFrame?.url || '';
+  if (!senderUrl.startsWith('file://') || !senderUrl.endsWith('/recovery.html')) {
+    throw new Error('Untrusted recovery renderer');
+  }
+}
+
+function saveSessionCookies(cookiesPath, cookies) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Secure credential storage is unavailable');
+  }
+
+  const filtered = Object.fromEntries(
+    Object.entries(cookies).filter(([name]) => PERSISTED_COOKIE_NAMES.has(name))
+  );
+  fs.writeFileSync(cookiesPath, safeStorage.encryptString(JSON.stringify(filtered)));
+}
+
+function loadSessionCookies(cookiesPath) {
+  if (!fs.existsSync(cookiesPath)) return {};
+  return JSON.parse(safeStorage.decryptString(fs.readFileSync(cookiesPath)));
+}
 
 // منع تشغيل أكثر من نسخة
 const gotTheLock = app.requestSingleInstanceLock();
@@ -55,11 +86,20 @@ app.whenReady().then(async () => {
   try {
     const cookiesPath = getCookiesPath();
     if (fs.existsSync(cookiesPath)) {
-      sessionCookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+      sessionCookies = loadSessionCookies(cookiesPath);
       console.log('[CookieProxy] Restored cookies from disk');
     }
   } catch (err) {
     console.error('[CookieProxy] Failed to restore cookies from disk:', err.message);
+    try {
+      const cookiesPath = getCookiesPath();
+      if (fs.existsSync(cookiesPath) && fs.readFileSync(cookiesPath, 'utf8').trim().startsWith('{')) {
+        fs.unlinkSync(cookiesPath);
+        console.warn('[CookieProxy] Removed legacy plaintext cookie storage; sign-in is required.');
+      }
+    } catch {
+      // A failed cleanup must not prevent application startup.
+    }
   }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -97,6 +137,7 @@ app.whenReady().then(async () => {
                 if (parts.length === 2) {
                   const name = parts[0].trim();
                   const value = parts[1].trim();
+                  if (!PERSISTED_COOKIE_NAMES.has(name)) return;
                   const isDelete = value === '' || 
                                    /expires=Thu, 01 Jan 1970/i.test(c) || 
                                    /Max-Age=0/i.test(c) || 
@@ -116,7 +157,7 @@ app.whenReady().then(async () => {
               });
               if (hasChanged) {
                 try {
-                  fs.writeFileSync(getCookiesPath(), JSON.stringify(sessionCookies, null, 2));
+                  saveSessionCookies(getCookiesPath(), sessionCookies);
                   console.log('[CookieProxy] Saved updated cookies to disk');
                 } catch (writeErr) {
                   console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
@@ -250,21 +291,16 @@ app.whenReady().then(async () => {
   }
 
   // ── Configure Windows Firewall rules (production) ──
-  configureFirewall().catch(err => console.error('[Firewall] Failed:', err));
+  if (process.env.POS_LAN_ENABLED === 'true') {
+    configureFirewall().catch(err => console.error('[Firewall] Failed:', err));
+  }
 
-  ipcMain.handle('get-version', () => app.getVersion());
-  ipcMain.handle('get-runtime-ports', async () => {
-    try {
-      const { getRuntimePortsPath } = require('./utils/paths');
-      const fs = require('fs');
-      const data = fs.readFileSync(getRuntimePortsPath(), 'utf8');
-      return JSON.parse(data);
-    } catch (err) {
-      console.error('[IPC] Failed to read runtime ports:', err.message);
-      return null;
-    }
+  ipcMain.handle('get-version', (event) => {
+    assertTrustedAppRenderer(event);
+    return app.getVersion();
   });
-  ipcMain.handle('get-api-base-url', async () => {
+  ipcMain.handle('get-api-base-url', async (event) => {
+    assertTrustedAppRenderer(event);
     try {
       const { getRuntimePortsPath } = require('./utils/paths');
       const fs = require('fs');
@@ -276,24 +312,25 @@ app.whenReady().then(async () => {
       return null;
     }
   });
-  ipcMain.handle('get-ws-base-url', async () => {
-    try {
-      const { getRuntimePortsPath } = require('./utils/paths');
-      const fs = require('fs');
-      const data = fs.readFileSync(getRuntimePortsPath(), 'utf8');
-      const ports = JSON.parse(data);
-      return ports.wsBaseUrl;
-    } catch (err) {
-      console.error('[IPC] Failed to read WS base URL:', err.message);
-      return null;
-    }
+  ipcMain.handle('qz-get-cert', (event) => {
+    assertTrustedAppRenderer(event);
+    return getQZCertificate();
   });
-  ipcMain.handle('qz-get-cert', () => getQZCertificate());
-  ipcMain.handle('qz-sign', (_event, data) => signQZMessage(data));
+  ipcMain.handle('qz-sign', (event, data) => {
+    assertTrustedAppRenderer(event);
+    if (typeof data !== 'string' || Buffer.byteLength(data, 'utf8') > 64 * 1024) {
+      throw new TypeError('Invalid QZ signing payload');
+    }
+    return signQZMessage(data);
+  });
 
   // ── Recovery Mode Handlers ──
-  ipcMain.handle('recovery:get-last-error', () => lastStartupError);
-  ipcMain.handle('recovery:get-diagnostics', () => {
+  ipcMain.handle('recovery:get-last-error', (event) => {
+    assertRecoveryRenderer(event);
+    return lastStartupError;
+  });
+  ipcMain.handle('recovery:get-diagnostics', (event) => {
+    assertRecoveryRenderer(event);
     const { getDataDir, getConfigDir, getLogsDir } = require('./utils/paths');
     const phpServer = require('./services/php-server');
     let runtimePorts = null;
@@ -387,22 +424,22 @@ app.whenReady().then(async () => {
       conflicts
     };
   });
-  ipcMain.handle('recovery:retry-startup', async () => {
+  ipcMain.handle('recovery:retry-startup', async (event) => {
+    assertRecoveryRenderer(event);
     console.log('[Recovery] Retry startup requested by user.');
     try {
       const phpServer = require('./services/php-server');
-      const wsServer = require('./services/websocket-server');
       console.log('[Recovery] Stopping PHP and WebSocket servers...');
       phpServer.stopPhpServer();
-      wsServer.stopWebSocketServer();
       
       console.log('[Recovery] Restarting PHP server...');
-      const phpServerInfo = await phpServer.startPhpServer({ preferredPort: phpPort, mysqlPort });
+      const phpServerInfo = await phpServer.startPhpServer({
+        preferredPort: phpPort,
+        mysqlPort,
+        dbCredentials,
+      });
       phpPort = phpServerInfo.port;
       console.log(`[Recovery] PHP Server restarted on port ${phpPort}`);
-
-      console.log('[Recovery] Restarting WebSocket server...');
-      await wsServer.startWebSocketServer();
 
       console.log('[Recovery] Awaiting readiness check...');
       await phpServer.waitForHealth(phpServerInfo.baseUrl, { maxTime: 15000 });
@@ -426,7 +463,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('recovery:get-rollback-readiness', () => {
+  ipcMain.handle('recovery:get-rollback-readiness', (event) => {
+    assertRecoveryRenderer(event);
     try {
       const { readRuntimeMetadata, getRollbackReadiness } = require('./utils/runtimeMigrator');
       const meta = readRuntimeMetadata();
@@ -437,7 +475,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('recovery:run-rollback-dry-run', () => {
+  ipcMain.handle('recovery:run-rollback-dry-run', (event) => {
+    assertRecoveryRenderer(event);
     try {
       const { runMysqlRollbackDryRun } = require('./utils/runtimeMigrator');
       return runMysqlRollbackDryRun();
@@ -447,8 +486,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('recovery:execute-mysql-rollback', (_event, options) => {
+  ipcMain.handle('recovery:execute-mysql-rollback', (event, options) => {
     try {
+      assertRecoveryRenderer(event);
       if (!options || options.confirmationToken !== 'CONFIRM_MYSQL_ROLLBACK') {
         throw new Error('Forbidden: Invalid confirmation token.');
       }
@@ -460,8 +500,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('recovery:prepare-rollback-restore-staging', (_event, options) => {
+  ipcMain.handle('recovery:prepare-rollback-restore-staging', (event, options) => {
     try {
+      assertRecoveryRenderer(event);
       if (!options || options.confirmationToken !== 'CONFIRM_MYSQL_ROLLBACK_RESTORE' || options.enableRollbackRestore !== true || options.dryRun === true) {
         throw new Error('Forbidden: Invalid confirmation token or rollback restore disabled.');
       }
@@ -473,8 +514,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('recovery:run-final-rollback-switch', (_event, options) => {
+  ipcMain.handle('recovery:run-final-rollback-switch', (event, options) => {
     try {
+      assertRecoveryRenderer(event);
       if (!options || options.confirmationToken !== 'CONFIRM_FINAL_MYSQL_ROLLBACK_SWITCH' || options.enableFinalRollbackSwitch !== true || options.dryRun === true) {
         throw new Error('Forbidden: Invalid confirmation token or final rollback switch disabled.');
       }
@@ -486,46 +528,15 @@ app.whenReady().then(async () => {
     }
   });
 
-  // ── Window Controls ──
-  ipcMain.handle('window-minimize', () => mainWindow?.minimize());
-  ipcMain.handle('window-maximize', () => {
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
-  });
-  ipcMain.handle('window-close', () => mainWindow?.close());
-  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
-
-  // ── System Info ──
-  ipcMain.handle('get-system-info', () => ({
-    platform: process.platform,
-    arch: process.arch,
-    nodeVersion: process.version,
-    electronVersion: process.versions.electron,
-    memory: process.memoryUsage(),
-  }));
-
-  // ── File Operations ──
-  ipcMain.handle('show-save-dialog', async (_e, options) => {
-    const { dialog } = require('electron');
-    return dialog.showSaveDialog(mainWindow, options);
-  });
-  ipcMain.handle('save-file', async (_e, filePath, data) => {
-    const fs = require('fs');
-    fs.writeFileSync(filePath, data);
-    return true;
-  });
-
-  // ── Notifications ──
-  ipcMain.handle('show-notification', (_e, title, body) => {
-    const { Notification } = require('electron');
-    new Notification({ title, body }).show();
-  });
-
   // 1. شاشة تحميل (Splash)
   splash = new BrowserWindow({
     width: 400, height: 300,
     frame: false, transparent: true, alwaysOnTop: true,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    }
   });
   splash.loadFile(path.join(__dirname, 'assets', 'splash.html'));
 
@@ -534,22 +545,15 @@ app.whenReady().then(async () => {
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل قاعدة البيانات...'`
     );
-    await startMySQL(mysqlPort);
+    dbCredentials = await startMySQL(mysqlPort);
 
     // 3. تشغيل PHP
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل الخادم...'`
     );
-    const phpServerInfo = await startPHP(phpPort, mysqlPort);
+    const phpServerInfo = await startPHP(phpPort, mysqlPort, dbCredentials);
     phpPort = phpServerInfo.port;
     console.log(`[Main] PHP Server started successfully on port ${phpPort}`);
-
-    // 3.1. تشغيل خادم الـ WebSocket
-    splash.webContents.executeJavaScript(
-      `document.getElementById('status').textContent = 'جاري تشغيل خادم WebSocket...'`
-    );
-    const wsServerInfo = await startWebSocketServer();
-    console.log(`[Main] WebSocket Server started successfully on port ${wsServerInfo.port}`);
 
     // ── Wait for Health Check ──
     splash.webContents.executeJavaScript(
@@ -558,13 +562,48 @@ app.whenReady().then(async () => {
     const { waitForHealth } = require('./services/php-server');
     await waitForHealth(phpServerInfo.baseUrl);
 
-    await startHttpsProxy(phpPort, 8443, wsServerInfo.port);
+    await startHttpsProxy(phpPort, 8443);
 
-    // تشغيل job worker في الخلفية
+    // Run log maintenance and the job worker without delaying startup.
     const { spawn } = require('child_process');
-    const phpPath = require('./utils/paths').getPhpPath();
-    const workerPath = path.join(__dirname, '..', 'backend', 'cli', 'process-jobs.php');
-    const jobWorker = spawn(phpPath, [workerPath, '--daemon'], { stdio: 'ignore', detached: true });
+    const {
+      getPhpPath,
+      getBackendDir,
+      getDataDir,
+      getEnvPath,
+      getLogsDir,
+      isPackaged,
+    } = require('./utils/paths');
+    const phpPath = getPhpPath();
+    const backendDir = getBackendDir();
+    const maintenanceEnv = {
+      ...process.env,
+      APP_STORAGE_DIR: getDataDir(),
+      ENV_PATH: getEnvPath(),
+      LOGS_PATH: getLogsDir(),
+    };
+    const cleanupArgs = isPackaged()
+      ? [path.join(backendDir, 'backend.phar'), 'cleanup-logs']
+      : [path.join(backendDir, 'cli', 'cleanup-logs.php')];
+    const cleanupProcess = spawn(phpPath, cleanupArgs, {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+      env: maintenanceEnv,
+    });
+    cleanupProcess.on('error', err => console.warn('[LogCleanup] Failed to start:', err.message));
+    cleanupProcess.unref();
+
+    const workerArgs = isPackaged()
+      ? [path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
+      : [path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
+    const jobWorker = spawn(phpPath, workerArgs, {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+      env: maintenanceEnv,
+    });
+    jobWorker.on('error', err => console.warn('[JobWorker] Failed to start:', err.message));
     jobWorker.unref();
 
     // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
@@ -602,6 +641,10 @@ app.whenReady().then(async () => {
 
     // تحميل الـ frontend عبر custom protocol
     mainWindow.loadURL('app://pos-app/index.html');
+    mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('app://pos-app/')) event.preventDefault();
+    });
     mainWindow.setMenu(null); // إخفاء القائمة العلوية
     mainWindow.maximize(); // تكبير الشاشة بالكامل
 
@@ -678,7 +721,7 @@ function enterRecoveryMode(err) {
         height: 36
       },
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(__dirname, 'recovery-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: true,
@@ -693,14 +736,10 @@ function enterRecoveryMode(err) {
 }
 
 function createTray() {
-  const { shell } = require('electron');
   const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'فتح النظام', click: () => mainWindow.show() },
-    { label: 'إدارة قاعدة البيانات', click: () => {
-      shell.openExternal(`http://127.0.0.1:${phpPort}/adminer-local.php?server=127.0.0.1%3A${mysqlPort}&username=root&db=pos_db`);
-    }},
     { type: 'separator' },
     { label: 'إغلاق', click: () => { forceQuit = true; app.quit(); } }
   ]));
@@ -712,7 +751,6 @@ app.on('before-quit', async () => {
   forceQuit = true;
   stopHttpsProxy();
   stopQZTray();
-  stopWebSocketServer();
   stopPHP();
   await stopMySQL();
 });

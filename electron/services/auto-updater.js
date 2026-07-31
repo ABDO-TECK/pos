@@ -66,10 +66,25 @@ function registerUpdaterIpc() {
   if (registerUpdaterIpc.registered) return;
   registerUpdaterIpc.registered = true;
 
-  ipcMain.handle('updater:get-status', () => status);
-  ipcMain.handle('updater:check', async () => checkForUpdates());
-  ipcMain.handle('updater:download', async () => downloadUpdate());
-  ipcMain.handle('updater:install', async () => installUpdate());
+  const assertTrustedRenderer = (event) => {
+    const senderUrl = event.senderFrame?.url || '';
+    if (!senderUrl.startsWith('app://pos-app/')) {
+      throw new Error('Untrusted renderer');
+    }
+  };
+
+  ipcMain.handle('updater:get-status', (event) => {
+    assertTrustedRenderer(event);
+    return status;
+  });
+  ipcMain.handle('updater:download', async (event) => {
+    assertTrustedRenderer(event);
+    return downloadUpdate();
+  });
+  ipcMain.handle('updater:install', async (event) => {
+    assertTrustedRenderer(event);
+    return installUpdate();
+  });
 }
 
 async function checkForUpdates() {
