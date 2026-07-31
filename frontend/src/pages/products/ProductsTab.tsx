@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
+import type { ComponentType } from 'react'
 import { Pencil, Trash2, Search, X, SlidersHorizontal, AlertTriangle, Warehouse, Camera, Printer, Scale, Droplet, Layers, Box, Coins, Ban } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 import Pagination from '../../components/Pagination'
 import toast from 'react-hot-toast'
 import PrintLabelsModal from '../../components/products/PrintLabelsModal'
 import { extractApiError } from '../../utils/apiError'
-import type { Product } from '../../types/product.d'
 import IconBadge from '../../components/common/IconBadge'
 
 const STOCK_FILTERS = [
@@ -39,6 +39,15 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode, label:
   )
 }
 
+interface ProductsTabProps {
+  allProducts: Product[]
+  loadingProducts: boolean
+  categories: Category[]
+  lowStock: Product[]
+  onEditProduct: (product: Product) => void
+  onDeleteProduct: (id: number, name: string) => void
+}
+
 export default function ProductsTab({
   allProducts,
   loadingProducts,
@@ -46,13 +55,16 @@ export default function ProductsTab({
   lowStock,
   onEditProduct,
   onDeleteProduct,
-}) {
+}: ProductsTabProps) {
   const [search, setSearch]             = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [stockFilter, setStockFilter]   = useState('all')
   const [sortKey, setSortKey]           = useState('name_asc')
   const [searchCameraOpen, setSearchCameraOpen] = useState(false)
-  const [SearchScannerLazy, setSearchScannerLazy] = useState<any>(null)
+  const [SearchScannerLazy, setSearchScannerLazy] = useState<ComponentType<{
+    onResult: (text: string) => void
+    onClose: () => void
+  }> | null>(null)
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([])
   const [printModalOpen, setPrintModalOpen] = useState(false)
   
@@ -98,7 +110,7 @@ export default function ProductsTab({
     }
 
     const sorted = [...list]
-    const nameCmp = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ar', { sensitivity: 'base' })
+    const nameCmp = (a: Product, b: Product) => String(a.name || '').localeCompare(String(b.name || ''), 'ar', { sensitivity: 'base' })
 
     switch (sortKey) {
       case 'name_desc':
@@ -379,10 +391,10 @@ export default function ProductsTab({
                   <td>{formatCurrency(p.price)}</td>
                   <td className="hide-mobile">{formatCurrency(p.cost)}</td>
                   <td>
-                    <span className={`badge ${p.quantity <= 0 ? 'badge-red' : p.quantity <= p.low_stock_threshold ? 'badge-yellow' : 'badge-green'}`}>
-                      {p.unit_type === 'liter' ? `${parseFloat(p.quantity).toFixed(2)} لتر` : (p.unit_type === 'weight' || (p.sell_by_weight === 1 && !p.unit_type)) ? `${parseFloat(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
+                    <span className={`badge ${p.quantity <= 0 ? 'badge-red' : p.quantity <= (p.low_stock_threshold ?? 5) ? 'badge-yellow' : 'badge-green'}`}>
+                      {p.unit_type === 'liter' ? `${Number(p.quantity).toFixed(2)} لتر` : (p.unit_type === 'weight' || (p.sell_by_weight === 1 && !p.unit_type)) ? `${Number(p.quantity).toFixed(1)} كجم` : formatNumber(p.quantity)}
                     </span>
-                    {p.units_per_box > 1 && (!p.unit_type || p.unit_type === 'piece') && (
+                    {(p.units_per_box ?? 1) > 1 && (!p.unit_type || p.unit_type === 'piece') && (
                       <div style={{ marginTop: '0.3rem' }}>
                         <span className="badge badge-blue" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} title="عدد القطع في الصندوق">
                           <IconBadge icon={Box} color="secondary" shape="rounded" size={10} badgeSize={16} style={{ marginRight: '-0.15rem' }} />

@@ -11,7 +11,7 @@ class ExpenseRequest extends FormRequest {
             'category_id'  => 'required|numeric',
             'amount'       => 'required|numeric|min_value:0.01',
             'expense_date' => 'required|date',
-            'notes'        => '',
+            'notes'        => 'string|max:1000',
         ];
     }
 }

@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\Response;
+use App\Requests\DailyReportRequest;
 use App\Services\ReportService;
 
 class ReportController extends Controller {
@@ -15,9 +16,21 @@ class ReportController extends Controller {
     }
 
     public function daily() {
-        $date = $this->getParam('date', date('Y-m-d'));
-        $data = $this->reportService->getDailySummary($date);
-        return Response::success($data);
+        $request = new DailyReportRequest([
+            'date' => $this->getParam('date', date('Y-m-d')),
+            'page' => $this->getParam('page', 1),
+            'limit' => $this->getParam('limit', 100),
+        ]);
+        $params = $request->validated();
+        $data = $this->reportService->getDailySummary(
+            $params['date'],
+            (int) $params['page'],
+            (int) $params['limit']
+        );
+        $pagination = $data['pagination'];
+        unset($data['pagination']);
+
+        return Response::success($data, 'success', 200, ['pagination' => $pagination]);
     }
 
     public function monthly() {

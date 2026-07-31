@@ -11,6 +11,7 @@ use App\Helpers\AuditLog;
 use App\Models\Product;
 use App\Models\PriceHistory;
 use App\Requests\ProductRequest;
+use App\Requests\ProductCatalogSyncRequest;
 use App\Services\ProductService;
 use App\Services\AuthService;
 
@@ -19,11 +20,13 @@ class ProductController extends Controller {
 
     private ProductService $productService;
     private Product        $productModel;
+    private PriceHistory   $priceHistory;
     private AuthService    $authService;
 
-    public function __construct(ProductService $productService, AuthService $authService) {
+    public function __construct(ProductService $productService, PriceHistory $priceHistory, AuthService $authService) {
         $this->productService = $productService;
         $this->productModel   = $productService->getProductModel();
+        $this->priceHistory   = $priceHistory;
         $this->authService    = $authService;
     }
 
@@ -32,7 +35,8 @@ class ProductController extends Controller {
             'search'      => $this->getParam('search'),
             'category_id' => $this->getParam('category_id'),
             'low_stock'   => $this->getParam('low_stock'),
-            ...$this->getPaginationParams(),
+            'page'        => max(1, (int) $this->getParam('page', 1)),
+            'limit'       => max(1, min(500, (int) $this->getParam('limit', 100))),
         ];
 
         $result = $this->productModel->all($filters);
@@ -43,6 +47,34 @@ class ProductController extends Controller {
         } else {
             return Response::success($result);
         }
+    }
+
+    public function catalogSync() {
+        $request = new ProductCatalogSyncRequest([
+            'checkpoint' => $this->getParam('checkpoint'),
+            'limit' => $this->getParam('limit', 500),
+        ]);
+        $params = $request->validated();
+
+        try {
+            $result = $this->productService->syncCatalog(
+                $params['checkpoint'] ?? null,
+                (int) $params['limit']
+            );
+        } catch (\InvalidArgumentException $e) {
+            return Response::error($e->getMessage(), 422);
+        }
+
+        return Response::success(
+            $result['data'],
+            'success',
+            200,
+            [
+                'catalog_scope' => $result['catalog_scope'],
+                'catalog_version' => $result['catalog_version'],
+                'pagination' => $result['pagination'],
+            ]
+        );
     }
 
     public function show(string $id) {
@@ -125,7 +157,7 @@ class ProductController extends Controller {
 
     /**
      * GET /api/products/{id}/price-history
-     * سجل تغييرات أسعار المنتج
+     * Product price change history
      */
     public function priceHistory(string $id) {
         $id = $this->resolveId($id);
@@ -134,8 +166,7 @@ class ProductController extends Controller {
             return Response::notFound('المنتج غير موجود');
         }
 
-        $db = \App\Config\Database::getInstance();
-        $history = (new PriceHistory($db))->getByProductId($id);
+        $history = $this->priceHistory->getByProductId($id);
 
         return Response::success($history);
     }

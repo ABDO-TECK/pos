@@ -37,9 +37,13 @@ class ReportService {
      * @param string $date التاريخ بصيغة Y-m-d
      * @return array تفاصيل التقرير
      */
-    public function getDailySummary(string $date): array {
+    public function getDailySummary(string $date, int $page = 1, int $limit = 100): array {
         $summary = $this->invoiceRepo->getDailySummary($date);
-        $invoices = $this->invoiceRepo->all(['date' => $date]);
+        $invoicePage = $this->invoiceRepo->all([
+            'date' => $date,
+            'page' => $page,
+            'limit' => $limit,
+        ]);
         $totalExpenses = $this->expenseRepo->getTotalExpensesForDate($date);
 
         if ($summary) {
@@ -48,9 +52,10 @@ class ReportService {
         }
 
         return [
-            'date'     => $date,
-            'summary'  => $summary,
-            'invoices' => $invoices,
+            'date'       => $date,
+            'summary'    => $summary,
+            'invoices'   => $invoicePage['data'],
+            'pagination' => $invoicePage['pagination'],
         ];
     }
 

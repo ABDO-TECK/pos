@@ -28,17 +28,32 @@ class Product {
 
         if (!empty($filters['search'])) {
             $searchTerm = trim($filters['search']);
-            // Barcode lookups: use exact match + prefix (index-friendly)
-            // Name lookups: use LIKE with leading wildcard (unavoidable for substring)
-            $where[] = '(
-                p.name LIKE :search_wild
-                OR p.barcode = :search_exact
-                OR p.barcode LIKE :search_prefix
-                OR p.box_barcode = :search_exact2
-                OR p.box_barcode LIKE :search_prefix2
-                OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND (pb.barcode = :search_exact3 OR pb.barcode LIKE :search_prefix3))
-            )';
-            $params['search_wild']    = '%' . $searchTerm . '%';
+            // Use FULLTEXT search for name (index-friendly, replaces LIKE '%term%')
+            // Fall back to LIKE for very short terms (< 3 chars) since FULLTEXT ft_min_word_len defaults to 3
+            // Barcode lookups: always use exact match + prefix (index-friendly)
+            if (mb_strlen($searchTerm, 'UTF-8') >= 3) {
+                $where[] = '(
+                    MATCH(p.name) AGAINST(:search_ft IN BOOLEAN MODE)
+                    OR p.barcode = :search_exact
+                    OR p.barcode LIKE :search_prefix
+                    OR p.box_barcode = :search_exact2
+                    OR p.box_barcode LIKE :search_prefix2
+                    OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND (pb.barcode = :search_exact3 OR pb.barcode LIKE :search_prefix3))
+                )';
+                // Append * for prefix matching in BOOLEAN MODE (e.g., "حلي" matches "حليب")
+                $params['search_ft']      = $searchTerm . '*';
+            } else {
+                // Short search terms: fall back to LIKE (FULLTEXT ignores words shorter than ft_min_word_len)
+                $where[] = '(
+                    p.name LIKE :search_wild
+                    OR p.barcode = :search_exact
+                    OR p.barcode LIKE :search_prefix
+                    OR p.box_barcode = :search_exact2
+                    OR p.box_barcode LIKE :search_prefix2
+                    OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND (pb.barcode = :search_exact3 OR pb.barcode LIKE :search_prefix3))
+                )';
+                $params['search_wild']    = '%' . $searchTerm . '%';
+            }
             $params['search_exact']   = $searchTerm;
             $params['search_prefix']  = $searchTerm . '%';
             $params['search_exact2']  = $searchTerm;
@@ -82,7 +97,7 @@ class Product {
                     FROM products p
                     LEFT JOIN categories c ON c.id = p.category_id
                     WHERE $whereClause
-                    ORDER BY p.name ASC
+                    ORDER BY p.name ASC, p.id ASC
                     LIMIT :pag_limit OFFSET :pag_offset";
 
             $stmt = $this->db->prepare($sql);
@@ -98,23 +113,29 @@ class Product {
             // جلب المقاسات لكل منتج رئيسي (batch query — no N+1)
             $this->attachSizes($rows);
 
+            $pages = (int) ceil($total / $limit);
             return [
                 'data' => $rows,
                 'pagination' => [
-                    'page'  => $page,
-                    'limit' => $limit,
-                    'total' => $total,
-                    'pages' => (int) ceil($total / $limit),
+                    'type'      => 'page',
+                    'page'      => $page,
+                    'limit'     => $limit,
+                    'total'     => $total,
+                    'pages'     => $pages,
+                    'has_more'  => $page < $pages,
+                    'truncated' => $total > count($rows),
                 ],
             ];
         }
 
-        // ── بدون pagination — إرجاع الكل (backward-compatible) ──
+        // ── بدون pagination — للاستخدام الداخلي المتوافق مع الإصدارات السابقة ──
+        // Internal unpaginated callers retain this path. HTTP offline catalog
+        // synchronization uses the cursor methods below.
         $sql = "SELECT p.*, c.name AS category_name
                 FROM products p
                 LEFT JOIN categories c ON c.id = p.category_id
                 WHERE $whereClause
-                ORDER BY p.name ASC";
+                ORDER BY p.name ASC, p.id ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
@@ -127,12 +148,131 @@ class Product {
         return $rows;
     }
 
+    /**
+     * Return one stable initial-catalog page without a COUNT(*) query.
+     *
+     * @return array{data: array, has_more: bool, last_id: int}
+     */
+    public function getCatalogSnapshotPage(int $afterId, int $limit): array
+    {
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $stmt = $this->db->prepare(
+            'SELECT p.*, c.name AS category_name
+             FROM products p
+             LEFT JOIN categories c ON c.id = p.category_id
+             WHERE p.branch_id = :branch_id
+               AND p.deleted_at IS NULL
+               AND p.id > :after_id
+             ORDER BY p.id ASC
+             LIMIT :catalog_limit'
+        );
+        $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
+        $stmt->bindValue(':after_id', $afterId, PDO::PARAM_INT);
+        $stmt->bindValue(':catalog_limit', $limit + 1, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $hasMore = count($rows) > $limit;
+        if ($hasMore) {
+            array_pop($rows);
+        }
+        $this->attachAdditionalBarcodes($rows);
+
+        return [
+            'data' => $rows,
+            'has_more' => $hasMore,
+            'last_id' => $rows === [] ? $afterId : (int) end($rows)['id'],
+        ];
+    }
+
+    public function getCatalogVersion(): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(MAX(id), 0)
+             FROM product_catalog_changes
+             WHERE branch_id = ?'
+        );
+        $stmt->execute([\App\Services\AuthService::getGlobalBranchId()]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @return array{data: array, has_more: bool, last_sequence: int}
+     */
+    public function getCatalogChangePage(int $afterSequence, int $limit): array
+    {
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $stmt = $this->db->prepare(
+            'SELECT
+                changes.id AS change_sequence,
+                changes.product_id AS catalog_product_id,
+                p.*,
+                c.name AS category_name
+             FROM product_catalog_changes changes
+             LEFT JOIN products p
+               ON p.id = changes.product_id
+              AND p.branch_id = changes.branch_id
+             LEFT JOIN categories c ON c.id = p.category_id
+             WHERE changes.branch_id = :branch_id
+               AND changes.id > :after_sequence
+             ORDER BY changes.id ASC
+             LIMIT :catalog_limit'
+        );
+        $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_INT);
+        $stmt->bindValue(':after_sequence', $afterSequence, PDO::PARAM_INT);
+        $stmt->bindValue(':catalog_limit', $limit + 1, PDO::PARAM_INT);
+        $stmt->execute();
+        $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $hasMore = count($events) > $limit;
+        if ($hasMore) {
+            array_pop($events);
+        }
+
+        $lastSequence = $afterSequence;
+        $productsById = [];
+        foreach ($events as $event) {
+            $lastSequence = (int) $event['change_sequence'];
+            $productId = (int) $event['catalog_product_id'];
+            if ($event['id'] === null) {
+                $productsById[$productId] = [
+                    'id' => $productId,
+                    '_deleted' => true,
+                    'deleted_at' => null,
+                ];
+                continue;
+            }
+
+            unset($event['change_sequence'], $event['catalog_product_id']);
+            $event['_deleted'] = $event['deleted_at'] !== null;
+            $productsById[$productId] = $event;
+        }
+
+        $rows = array_values($productsById);
+        $activeRows = [];
+        foreach ($rows as $index => $row) {
+            if (!$row['_deleted']) {
+                $activeRows[$index] = $row;
+            }
+        }
+        $this->attachAdditionalBarcodes($activeRows);
+        foreach ($activeRows as $index => $row) {
+            $rows[$index] = $row;
+        }
+
+        return [
+            'data' => $rows,
+            'has_more' => $hasMore,
+            'last_sequence' => $lastSequence,
+        ];
+    }
+
     public function findById(int $id): ?array {
         $qb = new \App\Core\QueryBuilder($this->db);
         $product = $qb->table('products p')
             ->select('p.*', 'c.name AS category_name')
             ->leftJoin('categories c', 'c.id', '=', 'p.category_id')
             ->where('p.id', '=', $id)
+            ->where('p.branch_id', '=', \App\Services\AuthService::getGlobalBranchId())
+            ->whereNull('p.deleted_at')
             ->first();
 
         if (!$product) {
@@ -141,8 +281,11 @@ class Product {
         $product['additional_barcodes'] = $this->getAdditionalBarcodesList($id);
 
         // جلب المقاسات المرتبطة
-        $stmt = $this->db->prepare('SELECT * FROM products WHERE parent_product_id = ? AND deleted_at IS NULL');
-        $stmt->execute([$id]);
+        $stmt = $this->db->prepare(
+            'SELECT * FROM products
+             WHERE parent_product_id = ? AND branch_id = ? AND deleted_at IS NULL'
+        );
+        $stmt->execute([$id, \App\Services\AuthService::getGlobalBranchId()]);
         $sizes = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
         $this->attachAdditionalBarcodes($sizes);
         $product['sizes'] = $sizes;
@@ -166,9 +309,9 @@ class Product {
             "SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
-             WHERE p.id IN ($placeholders)"
+             WHERE p.id IN ($placeholders) AND p.branch_id = ? AND p.deleted_at IS NULL"
         );
-        $stmt->execute(array_values($ids));
+        $stmt->execute([...array_values($ids), \App\Services\AuthService::getGlobalBranchId()]);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
         // Key by product ID for O(1) lookup
@@ -192,9 +335,9 @@ class Product {
         $ids = array_unique($ids);
         $placeholders = str_repeat('?,', count($ids) - 1) . '?';
         $stmt = $this->db->prepare(
-            "SELECT id, quantity FROM products WHERE id IN ($placeholders)"
+            "SELECT id, quantity FROM products WHERE id IN ($placeholders) AND branch_id = ? AND deleted_at IS NULL"
         );
-        $stmt->execute(array_values($ids));
+        $stmt->execute([...array_values($ids), \App\Services\AuthService::getGlobalBranchId()]);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
         $result = [];
@@ -215,12 +358,16 @@ class Product {
         $parentIds = array_column($rows, 'id');
         if (empty($parentIds)) return;
 
-        $placeholders = str_repeat('?,', count($parentIds) - 1) . '?';
-        $stmt = $this->db->prepare(
-            "SELECT * FROM products WHERE parent_product_id IN ($placeholders) AND deleted_at IS NULL"
-        );
-        $stmt->execute($parentIds);
-        $allSizes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $allSizes = [];
+        foreach (array_chunk($parentIds, 500) as $chunk) {
+            $placeholders = str_repeat('?,', count($chunk) - 1) . '?';
+            $stmt = $this->db->prepare(
+                "SELECT * FROM products
+                 WHERE parent_product_id IN ($placeholders) AND branch_id = ? AND deleted_at IS NULL"
+            );
+            $stmt->execute([...$chunk, \App\Services\AuthService::getGlobalBranchId()]);
+            $allSizes = array_merge($allSizes, $stmt->fetchAll(\PDO::FETCH_ASSOC));
+        }
 
         // Attach additional barcodes to all size rows in one batch
         $this->attachAdditionalBarcodes($allSizes);
@@ -243,12 +390,21 @@ class Product {
             'SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
-             WHERE p.barcode = ?
-                OR p.box_barcode = ?
-                OR p.id IN (SELECT product_id FROM product_barcodes WHERE barcode = ?)
+             WHERE p.branch_id = ?
+               AND p.deleted_at IS NULL
+               AND (
+                    p.barcode = ?
+                    OR p.box_barcode = ?
+                    OR p.id IN (SELECT product_id FROM product_barcodes WHERE barcode = ?)
+               )
              LIMIT 1'
         );
-        $stmt->execute([$barcode, $barcode, $barcode]);
+        $stmt->execute([
+            \App\Services\AuthService::getGlobalBranchId(),
+            $barcode,
+            $barcode,
+            $barcode,
+        ]);
         $product = $stmt->fetch();
         if (!$product) {
             return null;
@@ -264,10 +420,11 @@ class Product {
         $sellByWeight = ($unitType === 'weight') ? 1 : 0;
 
         $stmt = $this->db->prepare(
-            'INSERT INTO products (name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, parent_product_id, size_name, units_per_box, sell_by_weight, unit_type)
-             VALUES (:name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :parent_product_id, :size_name, :units_per_box, :sell_by_weight, :unit_type)'
+            'INSERT INTO products (branch_id, name, barcode, box_barcode, price, cost, quantity, low_stock_threshold, category_id, parent_product_id, size_name, units_per_box, sell_by_weight, unit_type)
+             VALUES (:branch_id, :name, :barcode, :box_barcode, :price, :cost, :quantity, :low_stock_threshold, :category_id, :parent_product_id, :size_name, :units_per_box, :sell_by_weight, :unit_type)'
         );
         $stmt->execute([
+            'branch_id'           => \App\Services\AuthService::getGlobalBranchId(),
             'name'                => $data['name'],
             'barcode'             => $data['barcode'],
             'box_barcode'         => !empty($data['box_barcode']) ? $data['box_barcode'] : null,
@@ -275,7 +432,7 @@ class Product {
             'cost'                => $data['cost'] ?? 0,
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
-            'category_id'         => $data['category_id'] ?? null,
+            'category_id'         => !empty($data['category_id']) ? (int) $data['category_id'] : null,
             'parent_product_id'   => !empty($data['parent_product_id']) ? (int)$data['parent_product_id'] : null,
             'size_name'           => !empty($data['size_name']) ? $data['size_name'] : null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
@@ -306,7 +463,7 @@ class Product {
                 units_per_box = :units_per_box,
                 sell_by_weight = :sell_by_weight,
                 unit_type = :unit_type
-             WHERE id = :id'
+             WHERE id = :id AND branch_id = :branch_id'
         );
         $stmt->execute([
             'name'                => $data['name'],
@@ -316,13 +473,14 @@ class Product {
             'cost'                => $data['cost'] ?? 0,
             'quantity'            => $data['quantity'] ?? 0,
             'low_stock_threshold' => $data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD,
-            'category_id'         => $data['category_id'] ?? null,
+            'category_id'         => !empty($data['category_id']) ? (int) $data['category_id'] : null,
             'parent_product_id'   => !empty($data['parent_product_id']) ? (int)$data['parent_product_id'] : null,
             'size_name'           => !empty($data['size_name']) ? $data['size_name'] : null,
             'units_per_box'       => max(1, (int)($data['units_per_box'] ?? 1)),
             'sell_by_weight'      => $sellByWeight,
             'unit_type'           => $unitType,
             'id'                  => $id,
+            'branch_id'           => \App\Services\AuthService::getGlobalBranchId(),
         ]);
     }
 
@@ -348,25 +506,43 @@ class Product {
     public function delete(int $id): void {
         // تفريغ الباركودات عند الحذف الناعم حتى يمكن إعادة استخدامها لمنتجات جديدة.
         // نحفظ الباركود القديم في الاسم كمرجع.
-        $stmt = $this->db->prepare('SELECT barcode FROM products WHERE id = ?');
-        $stmt->execute([$id]);
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $stmt = $this->db->prepare('SELECT barcode FROM products WHERE id = ? AND branch_id = ?');
+        $stmt->execute([$id, $branchId]);
         $oldBarcode = $stmt->fetchColumn();
+        if ($oldBarcode === false) {
+            return;
+        }
 
         $deletedBarcode = '__deleted_' . $id . '_' . time();
         $this->db->prepare(
-            'UPDATE products SET deleted_at = NOW(), barcode = ?, box_barcode = NULL WHERE id = ?'
-        )->execute([$deletedBarcode, $id]);
+            'UPDATE products SET deleted_at = NOW(), barcode = ?, box_barcode = NULL
+             WHERE id = ? AND branch_id = ?'
+        )->execute([$deletedBarcode, $id, $branchId]);
 
         // حذف الباركودات الإضافية من جدول product_barcodes
         $this->db->prepare('DELETE FROM product_barcodes WHERE product_id = ?')->execute([$id]);
     }
 
     public function decrementQuantity(int $id, float $qty): void {
-        $this->db->prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?')->execute([$qty, $id]);
+        $stmt = $this->db->prepare(
+            'UPDATE products SET quantity = quantity - ?
+             WHERE id = ? AND branch_id = ? AND quantity >= ?'
+        );
+        $stmt->execute([$qty, $id, \App\Services\AuthService::getGlobalBranchId(), $qty]);
+        if ($stmt->rowCount() !== 1) {
+            throw new \RuntimeException('Insufficient stock or out-of-scope product');
+        }
     }
 
     public function incrementQuantity(int $id, float $qty): void {
-        $this->db->prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?')->execute([$qty, $id]);
+        $stmt = $this->db->prepare(
+            'UPDATE products SET quantity = quantity + ? WHERE id = ? AND branch_id = ?'
+        );
+        $stmt->execute([$qty, $id, \App\Services\AuthService::getGlobalBranchId()]);
+        if ($stmt->rowCount() !== 1) {
+            throw new \RuntimeException('Out-of-scope product');
+        }
     }
 
     /**
@@ -381,6 +557,7 @@ class Product {
 
         $ids = [];
         $cases = [];
+        $stockChecks = [];
         $params = [];
         $i = 0;
 
@@ -388,12 +565,17 @@ class Product {
             $pidParam = ":pid_{$i}";
             $qtyParam = ":qty_{$i}";
             $wherePidParam = ":where_pid_{$i}";
+            $checkPidParam = ":check_pid_{$i}";
+            $checkQtyParam = ":check_qty_{$i}";
 
             $cases[] = "WHEN id = {$pidParam} THEN quantity - {$qtyParam}";
+            $stockChecks[] = "WHEN id = {$checkPidParam} THEN {$checkQtyParam}";
             
             $params[$pidParam] = (int) $item['product_id'];
             $params[$qtyParam] = (float) $item['quantity'];
             $params[$wherePidParam] = (int) $item['product_id'];
+            $params[$checkPidParam] = (int) $item['product_id'];
+            $params[$checkQtyParam] = (float) $item['quantity'];
 
             $ids[] = $wherePidParam;
             $i++;
@@ -402,22 +584,32 @@ class Product {
         $sql = "UPDATE products SET quantity = CASE "
              . implode(' ', $cases)
              . " ELSE quantity END"
-             . " WHERE id IN (" . implode(',', $ids) . ")";
+             . " WHERE id IN (" . implode(',', $ids) . ")"
+             . " AND branch_id = :branch_id"
+             . " AND quantity >= CASE " . implode(' ', $stockChecks) . " ELSE 0 END";
 
+        $params[':branch_id'] = \App\Services\AuthService::getGlobalBranchId();
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
+        if ($stmt->rowCount() !== count($decrements)) {
+            throw new \RuntimeException('Insufficient stock or out-of-scope product');
+        }
     }
 
     public function getLowStock(array $filters = []): array {
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $baseWhere = 'p.quantity <= p.low_stock_threshold AND p.deleted_at IS NULL AND p.branch_id = :branch_id';
+        $baseParams = ['branch_id' => $branchId];
+
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, (int)$filters['limit']);
+            $limit = max(1, min(500, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
 
-            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM products p WHERE p.quantity <= p.low_stock_threshold');
-            $countStmt->execute();
+            $countStmt = $this->db->prepare("SELECT COUNT(*) FROM products p WHERE $baseWhere");
+            $countStmt->execute($baseParams);
             $total = (int) $countStmt->fetchColumn();
 
             $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
@@ -426,13 +618,14 @@ class Product {
         }
 
         $stmt = $this->db->prepare(
-            'SELECT p.*, c.name AS category_name
+            "SELECT p.*, c.name AS category_name
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
-             WHERE p.quantity <= p.low_stock_threshold
+             WHERE $baseWhere
              ORDER BY p.quantity ASC
-             ' . $limitStr
+             $limitStr"
         );
+        $stmt->bindValue(':branch_id', $branchId, \PDO::PARAM_INT);
         if ($hasPagination) {
             $stmt->bindValue(':pag_limit', $limit, \PDO::PARAM_INT);
             $stmt->bindValue(':pag_offset', $offset, \PDO::PARAM_INT);
@@ -463,21 +656,26 @@ class Product {
         $placeholders = str_repeat('?,', count($ids) - 1) . '?';
         $stmt = $this->db->prepare(
             "SELECT * FROM products 
-             WHERE id IN ($placeholders) AND quantity <= low_stock_threshold"
+             WHERE id IN ($placeholders)
+               AND branch_id = ?
+               AND quantity <= low_stock_threshold
+               AND deleted_at IS NULL"
         );
-        $stmt->execute($ids);
+        $stmt->execute([...$ids, \App\Services\AuthService::getGlobalBranchId()]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function getTotalProductsCount(): int {
-        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products');
-        $stmt->execute();
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products WHERE deleted_at IS NULL AND branch_id = ?');
+        $stmt->execute([$branchId]);
         return (int) $stmt->fetchColumn();
     }
 
     public function getLowStockProductsCount(): int {
-        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold');
-        $stmt->execute();
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM products WHERE quantity <= low_stock_threshold AND deleted_at IS NULL AND branch_id = ?');
+        $stmt->execute([$branchId]);
         return (int) $stmt->fetchColumn();
     }
 }

@@ -1,8 +1,8 @@
-// @ts-nocheck
+import type { MouseEventHandler } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 
-const fmtDate = (s) => {
+const fmtDate = (s: string) => {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
@@ -16,9 +16,17 @@ const fmtDate = (s) => {
   }).format(d);
 };
 
-export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }) {
+interface LedgerRowProps {
+  row: CustomerLedgerRow;
+  onEdit: MouseEventHandler<HTMLButtonElement>;
+  onDelete: MouseEventHandler<HTMLButtonElement>;
+  onViewInvoice: (invoiceId: number) => void;
+}
+
+export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }: LedgerRowProps) {
   const isDebit  = row.debit  > 0;
   const isCredit = row.credit > 0;
+  const invoiceId = row.invoice_id;
   return (
     <tr style={{ borderBottom: '1px solid var(--border)', transition: 'background .1s' }}
         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
@@ -31,7 +39,7 @@ export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }) {
         {row.type === 'initial' && (
           <span style={{ marginRight: '0.5rem', fontSize: '0.7rem', background: 'rgba(59,130,246,.1)', color: 'var(--secondary)', borderRadius: '3px', padding: '0.1rem 0.35rem' }}>رصيد مبدئي</span>
         )}
-        {row.invoice_id && (
+        {invoiceId !== null && invoiceId !== undefined && (
           <button
             className="btn btn-link btn-sm"
             style={{
@@ -47,7 +55,7 @@ export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }) {
               border: 'none',
               cursor: 'pointer'
             }}
-            onClick={() => onViewInvoice(row.invoice_id)}
+            onClick={() => onViewInvoice(invoiceId)}
           >
             (فاتورة مبيعات #{row.invoice_id})
           </button>

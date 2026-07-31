@@ -66,6 +66,16 @@ class SupplierRepository implements RepositoryInterface
         return $this->purchaseInvoiceModel->getPurchaseInvoice($id);
     }
 
+    public function getPurchaseInvoiceHeaderForUpdate(int $id): ?array
+    {
+        return $this->purchaseInvoiceModel->getPurchaseInvoiceHeaderForUpdate($id);
+    }
+
+    public function getPurchaseInvoiceItems(int $id): array
+    {
+        return $this->purchaseInvoiceModel->getPurchaseInvoiceItems($id);
+    }
+
     public function deletePurchaseInvoiceItems(int $id): void
     {
         $this->purchaseInvoiceModel->deletePurchaseInvoiceItems($id);
@@ -76,7 +86,7 @@ class SupplierRepository implements RepositoryInterface
         $this->purchaseInvoiceModel->updatePurchaseInvoiceTotals($id, $data);
     }
 
-    public function deletePurchaseInvoice(int $id): array
+    public function deletePurchaseInvoice(int $id): int
     {
         return $this->purchaseInvoiceModel->deletePurchaseInvoice($id);
     }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Printer, X, EyeOff, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -18,8 +17,16 @@ import QZStatusBar from '../../../components/pos/receipt/QZStatusBar'
 import PrinterPickerModal from '../../../components/pos/receipt/PrinterPickerModal'
 
 interface PurchaseReceiptModalProps {
-  invoice: any
+  invoice: PurchaseInvoice & { items_count?: number }
   onClose: () => void
+}
+
+function isRemoteQzError(error: unknown): error is { isRemoteQZ: true; message: string; certUrl: string } {
+  if (typeof error !== 'object' || error === null) return false
+  const candidate = error as Record<string, unknown>
+  return candidate.isRemoteQZ === true
+    && typeof candidate.message === 'string'
+    && typeof candidate.certUrl === 'string'
 }
 
 export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseReceiptModalProps) {
@@ -31,12 +38,12 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
   const [hideQuantities, setHideQuantities] = useState(false)
 
   // QZ Tray printer states
-  const [qzStatus, setQzStatus] = useState('idle')
-  const [printers, setPrinters] = useState<any[]>([])
+  const [qzStatus, setQzStatus] = useState<'idle' | 'connecting' | 'ready' | 'error' | 'unavailable'>('idle')
+  const [printers, setPrinters] = useState<string[]>([])
   const [selectedPrinter, setSelectedPrinter] = useState(getSavedPrinter() ?? '')
   const [showPrinterPicker, setShowPrinterPicker] = useState(false)
   const [printing, setPrinting] = useState(false)
-  const [remoteError, setRemoteError] = useState<any>(null)
+  const [remoteError, setRemoteError] = useState<{ message: string; certUrl: string } | null>(null)
 
   useEffect(() => {
     if (!isQZAvailable()) { setQzStatus('unavailable'); return }
@@ -44,9 +51,9 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
     setQzStatus('connecting')
     connectQZ()
       .then(() => { setQzStatus('ready'); setRemoteError(null); loadPrinters() })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         setQzStatus('error')
-        if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
+        if (isRemoteQzError(err)) setRemoteError({ message: err.message, certUrl: err.certUrl })
       })
   }, [])
 
@@ -55,23 +62,22 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
     setRemoteError(null)
     connectQZ()
       .then(() => { setQzStatus('ready'); loadPrinters() })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         setQzStatus('error')
-        if (err?.isRemoteQZ) setRemoteError({ message: err.message, certUrl: err.certUrl })
+        if (isRemoteQzError(err)) setRemoteError({ message: err.message, certUrl: err.certUrl })
       })
   }
 
   const loadPrinters = async () => {
     try {
       const list = await listPrinters()
-      setPrinters(Array.isArray(list) ? list : [list] as any)
+      const printerList = Array.isArray(list) ? list : [list]
+      setPrinters(printerList)
       const saved = getSavedPrinter()
-      if (saved && list.includes(saved)) setSelectedPrinter(saved)
-      else if (list.length === 1) { savePrinter(list[0]); setSelectedPrinter(list[0]) }
+      if (saved && printerList.includes(saved)) setSelectedPrinter(saved)
+      else if (printerList.length === 1) { savePrinter(printerList[0]); setSelectedPrinter(printerList[0]) }
     } catch (err) { /* ignore */ }
   }
-
-  if (!invoice) return null
 
   const printOptions = { hidePrices, hideQuantities }
 
@@ -83,8 +89,8 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
       const html = buildPurchaseReceiptHTML(invoice, settings, paperSize, printOptions)
       await printHTML(html, selectedPrinter)
       toast.success(`تمت الطباعة بنجاح (${paperSize})`)
-    } catch (err: any) {
-      toast.error('فشل الطباعة: ' + (err.message ?? ''))
+    } catch (err: unknown) {
+      toast.error('فشل الطباعة: ' + (err instanceof Error ? err.message : ''))
     } finally {
       setPrinting(false)
     }
@@ -112,6 +118,8 @@ export default function PurchaseReceiptModal({ invoice, onClose }: PurchaseRecei
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose, showPrinterPicker])
+
+  if (!invoice) return null
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>

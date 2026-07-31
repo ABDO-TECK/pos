@@ -248,6 +248,32 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /products/sync:
+    get:
+      tags: [Products]
+      summary: Resumable offline product catalog synchronization
+      description: Returns an initial ID-cursor page or a branch-scoped change-sequence delta page without a catalog COUNT query.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: checkpoint
+          in: query
+          schema:
+            type: string
+          description: Opaque checkpoint returned by the preceding page. Checkpoints are bound to the authenticated branch.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+      responses:
+        '200':
+          description: Catalog rows or delete tombstones plus cursor metadata
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /products/{id}:
     get:
       tags: [Products]
@@ -381,10 +407,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [items, payment_method]
+              required: [idempotency_key, items, payment_method]
               properties:
+                idempotency_key:
+                  type: string
+                  format: uuid
+                  description: Stable UUID v4 retained for every retry and offline replay of this sale payload.
                 items:
                   type: array
+                  minItems: 1
+                  maxItems: 500
                   items:
                     type: object
                     required: [product_id, quantity]
@@ -392,16 +424,20 @@ paths:
                       product_id:
                         type: integer
                       quantity:
-                        type: integer
-                        minimum: 1
+                        type: number
+                        exclusiveMinimum: 0
                       price:
                         type: number
                         description: سعر مخصص (اختياري)
                 payment_method:
                   type: string
-                  enum: [cash, card, transfer]
+                  enum: [cash, card, vodafone_cash, instapay, other_wallet, credit]
                 discount:
                   type: number
+                  default: 0
+                shipping_cost:
+                  type: number
+                  minimum: 0
                   default: 0
                 customer_id:
                   type: integer
@@ -434,8 +470,18 @@ paths:
                                   type: string
                                 quantity:
                                   type: integer
+                          idempotency:
+                            type: object
+                            properties:
+                              key:
+                                type: string
+                                format: uuid
+                              replayed:
+                                type: boolean
         '400':
           description: سلة فارغة أو خطأ في البيانات
+        '409':
+          description: The idempotency key was reused with a different sale payload.
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -600,9 +646,22 @@ paths:
           schema:
             type: string
             format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
       responses:
         '200':
-          description: تقرير المبيعات اليومي
+          description: Complete daily aggregates plus one explicitly paginated invoice page
 
   /reports/monthly:
     get:
@@ -709,10 +768,12 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserInput'
+              $ref: '#/components/schemas/UserUpdateInput'
       responses:
         '200':
-          description: تم تحديث المستخدم
+          description: تم تحديث المستخدم. تغيير كلمة المرور يلغي جلسات المستخدم المستهدف، والتغيير الذاتي يتطلب تسجيل الدخول مجدداً.
+        '422':
+          $ref: '#/components/responses/ValidationError'
     delete:
       tags: [Users]
       summary: حذف مستخدم
@@ -755,11 +816,38 @@ paths:
   /health:
     get:
       tags: [Health]
-      summary: فحص صحة النظام
-      description: لا يتطلب مصادقة. يعيد حالة الخادم وقاعدة البيانات.
+      summary: فحص جاهزية الخدمة
+      description: لا يتطلب مصادقة. يعيد فقط حالة الخدمة ومعرّف الإصدار الآمن.
       responses:
         '200':
-          description: النظام يعمل بشكل طبيعي
+          description: الخدمة تعمل
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, version]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  version:
+                    type: string
+
+  /health/diagnostics:
+    get:
+      tags: [Health]
+      summary: فحص تشخيصي عميق للنظام
+      description: يتطلب المصادقة وصلاحية settings.update.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: تفاصيل التشخيص
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: صلاحية settings.update مطلوبة
 
   # ── Client Log ─────────────────────────────────────────────────
   /client-log:
@@ -1014,6 +1102,31 @@ paths:
           application/json:
             schema:
               type: object
+              required: [supplier_id, items]
+              properties:
+                supplier_id:
+                  type: integer
+                  minimum: 1
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [product_id, quantity, cost]
+                    properties:
+                      product_id:
+                        type: integer
+                        minimum: 1
+                      quantity:
+                        type: number
+                        exclusiveMinimum: 0
+                      cost:
+                        type: number
+                        minimum: 0
+                      update_cost:
+                        type: boolean
       responses:
         '201':
           description: تم إنشاء الشراء
@@ -1556,13 +1669,22 @@ components:
           format: email
         password:
           type: string
-          minLength: 6
+          minLength: 8
         role:
           type: string
           enum: [admin, cashier]
         is_active:
           type: integer
           enum: [0, 1]
+
+    UserUpdateInput:
+      allOf:
+        - $ref: '#/components/schemas/UserInput'
+        - type: object
+          properties:
+            current_password:
+              type: string
+              description: Required when the authenticated user changes their own password.
 
     Product:
       type: object
@@ -1635,11 +1757,13 @@ components:
           type: number
         tax:
           type: number
+        shipping_cost:
+          type: number
         net_total:
           type: number
         payment_method:
           type: string
-          enum: [cash, card, transfer]
+          enum: [cash, card, vodafone_cash, instapay, other_wallet, credit]
         status:
           type: string
           enum: [completed, reserved, cancelled]

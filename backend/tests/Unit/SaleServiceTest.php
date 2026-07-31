@@ -36,7 +36,7 @@ class SaleServiceTest extends TestCase
     public function testEnrichItemsWithValidProducts()
     {
         $this->productMock->method('findByIds')
-            ->willReturn([1 => ['id' => 1, 'price' => 10.50, 'cost' => 7.00]]);
+            ->willReturn([1 => ['id' => 1, 'price' => 10.50, 'cost' => 7.00, 'quantity' => 100]]);
 
         $items = [['product_id' => 1, 'quantity' => 3]];
         
@@ -74,11 +74,11 @@ class SaleServiceTest extends TestCase
     public function testEnrichItemsUsesCustomPrice()
     {
         $this->productMock->method('findByIds')
-            ->willReturn([1 => ['id' => 1, 'price' => 10.00, 'cost' => 5.00]]);
+            ->willReturn([1 => ['id' => 1, 'price' => 10.00, 'cost' => 5.00, 'quantity' => 100]]);
 
         $items = [['product_id' => 1, 'quantity' => 1, 'price' => 8.00]];
 
-        $result = $this->service->enrichItems($items);
+        $result = $this->service->enrichItems($items, true);
 
         $this->assertTrue($result['ok']);
         $this->assertEquals(8.00, $result['items'][0]['price']);
@@ -131,6 +131,27 @@ class SaleServiceTest extends TestCase
         $this->assertEquals(115, $totals['total']);
     }
 
+    public function testCalculateTotalsIncludesShippingCost(): void
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+
+        $service->method('getSettings')->willReturn(['tax_enabled' => '0', 'tax_rate' => '15']);
+
+        $totals = $service->calculateTotals(
+            [['price' => 100, 'quantity' => 1, 'unit_cost' => 50]],
+            0,
+            ['payment_method' => 'cash', 'amount_paid' => 125, 'shipping_cost' => 25],
+        );
+
+        $this->assertSame(25.0, $totals['shipping_cost']);
+        $this->assertSame(125.0, $totals['total']);
+        $this->assertSame(125.0, $totals['amount_paid']);
+        $this->assertSame(0, $totals['amount_due']);
+    }
+
     public function testCalculateTotalsWithCreditSale()
     {
         $service = $this->getMockBuilder(SaleService::class)
@@ -159,8 +180,8 @@ class SaleServiceTest extends TestCase
     {
         $this->productMock->method('findByIds')
             ->willReturn([
-                1 => ['id' => 1, 'price' => 10, 'cost' => 5],
-                2 => ['id' => 2, 'price' => 20, 'cost' => 12],
+                1 => ['id' => 1, 'price' => 10, 'cost' => 5, 'quantity' => 100],
+                2 => ['id' => 2, 'price' => 20, 'cost' => 12, 'quantity' => 100],
             ]);
 
         $items = [
@@ -187,6 +208,32 @@ class SaleServiceTest extends TestCase
         $items = [['product_id' => 1, 'quantity' => -5]];
         $result = $this->service->enrichItems($items);
         $this->assertFalse($result['ok']);
+    }
+
+    public function testEnrichItemsRejectsUnauthorizedPriceOverride()
+    {
+        $this->productMock->method('findByIds')
+            ->willReturn([1 => ['id' => 1, 'price' => 10, 'cost' => 5, 'quantity' => 100]]);
+
+        $result = $this->service->enrichItems([
+            ['product_id' => 1, 'quantity' => 1, 'price' => 1],
+        ]);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(403, $result['code']);
+    }
+
+    public function testEnrichItemsRejectsInsufficientStock()
+    {
+        $this->productMock->method('findByIds')
+            ->willReturn([1 => ['id' => 1, 'price' => 10, 'cost' => 5, 'quantity' => 2]]);
+
+        $result = $this->service->enrichItems([
+            ['product_id' => 1, 'quantity' => 3],
+        ]);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(409, $result['code']);
     }
 
     public function testCalculateTotalsChangeDue()

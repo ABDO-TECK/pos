@@ -1,12 +1,46 @@
-// @ts-nocheck
+import type { Dispatch, SetStateAction } from 'react'
 import { formatCurrency, formatDate } from '../../../utils/formatters'
 import { Edit2, Trash2 } from 'lucide-react'
+
+export interface SupplierLedgerEntry {
+  id: number | null
+  type: 'debit' | 'credit' | 'initial'
+  date?: string
+  created_at?: string
+  description?: string
+  purchase_invoice_id?: number | null
+  debit: number
+  credit: number
+  balance: number
+}
+
+export interface SupplierLedgerData {
+  entries: SupplierLedgerEntry[]
+  balance: number
+  truncated?: boolean
+  total_entries?: number
+}
+
+export interface SupplierEntryForm {
+  type: string
+  amount: string
+  description: string
+}
+
+interface SupplierLedgerTableProps {
+  ledgerLoading: boolean
+  ledgerData: SupplierLedgerData | null
+  setEditEntryModal: Dispatch<SetStateAction<SupplierLedgerEntry | null>>
+  setEditEntryForm: Dispatch<SetStateAction<SupplierEntryForm>>
+  onDeleteEntry: (entryId: number) => void
+  onViewInvoice: (invoiceId: number) => void
+}
 
 export default function SupplierLedgerTable({
   ledgerLoading, ledgerData,
   setEditEntryModal, setEditEntryForm,
   onDeleteEntry, onViewInvoice
-}) {
+}: SupplierLedgerTableProps) {
   if (ledgerLoading) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>جارٍ التحميل...</div>
   }
@@ -15,6 +49,11 @@ export default function SupplierLedgerTable({
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+      {ledgerData.truncated && (
+        <div role="status" style={{ padding: '0.65rem 0.75rem', background: 'var(--warning-bg, #fff7dd)', color: 'var(--text)' }}>
+          يتم عرض أحدث 500 حركة من أصل {ledgerData.total_entries}. الرصيد الافتتاحي يلخّص الحركات الأقدم.
+        </div>
+      )}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
         <thead>
           <tr style={{ background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 1 }}>
@@ -33,6 +72,8 @@ export default function SupplierLedgerTable({
           ) : ledgerData.entries.map((row, i) => {
             const isDebit = row.type === 'debit'
             const isCredit = row.type === 'credit'
+            const purchaseInvoiceId = row.purchase_invoice_id
+            const entryId = row.id
             return (
               <tr key={row.id ?? `init-${i}`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)', transition: 'background .2s' }}>
                 <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -40,7 +81,7 @@ export default function SupplierLedgerTable({
                 </td>
                 <td style={{ padding: '0.6rem 0.75rem' }}>
                   {row.description}
-                  {row.purchase_invoice_id && (
+                  {purchaseInvoiceId !== null && purchaseInvoiceId !== undefined && (
                     <button
                       className="btn btn-link btn-sm"
                       style={{
@@ -56,7 +97,7 @@ export default function SupplierLedgerTable({
                         border: 'none',
                         cursor: 'pointer'
                       }}
-                      onClick={() => onViewInvoice(row.purchase_invoice_id)}
+                      onClick={() => onViewInvoice(purchaseInvoiceId)}
                     >
                       (فاتورة شراء #{row.purchase_invoice_id})
                     </button>
@@ -79,7 +120,7 @@ export default function SupplierLedgerTable({
                         setEditEntryModal(row)
                         setEditEntryForm({
                           type: row.type,
-                          amount: row.type === 'debit' ? (row.debit || 0) : (row.credit || 0),
+                          amount: String(row.type === 'debit' ? row.debit : row.credit),
                           description: row.description || ''
                         })
                       }}
@@ -87,12 +128,12 @@ export default function SupplierLedgerTable({
                     >
                       <Edit2 size={13} />
                     </button>
-                    {row.id && row.type !== 'initial' && (
+                    {entryId !== null && row.type !== 'initial' && (
                       <button className="btn btn-ghost btn-icon btn-sm"
                         style={{ color: 'var(--danger)' }}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onDeleteEntry(row.id)
+                          onDeleteEntry(entryId)
                         }}
                         title="حذف القيد"
                       >
@@ -108,12 +149,12 @@ export default function SupplierLedgerTable({
         {ledgerData.entries.length > 0 && (
           <tfoot>
             <tr style={{ background: 'var(--surface)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-              <td colSpan={2} style={{ padding: '0.6rem 0.75rem' }}>الإجمالي</td>
+              <td colSpan={2} style={{ padding: '0.6rem 0.75rem' }}>{ledgerData.truncated ? 'إجمالي النافذة المعروضة' : 'الإجمالي'}</td>
               <td style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: 'var(--danger)' }}>
-                {formatCurrency(ledgerData.entries.reduce((s, r) => s + r.debit, 0))}
+                {formatCurrency(ledgerData.entries.filter((row) => row.id !== null).reduce((sum, row) => sum + row.debit, 0))}
               </td>
               <td style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: 'var(--primary)' }}>
-                {formatCurrency(ledgerData.entries.reduce((s, r) => s + r.credit, 0))}
+                {formatCurrency(ledgerData.entries.filter((row) => row.id !== null).reduce((sum, row) => sum + row.credit, 0))}
               </td>
               <td style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: ledgerData.balance > 0 ? 'var(--danger)' : 'var(--primary)', fontSize: '1rem' }}>
                 {formatCurrency(ledgerData.balance)}

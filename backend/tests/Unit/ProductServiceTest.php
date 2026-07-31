@@ -6,6 +6,7 @@ use PHPUnit\Framework\TestCase;
 use App\Services\ProductService;
 use App\Repositories\ProductRepository;
 use App\Models\PriceHistory;
+use App\Services\AuthService;
 
 class ProductServiceTest extends TestCase
 {
@@ -18,6 +19,12 @@ class ProductServiceTest extends TestCase
         $this->productRepoMock = $this->createMock(ProductRepository::class);
         $this->priceHistoryMock = $this->createMock(PriceHistory::class);
         $this->service = new ProductService($this->productRepoMock, $this->priceHistoryMock);
+        (new AuthService())->setBranchId(1);
+    }
+
+    protected function tearDown(): void
+    {
+        (new AuthService())->setBranchId(1);
     }
 
     public function testDeleteProductNotFound()
@@ -128,5 +135,83 @@ class ProductServiceTest extends TestCase
         $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
 
         $this->assertTrue($result['ok']);
+    }
+
+    public function testCatalogSnapshotUsesCursorWithoutCountAndResumes(): void
+    {
+        $this->productRepoMock->expects($this->once())
+            ->method('getCatalogVersion')
+            ->willReturn(1205);
+        $this->productRepoMock->expects($this->exactly(2))
+            ->method('getCatalogSnapshotPage')
+            ->willReturnOnConsecutiveCalls(
+                [
+                    'data' => [['id' => 500, 'name' => 'P500']],
+                    'has_more' => true,
+                    'last_id' => 500,
+                ],
+                [
+                    'data' => [['id' => 501, 'name' => 'P501']],
+                    'has_more' => false,
+                    'last_id' => 501,
+                ]
+            );
+
+        $first = $this->service->syncCatalog(null, 500);
+        $second = $this->service->syncCatalog($first['pagination']['next_checkpoint'], 500);
+
+        $this->assertSame('snapshot', $first['pagination']['mode']);
+        $this->assertTrue($first['pagination']['has_more']);
+        $this->assertFalse($second['pagination']['has_more']);
+        $this->assertSame(1205, $second['catalog_version']);
+        $this->assertSame(501, $second['data'][0]['id']);
+    }
+
+    public function testCatalogCheckpointCannotCrossBranches(): void
+    {
+        $this->productRepoMock->method('getCatalogVersion')->willReturn(5);
+        $this->productRepoMock->method('getCatalogSnapshotPage')->willReturn([
+            'data' => [],
+            'has_more' => false,
+            'last_id' => 0,
+        ]);
+
+        $first = $this->service->syncCatalog(null);
+        (new AuthService())->setBranchId(2);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('another branch');
+        $this->service->syncCatalog($first['pagination']['next_checkpoint']);
+    }
+
+    public function testCatalogDeltaReturnsUpdatesAndDeleteTombstones(): void
+    {
+        $this->productRepoMock->expects($this->exactly(2))
+            ->method('getCatalogVersion')
+            ->willReturnOnConsecutiveCalls(2, 4);
+        $this->productRepoMock->method('getCatalogSnapshotPage')->willReturn([
+            'data' => [],
+            'has_more' => false,
+            'last_id' => 0,
+        ]);
+        $this->productRepoMock->expects($this->once())
+            ->method('getCatalogChangePage')
+            ->with(2, 500)
+            ->willReturn([
+                'data' => [
+                    ['id' => 10, 'name' => 'Updated', '_deleted' => false],
+                    ['id' => 11, '_deleted' => true, 'deleted_at' => '2026-07-28 12:00:00'],
+                ],
+                'has_more' => false,
+                'last_sequence' => 4,
+            ]);
+
+        $snapshot = $this->service->syncCatalog(null);
+        $delta = $this->service->syncCatalog($snapshot['pagination']['next_checkpoint']);
+
+        $this->assertSame('delta', $delta['pagination']['mode']);
+        $this->assertCount(2, $delta['data']);
+        $this->assertSame('Updated', $delta['data'][0]['name']);
+        $this->assertTrue($delta['data'][1]['_deleted']);
     }
 }

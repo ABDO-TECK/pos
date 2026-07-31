@@ -49,8 +49,8 @@ class InventoryController extends Controller {
         if ($newQty < 0) return Response::error('الكمية لا يمكن أن تكون سالبة', 400);
 
         $db   = Database::getInstance();
-        $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ?');
-        $stmt->execute([$newQty, $id]);
+        $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ? AND branch_id = ?');
+        $stmt->execute([$newQty, $id, $this->authService->branchId()]);
 
         AuditLog::log($this->authService->id(), 'adjust_inventory', 'product', $id, null, $data);
 

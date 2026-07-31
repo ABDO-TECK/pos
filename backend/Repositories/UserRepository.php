@@ -24,6 +24,16 @@ class UserRepository implements RepositoryInterface
         return $this->model->findById($id);
     }
 
+    public function findByIdInCurrentBranch(int $id): ?array
+    {
+        return $this->model->findByIdInCurrentBranch($id);
+    }
+
+    public function findForPasswordChangeInCurrentBranch(int $id): ?array
+    {
+        return $this->model->findForPasswordChangeInCurrentBranch($id);
+    }
+
     public function createToken(int $userId): string
     {
         return $this->model->createToken($userId);
@@ -52,6 +62,11 @@ class UserRepository implements RepositoryInterface
     public function update(int $id, array $data): void
     {
         $this->model->update($id, $data);
+    }
+
+    public function revokeAllSessions(int $userId): void
+    {
+        $this->model->revokeAllSessions($userId);
     }
 
     public function delete(int $id): void

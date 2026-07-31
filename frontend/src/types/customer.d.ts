@@ -5,6 +5,8 @@ declare global {
     phone: string | null;
     address: string | null;
     balance: number;
+    initial_balance?: number;
+    loyalty_points?: number;
     created_at?: string;
   }
 
@@ -23,6 +25,27 @@ declare global {
     invoice_id: number | null;
     created_by: number | null;
     created_at: string;
+  }
+
+  type CustomerLedgerEntryType = 'debit' | 'credit' | 'initial' | 'opening';
+
+  interface CustomerLedgerRow {
+    id: number | null;
+    date: string;
+    description: string | null;
+    debit: number;
+    credit: number;
+    balance: number;
+    type: CustomerLedgerEntryType;
+    invoice_id?: number | null;
+  }
+
+  interface CustomerLedgerData {
+    customer: Customer;
+    entries: CustomerLedgerRow[];
+    balance: number;
+    total_entries: number;
+    truncated: boolean;
   }
 }
 

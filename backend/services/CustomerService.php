@@ -42,7 +42,10 @@ class CustomerService implements CustomerServiceInterface {
             throw new Exception('يجب أن يكون المبلغ أكبر من صفر', 422);
         }
 
-        $type = $data['type'] === 'debit' ? 'debit' : 'credit';
+        $type = $data['type'] ?? 'credit';
+        if (!in_array($type, ['debit', 'credit'], true)) {
+            throw new Exception('نوع القيد غير صحيح', 422);
+        }
 
         $db = \App\Config\Database::getInstance();
         $db->beginTransaction();
@@ -76,8 +79,14 @@ class CustomerService implements CustomerServiceInterface {
         }
 
         $type = $data['type'] ?? $entry['type'];
-        if (!in_array($type, ['debit', 'credit'])) {
+        if (!in_array($type, ['debit', 'credit'], true)) {
             throw new Exception('نوع القيد غير صحيح', 422);
+        }
+
+        // Validate that the ledger entry's customer belongs to the current scope.
+        $customer = $this->customerRepo->findById((int) $entry['customer_id']);
+        if (!$customer) {
+            throw new Exception('العميل المرتبط بهذا القيد غير موجود', 404);
         }
 
         $db = \App\Config\Database::getInstance();
@@ -101,6 +110,12 @@ class CustomerService implements CustomerServiceInterface {
         $entry = $this->customerRepo->getLedgerEntry($entryId);
         if (!$entry) {
             throw new \Exception('القيد غير موجود', 404);
+        }
+
+        // Validate that the ledger entry's customer belongs to the current branch/scope
+        $customer = $this->customerRepo->findById((int) $entry['customer_id']);
+        if (!$customer) {
+            throw new \Exception('العميل المرتبط بهذا القيد غير موجود', 404);
         }
 
         $db = \App\Config\Database::getInstance();

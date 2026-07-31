@@ -1,7 +1,24 @@
-// @ts-nocheck
+import type { Dispatch, SetStateAction } from 'react'
 import { X } from 'lucide-react'
 
-export default function CustomerFormModal({ modal, setModal, form, setForm, handleSave, saving }) {
+interface CustomerFormData {
+  name: string
+  phone: string
+  address: string
+  initial_balance: string
+  balance_direction: string
+}
+
+interface CustomerFormModalProps {
+  modal: 'create' | 'edit' | null
+  setModal: (modal: 'create' | 'edit' | null) => void
+  form: CustomerFormData
+  setForm: Dispatch<SetStateAction<CustomerFormData>>
+  handleSave: () => void
+  saving: boolean
+}
+
+export default function CustomerFormModal({ modal, setModal, form, setForm, handleSave, saving }: CustomerFormModalProps) {
   if (!modal) return null
 
   return (

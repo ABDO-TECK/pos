@@ -113,7 +113,7 @@ export default function SaleDetailModal({
             </div>
 
             {/* Delivery Info */}
-            {(selected.driver_name || selected.vehicle_number || selected.delivery_date || selected.delivery_notes) && (
+            {(selected.driver_name || Number(selected.shipping_cost) > 0 || selected.delivery_date || selected.delivery_notes) && (
               <div style={{
                 background: 'var(--bg)',
                 border: '1px solid var(--border)',
@@ -126,7 +126,7 @@ export default function SaleDetailModal({
                 </h4>
                 <div className="resp-2col" style={{ gap: '0.5rem', fontSize: '0.8rem' }}>
                   {selected.driver_name && <div><strong>اسم السائق:</strong> {selected.driver_name}</div>}
-                  {selected.vehicle_number && <div><strong>رقم السيارة:</strong> {selected.vehicle_number}</div>}
+                  {Number(selected.shipping_cost) > 0 && <div><strong>تكلفة الشحن:</strong> {formatCurrency(selected.shipping_cost)}</div>}
                   {selected.delivery_date && <div><strong>تاريخ التسليم:</strong> {formatDate(selected.delivery_date)}</div>}
                   {selected.delivery_notes && <div style={{ gridColumn: '1/-1', whiteSpace: 'pre-wrap' }}><strong>ملاحظات التسليم:</strong><br/>{selected.delivery_notes}</div>}
                 </div>

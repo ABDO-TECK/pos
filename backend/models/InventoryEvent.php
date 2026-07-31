@@ -2,6 +2,7 @@
 namespace App\Models;
 
 use PDO;
+use App\Services\AuthService;
 
 class InventoryEvent
 {
@@ -16,13 +17,14 @@ class InventoryEvent
      * تسجيل حدث تغيير مخزون.
      * يُستدعى من SaleService / InventoryService / ProductService عند أي تغيير.
      */
-    public function record(int $productId, string $action, int $newQuantity, int $delta = 0): void
+    public function record(int $productId, string $action, float $newQuantity, float $delta = 0.0): void
     {
         $stmt = $this->db->prepare(
-            'INSERT INTO inventory_events (product_id, action, quantity, delta)
-             VALUES (:pid, :action, :qty, :delta)'
+            'INSERT INTO inventory_events (branch_id, product_id, action, quantity, delta)
+             VALUES (:branch_id, :pid, :action, :qty, :delta)'
         );
         $stmt->execute([
+            'branch_id' => AuthService::getGlobalBranchId(),
             'pid'    => $productId,
             'action' => $action,
             'qty'    => $newQuantity,
@@ -39,11 +41,12 @@ class InventoryEvent
         $stmt = $this->db->prepare(
             'SELECT id, product_id, action, quantity, delta, created_at
              FROM inventory_events
-             WHERE id > :last_id
+             WHERE branch_id = :branch_id AND id > :last_id
              ORDER BY id ASC
              LIMIT :lim'
         );
         $stmt->bindValue(':last_id', $lastId, PDO::PARAM_INT);
+        $stmt->bindValue(':branch_id', AuthService::getGlobalBranchId(), PDO::PARAM_INT);
         $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->fetchAll();

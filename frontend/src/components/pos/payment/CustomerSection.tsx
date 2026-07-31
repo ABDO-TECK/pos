@@ -10,7 +10,13 @@ interface Props {
   amountDue: number
   deposit: number
   onDepositChange: (val: number) => void
-  onCustomerSelect: (customerId: number | null, newCustomer: any) => void
+  onCustomerSelect: (customerId: number | null, newCustomer: NewCustomer | null) => void
+}
+
+interface NewCustomer {
+  name: string
+  phone: string
+  address: string
 }
 
 export default function CustomerSection({ isCreditSale, rebillingCustomerId, computedTotal, amountDue, deposit, onDepositChange, onCustomerSelect }: Props) {
@@ -28,14 +34,34 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
       .finally(() => setCustomersLoading(false))
   }, [])
 
-  // Notify parent of customer selection changes
-  useEffect(() => {
-    if (customerMode === 'existing') {
-      onCustomerSelect(selectedCustomerId ? parseInt(selectedCustomerId) : null, null)
+  const notifyNewCustomer = (customer: NewCustomer) => {
+    onCustomerSelect(
+      null,
+      customer.name.trim()
+        ? { ...customer, name: customer.name.trim() }
+        : null,
+    )
+  }
+
+  const handleModeChange = (mode: 'existing' | 'new') => {
+    setCustomerMode(mode)
+    if (mode === 'existing') {
+      onCustomerSelect(selectedCustomerId ? Number(selectedCustomerId) : null, null)
     } else {
-      onCustomerSelect(null, newCust.name.trim() ? { name: newCust.name.trim(), phone: newCust.phone, address: newCust.address } : null)
+      notifyNewCustomer(newCust)
     }
-  }, [customerMode, selectedCustomerId, newCust])
+  }
+
+  const handleExistingCustomerChange = (value: string) => {
+    setSelectedCustomerId(value)
+    onCustomerSelect(value ? Number(value) : null, null)
+  }
+
+  const handleNewCustomerChange = (field: keyof NewCustomer, value: string) => {
+    const nextCustomer = { ...newCust, [field]: value }
+    setNewCust(nextCustomer)
+    notifyNewCustomer(nextCustomer)
+  }
 
   return (
     <div style={{
@@ -51,7 +77,7 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
 
       <div style={{ display: 'flex', gap: '0.4rem' }}>
         {(['existing', 'new'] as const).map(mode => (
-          <button key={mode} onClick={() => setCustomerMode(mode)}
+          <button key={mode} type="button" onClick={() => handleModeChange(mode)}
             className={`${styles.custModeBtn} ${customerMode === mode ? styles.active : ''}`}>
             {mode === 'existing' ? '👤 عميل موجود' : '➕ عميل جديد'}
           </button>
@@ -59,7 +85,7 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
       </div>
 
       {customerMode === 'existing' && (
-        <select className="input" value={selectedCustomerId} onChange={e => setSelectedCustomerId(e.target.value)}
+        <select className="input" value={selectedCustomerId} onChange={e => handleExistingCustomerChange(e.target.value)}
           style={{ fontFamily: 'inherit' }}>
           <option value="">{customersLoading ? 'جارٍ التحميل...' : '— اختر عميلاً —'}</option>
           {customers.map(c => (
@@ -73,11 +99,11 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
       {customerMode === 'new' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <input className="input" placeholder="اسم العميل *" value={newCust.name}
-            onChange={e => setNewCust(n => ({ ...n, name: e.target.value }))} />
+            onChange={e => handleNewCustomerChange('name', e.target.value)} />
           <input className="input" placeholder="رقم الهاتف (اختياري)" value={newCust.phone}
-            onChange={e => setNewCust(n => ({ ...n, phone: e.target.value }))} />
+            onChange={e => handleNewCustomerChange('phone', e.target.value)} />
           <input className="input" placeholder="العنوان (اختياري)" value={newCust.address}
-            onChange={e => setNewCust(n => ({ ...n, address: e.target.value }))} />
+            onChange={e => handleNewCustomerChange('address', e.target.value)} />
         </div>
       )}
 

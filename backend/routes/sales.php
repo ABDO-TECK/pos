@@ -5,10 +5,10 @@ use App\Middleware\AuthMiddleware;
 use App\Middleware\PermissionMiddleware;
 
 // Sales
-$router->post('/api/sales',          [SaleController::class, 'store',   [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('sales_create', 200, 60)]]);
+$router->post('/api/sales',          [SaleController::class, 'store',   [AuthMiddleware::class, PermissionMiddleware::require('invoices.create'), \App\Middleware\EndpointRateLimiter::limit('sales_create', 200, 60)]]);
 $router->get('/api/sales',           [SaleController::class, 'index',   [AuthMiddleware::class]]);
 $router->get('/api/sales/{id}',      [SaleController::class, 'show',    [AuthMiddleware::class]]);
-$router->put('/api/sales/{id}/status',[SaleController::class, 'updateStatus', [AuthMiddleware::class]]);
+$router->put('/api/sales/{id}/status',[SaleController::class, 'updateStatus', [AuthMiddleware::class, PermissionMiddleware::require('invoices.update_status')]]);
 $router->delete('/api/sales/{id}',  [SaleController::class, 'destroy', [AuthMiddleware::class, PermissionMiddleware::require('invoices.delete')]]);
 
 // Inventory

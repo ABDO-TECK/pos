@@ -11,7 +11,7 @@ export interface CartItem {
   sell_by_weight?: number;
   scanned_as_box?: boolean;
   unit_type?: string;
-  size_name?: string;
+  size_name?: string | null;
 }
 
 export interface AddItemProduct {
@@ -23,7 +23,7 @@ export interface AddItemProduct {
   sell_by_weight?: string | number;
   scanned_as_box?: boolean;
   unit_type?: string;
-  size_name?: string;
+  size_name?: string | null;
   [key: string]: unknown;
 }
 
@@ -44,6 +44,8 @@ interface CartState {
   rebillingInvoiceId: number | null;
   rebillingCustomerId: number | null;
   rebillingAmountPaid: number;
+  rebillingPaymentMethod: string | null;
+  rebillingShippingCost: number;
   subtotal: number;
   itemCount: number;
 
@@ -55,7 +57,14 @@ interface CartState {
   setPaymentMethod: (method: string) => void;
   setAmountPaid: (amount: number) => void;
   clearCart: () => void;
-  mergeInvoiceLines: (lines: MergeInvoiceLine[], invoiceId?: number | null, customerId?: number | null, amountPaid?: number) => void;
+  mergeInvoiceLines: (
+    lines: MergeInvoiceLine[],
+    invoiceId?: number | null,
+    customerId?: number | null,
+    amountPaid?: number,
+    originalPaymentMethod?: string | null,
+    shippingCost?: number,
+  ) => void;
   switchItemProduct: (oldId: number, newProduct: AddItemProduct) => void;
 }
 
@@ -67,6 +76,8 @@ const useCartStore = create<CartState>((set, get) => ({
   rebillingInvoiceId: null,
   rebillingCustomerId: null,
   rebillingAmountPaid: 0,
+  rebillingPaymentMethod: null,
+  rebillingShippingCost: 0,
 
   switchItemProduct: (oldId: number, newProduct: AddItemProduct) => {
     const items = get().items
@@ -169,9 +180,26 @@ const useCartStore = create<CartState>((set, get) => ({
   setAmountPaid: (amount: number) => set({ amountPaid: parseFloat(amount.toString()) || 0 }),
 
   clearCart: () =>
-    set({ items: [], discount: 0, amountPaid: 0, paymentMethod: 'cash', rebillingInvoiceId: null, rebillingCustomerId: null, rebillingAmountPaid: 0 }),
+    set({
+      items: [],
+      discount: 0,
+      amountPaid: 0,
+      paymentMethod: 'cash',
+      rebillingInvoiceId: null,
+      rebillingCustomerId: null,
+      rebillingAmountPaid: 0,
+      rebillingPaymentMethod: null,
+      rebillingShippingCost: 0,
+    }),
 
-  mergeInvoiceLines: (lines: MergeInvoiceLine[], invoiceId: number | null = null, customerId: number | null = null, amountPaid: number = 0) => {
+  mergeInvoiceLines: (
+    lines: MergeInvoiceLine[],
+    invoiceId: number | null = null,
+    customerId: number | null = null,
+    amountPaid: number = 0,
+    originalPaymentMethod: string | null = null,
+    shippingCost: number = 0,
+  ) => {
     if (!lines?.length) return
     set((state) => {
       let items = [...state.items]
@@ -200,11 +228,18 @@ const useCartStore = create<CartState>((set, get) => ({
       }
       const rid = invoiceId != null ? Number(invoiceId) : null
       const cid = customerId != null ? Number(customerId) : null
+      const normalizedPaymentMethod = originalPaymentMethod?.trim() || null
+      const normalizedShippingCost = Number.isFinite(Number(shippingCost))
+        ? Math.max(0, Number(shippingCost))
+        : 0
       return {
         items,
         rebillingInvoiceId: Number.isFinite(rid) && (rid as number) > 0 ? rid : state.rebillingInvoiceId,
         rebillingCustomerId: Number.isFinite(cid) && (cid as number) > 0 ? cid : state.rebillingCustomerId,
-        rebillingAmountPaid: amountPaid > 0 ? amountPaid : state.rebillingAmountPaid,
+        rebillingAmountPaid: Number.isFinite(amountPaid) && amountPaid > 0 ? amountPaid : 0,
+        rebillingPaymentMethod: normalizedPaymentMethod,
+        rebillingShippingCost: normalizedShippingCost,
+        paymentMethod: normalizedPaymentMethod ?? state.paymentMethod,
       }
     })
   },

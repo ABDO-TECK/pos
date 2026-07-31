@@ -21,26 +21,55 @@ class SupplierLedger {
         $supplier = $this->supplierModel->findById($supplierId);
         if (!$supplier) return ['supplier' => null, 'entries' => [], 'balance' => 0];
 
+        $limit = 500;
+        $summaryStmt = $this->db->prepare(
+            'SELECT COUNT(*) AS total_entries,
+                    COALESCE(SUM(CASE WHEN type = "debit" THEN amount ELSE -amount END), 0) AS net_change
+             FROM supplier_ledger
+             WHERE supplier_id = ?'
+        );
+        $summaryStmt->execute([$supplierId]);
+        $summary = $summaryStmt->fetch() ?: ['total_entries' => 0, 'net_change' => 0];
+        $totalEntries = (int) $summary['total_entries'];
+
         $stmt = $this->db->prepare(
-            'SELECT sl.*,
+            'SELECT recent.* FROM (
+                SELECT sl.*,
                 u.name AS created_by_name,
                 pi.id AS pinv_id
-             FROM supplier_ledger sl
-             LEFT JOIN users u ON u.id = sl.created_by
-             LEFT JOIN purchase_invoices pi ON pi.id = sl.purchase_invoice_id
-             WHERE sl.supplier_id = ?
-             ORDER BY sl.created_at ASC, sl.id ASC'
+                FROM supplier_ledger sl
+                LEFT JOIN users u ON u.id = sl.created_by
+                LEFT JOIN purchase_invoices pi ON pi.id = sl.purchase_invoice_id
+                WHERE sl.supplier_id = ?
+                ORDER BY sl.created_at DESC, sl.id DESC
+                LIMIT 500
+             ) recent
+             ORDER BY recent.created_at ASC, recent.id ASC'
         );
         $stmt->execute([$supplierId]);
         $rows = $stmt->fetchAll();
 
         $entries    = [];
-        $runningBal = 0;
-
-        // سطر الرصيد المبدئي إذا كان موجوداً
         $initBal = (float)($supplier['initial_balance'] ?? 0);
-        if ($initBal != 0) {
-            $runningBal += $initBal;
+        $recentChange = 0.0;
+        foreach ($rows as $row) {
+            $recentChange += $row['type'] === 'debit' ? (float) $row['amount'] : -(float) $row['amount'];
+        }
+        $totalBalance = $initBal + (float) $summary['net_change'];
+        $runningBal = $totalBalance - $recentChange;
+
+        if ($totalEntries > $limit) {
+            $entries[] = [
+                'id' => null,
+                'date' => $rows[0]['created_at'] ?? $supplier['created_at'],
+                'description' => 'رصيد افتتاحي قبل أحدث 500 قيد',
+                'debit' => $runningBal > 0 ? $runningBal : 0,
+                'credit' => $runningBal < 0 ? abs($runningBal) : 0,
+                'balance' => round($runningBal, 2),
+                'type' => 'opening',
+            ];
+        } elseif ($initBal != 0) {
+            $runningBal = $initBal;
             $entries[] = [
                 'id'          => null,
                 'date'        => $supplier['created_at'],
@@ -72,7 +101,9 @@ class SupplierLedger {
         return [
             'supplier' => $supplier,
             'entries'  => $entries,
-            'balance'  => round($runningBal, 2),
+            'balance'  => round($totalBalance, 2),
+            'total_entries' => $totalEntries,
+            'truncated' => $totalEntries > $limit,
         ];
     }
 

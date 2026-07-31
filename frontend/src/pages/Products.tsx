@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 
 import { Plus, X, Tag } from 'lucide-react'
 import {
-  getProducts, createProduct, updateProduct, deleteProduct,
+  createProduct, updateProduct, deleteProduct,
   getCategories, createCategory, updateCategory, deleteCategory,
   getLowStock,
 } from '../api/endpoints'
@@ -26,7 +26,7 @@ const emptyProduct = {
   quantity: '',
   low_stock_threshold: 5,
   units_per_box: 1,
-  category_id: '',
+  category_id: null,
   sell_by_weight: 0,
   barcode: '',
   unit_type: 'piece',
@@ -73,8 +73,7 @@ export default function Products() {
   const loadProducts = async () => {
     setLoadingProducts(true)
     try { 
-      const res = await getProducts()
-      const raw = (res.data as any).data; setAllProducts(Array.isArray(raw) ? raw : (raw?.data ?? []))
+      setAllProducts(await useProductStore.getState().fetchProducts({}, true))
     }
     finally { setLoadingProducts(false) }
   }
@@ -120,7 +119,12 @@ export default function Products() {
     const main = String(raw[0] ?? '').trim()
     const additional_barcodes = raw.slice(1).map((b) => String(b).trim()).filter(Boolean)
     const { barcodes: _b, barcode: _old, ...rest } = productForm
-    const payload = { ...rest, barcode: main, additional_barcodes }
+    const payload = {
+      ...rest,
+      category_id: rest.category_id === '' || rest.category_id == null ? null : rest.category_id,
+      barcode: main,
+      additional_barcodes,
+    }
 
     setSavingProduct(true)
     try {

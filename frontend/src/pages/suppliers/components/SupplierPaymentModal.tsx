@@ -1,12 +1,25 @@
-// @ts-nocheck
 import { X, PlusCircle } from 'lucide-react'
 import { formatCurrency } from '../../../utils/formatters'
+
+interface SupplierPaymentModalProps {
+  payModal: boolean
+  setPayModal: (open: boolean) => void
+  ledgerData: { balance?: number } | null
+  payType: string
+  setPayType: (type: string) => void
+  payAmount: string
+  setPayAmount: (amount: string) => void
+  payDesc: string
+  setPayDesc: (description: string) => void
+  handlePayment: () => void
+  payLoading: boolean
+}
 
 export default function SupplierPaymentModal({
   payModal, setPayModal, ledgerData,
   payType, setPayType, payAmount, setPayAmount,
   payDesc, setPayDesc, handlePayment, payLoading
-}) {
+}: SupplierPaymentModalProps) {
   if (!payModal) return null
 
   return (

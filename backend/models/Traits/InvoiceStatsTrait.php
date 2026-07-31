@@ -2,6 +2,7 @@
 namespace App\Models\Traits;
 
 use PDO;
+use App\Services\AuthService;
 
 trait InvoiceStatsTrait {
     public function getDailySummary(string $date): array {
@@ -13,9 +14,13 @@ trait InvoiceStatsTrait {
                 SUM(tax) AS total_tax,
                 SUM(total - tax) AS net_revenue
              FROM invoices
-             WHERE DATE(created_at) = ? AND status = "completed"'
+             WHERE branch_id = ? AND created_at >= ? AND created_at < ? AND status = "completed"'
         );
-        $stmt->execute([$date]);
+        $stmt->execute([
+            AuthService::getGlobalBranchId(),
+            $date . ' 00:00:00',
+            date('Y-m-d 00:00:00', strtotime($date . ' +1 day')),
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $row['total_profit'] = $this->getTotalProfitForDate($date);
         $row['total_cost']   = $this->getTotalCostForDate($date);
@@ -28,9 +33,13 @@ trait InvoiceStatsTrait {
             'SELECT COALESCE(SUM(ii.unit_cost * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE DATE(inv.created_at) = ?'
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?'
         );
-        $stmt->execute([$date]);
+        $stmt->execute([
+            AuthService::getGlobalBranchId(),
+            $date . ' 00:00:00',
+            date('Y-m-d 00:00:00', strtotime($date . ' +1 day')),
+        ]);
         return (float)$stmt->fetchColumn();
     }
 
@@ -40,9 +49,9 @@ trait InvoiceStatsTrait {
             'SELECT COALESCE(SUM(ii.unit_cost * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE inv.created_at >= ? AND inv.created_at <= ?'
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?'
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return (float)$stmt->fetchColumn();
     }
 
@@ -52,9 +61,13 @@ trait InvoiceStatsTrait {
             'SELECT COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE DATE(inv.created_at) = ?'
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?'
         );
-        $stmt->execute([$date]);
+        $stmt->execute([
+            AuthService::getGlobalBranchId(),
+            $date . ' 00:00:00',
+            date('Y-m-d 00:00:00', strtotime($date . ' +1 day')),
+        ]);
         return (float)$stmt->fetchColumn();
     }
 
@@ -64,9 +77,9 @@ trait InvoiceStatsTrait {
             'SELECT COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)
              FROM invoice_items ii
              INNER JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE inv.created_at >= ? AND inv.created_at <= ?'
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?'
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return (float)$stmt->fetchColumn();
     }
 
@@ -78,17 +91,17 @@ trait InvoiceStatsTrait {
                 COUNT(*) AS total_invoices,
                 SUM(total) AS total_revenue
              FROM invoices
-             WHERE created_at >= ? AND created_at <= ? AND status = "completed"
+             WHERE branch_id = ? AND created_at >= ? AND created_at < ? AND status = "completed"
              GROUP BY DATE(created_at)
              ORDER BY date ASC'
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return $stmt->fetchAll();
     }
 
     public function getTopProducts(int $limit = 10, ?string $fromDate = null, ?string $toDate = null): array {
-        $where  = ['1=1'];
-        $params = [];
+        $where  = ['i.branch_id = :branch_id'];
+        $params = ['branch_id' => AuthService::getGlobalBranchId()];
         if ($fromDate) {
             $where[]           = 'i.created_at >= :from';
             $params['from']    = $fromDate . ' 00:00:00';
@@ -124,9 +137,9 @@ trait InvoiceStatsTrait {
                 COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0)      AS total_profit
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE inv.created_at >= ? AND inv.created_at <= ?'
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?'
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return $stmt->fetch() ?: ['total_revenue' => 0, 'total_cost' => 0, 'total_profit' => 0];
     }
 
@@ -150,12 +163,12 @@ trait InvoiceStatsTrait {
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
              JOIN products p   ON p.id  = ii.product_id
-             WHERE inv.created_at >= ? AND inv.created_at <= ?
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?
              GROUP BY p.id, p.name
              ORDER BY profit DESC
              LIMIT ' . (int)$limit
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return $stmt->fetchAll();
     }
 
@@ -169,35 +182,41 @@ trait InvoiceStatsTrait {
                 COALESCE(SUM((ii.price - ii.unit_cost) * ii.quantity), 0) AS profit
              FROM invoice_items ii
              JOIN invoices inv ON inv.id = ii.invoice_id AND inv.status = "completed"
-             WHERE inv.created_at >= ? AND inv.created_at <= ?
+             WHERE inv.branch_id = ? AND inv.created_at >= ? AND inv.created_at < ?
              GROUP BY DATE(inv.created_at)
              ORDER BY date ASC'
         );
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([AuthService::getGlobalBranchId(), $startDate, $endDate]);
         return $stmt->fetchAll();
     }
 
     public function getTodayRevenue(): float {
         $stmt = $this->db->prepare(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at) = CURDATE() AND status = ?'
+            'SELECT COALESCE(SUM(total),0) FROM invoices
+             WHERE branch_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY AND status = ?'
         );
-        $stmt->execute(['completed']);
+        $stmt->execute([AuthService::getGlobalBranchId(), 'completed']);
         return (float) $stmt->fetchColumn();
     }
 
     public function getMonthRevenue(): float {
         $stmt = $this->db->prepare(
-            'SELECT COALESCE(SUM(total),0) FROM invoices WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) AND status = ?'
+            'SELECT COALESCE(SUM(total),0) FROM invoices
+             WHERE branch_id = ?
+               AND created_at >= DATE_FORMAT(CURDATE(), "%Y-%m-01")
+               AND created_at < DATE_FORMAT(CURDATE() + INTERVAL 1 MONTH, "%Y-%m-01")
+               AND status = ?'
         );
-        $stmt->execute(['completed']);
+        $stmt->execute([AuthService::getGlobalBranchId(), 'completed']);
         return (float) $stmt->fetchColumn();
     }
 
     public function getTodayInvoicesCount(): int {
         $stmt = $this->db->prepare(
-            'SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE() AND status = ?'
+            'SELECT COUNT(*) FROM invoices
+             WHERE branch_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY AND status = ?'
         );
-        $stmt->execute(['completed']);
+        $stmt->execute([AuthService::getGlobalBranchId(), 'completed']);
         return (int) $stmt->fetchColumn();
     }
 }

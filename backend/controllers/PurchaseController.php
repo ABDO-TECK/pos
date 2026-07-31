@@ -109,8 +109,7 @@ class PurchaseController extends Controller
     /** Bulk purchase — creates a purchase invoice + items */
     public function purchaseBulk() {
         $request = new BulkPurchaseRequest($this->getBody());
-        $request->validated();
-        $data   = $this->getBody();
+        $data   = $request->validated();
         $auth   = $this->authService->user();
         $result = $this->inventoryService->processBulkPurchase($data, $auth);
 

@@ -138,27 +138,56 @@ class Customer {
         $customer = $this->findById($customerId);
         if (!$customer) return ['entries' => [], 'balance' => 0];
 
-        // جلب القيود من customer_ledger مع بيانات الفاتورة إن وجدت
+        $limit = 500;
+        $summaryStmt = $this->db->prepare(
+            'SELECT COUNT(*) AS total_entries,
+                    COALESCE(SUM(CASE WHEN type = "debit" THEN amount ELSE -amount END), 0) AS net_change
+             FROM customer_ledger
+             WHERE customer_id = ?'
+        );
+        $summaryStmt->execute([$customerId]);
+        $summary = $summaryStmt->fetch() ?: ['total_entries' => 0, 'net_change' => 0];
+        $totalEntries = (int) $summary['total_entries'];
+
+        // Load only the latest bounded window, then restore chronological order.
         $stmt = $this->db->prepare(
-            'SELECT cl.*,
+            'SELECT recent.* FROM (
+                SELECT cl.*,
                 u.name AS created_by_name,
                 i.id AS inv_id
-             FROM customer_ledger cl
-             LEFT JOIN users u ON u.id = cl.created_by
-             LEFT JOIN invoices i ON i.id = cl.invoice_id
-             WHERE cl.customer_id = ?
-             ORDER BY cl.created_at ASC, cl.id ASC'
+                FROM customer_ledger cl
+                LEFT JOIN users u ON u.id = cl.created_by
+                LEFT JOIN invoices i ON i.id = cl.invoice_id
+                WHERE cl.customer_id = ?
+                ORDER BY cl.created_at DESC, cl.id DESC
+                LIMIT 500
+             ) recent
+             ORDER BY recent.created_at ASC, recent.id ASC'
         );
         $stmt->execute([$customerId]);
         $rows = $stmt->fetchAll();
 
         $entries    = [];
-        $runningBal = 0;
-
-        // سطر الرصيد المبدئي إذا كان موجوداً
         $initBal = (float)$customer['initial_balance'];
-        if ($initBal != 0) {
-            $runningBal += $initBal;
+        $recentChange = 0.0;
+        foreach ($rows as $row) {
+            $recentChange += $row['type'] === 'debit' ? (float) $row['amount'] : -(float) $row['amount'];
+        }
+        $totalBalance = $initBal + (float) $summary['net_change'];
+        $runningBal = $totalBalance - $recentChange;
+
+        if ($totalEntries > $limit) {
+            $entries[] = [
+                'id' => null,
+                'date' => $rows[0]['created_at'] ?? $customer['created_at'],
+                'description' => 'رصيد افتتاحي قبل أحدث 500 قيد',
+                'debit' => $runningBal > 0 ? $runningBal : 0,
+                'credit' => $runningBal < 0 ? abs($runningBal) : 0,
+                'balance' => round($runningBal, 2),
+                'type' => 'opening',
+            ];
+        } elseif ($initBal != 0) {
+            $runningBal = $initBal;
             $entries[] = [
                 'id'          => null,
                 'date'        => $customer['created_at'],
@@ -190,7 +219,9 @@ class Customer {
         return [
             'customer' => $customer,
             'entries'  => $entries,
-            'balance'  => round($runningBal, 2),
+            'balance'  => round($totalBalance, 2),
+            'total_entries' => $totalEntries,
+            'truncated' => $totalEntries > $limit,
         ];
     }
 

@@ -1,23 +1,43 @@
-// @ts-nocheck
 import api from '../api/axios'
+
+type LedgerId = number | string | null | undefined
+
+function pdfBlobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Unable to read the PDF data.'))
+        return
+      }
+
+      const base64 = reader.result.split(',', 2)[1]
+      if (!base64) {
+        reject(new Error('Unable to encode the PDF data.'))
+        return
+      }
+
+      resolve(base64)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Unable to read the PDF data.'))
+    reader.readAsDataURL(blob)
+  })
+}
 
 /**
  * Export Customer account statement as PDF.
  * Uses axios to pass the Auth token.
  * If asBase64 is true, returns base64 string. Otherwise triggers download.
  */
-export async function exportCustomerLedgerPDF(customerId, asBase64 = false) {
+export function exportCustomerLedgerPDF(customerId: LedgerId, asBase64: true): Promise<string | undefined>
+export function exportCustomerLedgerPDF(customerId: LedgerId, asBase64?: false): Promise<void>
+export async function exportCustomerLedgerPDF(customerId: LedgerId, asBase64 = false): Promise<string | undefined | void> {
   if (!customerId) return
   
   try {
-    const res = await api.get(`/customers/${customerId}/pdf`, { responseType: 'blob' })
+    const res = await api.get<Blob>(`/customers/${customerId}/pdf`, { responseType: 'blob' })
     if (asBase64) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(res.data)
-      })
+      return pdfBlobToBase64(res.data)
     }
 
     const url = window.URL.createObjectURL(new Blob([res.data]))
@@ -39,18 +59,15 @@ export async function exportCustomerLedgerPDF(customerId, asBase64 = false) {
  * Uses axios to pass the Auth token.
  * If asBase64 is true, returns base64 string. Otherwise triggers download.
  */
-export async function exportSupplierLedgerPDF(supplierId, asBase64 = false) {
+export function exportSupplierLedgerPDF(supplierId: LedgerId, asBase64: true): Promise<string | undefined>
+export function exportSupplierLedgerPDF(supplierId: LedgerId, asBase64?: false): Promise<void>
+export async function exportSupplierLedgerPDF(supplierId: LedgerId, asBase64 = false): Promise<string | undefined | void> {
   if (!supplierId) return
   
   try {
-    const res = await api.get(`/suppliers/${supplierId}/pdf`, { responseType: 'blob' })
+    const res = await api.get<Blob>(`/suppliers/${supplierId}/pdf`, { responseType: 'blob' })
     if (asBase64) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(res.data)
-      })
+      return pdfBlobToBase64(res.data)
     }
 
     const url = window.URL.createObjectURL(new Blob([res.data]))

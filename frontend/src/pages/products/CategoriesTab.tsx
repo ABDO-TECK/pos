@@ -1,8 +1,15 @@
-// @ts-nocheck
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { Pencil, Trash2, Search, Tag } from 'lucide-react'
 import { formatNumber } from '../../utils/formatters'
 import Pagination from '../../components/Pagination'
+
+interface CategoriesTabProps {
+  categories: Category[]
+  loadingCategories: boolean
+  allProducts: Product[]
+  onEditCategory: (category: Category) => void
+  onDeleteCategory: (id: number, name: string) => void
+}
 
 export default function CategoriesTab({
   categories,
@@ -10,15 +17,11 @@ export default function CategoriesTab({
   allProducts,
   onEditCategory,
   onDeleteCategory,
-}) {
+}: CategoriesTabProps) {
   const [categoryTabSearch, setCategoryTabSearch] = useState('')
 
   const categoryTabQ = categoryTabSearch.trim().toLowerCase()
   const [currentPage, setCurrentPage] = useState(1)
-
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [categoryTabQ])
 
   const filteredCategoriesTab = useMemo(() => {
     if (!categoryTabQ) return categories
@@ -38,7 +41,10 @@ export default function CategoriesTab({
             style={{ paddingRight: '2.5rem' }}
             placeholder="بحث في أسماء الفئات…"
             value={categoryTabSearch}
-            onChange={(e) => setCategoryTabSearch(e.target.value)}
+            onChange={(e) => {
+              setCategoryTabSearch(e.target.value)
+              setCurrentPage(1)
+            }}
           />
         </div>
         {categories.length > 0 && (

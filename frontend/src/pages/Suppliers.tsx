@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from 'react'
 import ReceiveGoods from './suppliers/ReceiveGoods'
 import PurchaseHistory from './suppliers/PurchaseHistory'
@@ -6,11 +5,17 @@ import ManageSuppliers from './suppliers/ManageSuppliers'
 import SupplierAccounts from './suppliers/SupplierAccounts'
 import styles from './Suppliers.module.css'
 
+type ReceiveCartLine = {
+  product: Product
+  quantity: number
+  cost: number
+}
+
 export default function Suppliers() {
   const [tab, setTab] = useState(0)
-  const [receiveCart, setReceiveCart] = useState<any[]>([])
+  const [receiveCart, setReceiveCart] = useState<ReceiveCartLine[]>([])
   const [receiveSupplierId, setReceiveSupplierId] = useState('')
-  const [receiveInvoiceId, setReceiveInvoiceId] = useState<any>(null)
+  const [receiveInvoiceId, setReceiveInvoiceId] = useState<number | null>(null)
 
   return (
     <div className={styles.root}>
@@ -31,13 +36,22 @@ export default function Suppliers() {
       </div>
 
       {tab === 0 && <ReceiveGoods cart={receiveCart} setCart={setReceiveCart} supplierId={receiveSupplierId} setSupplierId={setReceiveSupplierId} invoiceId={receiveInvoiceId} setInvoiceId={setReceiveInvoiceId} />}
-      {tab === 1 && <PurchaseHistory onReturnToCart={(items, sId, originalInvoiceId) => {
+      {tab === 1 && <PurchaseHistory onReturnToCart={(items: PurchaseItem[], sId: number, originalInvoiceId: number) => {
         setReceiveSupplierId(String(sId))
         setReceiveInvoiceId(originalInvoiceId)
         setReceiveCart(items.map(i => ({
-          product: { id: i.product_id, name: i.product_name, barcode: i.product_barcode, price: i.price, cost: i.cost, units_per_box: 1 },
-          quantity: parseInt(i.quantity, 10),
-          cost: parseFloat(i.cost)
+          product: {
+            id: i.product_id,
+            name: i.product_name ?? i.name ?? '',
+            barcode: i.product_barcode ?? '',
+            category_id: null,
+            price: i.unit_cost,
+            cost: i.cost ?? i.unit_cost,
+            quantity: 0,
+            units_per_box: 1,
+          },
+          quantity: i.quantity,
+          cost: i.cost ?? i.unit_cost,
         })))
         setTab(0)
       }} />}

@@ -53,13 +53,43 @@ class SaleController extends Controller {
     public function store() {
         $request = new SaleRequest($this->getBody());
         $data = $request->validated();
+        $idempotencyKey = $data['idempotency_key'];
+        $requestHash = $this->saleService->hashSaleRequest($data);
+        $idempotency = $this->saleService->resolveIdempotency($idempotencyKey, $requestHash);
+
+        if ($idempotency['status'] === 'replay') {
+            $responseData = $idempotency['data'];
+            $responseData['idempotency'] = [
+                'key' => $idempotencyKey,
+                'replayed' => true,
+            ];
+            return Response::success(
+                $responseData,
+                $idempotency['message'],
+                $idempotency['code']
+            );
+        }
+
+        if ($idempotency['status'] !== 'missing') {
+            $code = (int) ($idempotency['code'] ?? 500);
+            return Response::error(
+                $idempotency['message'] ?? 'Unable to resolve sale idempotency key',
+                $code,
+                ['idempotency_key' => [$idempotency['message'] ?? 'Idempotency request failed']],
+                $code === 409 ? ErrorCodes::IDEMPOTENCY_CONFLICT : ErrorCodes::SERVER_ERROR
+            );
+        }
 
         if (empty($data['items']) || !is_array($data['items'])) {
             return Response::error('السلة فارغة', 400, null, ErrorCodes::EMPTY_CART);
         }
 
         // 1. إثراء والتحقق من البنود
-        $enrichResult = $this->saleService->enrichItems($data['items']);
+        $canOverridePrice = \App\Middleware\PermissionMiddleware::allows(
+            $this->authService,
+            'sales.override_price'
+        );
+        $enrichResult = $this->saleService->enrichItems($data['items'], $canOverridePrice);
         if (!$enrichResult['ok']) {
             return Response::error($enrichResult['error'], $enrichResult['code'], null, ErrorCodes::VALIDATION_FAILED);
         }
@@ -67,7 +97,17 @@ class SaleController extends Controller {
 
         // 2. حساب الإجماليات
         $discount = (float)($data['discount'] ?? 0);
-        $totals   = $this->saleService->calculateTotals($enrichedItems, $discount, $data);
+        if (
+            $discount > 0
+            && !\App\Middleware\PermissionMiddleware::allows($this->authService, 'sales.discount')
+        ) {
+            return Response::error('Discount permission required', 403);
+        }
+        try {
+            $totals = $this->saleService->calculateTotals($enrichedItems, $discount, $data);
+        } catch (\InvalidArgumentException $exception) {
+            return Response::error($exception->getMessage(), 422, null, ErrorCodes::VALIDATION_FAILED);
+        }
 
         // 3. تنفيذ عملية البيع
         $auth   = $this->authService->user();
@@ -75,20 +115,29 @@ class SaleController extends Controller {
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
+            if (!empty($result['idempotency_error'])) {
+                return Response::error(
+                    $result['error'],
+                    $code,
+                    ['idempotency_key' => [$result['error']]],
+                    $code === 409 ? ErrorCodes::IDEMPOTENCY_CONFLICT : ErrorCodes::SERVER_ERROR
+                );
+            }
             return $code === 404
                 ? Response::notFound($result['error'], ErrorCodes::INVOICE_NOT_FOUND)
                 : Response::error($result['error'], $code, null, ErrorCodes::SERVER_ERROR);
         }
 
-        // 4. جلب الفاتورة الناتجة + تنبيهات المخزون
-        $invoice  = $this->saleService->getInvoiceRepository()->findById($result['invoice_id']);
-        $lowStock = $this->saleService->getLowStockAlerts($enrichedItems);
-
-        $isUpdate = $result['is_update'] ?? false;
-        return Response::success([
-            'invoice'          => $invoice,
-            'low_stock_alerts' => $lowStock,
-        ], $isUpdate ? 'Invoice updated' : 'Sale completed', $isUpdate ? 200 : 201);
+        $responseData = $result['response_data'];
+        $responseData['idempotency'] = [
+            'key' => $idempotencyKey,
+            'replayed' => (bool) ($result['replayed'] ?? false),
+        ];
+        return Response::success(
+            $responseData,
+            $result['response_message'],
+            $result['response_code']
+        );
     }
 
     public function updateStatus(string $id) {

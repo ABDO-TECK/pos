@@ -29,6 +29,16 @@ class PurchaseInvoiceRepository implements RepositoryInterface
         return $this->model->getPurchaseInvoice($id);
     }
 
+    public function findHeaderForUpdate(int $id): ?array
+    {
+        return $this->model->getPurchaseInvoiceHeaderForUpdate($id);
+    }
+
+    public function getItems(int $id): array
+    {
+        return $this->model->getPurchaseInvoiceItems($id);
+    }
+
     public function update(int $id, array $data): void
     {
         $this->model->updatePurchaseInvoiceTotals($id, $data);
@@ -37,6 +47,11 @@ class PurchaseInvoiceRepository implements RepositoryInterface
     public function delete(int $id): void
     {
         $this->model->deletePurchaseInvoice($id);
+    }
+
+    public function deleteLocked(int $id): int
+    {
+        return $this->model->deletePurchaseInvoice($id);
     }
 
     public function createPurchase(array $data): int

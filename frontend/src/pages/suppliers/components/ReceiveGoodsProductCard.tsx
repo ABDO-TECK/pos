@@ -1,14 +1,18 @@
-// @ts-nocheck
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
 
-export default function ReceiveGoodsProductCard({ product, onAdd }) {
+interface ReceiveGoodsProductCardProps {
+  product: Product
+  onAdd: () => void
+}
+
+export default function ReceiveGoodsProductCard({ product, onAdd }: ReceiveGoodsProductCardProps) {
   const isOutOfStock = product.quantity <= 0
-  const isLowStock   = product.quantity <= product.low_stock_threshold && product.quantity > 0
-  const unitType     = product.unit_type ?? (parseInt(product.sell_by_weight) === 1 ? 'weight' : 'piece')
+  const isLowStock   = product.quantity <= (product.low_stock_threshold ?? 0) && product.quantity > 0
+  const unitType     = product.unit_type ?? (Number(product.sell_by_weight) === 1 ? 'weight' : 'piece')
   const isByWeight   = unitType === 'weight'
   const isByLiter    = unitType === 'liter'
   const isByPiece    = unitType === 'piece'
-  const upb          = parseInt(product.units_per_box) || 1
+  const upb          = Number(product.units_per_box) || 1
 
   return (
     <button
@@ -62,7 +66,7 @@ export default function ReceiveGoodsProductCard({ product, onAdd }) {
           {isLowStock   && <span className="badge badge-yellow" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>منخفض</span>}
         </div>
         <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--secondary)' }}>
-          {formatCurrency(parseFloat(product.cost) > 0 ? product.cost : product.price)}
+          {formatCurrency(Number(product.cost) > 0 ? product.cost : product.price)}
         </span>
       </div>
     </button>

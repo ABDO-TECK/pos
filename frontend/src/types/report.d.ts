@@ -1,12 +1,23 @@
 declare global {
   interface DailyReport {
     date: string;
-    total_sales: number;
-    total_invoices: number;
-    total_discount: number;
-    total_tax: number;
-    net_amount: number;
-    payment_methods: Record<string, number>;
+    summary: {
+      total_revenue: number;
+      total_cost: number;
+      total_profit: number;
+      total_expenses: number;
+      net_profit: number;
+      total_invoices: number;
+      total_discount: number;
+      total_tax: number;
+    } | null;
+    invoices: Array<{
+      id: number;
+      cashier_name: string;
+      total: number;
+      payment_method: string;
+      created_at: string;
+    }>;
   }
 
   interface MonthlySummary {

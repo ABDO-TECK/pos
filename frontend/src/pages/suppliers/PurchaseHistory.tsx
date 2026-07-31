@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, ShoppingCart, X, Eye, Printer } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
@@ -23,7 +22,18 @@ const labelSt = {
   marginBottom: '0.3rem',
 }
 
-function InfoCard({ label, value }) {
+interface PurchaseFilters {
+  date: string
+  month: string
+  year: string
+  search: string
+}
+
+interface PurchaseHistoryProps {
+  onReturnToCart: (items: PurchaseItem[], supplierId: number, invoiceId: number) => void
+}
+
+function InfoCard({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
   return (
     <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem' }}>
       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.15rem' }}>{label}</p>
@@ -45,18 +55,18 @@ function TotalRow({ label, value, bold, green, danger }: { label: React.ReactNod
   )
 }
 
-export default function PurchaseHistory({ onReturnToCart }) {
-  const [invoices, setInvoices]       = useState<any[]>([])
+export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps) {
+  const [invoices, setInvoices]       = useState<PurchaseInvoice[]>([])
   const [loading, setLoading]         = useState(false)
-  const [selected, setSelected]       = useState<any>(null)
+  const [selected, setSelected]       = useState<PurchaseInvoice | null>(null)
   const [detailLoading, setDL]        = useState(false)
   const [deleting, setDeleting]       = useState(false)
   const [filterSupplier, setSupplier] = useState('')
-  const [filters, setFilters]         = useState({ date: '', month: '', year: '', search: '' })
+  const [filters, setFilters]         = useState<PurchaseFilters>({ date: '', month: '', year: '', search: '' })
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages]   = useState(1)
-  const [suppliers, setSuppliers]     = useState<any[]>([])
-  const searchTimer                   = useRef<any>(null)
+  const [suppliers, setSuppliers]     = useState<Supplier[]>([])
+  const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const user                          = useAuthStore((s) => s.user)
   const isAdmin                       = user?.role === 'admin'
   const settings                      = useSettingsStore()
@@ -66,10 +76,10 @@ export default function PurchaseHistory({ onReturnToCart }) {
   const [hideQuantities, setHideQuantities] = useState(false)
 
   useEffect(() => {
-    getSuppliers().then(r => { const d = (r.data as any).data; setSuppliers(Array.isArray(d) ? d : (d?.data ?? [])) }).catch(console.error)
+    getSuppliers().then((response) => setSuppliers(response.data.data ?? [])).catch(console.error)
   }, [])
 
-  const load = async (f = filters, supId = filterSupplier, p = 1) => {
+  const load = async (f: PurchaseFilters = filters, supId = filterSupplier, p = 1) => {
     setLoading(true)
     try {
       const params: Record<string, string | number> = { page: p, limit: 15 }
@@ -79,7 +89,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
       if (f.search) params.search = f.search
       if (supId)    params.supplier_id = supId
       const res = await getPurchaseInvoices(params)
-      setInvoices((res.data.data as any[]) ?? [])
+      setInvoices(res.data.data ?? [])
       
       const pg = res.data.pagination
       if (pg) {
@@ -96,18 +106,18 @@ export default function PurchaseHistory({ onReturnToCart }) {
 
   useEffect(() => { load() }, [])
 
-  const handleFilter = (key, val) => {
+  const handleFilter = (key: keyof PurchaseFilters, val: string) => {
     const next = { ...filters, [key]: val }
     setFilters(next)
     setCurrentPage(1)
-    clearTimeout(searchTimer.current)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => load(next, filterSupplier, 1), 400)
   }
 
-  const handleSupplierFilter = (val) => {
+  const handleSupplierFilter = (val: string) => {
     setSupplier(val)
     setCurrentPage(1)
-    clearTimeout(searchTimer.current)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => load(filters, val, 1), 400)
   }
 
@@ -119,7 +129,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
     load(cleared, '', 1)
   }
 
-  const openDetail = async (id) => {
+  const openDetail = async (id: number) => {
     setDL(true)
     try {
       const res = await getPurchaseInvoice(id)
@@ -139,7 +149,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
       setSelected(null)
       load(filters, filterSupplier, currentPage)
     } catch (err) {
-      toast.error(err.response?.data?.message ?? 'فشل حذف الفاتورة')
+      toast.error(extractApiError(err, 'فشل حذف الفاتورة'))
     } finally {
       setDeleting(false)
     }
@@ -214,7 +224,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
             <Pagination 
               current={currentPage} 
               total={totalPages} 
-              onPage={(p) => load(filters, filterSupplier, p)} 
+              onPage={(page: number) => load(filters, filterSupplier, page)}
             />
           </div>
         )}
@@ -234,14 +244,14 @@ export default function PurchaseHistory({ onReturnToCart }) {
                     multiSize={true}
                     qzReady={qz.qzReady}
                     printing={qz.printing}
-                    onQZPrint={async (paperSize) => {
+                    onQZPrint={async (paperSize: string) => {
                       const html = buildPurchaseReceiptHTML(selected, settings, paperSize, { hidePrices, hideQuantities })
                       const r = await qz.qzPrint(html)
                       if (r.ok) toast.success(`تمت الطباعة بنجاح (${paperSize})`)
                       else if (r.error) toast.error('فشل الطباعة: ' + r.error)
                     }}
                     onPickPrinter={() => qz.setShowPrinterPicker(true)}
-                    onBrowserPrint={(paperSize) => browserPrintPurchase(selected, settings, paperSize, { hidePrices, hideQuantities })}
+                    onBrowserPrint={(paperSize: string) => browserPrintPurchase(selected, settings, paperSize, { hidePrices, hideQuantities })}
                   />
                 )}
                 <button className="btn btn-ghost btn-icon" onClick={() => setSelected(null)}><X size={18}/></button>
@@ -315,13 +325,13 @@ export default function PurchaseHistory({ onReturnToCart }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {(selected.items ?? []).map((item, idx) => (
+                      {(selected.items ?? []).map((item: PurchaseItem, idx: number) => (
                         <tr key={idx}>
                           <td>{item.product_name}</td>
                           <td style={{ color: 'var(--text-muted)' }}>{item.product_barcode || '—'}</td>
                           <td>{formatNumber(item.quantity)}</td>
-                          <td>{formatCurrency(item.cost)}</td>
-                          <td style={{ fontWeight: 600 }}>{formatCurrency(item.cost * item.quantity)}</td>
+                          <td>{formatCurrency(item.cost ?? item.unit_cost)}</td>
+                          <td style={{ fontWeight: 600 }}>{formatCurrency((item.cost ?? item.unit_cost) * item.quantity)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -373,7 +383,7 @@ export default function PurchaseHistory({ onReturnToCart }) {
         <QZPrinterPicker
           printers={qz.printers}
           selectedPrinter={qz.selectedPrinter}
-          onSelect={(name) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
+          onSelect={(name: string) => { qz.handlePrinterSelect(name); toast.success(`تم اختيار الطابعة: ${name}`) }}
           onClose={() => qz.setShowPrinterPicker(false)}
         />
       )}

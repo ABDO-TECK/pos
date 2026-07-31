@@ -9,6 +9,7 @@ use App\Repositories\ProductRepository;
 use App\Repositories\CustomerRepository;
 use App\Repositories\InventoryEventRepository;
 use PDO;
+use PDOException;
 use Throwable;
 use App\Contracts\SaleServiceInterface;
 
@@ -71,15 +72,29 @@ class SaleService implements SaleServiceInterface
      * @param  array  $items  بنود السلة الخام من العميل
      * @return array  ['ok' => true, 'items' => [...]] أو ['ok' => false, 'error' => '...', 'code' => int]
      */
-    public function enrichItems(array $items): array
+    public function enrichItems(array $items, bool $allowPriceOverride = false): array
     {
+        if (count($items) > 500) {
+            return ['ok' => false, 'error' => 'A sale cannot contain more than 500 items', 'code' => 400];
+        }
         // 1. Validate all items first (no DB calls)
         $productIds = [];
         foreach ($items as $item) {
-            if (empty($item['product_id']) || empty($item['quantity'])) {
+            if (
+                !is_array($item)
+                || !isset($item['product_id'], $item['quantity'])
+                || filter_var($item['product_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+                || !is_numeric($item['quantity'])
+                || !is_finite((float) $item['quantity'])
+                || (float) $item['quantity'] <= 0
+            ) {
                 return ['ok' => false, 'error' => 'Invalid item data', 'code' => 400];
             }
-            $productIds[] = (int) $item['product_id'];
+            $productId = (int) $item['product_id'];
+            if (in_array($productId, $productIds, true)) {
+                return ['ok' => false, 'error' => 'Duplicate products are not allowed', 'code' => 400];
+            }
+            $productIds[] = $productId;
         }
 
         // 2. Batch-fetch all products in a single query (eliminates N+1)
@@ -93,11 +108,26 @@ class SaleService implements SaleServiceInterface
             if (!$product) {
                 return ['ok' => false, 'error' => "Product ID {$pid} not found", 'code' => 400];
             }
+            $quantity = (float) $item['quantity'];
+            if ($quantity > (float) $product['quantity']) {
+                return ['ok' => false, 'error' => "Insufficient stock for product ID {$pid}", 'code' => 409];
+            }
+
+            $catalogPrice = (float) $product['price'];
+            $requestedPrice = isset($item['price']) && is_numeric($item['price'])
+                ? (float) $item['price']
+                : $catalogPrice;
+            if (!is_finite($requestedPrice) || $requestedPrice < 0) {
+                return ['ok' => false, 'error' => 'Invalid item price', 'code' => 400];
+            }
+            if (!$allowPriceOverride && abs($requestedPrice - $catalogPrice) >= 0.005) {
+                return ['ok' => false, 'error' => 'Price override permission required', 'code' => 403];
+            }
             // Use float for quantity to support sell-by-weight products (e.g. 0.5 kg)
             $enriched[] = [
                 'product_id' => $product['id'],
-                'quantity'   => (float) $item['quantity'],
-                'price'      => isset($item['price']) ? (float) $item['price'] : (float) $product['price'],
+                'quantity'   => $quantity,
+                'price'      => $allowPriceOverride ? $requestedPrice : $catalogPrice,
                 'unit_cost'  => (float) ($product['cost'] ?? 0),
                 'product'    => $product,
             ];
@@ -122,11 +152,21 @@ class SaleService implements SaleServiceInterface
         $taxRate    = (float) ($settings['tax_rate'] ?? 15) / 100;
 
         $subtotal   = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $enrichedItems));
+        if (!is_finite($discount) || $discount < 0 || $discount > $subtotal) {
+            throw new \InvalidArgumentException('Discount must be between zero and the subtotal');
+        }
         $taxable    = $subtotal - $discount;
         $tax        = $taxEnabled ? round($taxable * $taxRate, 2) : 0;
-        $total      = round($taxable + $tax, 2);
+        $shippingCost = isset($data['shipping_cost']) ? (float) $data['shipping_cost'] : 0.0;
+        if (!is_finite($shippingCost) || $shippingCost < 0 || $shippingCost > 99999999) {
+            throw new \InvalidArgumentException('Shipping cost must be a valid non-negative amount');
+        }
+        $total      = round($taxable + $tax + $shippingCost, 2);
         
         $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $total;
+        if (!is_finite($amountPaid) || $amountPaid < 0) {
+            throw new \InvalidArgumentException('Amount paid cannot be negative');
+        }
         
         $isUpdate = isset($data['invoice_id']) && (int)$data['invoice_id'] > 0;
         $paymentMethod = $data['payment_method'] ?? 'cash';
@@ -149,6 +189,7 @@ class SaleService implements SaleServiceInterface
             'subtotal'       => $subtotal,
             'discount'       => $discount,
             'tax'            => $tax,
+            'shipping_cost'  => $shippingCost,
             'total'          => $total,
             'amount_paid'    => $amountPaid,
             'change_due'     => $changeDue,
@@ -166,21 +207,180 @@ class SaleService implements SaleServiceInterface
      *
      * @return array ['ok' => true, 'invoice_id' => int] أو ['ok' => false, 'error' => string]
      */
+    /**
+     * Hash only validated, client-controlled sale fields.
+     *
+     * Associative keys are sorted recursively so JSON object key order does not
+     * affect the hash. List order remains significant and the idempotency key
+     * itself is deliberately excluded.
+     */
+    public function hashSaleRequest(array $data): string
+    {
+        unset($data['idempotency_key']);
+        $canonical = $this->canonicalizeForHash($data);
+        return hash(
+            'sha256',
+            json_encode(
+                $canonical,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+            )
+        );
+    }
+
+    /**
+     * Resolve a committed idempotency record without touching sale side effects.
+     *
+     * @return array{status:string, data?:array, code?:int, message?:string, invoice_id?:int}
+     */
+    public function resolveIdempotency(string $key, string $requestHash): array
+    {
+        $record = $this->invoiceRepo->findIdempotency($key);
+        if ($record === null) {
+            return ['status' => 'missing'];
+        }
+
+        if (!hash_equals((string) $record['request_hash'], $requestHash)) {
+            return [
+                'status' => 'conflict',
+                'code' => 409,
+                'message' => 'Idempotency key was already used with a different sale payload',
+            ];
+        }
+
+        if (empty($record['completed_at']) || !is_string($record['response_json'])) {
+            return [
+                'status' => 'pending',
+                'code' => 409,
+                'message' => 'A sale with this idempotency key is still being processed',
+            ];
+        }
+
+        try {
+            $responseData = json_decode($record['response_json'], true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            Logger::error('Stored sale idempotency response is invalid', [
+                'idempotency_key' => $key,
+                'error' => $exception->getMessage(),
+            ]);
+            return [
+                'status' => 'error',
+                'code' => 500,
+                'message' => 'Unable to restore the original sale response',
+            ];
+        }
+
+        if (!is_array($responseData)) {
+            return [
+                'status' => 'error',
+                'code' => 500,
+                'message' => 'Unable to restore the original sale response',
+            ];
+        }
+
+        return [
+            'status' => 'replay',
+            'data' => $responseData,
+            'code' => (int) ($record['response_code'] ?? 200),
+            'message' => (string) ($record['response_message'] ?? 'Sale completed'),
+            'invoice_id' => (int) ($record['invoice_id'] ?? 0),
+        ];
+    }
+
+    private function canonicalizeForHash(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalizeForHash($item), $value);
+        }
+
+        ksort($value, SORT_STRING);
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalizeForHash($item);
+        }
+        return $value;
+    }
+
+    private function resultFromIdempotencyResolution(array $resolution): array
+    {
+        if ($resolution['status'] === 'replay') {
+            return [
+                'ok' => true,
+                'invoice_id' => (int) ($resolution['invoice_id'] ?? 0),
+                'is_update' => ((int) ($resolution['code'] ?? 200)) === 200,
+                'replayed' => true,
+                'response_data' => $resolution['data'],
+                'response_code' => (int) ($resolution['code'] ?? 200),
+                'response_message' => (string) ($resolution['message'] ?? 'Sale completed'),
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'error' => (string) ($resolution['message'] ?? 'Unable to resolve duplicate sale request'),
+            'code' => (int) ($resolution['code'] ?? 500),
+            'idempotency_error' => true,
+            'idempotency_conflict' => $resolution['status'] === 'conflict',
+        ];
+    }
+
+    private function isDuplicateKeyException(PDOException $exception): bool
+    {
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        return $driverCode === 1062
+            || (string) $exception->getCode() === '23000'
+            || str_contains(strtolower($exception->getMessage()), 'duplicate');
+    }
+
     public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array
     {
+        $idempotencyKey = (string) ($data['idempotency_key'] ?? '');
+        $requestHash = $this->hashSaleRequest($data);
         $replaceInvoiceId = isset($data['invoice_id']) ? (int) $data['invoice_id'] : 0;
         $existingInvoice  = null;
 
-        if ($replaceInvoiceId > 0) {
-            $existingInvoice = $this->invoiceRepo->findById($replaceInvoiceId);
-            if (!$existingInvoice) {
-                return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
-            }
-        }
-
         $this->db->beginTransaction();
         try {
+            try {
+                $this->invoiceRepo->claimIdempotency($idempotencyKey, $requestHash);
+            } catch (PDOException $exception) {
+                if (!$this->isDuplicateKeyException($exception)) {
+                    throw $exception;
+                }
+
+                if ($this->db->inTransaction()) {
+                    $this->db->rollBack();
+                }
+                return $this->resultFromIdempotencyResolution(
+                    $this->resolveIdempotency($idempotencyKey, $requestHash)
+                );
+            }
+
+            if ($replaceInvoiceId > 0) {
+                $existingInvoice = $this->invoiceRepo->findByIdForUpdate($replaceInvoiceId);
+                if (!$existingInvoice) {
+                    throw new \DomainException('Invoice not found');
+                }
+            }
+
             $customerId = $totals['customer_id'];
+
+            // Keep customer, invoice, and account-statement creation atomic.
+            // This applies to both new sales and reserved-invoice updates.
+            if ($customerId === null && !empty($data['new_customer']['name'])) {
+                $newCustomer = $data['new_customer'];
+                $customerId = $this->customerRepo->create([
+                    'name'            => $newCustomer['name'],
+                    'phone'           => $newCustomer['phone'] ?? null,
+                    'address'         => $newCustomer['address'] ?? null,
+                    'initial_balance' => 0,
+                ]);
+                if ($customerId <= 0) {
+                    throw new \RuntimeException('Customer creation did not return a valid ID');
+                }
+            }
 
             if ($replaceInvoiceId > 0) {
                 // Restore quantities for old invoice items
@@ -192,7 +392,12 @@ class SaleService implements SaleServiceInterface
                 $oldQuantities = $this->productRepo->getQuantitiesByIds($oldProductIds);
                 foreach ($existingInvoice['items'] as $old) {
                     $pid = (int) $old['product_id'];
-                    $this->inventoryEventRepo->record($pid, 'delete', $oldQuantities[$pid] ?? 0, (int) $old['quantity']);
+                    $this->inventoryEventRepo->record(
+                        $pid,
+                        'delete',
+                        (float) ($oldQuantities[$pid] ?? 0),
+                        (float) $old['quantity']
+                    );
                 }
                 
                 // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
@@ -213,6 +418,7 @@ class SaleService implements SaleServiceInterface
                     'status'         => $data['status'] ?? 'completed',
                     'driver_name'    => $data['driver_name'] ?? null,
                     'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'shipping_cost'  => $totals['shipping_cost'] ?? 0,
                     'delivery_date'  => $data['delivery_date'] ?? null,
                     'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
@@ -224,16 +430,6 @@ class SaleService implements SaleServiceInterface
                 }
             } else {
                 // إنشاء عميل جديد إذا لزم
-                if ($customerId === null && !empty($data['new_customer']['name'])) {
-                    $nc = $data['new_customer'];
-                    $customerId = $this->customerRepo->create([
-                        'name'            => trim($nc['name']),
-                        'phone'           => $nc['phone'] ?? null,
-                        'address'         => $nc['address'] ?? null,
-                        'initial_balance' => 0,
-                    ]);
-                }
-
                 $invoiceId = $this->invoiceRepo->create([
                     'user_id'        => $authUser['id'],
                     'customer_id'    => $customerId,
@@ -248,6 +444,7 @@ class SaleService implements SaleServiceInterface
                     'status'         => $data['status'] ?? 'completed',
                     'driver_name'    => $data['driver_name'] ?? null,
                     'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'shipping_cost'  => $totals['shipping_cost'] ?? 0,
                     'delivery_date'  => $data['delivery_date'] ?? null,
                     'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
@@ -264,29 +461,93 @@ class SaleService implements SaleServiceInterface
                 $this->invoiceRepo->addItem($invoiceId, $item);
                 $decrements[] = ['product_id' => $item['product_id'], 'quantity' => $item['quantity']];
                 // Calculate new quantity in PHP instead of an extra DB query per item
-                $newQuantity = (int)($item['product']['quantity'] ?? 0) - (int)$item['quantity'];
-                $this->inventoryEventRepo->record($item['product_id'], 'sale', $newQuantity, -$item['quantity']);
+                $newQuantity = (float) ($item['product']['quantity'] ?? 0) - (float) $item['quantity'];
+                $this->inventoryEventRepo->record(
+                    $item['product_id'],
+                    'sale',
+                    $newQuantity,
+                    -(float) $item['quantity']
+                );
             }
             // Batch-update all product quantities in a single query
             $this->productRepo->batchDecrementQuantity($decrements);
+
+            $invoice = $this->invoiceRepo->findById($invoiceId);
+            if ($invoice === null) {
+                throw new \RuntimeException('Created invoice could not be loaded');
+            }
+            $responseData = [
+                'invoice' => $invoice,
+                'low_stock_alerts' => $this->getLowStockAlerts($enrichedItems),
+            ];
+            $responseCode = $replaceInvoiceId > 0 ? 200 : 201;
+            $responseMessage = $replaceInvoiceId > 0 ? 'Invoice updated' : 'Sale completed';
+            $this->invoiceRepo->completeIdempotency(
+                $idempotencyKey,
+                $requestHash,
+                $invoiceId,
+                $responseCode,
+                $responseMessage,
+                json_encode(
+                    $responseData,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+                )
+            );
 
             $this->db->commit();
 
             // إضافة نقاط الولاء كـ Background Job (لا تبطئ استجابة البيع)
             if ($customerId !== null && $replaceInvoiceId === 0) {
-                \App\Helpers\JobQueue::dispatch('earn_loyalty_points', [
-                    'customer_id' => $customerId,
-                    'invoice_id'  => $invoiceId,
-                    'total'       => $totals['total'],
-                ], 1); // priority=1 (أعلى من المهام العادية)
+                try {
+                    \App\Helpers\JobQueue::dispatch('earn_loyalty_points', [
+                        'customer_id' => $customerId,
+                        'invoice_id'  => $invoiceId,
+                        'total'       => $totals['total'],
+                    ], 1); // priority=1 (أعلى من المهام العادية)
+                } catch (Throwable $exception) {
+                    Logger::warning('Unable to queue loyalty points after sale', [
+                        'customer_id' => $customerId,
+                        'invoice_id'  => $invoiceId,
+                        'error'       => $exception->getMessage(),
+                    ]);
+                }
             }
+        } catch (\DomainException $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            if ($e->getMessage() === 'Invoice not found') {
+                return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
+            }
+            Logger::error('Sale transaction failed', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
+        } catch (\RuntimeException $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            if ($e->getMessage() === 'Insufficient stock or out-of-scope product') {
+                return ['ok' => false, 'error' => 'Insufficient stock', 'code' => 409];
+            }
+            Logger::error('Sale transaction failed', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             Logger::error('فشل إنشاء عملية بيع', ['error' => $e->getMessage()]);
             return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
         }
 
-        return ['ok' => true, 'invoice_id' => $invoiceId, 'is_update' => $replaceInvoiceId > 0];
+        return [
+            'ok' => true,
+            'invoice_id' => $invoiceId,
+            'customer_id' => $customerId,
+            'is_update' => $replaceInvoiceId > 0,
+            'replayed' => false,
+            'response_data' => $responseData,
+            'response_code' => $responseCode,
+            'response_message' => $responseMessage,
+        ];
     }
 
     // ── Customer ledger entries ──────────────────────────────
@@ -341,13 +602,17 @@ class SaleService implements SaleServiceInterface
      */
     public function deleteInvoice(int $invoiceId): array
     {
-        $invoice = $this->invoiceRepo->findById($invoiceId);
-        if (!$invoice) {
-            return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
+        if ($this->db->inTransaction()) {
+            return ['ok' => false, 'error' => 'Sale transaction already active', 'code' => 409];
         }
 
-        $this->db->beginTransaction();
         try {
+            $this->db->beginTransaction();
+            $invoice = $this->invoiceRepo->findByIdForUpdate($invoiceId);
+            if (!$invoice) {
+                throw new \RuntimeException('Invoice not found');
+            }
+
             // 1. Increment all product quantities (N UPDATE queries — unavoidable)
             foreach ($invoice['items'] as $item) {
                 $this->productRepo->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
@@ -361,16 +626,37 @@ class SaleService implements SaleServiceInterface
             foreach ($invoice['items'] as $item) {
                 $pid = (int) $item['product_id'];
                 $newQty = $quantities[$pid] ?? 0;
-                $this->inventoryEventRepo->record($pid, 'delete', $newQty, (int) $item['quantity']);
+                $this->inventoryEventRepo->record(
+                    $pid,
+                    'delete',
+                    (float) $newQty,
+                    (float) $item['quantity']
+                );
             }
             // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
             $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);
             
             // حذف الفاتورة (والعناصر المرتبطة بها تحذف تلقائياً بفضل ON DELETE CASCADE)
-            $this->db->prepare('DELETE FROM invoices WHERE id = ?')->execute([$invoiceId]);
+            if ($this->invoiceRepo->deleteLocked($invoiceId) !== 1) {
+                throw new \RuntimeException('Invoice changed concurrently');
+            }
             $this->db->commit();
+        } catch (\RuntimeException $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            if ($e->getMessage() === 'Invoice not found') {
+                return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
+            }
+            if (in_array($e->getMessage(), ['Invoice changed concurrently', 'Out-of-scope product'], true)) {
+                return ['ok' => false, 'error' => 'Invoice changed concurrently', 'code' => 409];
+            }
+            Logger::error('Sale invoice deletion failed', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'error' => 'Failed to delete invoice', 'code' => 500];
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             Logger::error('فشل حذف الفاتورة', ['error' => $e->getMessage()]);
             return ['ok' => false, 'error' => 'Failed to delete invoice', 'code' => 500];
         }
