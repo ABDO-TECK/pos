@@ -88,17 +88,37 @@ test('CI installs the locked backend dependencies before skipping local installs
   assert.match(workflow, /extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip/u)
 })
 
-test('backend configuration files use the Linux-correct Config path casing', () => {
+test('backend PSR-4 source paths use Linux-correct casing', () => {
+  const expectedSourceDirectories = [
+    'Config',
+    'Contracts',
+    'Controllers',
+    'Core',
+    'Helpers',
+    'Middleware',
+    'Models',
+    'Repositories',
+    'Requests',
+    'Services',
+  ]
   const trackedPaths = execFileSync(
     'git',
-    ['ls-files', '-z', 'backend/Config'],
+    ['ls-files', '-z', 'backend'],
     { cwd: repoRoot, encoding: 'utf8' },
   )
     .split('\0')
     .filter(Boolean)
     .sort()
 
-  assert.deepEqual(trackedPaths, [
+  const trackedSourceDirectories = [...new Set(
+    trackedPaths
+      .map((trackedPath) => /^backend\/([^/]+)\//u.exec(trackedPath)?.[1])
+      .filter((directory) => directory && expectedSourceDirectories
+        .some((expected) => expected.toLowerCase() === directory.toLowerCase())),
+  )].sort()
+
+  assert.deepEqual(trackedSourceDirectories, expectedSourceDirectories)
+  assert.deepEqual(trackedPaths.filter((trackedPath) => trackedPath.startsWith('backend/Config/')), [
     'backend/Config/Database.php',
     'backend/Config/bindings.php',
     'backend/Config/config.php',
@@ -110,6 +130,13 @@ test('backend configuration files use the Linux-correct Config path casing', () 
   assert.match(
     readFileSync(path.join(repoRoot, 'backend/cli/bootstrap-admin.php'), 'utf8'),
     /require dirname\(__DIR__\) \. '\/Config\/config\.php';/u,
+  )
+  assert.doesNotMatch(
+    trackedPaths
+      .filter((trackedPath) => trackedPath.endsWith('.php'))
+      .map((trackedPath) => readFileSync(path.join(repoRoot, trackedPath), 'utf8'))
+      .join('\n'),
+    /\/(?:config|controllers|core|helpers|middleware|models|requests|services)\//u,
   )
 })
 

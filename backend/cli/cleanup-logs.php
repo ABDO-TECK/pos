@@ -7,8 +7,8 @@ if (php_sapi_name() !== 'cli') {
     die('Forbidden: CLI only.');
 }
 
-require_once __DIR__ . '/../helpers/EnvLoader.php';
-require_once __DIR__ . '/../helpers/Logger.php';
+require_once __DIR__ . '/../Helpers/EnvLoader.php';
+require_once __DIR__ . '/../Helpers/Logger.php';
 
 use App\Helpers\EnvLoader;
 use App\Helpers\Logger;
