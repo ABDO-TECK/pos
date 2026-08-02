@@ -179,7 +179,8 @@ function runBackendCli(args, input = null) {
         resolve({ stdout, stderr });
         return;
       }
-      const detail = stderr.trim() || stdout.trim() || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
+      const detail = formatBackendCliFailure(stdout, stderr)
+        || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
       reject(new Error(detail.slice(-2000)));
     });
     if (input !== null) {
@@ -243,6 +244,34 @@ function parseBackendJson(stdout) {
     }
   }
   throw new Error('The backend bootstrap returned an invalid response');
+}
+
+function formatBackendCliFailure(stdout, stderr) {
+  const output = [stderr, stdout]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join('\n');
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse();
+
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed.error === 'string' && parsed.error.trim() !== '') {
+        return parsed.error.trim();
+      }
+      if (parsed && typeof parsed.message === 'string' && parsed.message.trim() !== '') {
+        return parsed.message.trim();
+      }
+    } catch {
+      // PHP startup notices may surround the structured CLI error.
+    }
+  }
+
+  return output;
 }
 
 async function initializeFreshRuntime({ seed = false } = {}) {
@@ -419,12 +448,18 @@ async function restoreDesktopBackup(filePath) {
     throw new Error('The local PHP server is not running');
   }
 
+  firstRunAdminCredentials = null;
   sessionCookies = {};
   await stopJobWorker();
   phpServer.stopPhpServer();
   try {
     await runBackendCli(['restore-backup', resolvedPath]);
-    await restartPhpAndWorker();
+    // A backup may legitimately contain no users (for example, a schema-only
+    // export). Seed missing defaults and create a temporary administrator
+    // before starting the worker so the restored desktop remains reachable.
+    await restartPhpAndWorker({ startWorker: false });
+    await initializeFreshRuntime({ seed: true });
+    startJobWorker();
     await clearDesktopSession();
     await clearDesktopRendererStorage();
     // Restore invalidates all application tokens. Reload so the renderer

@@ -20,18 +20,34 @@ use PDO;
  */
 final class PasswordRecoveryService
 {
+    /**
+     * Accounts disabled by migration 033 because they still used the shipped
+     * predictable password. They may be recovered once, locally, by replacing
+     * that password; intentionally disabled accounts must remain blocked.
+     */
+    private const LEGACY_DISABLED_ACCOUNTS = [
+        'admin@pos.com' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+        'cashier@pos.com' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+    ];
+
     public function __construct(private readonly PDO $db)
     {
     }
 
     /**
-     * Reset an active account password and revoke every existing session.
+     * Reset an account password and revoke every existing session.
+     * Legacy accounts disabled by the security migration remain recoverable
+     * locally only when their email and old predictable hash match the
+     * migration marker; intentionally disabled accounts remain blocked.
      *
-     * @return array{ok: bool, user_id?: int, error?: string, errors?: array}
+     * @return array{ok: bool, user_id?: int, reactivated?: bool, error?: string, errors?: array}
      */
     public function resetByEmail(string $email, string $password): array
     {
-        $email = trim($email);
+        // MySQL's normal email collation is case-insensitive. Normalize before
+        // lookup as well so the legacy recovery marker works for equivalent
+        // casing entered in the desktop form.
+        $email = strtolower(trim($email));
         $validationErrors = Validator::validate(
             ['email' => $email, 'password' => $password],
             [
@@ -44,21 +60,31 @@ final class PasswordRecoveryService
         }
 
         $statement = $this->db->prepare(
-            'SELECT id, is_active FROM users WHERE email = :email LIMIT 1'
+            'SELECT id, email, password, is_active, force_password_change
+             FROM users
+             WHERE email = :email
+             LIMIT 1'
         );
         $statement->execute(['email' => $email]);
         $user = $statement->fetch(PDO::FETCH_ASSOC);
-        if (!$user || (int) $user['is_active'] !== 1) {
+        $legacyPasswordHash = self::LEGACY_DISABLED_ACCOUNTS[$email] ?? null;
+        $isInactiveLegacyAccount = $user
+            && (int) $user['is_active'] !== 1
+            && (int) ($user['force_password_change'] ?? 0) === 1
+            && $legacyPasswordHash !== null
+            && hash_equals($legacyPasswordHash, (string) ($user['password'] ?? ''));
+        if (!$user || ((int) $user['is_active'] !== 1 && !$isInactiveLegacyAccount)) {
             return ['ok' => false, 'error' => 'Active account not found.'];
         }
 
         $userId = (int) $user['id'];
+        $reactivated = (int) $user['is_active'] !== 1;
         $this->db->beginTransaction();
         try {
             $this->db->prepare(
                 'UPDATE users
-                 SET password = :password, force_password_change = 0
-                 WHERE id = :id AND is_active = 1'
+                 SET password = :password, is_active = 1, force_password_change = 0
+                 WHERE id = :id'
             )->execute([
                 'password' => PasswordHasher::hash($password),
                 'id' => $userId,
@@ -89,9 +115,10 @@ final class PasswordRecoveryService
         // No password or reset token is ever written to the audit trail.
         AuditLog::log(null, 'local_password_recovery', 'user', $userId, null, [
             'sessions_revoked' => true,
+            'reactivated' => $reactivated,
             'source' => 'desktop_recovery',
         ]);
 
-        return ['ok' => true, 'user_id' => $userId];
+        return ['ok' => true, 'user_id' => $userId, 'reactivated' => $reactivated];
     }
 }
