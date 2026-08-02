@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 // Register app scheme as privileged before app ready
 protocol.registerSchemesAsPrivileged([
@@ -16,7 +17,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const { startPHP, stopPHP } = require('./services/php-server');
-const { startMySQL, stopMySQL } = require('./services/mysql-server');
+const { startMySQL, stopMySQL, resetDatabase } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
 const {
   enableLanAccess,
@@ -39,6 +40,8 @@ let dbCredentials = null;
 let lastStartupError = null;
 let splash = null;
 let jobWorkerProcess = null;
+let firstRunAdminCredentials = null;
+let sessionCookies = {};
 const PERSISTED_COOKIE_NAMES = new Set(['pos_token', 'pos_refresh_token', 'XSRF-TOKEN']);
 
 function assertTrustedAppRenderer(event) {
@@ -52,6 +55,392 @@ function assertRecoveryRenderer(event) {
   const senderUrl = event.senderFrame?.url || '';
   if (!senderUrl.startsWith('file://') || !senderUrl.endsWith('/recovery.html')) {
     throw new Error('Untrusted recovery renderer');
+  }
+}
+
+function stopJobWorker() {
+  const worker = jobWorkerProcess;
+  jobWorkerProcess = null;
+  if (!worker || worker.killed) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    worker.once('exit', finish);
+    worker.once('error', finish);
+    try {
+      worker.kill();
+    } catch {
+      finish();
+      return;
+    }
+    setTimeout(finish, 2000);
+  });
+}
+
+/**
+ * Start the worker as an Electron-owned child. Keeping this in one helper is
+ * important because database restore temporarily stops both PHP and the
+ * worker, then must bring the exact same runtime back online.
+ */
+function startJobWorker() {
+  if (jobWorkerProcess && !jobWorkerProcess.killed) {
+    return;
+  }
+  if (!dbCredentials) {
+    throw new Error('Database credentials are not available for the job worker');
+  }
+
+  const {
+    getPhpPath,
+    getBackendDir,
+    getDataDir,
+    getLogsDir,
+    getTempDir,
+    getEnvPath,
+    isPackaged,
+  } = require('./utils/paths');
+  const { createBackendEnv } = require('./services/php-server');
+  const phpPath = getPhpPath();
+  const backendDir = getBackendDir();
+  const phpRuntimeArgs = getPhpRuntimeArgs(phpPath, getTempDir());
+  const workerArgs = isPackaged()
+    ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
+    : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
+  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
+  const workerEnv = {
+    ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
+    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
+    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+    APP_TIMEZONE: resolveSystemTimeZone(),
+    APP_STORAGE_DIR: getDataDir(),
+    ENV_PATH: getEnvPath(),
+    LOGS_PATH: getLogsDir(),
+  };
+
+  const worker = spawn(phpPath, workerArgs, {
+    stdio: 'ignore',
+    detached: false,
+    windowsHide: true,
+    env: workerEnv,
+  });
+  jobWorkerProcess = worker;
+  worker.on('error', (err) => console.warn('[JobWorker] Failed to start:', err.message));
+  worker.on('exit', () => {
+    if (jobWorkerProcess === worker) jobWorkerProcess = null;
+  });
+}
+
+function runBackendCli(args, input = null) {
+  const {
+    getPhpPath,
+    getBackendDir,
+    getTempDir,
+    isPackaged,
+  } = require('./utils/paths');
+  const { createBackendEnv } = require('./services/php-server');
+  if (!dbCredentials) {
+    return Promise.reject(new Error('Database credentials are not available'));
+  }
+
+  const phpPath = getPhpPath();
+  const backendDir = getBackendDir();
+  const runtimeArgs = getPhpRuntimeArgs(phpPath, getTempDir());
+  const entryArgs = isPackaged()
+    ? [path.join(backendDir, 'backend.phar'), ...args]
+    : [path.join(backendDir, 'cli', `${args[0]}.php`), ...args.slice(1)];
+  const commandArgs = [...runtimeArgs, ...entryArgs];
+  const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort });
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(phpPath, commandArgs, {
+      env,
+      windowsHide: true,
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const maxOutput = 12 * 1024;
+    child.stdout.on('data', (data) => {
+      stdout = (stdout + data.toString()).slice(-maxOutput);
+    });
+    child.stderr.on('data', (data) => {
+      stderr = (stderr + data.toString()).slice(-maxOutput);
+    });
+    child.once('error', (error) => reject(new Error(`Failed to start backend command: ${error.message}`)));
+    child.once('close', (code, signal) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      const detail = stderr.trim() || stdout.trim() || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
+      reject(new Error(detail.slice(-2000)));
+    });
+    if (input !== null) {
+      child.stdin.end(input);
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
+function validateDesktopSqlPath(filePath) {
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    throw new Error('No backup file was selected');
+  }
+  const resolvedPath = fs.realpathSync(path.resolve(filePath));
+  if (path.extname(resolvedPath).toLowerCase() !== '.sql') {
+    throw new Error('The selected file must have a .sql extension');
+  }
+  const stat = fs.statSync(resolvedPath);
+  try {
+    fs.accessSync(resolvedPath, fs.constants.R_OK);
+  } catch {
+    throw new Error('The selected backup file cannot be read');
+  }
+  if (!stat.isFile()) {
+    throw new Error('The selected backup file cannot be read');
+  }
+  if (stat.size > 50 * 1024 * 1024) {
+    throw new Error('The backup file exceeds the 50 MB limit');
+  }
+  return resolvedPath;
+}
+
+async function restartPhpAndWorker(options = {}) {
+  const { startWorker = true } = options;
+  const phpServer = require('./services/php-server');
+  const phpServerInfo = await phpServer.startPhpServer({
+    preferredPort: phpPort,
+    mysqlPort,
+    dbCredentials,
+  });
+  phpPort = phpServerInfo.port;
+  await phpServer.waitForHealth(phpServerInfo.baseUrl, { maxTime: 30000 });
+  if (startWorker) startJobWorker();
+  return phpServerInfo;
+}
+
+function parseBackendJson(stdout) {
+  const lines = String(stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse();
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      // CLI bootstrap output may include harmless PHP startup notices. Only
+      // accept the final valid JSON object.
+    }
+  }
+  throw new Error('The backend bootstrap returned an invalid response');
+}
+
+async function initializeFreshRuntime({ seed = false } = {}) {
+  if (seed) {
+    await runBackendCli(['seed']);
+  }
+
+  const { stdout } = await runBackendCli(['initialize-admin']);
+  const result = parseBackendJson(stdout);
+  if (result.created === true) {
+    if (typeof result.email !== 'string' || typeof result.password !== 'string' || !result.email || !result.password) {
+      throw new Error('The backend returned incomplete administrator credentials');
+    }
+    firstRunAdminCredentials = {
+      email: result.email,
+      name: String(result.name || 'Administrator'),
+      password: result.password,
+      forcePasswordChange: result.force_password_change === true,
+    };
+  }
+  return result;
+}
+
+function isPathInside(childPath, parentPath) {
+  const child = path.resolve(childPath);
+  const parent = path.resolve(parentPath);
+  const relative = path.relative(parent, child);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function clearDirectoryContents(directory, parentDirectory) {
+  if (!isPathInside(directory, parentDirectory)) {
+    throw new Error('Refusing to clear an unmanaged directory');
+  }
+  if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) {
+    throw new Error('Refusing to clear a symbolic-link directory');
+  }
+  fs.mkdirSync(directory, { recursive: true });
+  for (const entry of fs.readdirSync(directory)) {
+    const target = path.join(directory, entry);
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+}
+
+function removeManagedFile(filePath, parentDirectory) {
+  if (!isPathInside(filePath, parentDirectory)) {
+    throw new Error('Refusing to remove an unmanaged file');
+  }
+  if (fs.existsSync(filePath)) {
+    if (fs.lstatSync(filePath).isSymbolicLink()) {
+      throw new Error('Refusing to remove a symbolic-link file');
+    }
+    fs.rmSync(filePath, { force: true });
+  }
+}
+
+function clearFactoryResetRuntimeState() {
+  const {
+    getDataDir,
+    getConfigDir,
+    getLogsDir,
+    getTempDir,
+    getRuntimeMetadataPath,
+    getRuntimePortsPath,
+    getMigrationsFlagPath,
+    getRecoveryAuthPath,
+    getCookiesPath,
+  } = require('./utils/paths');
+  const dataDir = getDataDir();
+  const configDir = getConfigDir();
+
+  // Keep the directory itself and only remove app-managed runtime contents.
+  // User-created backups are intentionally preserved for recovery.
+  clearDirectoryContents(getLogsDir(), dataDir);
+  clearDirectoryContents(getTempDir(), dataDir);
+  removeManagedFile(getRuntimeMetadataPath(), configDir);
+  removeManagedFile(getRuntimePortsPath(), configDir);
+  removeManagedFile(getMigrationsFlagPath(), dataDir);
+  removeManagedFile(getRecoveryAuthPath(), configDir);
+  removeManagedFile(getCookiesPath(), configDir);
+}
+
+async function factoryResetDesktop() {
+  if (process.env.POS_LAN_ENABLED === 'true') {
+    throw new Error('Factory reset is available only while the desktop runtime is local');
+  }
+
+  const phpServer = require('./services/php-server');
+  firstRunAdminCredentials = null;
+  sessionCookies = {};
+  await stopJobWorker();
+  phpServer.stopPhpServer();
+  await stopHttpsProxy();
+
+  try {
+    dbCredentials = await resetDatabase(mysqlPort);
+    clearFactoryResetRuntimeState();
+
+    // Start PHP only while the schema is migrated and default data/admin are
+    // recreated. The worker must not observe a half-reset database.
+    await restartPhpAndWorker({ startWorker: false });
+    await initializeFreshRuntime({ seed: true });
+    startJobWorker();
+    await startHttpsProxy(phpPort, 8443);
+    await clearDesktopSession();
+    await clearDesktopRendererStorage();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await mainWindow.loadURL('app://pos-app/index.html');
+    }
+    return { success: true, adminSetupRequired: firstRunAdminCredentials !== null };
+  } catch (error) {
+    try {
+      if (!phpServer.getPhpServerInfo()) {
+        await restartPhpAndWorker();
+      } else {
+        startJobWorker();
+      }
+    } catch (restartError) {
+      console.error('[Factory Reset] Failed to restart PHP after reset error:', restartError.message);
+    }
+    throw error;
+  }
+}
+
+async function clearDesktopSession() {
+  const { session } = require('electron');
+  const { getCookiesPath } = require('./utils/paths');
+  const cookieNames = ['pos_token', 'pos_refresh_token', 'XSRF-TOKEN'];
+  for (const host of ['127.0.0.1', 'localhost']) {
+    for (const name of cookieNames) {
+      try {
+        await session.defaultSession.cookies.remove(`http://${host}:${phpPort}`, name);
+      } catch {
+        // A cookie may not exist on one of the two local host aliases.
+      }
+    }
+  }
+  try {
+    if (fs.existsSync(getCookiesPath())) fs.unlinkSync(getCookiesPath());
+  } catch (error) {
+    console.warn('[Session] Failed to remove persisted session cookies:', error.message);
+  }
+  sessionCookies = {};
+}
+
+async function clearDesktopRendererStorage() {
+  const { session } = require('electron');
+  // The renderer keeps the offline catalog and service-worker cache outside
+  // the SQL database. Clear those stores so a factory reset cannot show
+  // products or pending operations from the previous installation.
+  await session.defaultSession.clearStorageData({
+    storages: [
+      'cookies',
+      'indexdb',
+      'localstorage',
+      'serviceworkers',
+      'cachestorage',
+      'filesystem',
+      'websql',
+      'appcache',
+    ],
+  });
+}
+
+async function restoreDesktopBackup(filePath) {
+  if (process.env.POS_LAN_ENABLED === 'true') {
+    throw new Error('Database restore is available only while the desktop runtime is local');
+  }
+
+  const resolvedPath = validateDesktopSqlPath(filePath);
+  const phpServer = require('./services/php-server');
+  if (!phpServer.getPhpServerInfo()) {
+    throw new Error('The local PHP server is not running');
+  }
+
+  sessionCookies = {};
+  await stopJobWorker();
+  phpServer.stopPhpServer();
+  try {
+    await runBackendCli(['restore-backup', resolvedPath]);
+    await restartPhpAndWorker();
+    await clearDesktopSession();
+    await clearDesktopRendererStorage();
+    // Restore invalidates all application tokens. Reload so the renderer
+    // returns to the login screen instead of using stale in-memory state.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await mainWindow.loadURL('app://pos-app/index.html');
+    }
+    return { success: true };
+  } catch (error) {
+    try {
+      if (phpServer.getPhpServerInfo()) phpServer.stopPhpServer();
+      await restartPhpAndWorker();
+    } catch (restartError) {
+      console.error('[Backup] Failed to restart PHP after restore error:', restartError.message);
+    }
+    throw error;
   }
 }
 
@@ -86,7 +475,6 @@ app.whenReady().then(async () => {
   // ── Session Cookie Proxy ──
   const { session } = require('electron');
   const { getCookiesPath } = require('./utils/paths');
-  let sessionCookies = {};
 
   // Restore session cookies from disk at startup
   try {
@@ -368,6 +756,106 @@ app.whenReady().then(async () => {
     return signQZMessage(data.trim().toLowerCase());
   });
 
+  ipcMain.handle('setup:get-initial-admin', (event) => {
+    assertTrustedAppRenderer(event);
+    return firstRunAdminCredentials;
+  });
+
+  ipcMain.handle('setup:acknowledge-initial-admin', (event) => {
+    assertTrustedAppRenderer(event);
+    firstRunAdminCredentials = null;
+    return { success: true };
+  });
+
+  ipcMain.handle('system:factory-reset', async (event, options) => {
+    assertTrustedAppRenderer(event);
+    if (!options || options.confirmationToken !== 'RESET_POS_DATA') {
+      return { success: false, error: 'Invalid factory reset confirmation.' };
+    }
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Factory reset',
+      message: 'This permanently deletes the POS database and local session/cache data.',
+      detail: 'Backup files are preserved. Continue only if you intend to start from a clean system.',
+      buttons: ['Cancel', 'Reset everything'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (confirmation.response !== 1) {
+      return { success: false, cancelled: true };
+    }
+    try {
+      return await factoryResetDesktop();
+    } catch (error) {
+      console.error('[Factory Reset] Failed:', error.message);
+      return {
+        success: false,
+        error: 'Factory reset failed. Check the error log for the reference.',
+      };
+    }
+  });
+
+  ipcMain.handle('backup:restore', async (event) => {
+    assertTrustedAppRenderer(event);
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select POS SQL backup',
+      properties: ['openFile'],
+      filters: [{ name: 'SQL backup', extensions: ['sql'] }],
+    });
+    if (selection.canceled || selection.filePaths.length === 0) {
+      return { success: false, cancelled: true };
+    }
+
+    try {
+      return await restoreDesktopBackup(selection.filePaths[0]);
+    } catch (error) {
+      console.error('[Backup] Desktop restore failed:', error.message);
+      return {
+        success: false,
+        error: 'Database restore failed. Check the error log for the reference.',
+      };
+    }
+  });
+
+  ipcMain.handle('auth:recover-password', async (event, payload) => {
+    assertTrustedAppRenderer(event);
+    if (process.env.POS_LAN_ENABLED === 'true') {
+      return {
+        success: false,
+        error: 'Local password recovery is disabled while LAN access is enabled. Ask an administrator to reset the account.',
+      };
+    }
+    if (!payload || typeof payload !== 'object') {
+      return { success: false, error: 'Invalid recovery details.' };
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+    const password = typeof payload.password === 'string' ? payload.password : '';
+    if (email.length > 254 || password.length > 256) {
+      return { success: false, error: 'Invalid recovery details.' };
+    }
+
+    const phpServer = require('./services/php-server');
+    sessionCookies = {};
+    await stopJobWorker();
+    phpServer.stopPhpServer();
+    try {
+      await runBackendCli(['reset-password'], JSON.stringify({ email, password }));
+      await restartPhpAndWorker();
+      return { success: true };
+    } catch (error) {
+      try {
+        if (phpServer.getPhpServerInfo()) phpServer.stopPhpServer();
+        await restartPhpAndWorker();
+      } catch (restartError) {
+        console.error('[Auth] Failed to restart PHP after password recovery error:', restartError.message);
+      }
+      console.error('[Auth] Local password recovery failed:', error.message);
+      return { success: false, error: error.message || 'Password recovery failed.' };
+    }
+  });
+
   // ── Recovery Mode Handlers ──
   ipcMain.handle('recovery:get-last-error', (event) => {
     assertRecoveryRenderer(event);
@@ -606,10 +1094,14 @@ app.whenReady().then(async () => {
     const { waitForHealth } = require('./services/php-server');
     await waitForHealth(phpServerInfo.baseUrl);
 
+    // Fresh desktop installs contain no interactive user by design. Seed the
+    // packaged defaults and create a one-time administrator credential only
+    // when the database is empty; existing upgrades retain their data.
+    await initializeFreshRuntime({ seed: dbCredentials.freshInstall === true });
+
     await startHttpsProxy(phpPort, 8443);
 
     // Run log maintenance and the job worker without delaying startup.
-    const { spawn } = require('child_process');
     const {
       getPhpPath,
       getBackendDir,
@@ -622,8 +1114,9 @@ app.whenReady().then(async () => {
     const phpPath = getPhpPath();
     const backendDir = getBackendDir();
     const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
+    const { createBackendEnv } = require('./services/php-server');
     const maintenanceEnv = {
-      ...process.env,
+      ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
       APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
       DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
       APP_TIMEZONE: resolveSystemTimeZone(),
@@ -644,19 +1137,9 @@ app.whenReady().then(async () => {
     cleanupProcess.on('error', err => console.warn('[LogCleanup] Failed to start:', err.message));
     cleanupProcess.unref();
 
-    const workerArgs = isPackaged()
-      ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
-      : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
     // Keep the worker owned by Electron. A detached worker survives app
     // restarts and can continue running an older backend indefinitely.
-    jobWorkerProcess = spawn(phpPath, workerArgs, {
-      stdio: 'ignore',
-      detached: false,
-      windowsHide: true,
-      env: maintenanceEnv,
-    });
-    jobWorkerProcess.on('error', err => console.warn('[JobWorker] Failed to start:', err.message));
-    jobWorkerProcess.on('exit', () => { jobWorkerProcess = null; });
+    startJobWorker();
 
     // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
     splash.webContents.executeJavaScript(
@@ -801,10 +1284,7 @@ function createTray() {
 let forceQuit = false;
 app.on('before-quit', async () => {
   forceQuit = true;
-  if (jobWorkerProcess && !jobWorkerProcess.killed) {
-    jobWorkerProcess.kill();
-    jobWorkerProcess = null;
-  }
+  stopJobWorker();
   stopHttpsProxy();
   stopQZTray();
   stopPHP();

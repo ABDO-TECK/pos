@@ -112,16 +112,38 @@ export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyRe
 
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
-/** FormData مع الحقل sql_file */
-export const restoreBackup = (formData: FormData) =>
-  api.post('/backup/restore', formData, {
-    transformRequest: [
-      (data, headers) => {
-        if (data instanceof FormData) delete headers['Content-Type']
-        return data
-      },
-    ],
-  })
+/**
+ * Restore through the trusted Electron main process. The browser endpoint is
+ * intentionally disabled because a restore must run as a CLI operation while
+ * PHP is stopped; this also prevents accidental remote database replacement.
+ */
+export const restoreBackup = async (): Promise<{
+  success: boolean
+  cancelled?: boolean
+  error?: string
+}> => {
+  const restore = window.electronAPI?.backup?.restore
+  if (typeof restore !== 'function') {
+    throw new Error('Database restore is available in the desktop application only.')
+  }
+  const result = await restore()
+  if (!result.success && !result.cancelled) {
+    throw new Error(result.error || 'Database restore failed.')
+  }
+  return result
+}
+
+export const recoverPassword = async (payload: { email: string; password: string }) => {
+  const recover = window.electronAPI?.auth?.recoverPassword
+  if (typeof recover !== 'function') {
+    throw new Error('Password recovery is available on the local desktop only.')
+  }
+  const result = await recover(payload)
+  if (!result.success) {
+    throw new Error(result.error || 'Password recovery failed.')
+  }
+  return result
+}
 
 // Purchases (bulk)
 export const createBulkPurchase = (data: BulkPurchasePayload) => api.post<ApiResponse<PurchaseInvoice>>('/purchases/bulk', data)

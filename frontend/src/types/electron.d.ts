@@ -2,6 +2,34 @@ interface ElectronAPI {
   getVersion: () => Promise<string>;
   getQZCert: () => Promise<string | null>;
   signQZMessage: (data: string) => Promise<string | null>;
+  backup?: {
+    restore: () => Promise<{
+      success: boolean;
+      cancelled?: boolean;
+      error?: string;
+    }>;
+  };
+  auth?: {
+    recoverPassword: (payload: { email: string; password: string }) => Promise<{
+      success: boolean;
+      error?: string;
+    }>;
+  };
+  setup?: {
+    getInitialAdmin: () => Promise<{
+      email: string;
+      name: string;
+      password: string;
+      forcePasswordChange: boolean;
+    } | null>;
+    acknowledgeInitialAdmin: () => Promise<{ success: boolean }>;
+    factoryReset: (options: { confirmationToken: string }) => Promise<{
+      success: boolean;
+      cancelled?: boolean;
+      adminSetupRequired?: boolean;
+      error?: string;
+    }>;
+  };
 
   updater?: {
     download: () => Promise<UpdaterStatus>;

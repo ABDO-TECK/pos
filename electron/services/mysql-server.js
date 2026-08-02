@@ -1,7 +1,8 @@
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, execFileSync } = require('child_process');
 const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
+const fs = require('fs');
 const { getMysqlPaths } = require('../utils/paths');
 
 let mysqlProcess = null;
@@ -11,8 +12,6 @@ function startMySQL(port) {
   mysqlPort = port;
   return new Promise((resolve, reject) => {
     const { mysqldPath, dataDir, baseDir } = getMysqlPaths();
-    const fs = require('fs');
-
     // تهيئة قاعدة البيانات إذا لم تكن موجودة في مسار الـ userData
     if (!fs.existsSync(dataDir) || fs.readdirSync(dataDir).length === 0) {
       console.log('[MySQL] Initializing new database directory at:', dataDir);
@@ -70,7 +69,8 @@ async function initDatabase(port) {
       `"${mysqlPath}" -u root --port=${port} pos_db -e "SHOW TABLES" 2>&1`,
       { encoding: 'utf-8', windowsHide: true }
     );
-    if (!result.includes('users')) {
+    const freshInstall = !result.includes('users');
+    if (freshInstall) {
       // أول تشغيل — تحميل الـ schema مع فرض ترميز utf8mb4
       execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 pos_db < "${schemaFile}"`,
         { windowsHide: true, shell: true });
@@ -83,11 +83,47 @@ async function initDatabase(port) {
       `"${mysqlPath}" -u root --port=${port} -e "GRANT ALL PRIVILEGES ON pos_db.* TO 'pos_app'@'127.0.0.1' IDENTIFIED BY '${appPassword}'"`,
       { windowsHide: true }
     );
-    return { user: 'pos_app', password: appPassword };
+    return { user: 'pos_app', password: appPassword, freshInstall };
   } catch (e) {
     console.error('[MySQL Init]', e.message);
     throw e;
   }
+}
+
+/**
+ * Recreate only the application database while keeping the bundled MySQL
+ * system tables and process intact. The caller must stop PHP and workers
+ * first so no application connection can write during the reset.
+ */
+async function resetDatabase(port) {
+  const { mysqlPath } = getMysqlPaths();
+  const { getDatabaseDir } = require('../utils/paths');
+  const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
+
+  if (!fs.existsSync(schemaFile) || !fs.statSync(schemaFile).isFile()) {
+    throw new Error('The packaged database schema is missing');
+  }
+
+  execFileSync(mysqlPath, [
+    '-u', 'root',
+    `--port=${port}`,
+    '-e',
+    'DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
+  ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  const schema = fs.readFileSync(schemaFile);
+  execFileSync(mysqlPath, [
+    '-u', 'root',
+    `--port=${port}`,
+    '--default-character-set=utf8mb4',
+  ], {
+    input: schema,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    maxBuffer: 16 * 1024 * 1024,
+  });
+
+  return initDatabase(port);
 }
 
 function repairCorruptedTables(mysqlPath, port) {
@@ -145,4 +181,4 @@ function stopMySQL() {
   });
 }
 
-module.exports = { startMySQL, stopMySQL };
+module.exports = { startMySQL, stopMySQL, resetDatabase };

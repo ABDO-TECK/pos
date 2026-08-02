@@ -350,6 +350,7 @@ module.exports = {
   findAvailablePort,
   resolveBackendPharPath,
   resolveBackendEntryPath,
+  createBackendEnv,
   runDatabaseMigrations,
   startPhpServer,
   stopPhpServer,

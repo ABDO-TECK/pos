@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { Database, Download, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { downloadBackup, restoreBackup } from '../../api/endpoints'
@@ -13,7 +13,6 @@ export default function BackupSection() {
 
   const [backing, setBacking] = useState(false)
   const [restoring, setRestoring] = useState(false)
-  const restoreInputRef = useRef<HTMLInputElement>(null)
 
   const handleBackup = async () => {
     setBacking(true)
@@ -33,28 +32,18 @@ export default function BackupSection() {
     }
   }
 
-  const handleRestorePick = () => restoreInputRef.current?.click()
-
-  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    if (!file.name.toLowerCase().endsWith('.sql')) {
-      toast.error('اختر ملفاً بصيغة .sql')
-      return
-    }
-    if (!(await confirm('سيتم استبدال قاعدة البيانات الحالية بالكامل بمحتوى الملف. لن يمكن التراجع تلقائياً. هل تريد المتابعة؟'))) {
+  const handleRestorePick = async () => {
+    if (!(await confirm('The current database will be replaced by the selected SQL backup. Continue?'))) {
       return
     }
     setRestoring(true)
     try {
-      const fd = new FormData()
-      fd.append('sql_file', file)
-      await restoreBackup(fd)
-      toast.success('تمت استعادة قاعدة البيانات')
+      const result = await restoreBackup()
+      if (result.cancelled) return
+      toast.success('Database restored successfully')
       await fetchSettings()
-    } catch (err: any) {
-      toast.error(extractApiError(err, 'فشلت الاستعادة'))
+    } catch (err: unknown) {
+      toast.error(extractApiError(err, 'Database restore failed'))
     } finally {
       setRestoring(false)
     }
@@ -66,13 +55,9 @@ export default function BackupSection() {
       <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0 }}>
         تحميل نسخة احتياطية كاملة من قاعدة البيانات بصيغة SQL، أو استعادة نسخة سابقة من ملف تم تصديره من هنا.
       </p>
-      <input
-        ref={restoreInputRef}
-        type="file"
-        accept=".sql,text/plain"
-        style={{ display: 'none' }}
-        onChange={handleRestoreFile}
-      />
+      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+        Restore runs locally through the desktop runtime; the web endpoint remains disabled for safety.
+      </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
         <button
           type="button"

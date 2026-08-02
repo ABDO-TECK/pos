@@ -28,6 +28,7 @@ $phar = new Phar($tempPharFile, 0, 'backend.phar');
 $phar->startBuffering();
 $addedFileCount = 0;
 $addedMigrationCount = 0;
+$addedSeederCount = 0;
 
 // 1. Walk through the backend directory and compile it
 $backendDir = __DIR__ . '/backend';
@@ -358,6 +359,31 @@ if (is_dir($migrationsDir)) {
     }
 }
 
+// 2b. Include default seeders used by first-install and factory-reset flows.
+$seedersDir = __DIR__ . '/database/seeders';
+if (is_dir($seedersDir)) {
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($seedersDir, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($iterator as $file) {
+        if ($file->isFile()) {
+            $filePath = $file->getPathname();
+            $realSeedersDir = realpath($seedersDir);
+            $realFilePath = realpath($filePath);
+            $rel = '';
+            if ($realSeedersDir !== false && $realFilePath !== false && strpos(strtolower($realFilePath), strtolower($realSeedersDir)) === 0) {
+                $rel = substr($realFilePath, strlen($realSeedersDir));
+                $rel = ltrim($rel, DIRECTORY_SEPARATOR . '/');
+            } else {
+                $rel = str_replace($seedersDir . DIRECTORY_SEPARATOR, '', $filePath);
+            }
+            $relativePath = 'database/seeders/' . str_replace('\\', '/', $rel);
+            $phar->addFile($filePath, $relativePath);
+            $addedSeederCount++;
+        }
+    }
+}
+
 // 3. Include version.json inside the Phar
 $versionFile = __DIR__ . '/version.json';
 if (file_exists($versionFile)) {
@@ -399,6 +425,38 @@ if (php_sapi_name() === 'cli') {
         exit(0);
     }
 
+    if (\$argc > 1 && \$argv[1] === 'restore-backup') {
+        unset(\$argv[1]);
+        \$argv = array_values(\$argv);
+        \$argc = count(\$argv);
+        require 'phar://backend.phar/cli/restore-backup.php';
+        exit(0);
+    }
+
+    if (\$argc > 1 && \$argv[1] === 'reset-password') {
+        unset(\$argv[1]);
+        \$argv = array_values(\$argv);
+        \$argc = count(\$argv);
+        require 'phar://backend.phar/cli/reset-password.php';
+        exit(0);
+    }
+
+    if (\$argc > 1 && \$argv[1] === 'seed') {
+        unset(\$argv[1]);
+        \$argv = array_values(\$argv);
+        \$argc = count(\$argv);
+        require 'phar://backend.phar/cli/seed.php';
+        exit(0);
+    }
+
+    if (\$argc > 1 && \$argv[1] === 'initialize-admin') {
+        unset(\$argv[1]);
+        \$argv = array_values(\$argv);
+        \$argc = count(\$argv);
+        require 'phar://backend.phar/cli/initialize-admin.php';
+        exit(0);
+    }
+
     // Recovery Mode / verify-admin placeholder
     if (\$argc > 1 && \$argv[1] === 'verify-admin') {
         echo "Placeholder for verify-admin in Recovery Mode.\n";
@@ -424,4 +482,4 @@ if (file_exists($pharFile)) {
 }
 rename($tempPharFile, $pharFile);
 
-echo "backend.phar generated successfully ({$addedFileCount} backend files, {$addedMigrationCount} migrations; SHA-512 integrity check).\n";
+echo "backend.phar generated successfully ({$addedFileCount} backend files, {$addedMigrationCount} migrations, {$addedSeederCount} seeders; SHA-512 integrity check).\n";

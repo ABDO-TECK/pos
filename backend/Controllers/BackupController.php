@@ -39,9 +39,9 @@ class BackupController extends Controller {
      */
     public function restore() {
         if (PHP_SAPI !== 'cli') {
-            \App\Helpers\Logger::warning('Web restore attempted — blocked');
+            \App\Helpers\Logger::warning('HTTP restore attempted — blocked; use the local desktop restore flow');
             return Response::error(
-                'Web restore is disabled; use the CLI restore command.',
+                'HTTP restore is disabled; use the desktop application restore action or the CLI command.',
                 410
             );
         }

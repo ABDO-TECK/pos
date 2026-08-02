@@ -161,6 +161,10 @@ function getRuntimePortsPath() {
   return path.join(getConfigDir(), 'runtime_ports.json');
 }
 
+function getMigrationsFlagPath() {
+  return path.join(getDataDir(), 'migrations_hash.flag');
+}
+
 function getEnvPath() {
   return path.join(getConfigDir(), '.env');
 }
@@ -218,6 +222,7 @@ module.exports = {
   getMysqlDataDir,
   getRuntimeMetadataPath,
   getRuntimePortsPath,
+  getMigrationsFlagPath,
   getEnvPath,
   getRecoveryAuthPath,
   getCookiesPath,

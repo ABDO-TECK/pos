@@ -4,6 +4,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVersion: () => ipcRenderer.invoke('get-version'),
   getQZCert: () => ipcRenderer.invoke('qz-get-cert'),
   signQZMessage: (data) => ipcRenderer.invoke('qz-sign', data),
+  backup: {
+    restore: () => ipcRenderer.invoke('backup:restore'),
+  },
+  auth: {
+    recoverPassword: (payload) => ipcRenderer.invoke('auth:recover-password', payload),
+  },
+  setup: {
+    getInitialAdmin: () => ipcRenderer.invoke('setup:get-initial-admin'),
+    acknowledgeInitialAdmin: () => ipcRenderer.invoke('setup:acknowledge-initial-admin'),
+    factoryReset: (options) => ipcRenderer.invoke('system:factory-reset', options),
+  },
 
   // ── Manual Desktop Updates ──
   updater: {

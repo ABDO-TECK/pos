@@ -51,7 +51,13 @@ test('preload exposes only IPC methods used by the frontend', async () => {
 
   assert.deepEqual(
     Object.keys(exposed.electronAPI).sort(),
-    ['getQZCert', 'getVersion', 'signQZMessage', 'updater']
+    ['auth', 'backup', 'getQZCert', 'getVersion', 'setup', 'signQZMessage', 'updater']
+  );
+  assert.deepEqual(Object.keys(exposed.electronAPI.auth).sort(), ['recoverPassword']);
+  assert.deepEqual(Object.keys(exposed.electronAPI.backup).sort(), ['restore']);
+  assert.deepEqual(
+    Object.keys(exposed.electronAPI.setup).sort(),
+    ['acknowledgeInitialAdmin', 'factoryReset', 'getInitialAdmin']
   );
   assert.deepEqual(
     Object.keys(exposed.electronAPI.updater).sort(),
@@ -62,6 +68,11 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   await exposed.electronAPI.getVersion();
   await exposed.electronAPI.getQZCert();
   await exposed.electronAPI.signQZMessage('payload');
+  await exposed.electronAPI.backup.restore();
+  await exposed.electronAPI.auth.recoverPassword({ email: 'user@example.com', password: 'Password1' });
+  await exposed.electronAPI.setup.getInitialAdmin();
+  await exposed.electronAPI.setup.acknowledgeInitialAdmin();
+  await exposed.electronAPI.setup.factoryReset({ confirmationToken: 'RESET_POS_DATA' });
   await exposed.electronAPI.updater.getStatus();
   await exposed.electronAPI.updater.download();
   await exposed.electronAPI.updater.install();
@@ -74,6 +85,11 @@ test('preload exposes only IPC methods used by the frontend', async () => {
       'get-version',
       'qz-get-cert',
       'qz-sign',
+      'backup:restore',
+      'auth:recover-password',
+      'setup:get-initial-admin',
+      'setup:acknowledge-initial-admin',
+      'system:factory-reset',
       'updater:get-status',
       'updater:download',
       'updater:install',
@@ -144,6 +160,11 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:install': readRepositoryFile('frontend/src/pages/settings/UpdateSection.tsx'),
     'get-api-base-url': readRepositoryFile('frontend/src/main.tsx'),
     'network:enable-lan': readRepositoryFile('frontend/src/pages/settings/NetworkAccessSection.tsx'),
+    'backup:restore': readRepositoryFile('frontend/src/api/endpoints.ts'),
+    'auth:recover-password': readRepositoryFile('frontend/src/api/endpoints.ts'),
+    'setup:get-initial-admin': readRepositoryFile('frontend/src/pages/Login.tsx'),
+    'setup:acknowledge-initial-admin': readRepositoryFile('frontend/src/pages/Login.tsx'),
+    'system:factory-reset': readRepositoryFile('frontend/src/pages/settings/FactoryResetSection.tsx'),
   };
   const consumerMethodNames = {
     'get-version': 'getVersion',
@@ -154,6 +175,11 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:install': 'install',
     'get-api-base-url': 'getApiBaseUrl',
     'network:enable-lan': 'enableLanAccess',
+    'backup:restore': 'restore',
+    'auth:recover-password': 'recoverPassword',
+    'setup:get-initial-admin': 'getInitialAdmin',
+    'setup:acknowledge-initial-admin': 'acknowledgeInitialAdmin',
+    'system:factory-reset': 'factoryReset',
   };
 
   for (const [channel, consumerSource] of Object.entries(consumers)) {

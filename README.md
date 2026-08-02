@@ -1,6 +1,6 @@
 # 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
 
-![Version](https://img.shields.io/badge/version-1.1.37-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.38-blue.svg)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
 ![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-43.2-47848F?logo=electron&logoColor=white)
@@ -184,3 +184,19 @@ unset INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
 
 ## 📝 الترخيص (License)
 هذا النظام مخصص للاستخدام التجاري الخاص. لا يُسمح بإعادة التوزيع أو البيع دون إذن مسبق.
+
+## Desktop first run and factory reset
+
+The desktop runtime keeps its database and logs in the per-user application
+data directory, so a new installation starts with an empty database and no
+historical error log. It seeds the packaged defaults and creates
+`admin@pos.local` with a cryptographically random temporary password. The
+password is shown once in the local login screen and must be changed after the
+first sign-in; no shared password is embedded in the release.
+
+An administrator can use **System & Maintenance → Factory reset** to drop the
+application database, restore the schema and default seed data, clear runtime
+logs/session/cache state, and create a new temporary administrator credential.
+The reset requires typing `RESET_POS_DATA` and deliberately preserves backup
+files so they remain available for recovery. Existing installations are never
+erased automatically during an upgrade.

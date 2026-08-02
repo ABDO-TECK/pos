@@ -6,6 +6,7 @@ import BackupSection from './settings/BackupSection'
 import UpdateSection from './settings/UpdateSection'
 import SystemHealth from '../components/settings/SystemHealth'
 import LogViewer from './settings/LogViewer'
+import FactoryResetSection from './settings/FactoryResetSection'
 import { Store, Wifi, Settings as SettingsIcon } from 'lucide-react'
 
 export default function Settings() {
@@ -63,6 +64,8 @@ export default function Settings() {
             <section className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <LogViewer />
             </section>
+
+            <FactoryResetSection />
           </div>
         )}
       </div>

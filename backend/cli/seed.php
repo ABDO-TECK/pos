@@ -4,6 +4,10 @@
  *
  * الاستخدام:
  *   php backend/cli/seed.php
+ *
+ * The first administrator is created separately by initialize-admin.php so
+ * seed data can be reused safely during a factory reset without a shared
+ * password.
  */
 
 declare(strict_types=1);
@@ -24,9 +28,12 @@ echo "===========================\n";
 
 try {
     $db = Database::getInstance();
-    $seedDir = realpath(__DIR__ . '/../../database/seeders');
+    $pharRunning = \Phar::running(false);
+    $seedDir = $pharRunning
+        ? 'phar://' . str_replace('\\', '/', $pharRunning) . '/database/seeders'
+        : __DIR__ . '/../../database/seeders';
 
-    if (!$seedDir || !is_dir($seedDir)) {
+    if (!is_dir($seedDir)) {
         echo "Seeder directory not found: database/seeders/\n";
         exit(1);
     }
@@ -57,10 +64,16 @@ try {
             continue;
         }
 
+        // Remove full-line SQL comments before splitting. The old parser
+        // discarded any statement preceded by a comment because every chunk
+        // started with `--`, leaving a fresh install without categories and
+        // default settings.
+        $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? $sql;
+
         // تنفيذ كل statement على حدة
         $statements = array_filter(
             array_map('trim', explode(';', $sql)),
-            fn($s) => $s !== '' && !str_starts_with($s, '--')
+            fn($s) => $s !== ''
         );
 
         foreach ($statements as $stmt) {
