@@ -75,9 +75,62 @@ ALTER TABLE supplier_ledger ADD CONSTRAINT fk_supplier_ledger_branch FOREIGN KEY
 
 -- Replace the original single-column ledger ownership FKs with composite FKs.
 -- ON DELETE CASCADE is intentionally retained.
-ALTER TABLE customer_ledger DROP FOREIGN KEY fk_ledger_customer;
+SET @migration_044_drop_customer_canonical_fk = (
+    SELECT CASE WHEN COUNT(*) > 0
+        THEN 'ALTER TABLE customer_ledger DROP FOREIGN KEY fk_ledger_customer'
+        ELSE 'SET @migration_044_noop = 1'
+    END
+    FROM information_schema.referential_constraints
+    WHERE constraint_schema = DATABASE()
+      AND table_name = 'customer_ledger'
+      AND constraint_name = 'fk_ledger_customer'
+);
+PREPARE migration_044_customer_canonical_fk_stmt FROM @migration_044_drop_customer_canonical_fk;
+EXECUTE migration_044_customer_canonical_fk_stmt;
+DEALLOCATE PREPARE migration_044_customer_canonical_fk_stmt;
+-- Older installations created this relation as fk_cl_customer. Drop it only
+-- when present so this migration remains directly rerunnable.
+SET @migration_044_drop_customer_fk = (
+    SELECT CASE WHEN COUNT(*) > 0
+        THEN 'ALTER TABLE customer_ledger DROP FOREIGN KEY fk_cl_customer'
+        ELSE 'SET @migration_044_noop = 1'
+    END
+    FROM information_schema.referential_constraints
+    WHERE constraint_schema = DATABASE()
+      AND table_name = 'customer_ledger'
+      AND constraint_name = 'fk_cl_customer'
+);
+PREPARE migration_044_customer_fk_stmt FROM @migration_044_drop_customer_fk;
+EXECUTE migration_044_customer_fk_stmt;
+DEALLOCATE PREPARE migration_044_customer_fk_stmt;
 ALTER TABLE customer_ledger ADD CONSTRAINT fk_ledger_customer FOREIGN KEY (branch_id, customer_id) REFERENCES customers(branch_id, id) ON DELETE CASCADE;
-ALTER TABLE supplier_ledger DROP FOREIGN KEY fk_sledger_supplier;
+SET @migration_044_drop_supplier_canonical_fk = (
+    SELECT CASE WHEN COUNT(*) > 0
+        THEN 'ALTER TABLE supplier_ledger DROP FOREIGN KEY fk_sledger_supplier'
+        ELSE 'SET @migration_044_noop = 1'
+    END
+    FROM information_schema.referential_constraints
+    WHERE constraint_schema = DATABASE()
+      AND table_name = 'supplier_ledger'
+      AND constraint_name = 'fk_sledger_supplier'
+);
+PREPARE migration_044_supplier_canonical_fk_stmt FROM @migration_044_drop_supplier_canonical_fk;
+EXECUTE migration_044_supplier_canonical_fk_stmt;
+DEALLOCATE PREPARE migration_044_supplier_canonical_fk_stmt;
+-- Older installations created this relation as fk_sl_supplier.
+SET @migration_044_drop_supplier_fk = (
+    SELECT CASE WHEN COUNT(*) > 0
+        THEN 'ALTER TABLE supplier_ledger DROP FOREIGN KEY fk_sl_supplier'
+        ELSE 'SET @migration_044_noop = 1'
+    END
+    FROM information_schema.referential_constraints
+    WHERE constraint_schema = DATABASE()
+      AND table_name = 'supplier_ledger'
+      AND constraint_name = 'fk_sl_supplier'
+);
+PREPARE migration_044_supplier_fk_stmt FROM @migration_044_drop_supplier_fk;
+EXECUTE migration_044_supplier_fk_stmt;
+DEALLOCATE PREPARE migration_044_supplier_fk_stmt;
 ALTER TABLE supplier_ledger ADD CONSTRAINT fk_sledger_supplier FOREIGN KEY (branch_id, supplier_id) REFERENCES suppliers(branch_id, id) ON DELETE CASCADE;
 
 -- Cleanup is maintenance work, not request work. The migration runner tolerates

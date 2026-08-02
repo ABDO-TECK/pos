@@ -204,7 +204,7 @@ class MigrationService {
         // بقية الأوامر المهمة من التنفيذ.
         $statements = $this->splitSqlStatements($content);
 
-        foreach ($statements as $sql) {
+        foreach ($statements as $statementIndex => $sql) {
             $sql = trim($sql);
             if ($sql === '') continue;
 
@@ -214,12 +214,7 @@ class MigrationService {
                 $errorInfo = $e->errorInfo ?? [];
                 $errno = $errorInfo[1] ?? $e->getCode();
 
-                // Ignore only explicit duplicate-object errors and privilege
-                // errors for optional features (EVENT scheduler, GLOBAL vars).
-                // Error 1005 is intentionally not ignored because it also
-                // represents broken foreign keys and other real schema failures.
-                $ignorable = [1060, 1061, 1050, 1068, 1826, 1227, 1044];
-                if (in_array((int) $errno, $ignorable, true)) {
+                if ($this->isIgnorableMigrationError($e, $sql)) {
                     // خطأ متوقع ومتجاهل — نستمر بالأمر التالي
                     continue;
                 }
@@ -228,6 +223,10 @@ class MigrationService {
                     'reference' => bin2hex(random_bytes(8)),
                     'exception' => get_class($e),
                     'code' => (int) $e->getCode(),
+                    'driver_code' => (int) $errno,
+                    'sql_state' => (string) ($errorInfo[0] ?? ''),
+                    'statement_index' => (int) $statementIndex,
+                    'message' => $this->migrationErrorMessage($e),
                 ]);
                 return false;
             }
@@ -235,6 +234,57 @@ class MigrationService {
 
         Database::resetInstance();
         return true;
+    }
+
+    /**
+     * Return true only for schema-object conflicts that are safe to skip or
+     * optional-feature privilege failures. A generic 1005 must not be ignored
+     * because it can also indicate a malformed foreign key.
+     */
+    private function isIgnorableMigrationError(PDOException $exception, string $sql): bool
+    {
+        $errorInfo = $exception->errorInfo ?? [];
+        $driverCode = (int) ($errorInfo[1] ?? $exception->getCode());
+        $details = strtolower(trim(
+            $exception->getMessage() . ' ' . (string) ($errorInfo[2] ?? '')
+        ));
+
+        $duplicateObjectCodes = [1060, 1061, 1050, 1068, 1826, 1227, 1044];
+        if (in_array($driverCode, $duplicateObjectCodes, true)) {
+            return true;
+        }
+
+        // MariaDB reports an already-defined foreign-key symbol as
+        // 1005/121 ("Duplicate key on write or update"), while MySQL may
+        // report the same condition as 1826. Ignore only this exact shape.
+        if (
+            $driverCode === 1005
+            && str_contains($details, 'duplicate key')
+            && preg_match('/\\bADD\\s+CONSTRAINT\\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        // Legacy schemas used different foreign-key names. A missing FK is
+        // safe when a migration is replacing it with the canonical one.
+        if (
+            $driverCode === 1091
+            && preg_match('/\\bDROP\\s+FOREIGN\\s+KEY\\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        // The inventory cleanup event is optional; deployments may not grant
+        // EVENT privileges to the application account.
+        return $driverCode === 1142
+            && preg_match('/^\\s*CREATE\\s+EVENT\\b/i', $sql) === 1;
+    }
+
+    private function migrationErrorMessage(PDOException $exception): string
+    {
+        $errorInfo = $exception->errorInfo ?? [];
+        $message = trim((string) ($errorInfo[2] ?? $exception->getMessage()));
+        return mb_substr($message, 0, 500);
     }
 
     /**

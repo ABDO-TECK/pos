@@ -140,7 +140,45 @@ final class MySqlMigrationTest extends TestCase
         }
     }
 
-    private function createLegacyPartnerSchema(PDO $pdo): void
+    public function testMigration044HandlesLegacyLedgerForeignKeyNames(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_partner_legacy_fk_test');
+        try {
+            $pdo = MySqlTestEnvironment::connect($database);
+            $this->createLegacyPartnerSchema($pdo, 'fk_cl_customer', 'fk_sl_supplier');
+            $pdo->exec("INSERT INTO branches (id, name) VALUES (1, 'Main')");
+            $pdo->exec("INSERT INTO customers (id, name) VALUES (10, 'Customer')");
+            $pdo->exec("INSERT INTO suppliers (id, name) VALUES (20, 'Supplier')");
+
+            MySqlTestEnvironment::applyMigration(
+                $pdo,
+                'database/migrations/044_scope_business_partners_by_branch.sql'
+            );
+
+            $foreignKeys = $pdo->prepare(
+                'SELECT constraint_name
+                 FROM information_schema.referential_constraints
+                 WHERE constraint_schema = ?
+                   AND table_name IN (\'customer_ledger\', \'supplier_ledger\')
+                 ORDER BY constraint_name'
+            );
+            $foreignKeys->execute([$database]);
+            $names = array_column($foreignKeys->fetchAll(PDO::FETCH_ASSOC), 'constraint_name');
+
+            self::assertContains('fk_ledger_customer', $names);
+            self::assertContains('fk_sledger_supplier', $names);
+            self::assertNotContains('fk_cl_customer', $names);
+            self::assertNotContains('fk_sl_supplier', $names);
+        } finally {
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+
+    private function createLegacyPartnerSchema(
+        PDO $pdo,
+        string $customerForeignKey = 'fk_ledger_customer',
+        string $supplierForeignKey = 'fk_sledger_supplier'
+    ): void
     {
         $statements = [
             'CREATE TABLE branches (id INT PRIMARY KEY, name VARCHAR(100) NOT NULL) ENGINE=InnoDB',
@@ -164,24 +202,24 @@ final class MySqlMigrationTest extends TestCase
                 branch_id INT NOT NULL,
                 supplier_id INT NOT NULL
             ) ENGINE=InnoDB',
-            'CREATE TABLE customer_ledger (
+            "CREATE TABLE customer_ledger (
                 id INT PRIMARY KEY,
                 customer_id INT NOT NULL,
-                type ENUM(\'debit\', \'credit\') NOT NULL,
+                type ENUM('debit', 'credit') NOT NULL,
                 amount DECIMAL(10,2) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT fk_ledger_customer FOREIGN KEY (customer_id)
+                CONSTRAINT {$customerForeignKey} FOREIGN KEY (customer_id)
                     REFERENCES customers(id) ON DELETE CASCADE
-            ) ENGINE=InnoDB',
-            'CREATE TABLE supplier_ledger (
+            ) ENGINE=InnoDB",
+            "CREATE TABLE supplier_ledger (
                 id INT PRIMARY KEY,
                 supplier_id INT NOT NULL,
-                type ENUM(\'debit\', \'credit\') NOT NULL,
+                type ENUM('debit', 'credit') NOT NULL,
                 amount DECIMAL(10,2) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id)
+                CONSTRAINT {$supplierForeignKey} FOREIGN KEY (supplier_id)
                     REFERENCES suppliers(id) ON DELETE CASCADE
-            ) ENGINE=InnoDB',
+            ) ENGINE=InnoDB",
             'CREATE TABLE inventory_events (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
