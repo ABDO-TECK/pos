@@ -18,10 +18,15 @@ protocol.registerSchemesAsPrivileged([
 const { startPHP, stopPHP } = require('./services/php-server');
 const { startMySQL, stopMySQL } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
-const { startHttpsProxy, stopHttpsProxy } = require('./services/https-proxy');
+const {
+  enableLanAccess,
+  startHttpsProxy,
+  stopHttpsProxy,
+} = require('./services/https-proxy');
 const { startQZTray, stopQZTray } = require('./services/qz-tray');
 const { ensureQZCerts, getQZCertificate, signQZMessage } = require('./services/qz-certs');
 const { configureFirewall } = require('./services/firewall');
+const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('./utils/php-runtime');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -33,6 +38,7 @@ let mysqlPort = 3307; // Bundled MySQL port
 let dbCredentials = null;
 let lastStartupError = null;
 let splash = null;
+let jobWorkerProcess = null;
 const PERSISTED_COOKIE_NAMES = new Set(['pos_token', 'pos_refresh_token', 'XSRF-TOKEN']);
 
 function assertTrustedAppRenderer(event) {
@@ -312,16 +318,54 @@ app.whenReady().then(async () => {
       return null;
     }
   });
+  ipcMain.handle('network:enable-lan', async (event) => {
+    assertTrustedAppRenderer(event);
+    try {
+      const proxyInfo = await enableLanAccess(phpPort, 8443);
+      if (!proxyInfo.running) {
+        return {
+          enabled: false,
+          port: 8443,
+          protocol: 'https',
+          error: proxyInfo.error || 'Unable to bind the LAN HTTPS service',
+        };
+      }
+
+      // Keep subsequent recovery/restart workers aligned with the explicit
+      // user choice made from the network settings section.
+      process.env.POS_LAN_ENABLED = 'true';
+      const firewallConfigured = await configureFirewall();
+      return {
+        enabled: true,
+        port: proxyInfo.port || 8443,
+        protocol: 'https',
+        firewallConfigured,
+        firewallRequired: process.platform === 'win32' && !firewallConfigured,
+      };
+    } catch (err) {
+      console.error('[LAN] Failed to enable phone access:', err.message);
+      return {
+        enabled: false,
+        port: 8443,
+        protocol: 'https',
+        error: 'LAN access could not be enabled. Check the local firewall and try again.',
+      };
+    }
+  });
   ipcMain.handle('qz-get-cert', (event) => {
     assertTrustedAppRenderer(event);
     return getQZCertificate();
   });
   ipcMain.handle('qz-sign', (event, data) => {
     assertTrustedAppRenderer(event);
-    if (typeof data !== 'string' || Buffer.byteLength(data, 'utf8') > 64 * 1024) {
+    if (
+      typeof data !== 'string'
+      || Buffer.byteLength(data, 'utf8') > 128
+      || !/^[a-f0-9]{64}$/i.test(data.trim())
+    ) {
       throw new TypeError('Invalid QZ signing payload');
     }
-    return signQZMessage(data);
+    return signQZMessage(data.trim().toLowerCase());
   });
 
   // ── Recovery Mode Handlers ──
@@ -572,19 +616,25 @@ app.whenReady().then(async () => {
       getDataDir,
       getEnvPath,
       getLogsDir,
+      getTempDir,
       isPackaged,
     } = require('./utils/paths');
     const phpPath = getPhpPath();
     const backendDir = getBackendDir();
+    const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
     const maintenanceEnv = {
       ...process.env,
+      APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
+      DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+      APP_TIMEZONE: resolveSystemTimeZone(),
       APP_STORAGE_DIR: getDataDir(),
       ENV_PATH: getEnvPath(),
       LOGS_PATH: getLogsDir(),
     };
+    const phpRuntimeArgs = getPhpRuntimeArgs(phpPath, getTempDir());
     const cleanupArgs = isPackaged()
-      ? [path.join(backendDir, 'backend.phar'), 'cleanup-logs']
-      : [path.join(backendDir, 'cli', 'cleanup-logs.php')];
+      ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'cleanup-logs']
+      : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'cleanup-logs.php')];
     const cleanupProcess = spawn(phpPath, cleanupArgs, {
       stdio: 'ignore',
       detached: true,
@@ -595,16 +645,18 @@ app.whenReady().then(async () => {
     cleanupProcess.unref();
 
     const workerArgs = isPackaged()
-      ? [path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
-      : [path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
-    const jobWorker = spawn(phpPath, workerArgs, {
+      ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
+      : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
+    // Keep the worker owned by Electron. A detached worker survives app
+    // restarts and can continue running an older backend indefinitely.
+    jobWorkerProcess = spawn(phpPath, workerArgs, {
       stdio: 'ignore',
-      detached: true,
+      detached: false,
       windowsHide: true,
       env: maintenanceEnv,
     });
-    jobWorker.on('error', err => console.warn('[JobWorker] Failed to start:', err.message));
-    jobWorker.unref();
+    jobWorkerProcess.on('error', err => console.warn('[JobWorker] Failed to start:', err.message));
+    jobWorkerProcess.on('exit', () => { jobWorkerProcess = null; });
 
     // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
     splash.webContents.executeJavaScript(
@@ -749,6 +801,10 @@ function createTray() {
 let forceQuit = false;
 app.on('before-quit', async () => {
   forceQuit = true;
+  if (jobWorkerProcess && !jobWorkerProcess.killed) {
+    jobWorkerProcess.kill();
+    jobWorkerProcess = null;
+  }
   stopHttpsProxy();
   stopQZTray();
   stopPHP();

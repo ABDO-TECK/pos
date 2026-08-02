@@ -26,7 +26,7 @@ class CustomerService implements CustomerServiceInterface {
             return $id;
         } catch (Throwable $e) {
             $db->rollBack();
-            Logger::error('فشل إضافة العميل', ['error' => $e->getMessage()]);
+            Logger::error('فشل إضافة العميل', Logger::exceptionContext($e));
             throw new Exception('فشل في إضافة العميل');
         }
     }

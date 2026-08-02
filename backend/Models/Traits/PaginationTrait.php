@@ -28,7 +28,7 @@ trait PaginationTrait
     protected function paginate(string $baseSql, array $params, array $filters, string $countTable, string $whereClause): array
     {
         $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
-        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+        $limit = isset($filters['limit']) ? max(1, min(100, (int) $filters['limit'])) : 100;
 
         if ($page !== null && $limit !== null) {
             // Count total rows
@@ -61,8 +61,12 @@ trait PaginationTrait
         }
 
         // No pagination — return all rows
-        $stmt = $this->db->prepare($baseSql);
-        $stmt->execute($params);
+        $stmt = $this->db->prepare($baseSql . ' LIMIT :fallback_limit');
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':fallback_limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
         return $stmt->fetchAll();
     }
 }

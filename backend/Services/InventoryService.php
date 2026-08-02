@@ -54,7 +54,7 @@ class InventoryService implements InventoryServiceInterface
         }
 
         $seenProductIds = [];
-        $grandTotal = 0.0;
+        $subtotal = 0.0;
         foreach ($data['items'] as $item) {
             if (
                 !is_array($item)
@@ -74,8 +74,41 @@ class InventoryService implements InventoryServiceInterface
                 return ['ok' => false, 'error' => 'Duplicate products are not allowed', 'code' => 422];
             }
             $seenProductIds[$productId] = true;
-            $grandTotal += (float) $item['cost'] * (float) $item['quantity'];
+            $lineTotal = (float) $item['cost'] * (float) $item['quantity'];
+            if (!is_finite($lineTotal)) {
+                return ['ok' => false, 'error' => 'Invalid purchase item total', 'code' => 422];
+            }
+            $subtotal += $lineTotal;
+            if (!is_finite($subtotal)) {
+                return ['ok' => false, 'error' => 'Purchase total is too large', 'code' => 422];
+            }
         }
+
+        $discount = $data['discount'] ?? 0;
+        if (
+            !is_numeric($discount)
+            || !is_finite((float) $discount)
+            || (float) $discount < 0
+            || (float) $discount > 999999999
+        ) {
+            return ['ok' => false, 'error' => 'Invalid supplier discount', 'code' => 422];
+        }
+        $discount = round((float) $discount, 2);
+        if ($discount > round($subtotal, 2)) {
+            return ['ok' => false, 'error' => 'Supplier discount cannot exceed purchase subtotal', 'code' => 422];
+        }
+
+        $shippingCost = $data['shipping_cost'] ?? 0;
+        if (
+            !is_numeric($shippingCost)
+            || !is_finite((float) $shippingCost)
+            || (float) $shippingCost < 0
+            || (float) $shippingCost > 999999999
+        ) {
+            return ['ok' => false, 'error' => 'Invalid shipping cost', 'code' => 422];
+        }
+        $shippingCost = round((float) $shippingCost, 2);
+        $grandTotal = round(max(0.0, $subtotal - $discount + $shippingCost), 2);
 
         $paymentType = $data['payment_type'] ?? 'cash';
         if (!in_array($paymentType, ['cash', 'credit'], true)) {
@@ -103,25 +136,40 @@ class InventoryService implements InventoryServiceInterface
         try {
             $this->db->beginTransaction();
 
+            $productIds = array_map(
+                static fn(array $item): int => (int) $item['product_id'],
+                $data['items']
+            );
+            $products = $this->productModel->findByIds($productIds);
+            foreach ($productIds as $productId) {
+                if (!isset($products[$productId])) {
+                    throw new \RuntimeException("Product ID {$productId} not found");
+                }
+            }
+
             if ($replaceInvoiceId > 0) {
                 $existingInvoice = $this->supplierRepo->getPurchaseInvoiceHeaderForUpdate($replaceInvoiceId);
                 if (!$existingInvoice) {
                     throw new \RuntimeException('Original invoice not found for replacement');
                 }
+                if ((int) $existingInvoice['supplier_id'] !== (int) $data['supplier_id']) {
+                    throw new \RuntimeException('Replacement supplier does not match original invoice');
+                }
                 $existingInvoice['items'] = $this->supplierRepo->getPurchaseInvoiceItems($replaceInvoiceId);
             }
 
             if ($replaceInvoiceId > 0) {
-                foreach ($existingInvoice['items'] as $oldItem) {
-                    $this->productModel->decrementQuantity((int) $oldItem['product_id'], (float) $oldItem['quantity']);
-                }
+                $this->productModel->batchDecrementQuantity(
+                    $this->aggregateQuantityChanges($existingInvoice['items'])
+                );
                 $this->supplierRepo->deletePurchaseInvoiceItems($replaceInvoiceId);
                 $this->supplierRepo->updatePurchaseInvoiceTotals($replaceInvoiceId, [
                     'total'          => $grandTotal,
+                    'discount'       => $discount,
+                    'shipping_cost'  => $shippingCost,
                     'items_count'    => count($data['items']),
                     'notes'          => $data['notes'] ?? null,
                     'driver_name'    => $data['driver_name'] ?? null,
-                    'vehicle_number' => $data['vehicle_number'] ?? null,
                     'delivery_date'  => $data['delivery_date'] ?? null,
                     'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
@@ -130,44 +178,49 @@ class InventoryService implements InventoryServiceInterface
                 $invoiceId = $this->supplierRepo->createPurchaseInvoice([
                     'supplier_id'    => (int) $data['supplier_id'],
                     'total'          => $grandTotal,
+                    'discount'       => $discount,
+                    'shipping_cost'  => $shippingCost,
                     'items_count'    => count($data['items']),
                     'notes'          => $data['notes'] ?? null,
                     'driver_name'    => $data['driver_name'] ?? null,
-                    'vehicle_number' => $data['vehicle_number'] ?? null,
                     'delivery_date'  => $data['delivery_date'] ?? null,
                     'delivery_notes' => $data['delivery_notes'] ?? null,
                 ]);
             }
 
+            $purchaseRows = [];
+            $quantityIncrements = [];
+            $costUpdates = [];
             foreach ($data['items'] as $item) {
-                $product = $this->productModel->findById((int) $item['product_id']);
-                if (!$product) {
-                    throw new \RuntimeException("Product ID {$item['product_id']} not found");
-                }
-
-                $this->supplierRepo->createPurchase([
+                $purchaseRows[] = [
                     'purchase_invoice_id' => $invoiceId,
                     'supplier_id'         => (int) $data['supplier_id'],
                     'product_id'          => (int) $item['product_id'],
                     'quantity'            => (float) $item['quantity'],
                     'cost'                => (float) $item['cost'],
-                ]);
-                $this->productModel->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
+                ];
+                $quantityIncrements[] = [
+                    'product_id' => (int) $item['product_id'],
+                    'quantity' => (float) $item['quantity'],
+                ];
 
                 if (!empty($item['update_cost'])) {
-                    $this->db->prepare('UPDATE products SET cost = ? WHERE id = ? AND branch_id = ?')
-                       ->execute([
-                           (float) $item['cost'],
-                           (int) $item['product_id'],
-                           \App\Services\AuthService::getGlobalBranchId(),
-                       ]);
+                    $costUpdates[] = [
+                        'product_id' => (int) $item['product_id'],
+                        'cost' => (float) $item['cost'],
+                    ];
                 }
             }
+            $this->supplierRepo->createPurchases($purchaseRows);
+            $this->productModel->batchIncrementQuantity($quantityIncrements);
+            $this->productModel->batchUpdateCosts($costUpdates);
 
             // تسجيل قيود كشف حساب المورد
             if ($replaceInvoiceId > 0) {
                 // Delete old ledger entries linked to this invoice before writing the updated ones
-                $this->db->prepare('DELETE FROM supplier_ledger WHERE purchase_invoice_id = ?')->execute([$invoiceId]);
+                $this->db->prepare(
+                    'DELETE FROM supplier_ledger WHERE purchase_invoice_id = ? AND branch_id = ?'
+                )->execute([$invoiceId, \App\Services\AuthService::getGlobalBranchId()]);
             }
 
             if ($paymentType === 'credit') {
@@ -198,6 +251,9 @@ class InventoryService implements InventoryServiceInterface
             if ($e->getMessage() === 'Original invoice not found for replacement') {
                 return ['ok' => false, 'error' => 'Original invoice not found for replacement', 'code' => 404];
             }
+            if ($e->getMessage() === 'Replacement supplier does not match original invoice') {
+                return ['ok' => false, 'error' => 'Replacement supplier does not match original invoice', 'code' => 409];
+            }
             if (str_starts_with($e->getMessage(), 'Product ID ')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 404];
             }
@@ -207,13 +263,13 @@ class InventoryService implements InventoryServiceInterface
             if ($e->getMessage() === 'Out-of-scope product') {
                 return ['ok' => false, 'error' => 'Product changed concurrently', 'code' => 409];
             }
-            Logger::error('Bulk purchase transaction failed', ['error' => $e->getMessage()]);
+            Logger::error('Bulk purchase transaction failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to record bulk purchase', 'code' => 500];
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            Logger::error('فشل عملية شراء بالجملة', ['error' => $e->getMessage()]);
+            Logger::error('فشل عملية شراء بالجملة', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to record bulk purchase', 'code' => 500];
         }
 
@@ -244,12 +300,14 @@ class InventoryService implements InventoryServiceInterface
             }
             $invoice['items'] = $this->supplierRepo->getPurchaseInvoiceItems($id);
 
-            foreach ($invoice['items'] as $item) {
-                $this->productModel->decrementQuantity((int) $item['product_id'], (float) $item['quantity']);
-            }
+            $this->productModel->batchDecrementQuantity(
+                $this->aggregateQuantityChanges($invoice['items'])
+            );
             
             // Delete related supplier ledger entries
-            $this->db->prepare('DELETE FROM supplier_ledger WHERE purchase_invoice_id = ?')->execute([$id]);
+            $this->db->prepare(
+                'DELETE FROM supplier_ledger WHERE purchase_invoice_id = ? AND branch_id = ?'
+            )->execute([$id, \App\Services\AuthService::getGlobalBranchId()]);
 
             if ($this->supplierRepo->deletePurchaseInvoice($id) !== 1) {
                 throw new \RuntimeException('Purchase invoice changed concurrently');
@@ -268,13 +326,13 @@ class InventoryService implements InventoryServiceInterface
             if (in_array($e->getMessage(), ['Purchase invoice changed concurrently', 'Out-of-scope product'], true)) {
                 return ['ok' => false, 'error' => 'Purchase invoice changed concurrently', 'code' => 409];
             }
-            Logger::error('Purchase deletion failed', ['error' => $e->getMessage()]);
+            Logger::error('Purchase deletion failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to delete purchase invoice', 'code' => 500];
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            Logger::error('فشل حذف فاتورة الشراء', ['error' => $e->getMessage()]);
+            Logger::error('فشل حذف فاتورة الشراء', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to delete purchase invoice', 'code' => 500];
         }
 
@@ -320,5 +378,27 @@ class InventoryService implements InventoryServiceInterface
                 'created_by'          => $authUser['id'],
             ]);
         }
+    }
+
+    /**
+     * Aggregate legacy duplicate purchase rows before a batch stock reversal.
+     *
+     * @param list<array<string,mixed>> $items
+     * @return list<array{product_id:int,quantity:float}>
+     */
+    private function aggregateQuantityChanges(array $items): array
+    {
+        $quantities = [];
+        foreach ($items as $item) {
+            $productId = (int) $item['product_id'];
+            $quantities[$productId] = ($quantities[$productId] ?? 0.0) + (float) $item['quantity'];
+        }
+
+        $changes = [];
+        foreach ($quantities as $productId => $quantity) {
+            $changes[] = ['product_id' => $productId, 'quantity' => $quantity];
+        }
+
+        return $changes;
     }
 }

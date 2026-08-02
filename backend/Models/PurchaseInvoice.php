@@ -16,18 +16,21 @@ class PurchaseInvoice {
      * Create a purchase invoice header and return its ID.
      */
     public function createPurchaseInvoice(array $data): int {
+        $this->assertSupplierInCurrentBranch((int) $data['supplier_id']);
+
         $stmt = $this->db->prepare(
-            'INSERT INTO purchase_invoices (branch_id, supplier_id, total, items_count, notes, driver_name, vehicle_number, delivery_date, delivery_notes)
-             VALUES (:branch_id, :supplier_id, :total, :items_count, :notes, :driver_name, :vehicle_number, :delivery_date, :delivery_notes)'
+            'INSERT INTO purchase_invoices (branch_id, supplier_id, total, discount, shipping_cost, items_count, notes, driver_name, delivery_date, delivery_notes)
+             VALUES (:branch_id, :supplier_id, :total, :discount, :shipping_cost, :items_count, :notes, :driver_name, :delivery_date, :delivery_notes)'
         );
         $stmt->execute([
             'branch_id'      => AuthService::getGlobalBranchId(),
             'supplier_id'    => $data['supplier_id'],
             'total'          => $data['total'] ?? 0,
+            'discount'       => $data['discount'] ?? 0,
+            'shipping_cost'  => $data['shipping_cost'] ?? 0,
             'items_count'    => $data['items_count'] ?? 0,
             'notes'          => $data['notes'] ?? null,
             'driver_name'    => $data['driver_name'] ?? null,
-            'vehicle_number' => $data['vehicle_number'] ?? null,
             'delivery_date'  => $data['delivery_date'] ?? null,
             'delivery_notes' => $data['delivery_notes'] ?? null,
         ]);
@@ -38,36 +41,78 @@ class PurchaseInvoice {
      * Create a purchase line item linked to a purchase invoice.
      */
     public function createPurchase(array $data): int {
-        $branchId = AuthService::getGlobalBranchId();
-        $scopeSql = 'SELECT 1 FROM products p WHERE p.id = ? AND p.branch_id = ?';
-        $scopeParams = [$data['product_id'], $branchId];
-        if (!empty($data['purchase_invoice_id'])) {
-            $scopeSql .= ' AND EXISTS (
-                SELECT 1 FROM purchase_invoices pi
-                WHERE pi.id = ? AND pi.branch_id = ?
-            )';
-            $scopeParams[] = $data['purchase_invoice_id'];
-            $scopeParams[] = $branchId;
+        return $this->createPurchases([$data]);
+    }
+
+    /**
+     * Insert a validated purchase batch with a single database round trip.
+     *
+     * @param list<array<string,mixed>> $items
+     */
+    public function createPurchases(array $items): int {
+        if ($items === []) {
+            throw new \InvalidArgumentException('Purchase batch cannot be empty.');
         }
-        $scopeStmt = $this->db->prepare($scopeSql . ' LIMIT 1');
-        $scopeStmt->execute($scopeParams);
-        if (!$scopeStmt->fetchColumn()) {
+
+        $branchId = AuthService::getGlobalBranchId();
+        $supplierId = (int) $items[0]['supplier_id'];
+        $invoiceId = isset($items[0]['purchase_invoice_id'])
+            ? (int) $items[0]['purchase_invoice_id']
+            : null;
+
+        $this->assertSupplierInCurrentBranch($supplierId);
+        if ($invoiceId !== null) {
+            $invoiceStmt = $this->db->prepare(
+                'SELECT 1 FROM purchase_invoices
+                 WHERE id = ? AND branch_id = ? AND supplier_id = ?
+                 LIMIT 1'
+            );
+            $invoiceStmt->execute([$invoiceId, $branchId, $supplierId]);
+            if (!$invoiceStmt->fetchColumn()) {
+                throw new \DomainException('Purchase invoice is outside the active branch.');
+            }
+        }
+
+        $productIds = [];
+        foreach ($items as $item) {
+            if (
+                (int) $item['supplier_id'] !== $supplierId
+                || (isset($item['purchase_invoice_id']) ? (int) $item['purchase_invoice_id'] : null) !== $invoiceId
+            ) {
+                throw new \InvalidArgumentException('A purchase batch must share one supplier and invoice.');
+            }
+            $productIds[] = (int) $item['product_id'];
+        }
+        $productIds = array_values(array_unique($productIds));
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $productStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM products
+             WHERE id IN ({$placeholders}) AND branch_id = ? AND deleted_at IS NULL"
+        );
+        $productStmt->execute([...$productIds, $branchId]);
+        if ((int) $productStmt->fetchColumn() !== count($productIds)) {
             throw new \DomainException('Purchase item is outside the active branch.');
         }
 
+        $values = [];
+        $params = [];
+        foreach ($items as $index => $item) {
+            $values[] = "(:invoice_{$index}, :supplier_{$index}, :product_{$index}, :quantity_{$index}, :cost_{$index}, :total_{$index}, :notes_{$index})";
+            $params["invoice_{$index}"] = $invoiceId;
+            $params["supplier_{$index}"] = $supplierId;
+            $params["product_{$index}"] = (int) $item['product_id'];
+            $params["quantity_{$index}"] = (float) $item['quantity'];
+            $params["cost_{$index}"] = (float) $item['cost'];
+            $params["total_{$index}"] = (float) $item['quantity'] * (float) $item['cost'];
+            $params["notes_{$index}"] = $item['notes'] ?? null;
+        }
+
         $stmt = $this->db->prepare(
-            'INSERT INTO purchases (purchase_invoice_id, supplier_id, product_id, quantity, cost, total, notes)
-             VALUES (:purchase_invoice_id, :supplier_id, :product_id, :quantity, :cost, :total, :notes)'
+            'INSERT INTO purchases (purchase_invoice_id, supplier_id, product_id, quantity, cost, total, notes) VALUES '
+            . implode(', ', $values)
         );
-        $stmt->execute([
-            'purchase_invoice_id' => $data['purchase_invoice_id'] ?? null,
-            'supplier_id'         => $data['supplier_id'],
-            'product_id'          => $data['product_id'],
-            'quantity'            => $data['quantity'],
-            'cost'                => $data['cost'],
-            'total'               => $data['quantity'] * $data['cost'],
-            'notes'               => $data['notes'] ?? null,
-        ]);
+        $stmt->execute($params);
+
         return (int) $this->db->lastInsertId();
     }
 
@@ -109,7 +154,7 @@ class PurchaseInvoice {
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, min(500, (int)$filters['limit']));
+            $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
             
@@ -119,13 +164,13 @@ class PurchaseInvoice {
             
             $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
         } else {
-            $limitStr = "LIMIT 200";
+            $limitStr = "LIMIT 100";
         }
 
         $stmt = $this->db->prepare(
             'SELECT pi.*, s.name AS supplier_name
              FROM purchase_invoices pi
-             JOIN suppliers s ON s.id = pi.supplier_id
+             JOIN suppliers s ON s.id = pi.supplier_id AND s.branch_id = pi.branch_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY pi.created_at DESC
              ' . $limitStr
@@ -161,7 +206,7 @@ class PurchaseInvoice {
         $stmt = $this->db->prepare(
             'SELECT pi.*, s.name AS supplier_name
              FROM purchase_invoices pi
-             JOIN suppliers s ON s.id = pi.supplier_id
+             JOIN suppliers s ON s.id = pi.supplier_id AND s.branch_id = pi.branch_id
              WHERE pi.id = ? AND pi.branch_id = ?'
         );
         $stmt->execute([$id, AuthService::getGlobalBranchId()]);
@@ -229,10 +274,11 @@ class PurchaseInvoice {
         $stmt = $this->db->prepare(
             'UPDATE purchase_invoices 
              SET total = :total, 
+                 discount = :discount,
+                 shipping_cost = :shipping_cost,
                  items_count = :items_count, 
                  notes = :notes, 
                  driver_name = :driver_name, 
-                 vehicle_number = :vehicle_number, 
                  delivery_date = :delivery_date, 
                  delivery_notes = :delivery_notes 
              WHERE id = :id AND branch_id = :branch_id'
@@ -241,10 +287,11 @@ class PurchaseInvoice {
             'id'             => $id, 
             'branch_id'      => AuthService::getGlobalBranchId(),
             'total'          => $data['total'], 
+            'discount'       => $data['discount'] ?? 0,
+            'shipping_cost'  => $data['shipping_cost'] ?? 0,
             'items_count'    => $data['items_count'], 
             'notes'          => $data['notes'] ?? null,
             'driver_name'    => $data['driver_name'] ?? null,
-            'vehicle_number' => $data['vehicle_number'] ?? null,
             'delivery_date'  => $data['delivery_date'] ?? null,
             'delivery_notes' => $data['delivery_notes'] ?? null,
         ]);
@@ -288,7 +335,7 @@ class PurchaseInvoice {
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, min(500, (int)$filters['limit']));
+            $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
 
@@ -303,13 +350,13 @@ class PurchaseInvoice {
 
             $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
         } else {
-            $limitStr = "LIMIT 500";
+            $limitStr = "LIMIT 100";
         }
 
         $stmt = $this->db->prepare(
             'SELECT pu.*, s.name AS supplier_name, p.name AS product_name, p.barcode AS product_barcode
              FROM purchases pu
-             JOIN suppliers s ON s.id = pu.supplier_id
+             JOIN suppliers s ON s.id = pu.supplier_id AND s.branch_id = pi.branch_id
              JOIN products p ON p.id = pu.product_id
              JOIN purchase_invoices pi ON pi.id = pu.purchase_invoice_id
              WHERE ' . implode(' AND ', $where) . '
@@ -338,5 +385,18 @@ class PurchaseInvoice {
         }
 
         return $stmt->fetchAll();
+    }
+
+    private function assertSupplierInCurrentBranch(int $supplierId): void
+    {
+        $stmt = $this->db->prepare(
+            'SELECT 1 FROM suppliers
+             WHERE id = ? AND branch_id = ? AND deleted_at IS NULL
+             LIMIT 1'
+        );
+        $stmt->execute([$supplierId, AuthService::getGlobalBranchId()]);
+        if (!$stmt->fetchColumn()) {
+            throw new \DomainException('Supplier is outside the active branch.');
+        }
     }
 }

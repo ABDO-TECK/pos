@@ -888,6 +888,38 @@ paths:
 
 
   # ── Categories ──────────────────────────────────────────────────
+  /admin/error-logs:
+    get:
+      tags: [Admin]
+      summary: Read client, server, and PHP runtime logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [all, debug, info, warning, error, critical]
+            default: all
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Newest-first structured error log entries with pagination
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: audit.view permission required
+
   /categories:
     get:
       tags: [Categories]
@@ -1127,6 +1159,35 @@ paths:
                         minimum: 0
                       update_cost:
                         type: boolean
+                discount:
+                  type: number
+                  minimum: 0
+                  description: Supplier discount deducted from the item subtotal.
+                shipping_cost:
+                  type: number
+                  minimum: 0
+                  description: Inbound shipping or transport cost added to the invoice total.
+                notes:
+                  type: string
+                  maxLength: 1000
+                driver_name:
+                  type: string
+                  maxLength: 150
+                delivery_date:
+                  type: string
+                  format: date
+                delivery_notes:
+                  type: string
+                  maxLength: 1000
+                payment_type:
+                  type: string
+                  enum: [cash, credit]
+                deposit:
+                  type: number
+                  minimum: 0
+                replace_invoice_id:
+                  type: integer
+                  minimum: 1
       responses:
         '201':
           description: تم إنشاء الشراء

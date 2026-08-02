@@ -4,12 +4,15 @@ import { getProfitReport } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatPercent, formatShortDate } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
 import { Coins, Box, TrendingUp, TrendingDown, Sparkles, Percent, RefreshCw } from 'lucide-react'
+import NumericInput from '../../components/forms/NumericInput'
+import useReportChartTheme from './components/useReportChartTheme'
 
 export default function ProfitTab() {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [year, setYear] = useState(new Date().getFullYear())
   const [profit, setProfit] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const chartTheme = useReportChartTheme()
 
   const loadProfit = async () => {
     setLoading(true)
@@ -31,7 +34,7 @@ export default function ProfitTab() {
             <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}</option>
           ))}
         </select>
-        <input type="number" className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value))} />
+        <NumericInput className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value, 10) || new Date().getFullYear())} />
         <button className="btn btn-primary" onClick={loadProfit} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
           {loading ? <span className="spinner" /> : <RefreshCw size={14} />} عرض
         </button>
@@ -56,11 +59,17 @@ export default function ProfitTab() {
                   data={profit.daily_breakdown.map((d: any) => ({ ...d, label: formatShortDate(d.date) }))}
                   margin={{ top: 5, right: 10, left: 10, bottom: 25 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v, name) => [formatCurrency(Number(v)), String(name ?? '')]} />
-                  <Legend />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: chartTheme.axis }} angle={-30} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 11, fill: chartTheme.axis }} />
+                  <Tooltip
+                    formatter={(v, name) => [formatCurrency(Number(v)), String(name ?? '')]}
+                    contentStyle={{ backgroundColor: chartTheme.tooltipBackground, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
+                    labelStyle={{ color: chartTheme.tooltipText }}
+                    itemStyle={{ color: chartTheme.tooltipText }}
+                    cursor={{ fill: chartTheme.cursor }}
+                  />
+                  <Legend wrapperStyle={{ color: chartTheme.legend }} />
                   <Bar dataKey="revenue" name="الإيرادات" fill="#3b82f6" radius={[4,4,0,0]} />
                   <Bar dataKey="cost"    name="التكاليف"  fill="#f97316" radius={[4,4,0,0]} />
                   <Bar dataKey="profit"  name="الأرباح"   fill="#22c55e" radius={[4,4,0,0]} />

@@ -1,19 +1,26 @@
-import React from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { ArrowRight, Phone, PlusCircle } from 'lucide-react'
 import { formatCurrency } from '../../utils/formatters'
 import { QZPrintButton } from '../../components/QZPrinterUI'
 import { exportCustomerLedgerPDF } from '../../utils/pdfExport'
 import toast from 'react-hot-toast'
 import CustomerLedgerTable from './components/CustomerLedgerTable'
+import type useQZPrinter from '../../hooks/useQZPrinter'
+
+interface CustomerEditEntryForm {
+  type: string
+  amount: string
+  description: string
+}
 
 interface CustomerLedgerPanelProps {
-  ledgerData: any
-  setLedgerData: (data: any) => void
-  qz: any
+  ledgerData: CustomerLedgerData | null
+  setLedgerData: Dispatch<SetStateAction<CustomerLedgerData | null>>
+  qz: ReturnType<typeof useQZPrinter>
   setPayModal: (open: boolean) => void
   ledgerLoading: boolean
-  setEditEntryModal: (modal: any) => void
-  setEditEntryForm: (form: any) => void
+  setEditEntryModal: Dispatch<SetStateAction<CustomerLedgerRow | null>>
+  setEditEntryForm: Dispatch<SetStateAction<CustomerEditEntryForm>>
   onDeleteEntry: (entryId: number) => void
   onViewInvoice: (invoiceId: number) => void
 }

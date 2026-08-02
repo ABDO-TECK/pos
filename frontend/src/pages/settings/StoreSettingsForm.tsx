@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Store, Percent, List, Image as ImageIcon, Trash2, Upload } from 'lucide-react'
+import { Save, Store, Percent, List, ShieldCheck, Image as ImageIcon, Trash2, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { updateSettings } from '../../api/endpoints'
 import useSettingsStore from '../../store/settingsStore'
@@ -7,6 +7,7 @@ import SectionTitle from '../../components/common/SectionTitle'
 import Toggle from '../../components/common/Toggle'
 import { extractApiError } from '../../utils/apiError'
 import styles from '../Settings.module.css'
+import NumericInput from '../../components/forms/NumericInput'
 
 export default function StoreSettingsForm() {
   const { fetchSettings, setSettings } = useSettingsStore()
@@ -20,7 +21,7 @@ export default function StoreSettingsForm() {
   }
 
   const [form, setForm] = useState({ 
-    store_name: '', store_logo: '', tax_enabled: '0', tax_rate: '15',
+    store_name: '', store_logo: '', tax_enabled: '0', tax_rate: '15', prevent_negative_stock: '1',
     loyalty_enabled: '0', loyalty_points_per_rial: '1', loyalty_rial_per_point: '0.01'
   })
   const [saving, setSaving] = useState(false)
@@ -42,6 +43,7 @@ export default function StoreSettingsForm() {
         store_logo:  s.storeLogo ?? '',
         tax_enabled: s.taxEnabled ? '1' : '0',
         tax_rate:    String(s.taxRate),
+        prevent_negative_stock: s.preventNegativeStock ? '1' : '0',
         loyalty_enabled: s.loyaltyEnabled ? '1' : '0',
         loyalty_points_per_rial: String(s.loyaltyPointsPerRial),
         loyalty_rial_per_point: String(s.loyaltyRialPerPoint),
@@ -59,6 +61,7 @@ export default function StoreSettingsForm() {
         storeLogo:  form.store_logo,
         taxEnabled: form.tax_enabled === '1',
         taxRate:    parseFloat(form.tax_rate),
+        preventNegativeStock: form.prevent_negative_stock === '1',
         loyaltyEnabled: form.loyalty_enabled === '1',
         loyaltyPointsPerRial: parseInt(form.loyalty_points_per_rial, 10),
         loyaltyRialPerPoint: parseFloat(form.loyalty_rial_per_point),
@@ -292,8 +295,7 @@ export default function StoreSettingsForm() {
         {form.tax_enabled === '1' && (
           <div>
             <label style={labelStyle}>نسبة الضريبة (%)</label>
-            <input
-              type="number"
+            <NumericInput
               className="input"
               min="0"
               max="100"
@@ -304,6 +306,30 @@ export default function StoreSettingsForm() {
             />
           </div>
         )}
+      </section>
+
+      {/* ── Stock policy ── */}
+      <section className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <SectionTitle icon={<ShieldCheck size={16}/>} label="سياسة المخزون" />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          <div>
+            <p style={{ fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>منع البيع عند نفاد المخزون</p>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+              عند التفعيل لا يمكن بيع كمية أكبر من المخزون المتاح.
+            </p>
+          </div>
+          <Toggle
+            checked={form.prevent_negative_stock === '1'}
+            onChange={() => setForm({
+              ...form,
+              prevent_negative_stock: form.prevent_negative_stock === '1' ? '0' : '1',
+            })}
+          />
+        </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+          عند إيقاف الخيار يسمح النظام بالبيع وتسجيل الكمية بالسالب حتى تتم إضافة المخزون لاحقاً.
+        </p>
       </section>
 
       {/* ── Loyalty ── */}
@@ -325,8 +351,7 @@ export default function StoreSettingsForm() {
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
             <div>
               <label style={labelStyle}>النقاط المكتسبة لكل 1 ريال</label>
-              <input
-                type="number"
+              <NumericInput
                 className="input"
                 min="1"
                 style={{ maxWidth: '160px' }}
@@ -336,8 +361,7 @@ export default function StoreSettingsForm() {
             </div>
             <div>
               <label style={labelStyle}>قيمة النقطة الواحدة (ريال)</label>
-              <input
-                type="number"
+              <NumericInput
                 className="input"
                 min="0.01"
                 step="0.01"

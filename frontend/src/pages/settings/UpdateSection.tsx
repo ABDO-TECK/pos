@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { isAxiosError } from 'axios'
 import { RefreshCw, List } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { applyUpdate } from '../../api/endpoints'
@@ -14,6 +15,12 @@ export default function UpdateSection() {
   const [showChangelog, setShowChangelog] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
   const [desktopUpdaterStatus, setDesktopUpdaterStatus] = useState<UpdaterStatus | null>(null)
+
+  const appendUpdaterLog = useCallback((status: UpdaterStatus) => {
+    const line = formatUpdaterStatus(status)
+    if (!line) return
+    setUpdateLogs((logs) => [...logs, line])
+  }, [])
 
   useEffect(() => {
     const unsubscribe = window.electronAPI?.updater?.onStatus?.(async (status) => {
@@ -37,23 +44,17 @@ export default function UpdateSection() {
     return () => {
       unsubscribe?.()
     }
-  }, [confirm])
-
-  const appendUpdaterLog = (status: UpdaterStatus) => {
-    const line = formatUpdaterStatus(status)
-    if (!line) return
-    setUpdateLogs((logs) => [...logs, line])
-  }
+  }, [appendUpdaterLog, confirm])
 
   const handleCheckUpdate = async () => {
     try {
       const data = await forceCheck()
-      if (data && (data as any).updates_disabled) {
-        toast.error((data as any).message || 'خادم التحديثات غير مهيأ.')
+      if (data?.updates_disabled) {
+        toast.error(data.message || 'خادم التحديثات غير مهيأ.')
         return
       }
-      if (data && (data as any).updates_unreachable) {
-        toast.error(formatUpdateError(data as unknown as Record<string, unknown>))
+      if (data?.updates_unreachable) {
+        toast.error(formatUpdateError(data))
         return
       }
       if (data?.has_update) {
@@ -62,8 +63,9 @@ export default function UpdateSection() {
       } else {
         toast.success('النظام محدّث لأحدث إصدار')
       }
-    } catch (err: any) {
-      toast.error(formatUpdateError(err.response?.data?.data || err.response?.data || err))
+    } catch (error: unknown) {
+      const responseData = isAxiosError(error) ? error.response?.data : undefined
+      toast.error(formatUpdateError(asRecord(responseData)?.data ?? responseData ?? error))
     }
   }
 
@@ -81,8 +83,8 @@ export default function UpdateSection() {
           toast.error(status.error || 'فشل تحميل تحديث سطح المكتب.')
           setApplyingUpdate(false)
         }
-      } catch (err: any) {
-        toast.error(err?.message || 'فشل تحميل تحديث سطح المكتب.')
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : 'فشل تحميل تحديث سطح المكتب.')
         setApplyingUpdate(false)
       }
       return
@@ -100,10 +102,12 @@ export default function UpdateSection() {
       setUpdateLogs(logs)
       toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
       setTimeout(() => window.location.reload(), 3000)
-    } catch (err: any) {
-      const status = err.response?.status
-      const msg = err.response?.data?.message || 'فشل تطبيق التحديث.'
-      const errData = err.response?.data as { errors?: { logs?: string[] }, data?: { logs?: string[] } } | undefined;
+    } catch (error: unknown) {
+      const status = isAxiosError(error) ? error.response?.status : undefined
+      const errData = isAxiosError(error)
+        ? error.response?.data as { message?: string, errors?: { logs?: string[] }, data?: { logs?: string[] } } | undefined
+        : undefined
+      const msg = errData?.message || 'فشل تطبيق التحديث.'
       const logs = errData?.errors?.logs || errData?.data?.logs || []
       setUpdateLogs(logs)
 
@@ -262,9 +266,10 @@ export default function UpdateSection() {
         <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: 'var(--radius)', maxHeight: '300px', overflowY: 'auto' }}>
           <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.9rem' }}>أهم المميزات والإصلاحات الجديدة:</h4>
           <ul style={{ margin: 0, padding: '0 1.2rem', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {changelog.map((c: any, i: number) => (
-              <li key={i}>
-                <strong>{typeof c === 'string' ? c : (c as any).message}</strong>
+            {changelog.map((entry) => (
+              <li key={`${entry.version}-${entry.date}`}>
+                <strong>{entry.version}</strong>
+                {entry.changes.length > 0 ? ` — ${entry.changes.join(' • ')}` : ''}
               </li>
             ))}
           </ul>
@@ -306,7 +311,8 @@ function formatUpdaterStatus(status: UpdaterStatus): string {
   }
 }
 
-function formatUpdateError(data: Record<string, unknown> | undefined): string {
+function formatUpdateError(value: unknown): string {
+  const data = asRecord(value)
   const baseMessage = typeof data?.message === 'string'
     ? data.message
     : 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'
@@ -322,4 +328,10 @@ function formatUpdateError(data: Record<string, unknown> | undefined): string {
   ].filter(Boolean)
 
   return technicalParts.length ? `${baseMessage} (${technicalParts.join(' | ')})` : baseMessage
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : undefined
 }

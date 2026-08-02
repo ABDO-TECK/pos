@@ -10,6 +10,7 @@ use App\Helpers\Response;
 use App\Services\AuthService;
 use App\Services\SupplierService;
 use App\Repositories\SupplierRepository;
+use PDO;
 use App\Requests\SupplierRequest;
 use Throwable;
 
@@ -20,10 +21,16 @@ class SupplierController extends Controller {
     private SupplierService  $supplierService;
     private AuthService      $authService;
 
-    public function __construct(SupplierRepository $supplierRepo, SupplierService $supplierService, AuthService $authService) {
+    public function __construct(
+        SupplierRepository $supplierRepo,
+        SupplierService $supplierService,
+        AuthService $authService,
+        PDO $db
+    ) {
         $this->supplierRepo     = $supplierRepo;
         $this->supplierService  = $supplierService;
         $this->authService      = $authService;
+        $this->setTransactionDatabase($db);
     }
 
     public function index() {
@@ -149,5 +156,4 @@ class SupplierController extends Controller {
         }
     }
 }
-
 

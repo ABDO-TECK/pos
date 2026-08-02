@@ -29,7 +29,7 @@ class Cache {
             $r->setOption(\Redis::OPT_PREFIX, 'pos:');
             self::$redis = $r;
         } catch (\Throwable $e) {
-            Logger::warning('Redis connection failed, falling back', ['error' => $e->getMessage()]);
+            Logger::warning('Redis connection failed, falling back', Logger::exceptionContext($e));
             self::$redis = null;
         }
         return self::$redis;
@@ -45,8 +45,11 @@ class Cache {
             }
         }
         if (!is_dir(self::$dir)) {
-            @mkdir(self::$dir, 0755, true);
+            $previousUmask = umask(0077);
+            @mkdir(self::$dir, 0700, true);
+            umask($previousUmask);
         }
+        @chmod(self::$dir, 0700);
     }
 
     public static function get(string $key): mixed {

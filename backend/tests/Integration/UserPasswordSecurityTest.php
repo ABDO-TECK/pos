@@ -119,6 +119,7 @@ class UserPasswordSecurityTest extends TestCase
         $this->assertTrue($response['body']['requires_reauthentication']);
         $this->assertTrue($response['body']['sessions_revoked']);
         $this->assertNotSame($oldHash, $newHash);
+        $this->assertSame('argon2id', password_get_info($newHash)['algoName']);
         $this->assertTrue(password_verify('Changed456', $newHash));
         $this->assertFalse(password_verify('Temporary123', $newHash));
         $this->assertSame(0, (int) $this->db->query('SELECT force_password_change FROM users WHERE id = 1')->fetchColumn());
@@ -175,6 +176,7 @@ class UserPasswordSecurityTest extends TestCase
         $this->assertSame(200, $response['status_code']);
         $this->assertFalse($response['body']['requires_reauthentication']);
         $this->assertTrue(password_verify('AdminReset456', $this->passwordHashFor(2)));
+        $this->assertSame('argon2id', password_get_info($this->passwordHashFor(2))['algoName']);
         $this->assertSame(1, $this->countAccessTokens(1));
         $this->assertSame(0, $this->countAccessTokens(2));
         $this->assertNotNull($this->refreshRevokedAt($targetRefreshToken));

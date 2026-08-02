@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Config\Database;
+use App\Helpers\Logger;
 use Throwable;
 
 /**
@@ -50,10 +51,11 @@ class HealthService
                 'message'    => "Connected successfully. Latency: {$latency}ms"
             ];
         } catch (Throwable $e) {
+            $reference = $this->exceptionReference('health.database', $e);
             $checks['database'] = [
                 'status'     => 'failed',
                 'severity'   => 'warning',
-                'message'    => "Database offline/skipped: " . $e->getMessage()
+                'message'    => "Database unavailable. Reference: {$reference}"
             ];
             $hasWarnings = true;
         }
@@ -72,13 +74,13 @@ class HealthService
             $checks['storage'] = [
                 'status'   => 'ok',
                 'severity' => 'critical',
-                'message'  => "Storage directory is writable: {$storagePath}"
+                'message'  => 'Storage directory is writable.'
             ];
         } else {
             $checks['storage'] = [
                 'status'   => 'failed',
                 'severity' => 'critical',
-                'message'  => "Storage directory is not writable: {$storagePath}"
+                'message'  => 'Storage directory is not writable.'
             ];
             $criticalFailed = true;
         }
@@ -97,13 +99,13 @@ class HealthService
             $checks['logs'] = [
                 'status'   => 'ok',
                 'severity' => 'warning',
-                'message'  => "Logs directory is writable: {$logsPath}"
+                'message'  => 'Logs directory is writable.'
             ];
         } else {
             $checks['logs'] = [
                 'status'   => 'failed',
                 'severity' => 'warning',
-                'message'  => "Logs directory is not writable: {$logsPath}"
+                'message'  => 'Logs directory is not writable.'
             ];
             $hasWarnings = true;
         }
@@ -294,10 +296,11 @@ class HealthService
                 'used_percent' => $usedPercent
             ];
         } catch (\Throwable $e) {
+            $reference = $this->exceptionReference('health.disk', $e);
             $checks['disk'] = [
                 'status'       => 'failed',
                 'severity'     => 'warning',
-                'message'      => 'Failed to check disk space: ' . $e->getMessage(),
+                'message'      => "Failed to check disk space. Reference: {$reference}",
                 'free_gb'      => 0.0,
                 'total_gb'     => 0.0,
                 'used_percent' => 0.0
@@ -320,10 +323,11 @@ class HealthService
                 'limit'    => $limit ?: 'unlimited'
             ];
         } catch (\Throwable $e) {
+            $reference = $this->exceptionReference('health.memory', $e);
             $checks['memory'] = [
                 'status'   => 'failed',
                 'severity' => 'info',
-                'message'  => 'Failed to check memory: ' . $e->getMessage(),
+                'message'  => "Failed to check memory. Reference: {$reference}",
                 'usage_mb' => 0.0,
                 'peak_mb'  => 0.0,
                 'limit'    => 'unknown'
@@ -349,10 +353,11 @@ class HealthService
                 'extensions' => $extensions
             ];
         } catch (\Throwable $e) {
+            $reference = $this->exceptionReference('health.php', $e);
             $checks['php'] = [
                 'status'     => 'failed',
                 'severity'   => 'info',
-                'message'    => 'Failed to check PHP info: ' . $e->getMessage(),
+                'message'    => "Failed to check PHP info. Reference: {$reference}",
                 'version'    => PHP_VERSION,
                 'extensions' => []
             ];
@@ -374,6 +379,17 @@ class HealthService
             'checks'          => $checks,
             'version'         => $version
         ];
+    }
+
+    private function exceptionReference(string $operation, Throwable $exception): string
+    {
+        $reference = bin2hex(random_bytes(8));
+        Logger::error($operation . ' failed', [
+            'reference' => $reference,
+            'exception' => get_class($exception),
+        ]);
+
+        return $reference;
     }
 
     /** Resolve a bounded, display-safe application version identifier. */
@@ -422,7 +438,7 @@ class HealthService
             $row = $stmt->fetch();
             $metrics['database']['slow_queries'] = (int)($row['Value'] ?? 0);
         } catch (Throwable $e) {
-            $metrics['database']['error'] = $e->getMessage();
+            $metrics['database']['error'] = $this->exceptionReference('metrics.database', $e);
         }
 
         // ── 2. Table Row Counts ──
@@ -465,7 +481,7 @@ class HealthService
             $stmt->execute([$branchId, $today, $tomorrow]);
             $metrics['today']['expenses_total'] = round((float)$stmt->fetchColumn(), 2);
         } catch (Throwable $e) {
-            $metrics['today']['error'] = $e->getMessage();
+            $metrics['today']['error'] = $this->exceptionReference('metrics.today', $e);
         }
 
         // ── 4. Cache Status ──
@@ -517,7 +533,9 @@ class HealthService
                     'type'       => $explain[0]['type'] ?? 'unknown',
                 ];
             } catch (Throwable $e) {
-                $results[$name] = ['error' => $e->getMessage()];
+                $results[$name] = [
+                    'error' => $this->exceptionReference('metrics.explain.' . $name, $e),
+                ];
             }
         }
 

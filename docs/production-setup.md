@@ -10,7 +10,7 @@
 |--------------|----------------------|
 | PHP          | 8.1+                 |
 | MySQL/MariaDB| 8.0+ / 10.6+        |
-| Node.js      | 18+ (للبناء فقط)     |
+| Node.js      | 22.12+ (للبناء فقط)  |
 | Apache       | 2.4+ مع mod_rewrite  |
 | Composer     | 2.x                  |
 
@@ -75,9 +75,8 @@ mysql -u root -p -e "CREATE DATABASE pos_db CHARACTER SET utf8mb4 COLLATE utf8mb
 # استيراد المخطط
 mysql -u root -p pos_db < database/pos_schema.sql
 
-# تشغيل التهجيرات (Migrations)
-# قم بتشغيل جميع ملفات SQL في مجلد database/migrations/ بالترتيب:
-for f in database/migrations/*.sql; do mysql -u root -p pos_db < "$f"; done
+# تشغيل التهجيرات بالترتيب مع قفل قاعدة البيانات
+php backend/cli/migrate.php
 ```
 
 ---
@@ -101,9 +100,12 @@ DB_PASS=YOUR_STRONG_PASSWORD
 # التطبيق
 APP_ENV=production
 APP_DEBUG=false
+DEPLOYMENT_MODE=web
+FORCE_HTTPS=true
+SECURE_COOKIES=true
 
-# المصادقة (Token lifetime بالثواني — 7 أيام)
-TOKEN_LIFETIME=604800
+# المصادقة (Token lifetime بالثواني — 4 ساعات)
+TOKEN_LIFETIME=14400
 
 # المخزون
 LOW_STOCK_THRESHOLD=5
@@ -115,10 +117,9 @@ TAX_RATE=0.15
 FRONTEND_URL=https://pos.yourdomain.com
 
 # الأمان
-ALLOW_WEB_RESTORE=false
 ```
 
-> **⚠️ تحذير:** تأكد من أن `APP_DEBUG=false` و `ALLOW_WEB_RESTORE=false` في الإنتاج.
+> **⚠️ تحذير:** تأكد من أن `APP_DEBUG=false` في الإنتاج. استعادة SQL متاحة من سطر الأوامر فقط عبر `php backend/cli/restore-backup.php <backup.sql>`.
 
 ---
 
@@ -149,11 +150,11 @@ ALLOW_WEB_RESTORE=false
 
     # ── الباك إند (API Proxy) ───────────────────────────────
     # توجيه طلبات /api/* إلى مجلد الباك إند
-    Alias /api "C:/xampp/htdocs/pos/backend/api"
+    Alias /api "C:/xampp/htdocs/pos/backend"
 
     # طريقة بديلة باستخدام ProxyPass (تحتاج mod_proxy):
-    # ProxyPass        /api http://localhost/pos/backend/api
-    # ProxyPassReverse /api http://localhost/pos/backend/api
+    # ProxyPass        /api http://localhost/pos/backend
+    # ProxyPassReverse /api http://localhost/pos/backend
 
     <Directory "C:/xampp/htdocs/pos/backend">
         Options -Indexes +FollowSymLinks
@@ -161,8 +162,15 @@ ALLOW_WEB_RESTORE=false
         Require all granted
     </Directory>
 
+    <Directory "C:/xampp/htdocs/pos/backend/storage">
+        Require all denied
+    </Directory>
+    <Directory "C:/xampp/htdocs/pos/backend/logs">
+        Require all denied
+    </Directory>
+
     # ── الأمان ──────────────────────────────────────────────
-    <FilesMatch "\.(env|log|sql|md)$">
+    <FilesMatch "(^\.|\.(env|log|sql|md|pem|key|sqlite|sqlite-wal|sqlite-shm)$)">
         Require all denied
     </FilesMatch>
 
@@ -197,8 +205,8 @@ ALLOW_WEB_RESTORE=false
 
     # API reverse proxy
     ProxyPreserveHost On
-    ProxyPass        /api http://127.0.0.1:8080/pos/backend/api
-    ProxyPassReverse /api http://127.0.0.1:8080/pos/backend/api
+    ProxyPass        /api http://127.0.0.1:8080/pos/backend
+    ProxyPassReverse /api http://127.0.0.1:8080/pos/backend
 
     <Directory /var/www/pos/backend>
         Options -Indexes +FollowSymLinks
@@ -206,7 +214,14 @@ ALLOW_WEB_RESTORE=false
         Require all granted
     </Directory>
 
-    <FilesMatch "\.(env|log|sql|md)$">
+    <Directory /var/www/pos/backend/storage>
+        Require all denied
+    </Directory>
+    <Directory /var/www/pos/backend/logs>
+        Require all denied
+    </Directory>
+
+    <FilesMatch "(^\.|\.(env|log|sql|md|pem|key|sqlite|sqlite-wal|sqlite-shm)$)">
         Require all denied
     </FilesMatch>
 
@@ -236,16 +251,31 @@ docker-compose up -d --build
 docker-compose logs -f app
 ```
 
+تنفذ حاوية التطبيق `php backend/cli/migrate.php` مرة واحدة قبل بدء Apache.
+إذا فشل أي تهجير فلن تبدأ خدمة الويب.
+
+ملف Compose يربط المنفذ محلياً افتراضياً، لكن بيئة الإنتاج تتطلب
+اختياراً صريحاً لوضع الشبكة. عند النشر عبر الشبكة، ضع الحاوية خلف reverse proxy ينهي TLS واضبط صراحةً
+`DEPLOYMENT_MODE=web` و`FORCE_HTTPS=true` و`SECURE_COOKIES=true`، وأضف
+عنوان الـ proxy الدقيق إلى `TRUSTED_PROXIES` حتى يُعتمد
+`X-Forwarded-Proto: https` من ذلك المصدر فقط.
+
 ### المتغيرات البيئية في Docker
 
 ```yaml
 environment:
   - DB_HOST=db
   - DB_NAME=pos_db
-  - DB_USER=root
+  - DB_USER=pos_user
   - DB_PASS=your_strong_password
   - APP_ENV=production
   - APP_DEBUG=false
+  - DEPLOYMENT_MODE=web
+  - FORCE_HTTPS=true
+  - SECURE_COOKIES=true
+  - ENABLE_UPDATE_CHECKS=false
+  - ENABLE_AUTO_UPDATE=false
+  - UPDATE_COMMIT_SHA=<40-character-signed-commit>
 ```
 
 ---
@@ -253,7 +283,9 @@ environment:
 ## 7. الأمان — قائمة مراجعة الإنتاج
 
 - [ ] `APP_DEBUG=false`
-- [ ] `ALLOW_WEB_RESTORE=false`
+- [ ] `DEPLOYMENT_MODE=web` أو `lan` للخوادم القابلة للوصول عبر الشبكة
+- [ ] `FORCE_HTTPS=true` و `SECURE_COOKIES=true`
+- [ ] SQL restore is CLI-only: `php backend/cli/restore-backup.php <backup.sql>`
 - [ ] كلمات المرور الافتراضية تم تغييرها (الحقل `force_password_change`)
 - [ ] HTTPS مُفعَّل (Let's Encrypt أو شهادة مخصصة)
 - [ ] حماية ملفات `.env` و `logs/` من الوصول العام
@@ -299,8 +331,8 @@ cd backend && composer install --no-dev --optimize-autoloader
 # 3. إعادة بناء الواجهة
 cd ../frontend && npm ci && npm run build
 
-# 4. تشغيل التهجيرات الجديدة
-for f in database/migrations/*.sql; do mysql -u pos_user -p pos_db < "$f"; done
+# 4. تشغيل التهجيرات الجديدة قبل إعادة تشغيل Apache
+php backend/cli/migrate.php
 
 # 5. مسح الكاش (إن وُجد)
 # يمكن إعادة تشغيل Apache إذا لزم الأمر

@@ -7,8 +7,8 @@ use App\Core\FormRequest;
 class LoginRequest extends FormRequest {
     public function rules(): array {
         return [
-            'email'    => 'required|email',
-            'password' => 'required',
+            'email'    => 'required|string|email|max:254',
+            'password' => 'required|string|max:256',
         ];
     }
 }

@@ -50,8 +50,7 @@ class UpdateController extends Controller {
         if (!$result['ok']) {
             return Response::error(
                 $result['error'],
-                $result['code'] ?? 500,
-                $result['data'] ?? null
+                $result['code'] ?? 500
             );
         }
 

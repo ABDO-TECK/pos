@@ -100,6 +100,7 @@ trait InvoiceStatsTrait {
     }
 
     public function getTopProducts(int $limit = 10, ?string $fromDate = null, ?string $toDate = null): array {
+        $limit = max(1, min(100, $limit));
         $where  = ['i.branch_id = :branch_id'];
         $params = ['branch_id' => AuthService::getGlobalBranchId()];
         if ($fromDate) {
@@ -144,6 +145,7 @@ trait InvoiceStatsTrait {
     }
 
     public function getTopProfitProducts(int $month, int $year, int $limit = 20): array {
+        $limit = max(1, min(100, $limit));
         [$startDate, $endDate] = $this->getMonthDateRange($month, $year);
         $stmt = $this->db->prepare(
             'SELECT

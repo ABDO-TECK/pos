@@ -8,6 +8,8 @@ use App\Core\FormRequest;
 
 final class ClientLogIndexRequest extends FormRequest
 {
+    private const DEFAULT_LIMIT = 10;
+
     public function rules(): array
     {
         return [
@@ -26,7 +28,7 @@ final class ClientLogIndexRequest extends FormRequest
 
         return [
             'level' => strtolower((string) ($data['level'] ?? 'all')),
-            'limit' => (int) ($data['limit'] ?? 100),
+            'limit' => (int) ($data['limit'] ?? self::DEFAULT_LIMIT),
             'cursor' => isset($data['cursor']) && $data['cursor'] !== ''
                 ? (string) $data['cursor']
                 : null,

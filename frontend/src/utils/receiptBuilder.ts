@@ -20,18 +20,42 @@ function numeric(value: unknown): number {
     const parsed = Number(value ?? 0)
     return Number.isFinite(parsed) ? parsed : 0
 }
+function numericMarkup(value: string): string {
+    return `<span class="numeric" dir="ltr">${value}</span>`
+}
+function numberText(value: unknown, maximumFractionDigits = 2): string {
+    return new Intl.NumberFormat(AR, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits,
+    }).format(numeric(value))
+}
 function fc(n: unknown): string {
-    return new Intl.NumberFormat(AR, { style: 'currency', currency: 'EGP' }).format(numeric(n))
+    return numericMarkup(new Intl.NumberFormat(AR, {
+        style: 'currency',
+        currency: 'EGP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    }).format(numeric(n)))
 }
 function fn(n: unknown): string {
     return new Intl.NumberFormat(AR).format(numeric(n))
 }
 // number with 2 decimal places, no currency symbol (for table cells)
 function fd2(n: unknown): string {
-    return new Intl.NumberFormat(AR, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric(n))
+    return numericMarkup(numberText(n, 2))
 }
 function fp(n: unknown): string {
     return `${new Intl.NumberFormat(AR).format(numeric(n))}%`
+}
+function itemColumnGroup(showQty: boolean, showPrice: boolean): string {
+    const nameWidth = showQty && showPrice ? 36 : showQty ? 52 : showPrice ? 54 : 92
+    const columns = [
+        '<col style="width: 8%">',
+        `<col style="width: ${nameWidth}%">`,
+        ...(showQty ? [`<col style="width: ${showQty && showPrice ? 20 : 40}%">`] : []),
+        ...(showPrice ? ['<col style="width: 18%">', '<col style="width: 18%">'] : []),
+    ]
+    return `<colgroup>${columns.join('')}</colgroup>`
 }
 function fd(d: string | number | Date | null | undefined): string {
     if (!d) return ''
@@ -42,12 +66,12 @@ function fd(d: string | number | Date | null | undefined): string {
 function ft(d: string | number | Date | null | undefined): string {
     if (!d) return ''
     return new Intl.DateTimeFormat(AR, {
-        hour: '2-digit', minute: '2-digit',
+        hour: 'numeric', minute: '2-digit', hour12: true,
     }).format(new Date(d))
 }
 
 // ── CSS ──────────────────────────────────────────────────────────────────────
-export const PRINT_CSS = `
+const LEGACY_PRINT_CSS = `
 * { box-sizing: border-box; }
 body {
     font-family: Arial, Tahoma, 'DejaVu Sans', sans-serif;
@@ -162,7 +186,7 @@ body {
 }
 `
 
-export const SCOPED_PRINT_CSS = `
+const LEGACY_SCOPED_PRINT_CSS = `
 .thermal-preview * { box-sizing: border-box; }
 .thermal-preview {
     font-family: Arial, Tahoma, 'DejaVu Sans', sans-serif;
@@ -263,11 +287,205 @@ export const SCOPED_PRINT_CSS = `
 .thermal-preview .invoice-footer p { margin: 0.5mm 0; }
 `
 
+// The same rules are appended to the legacy stylesheet so browser print,
+// QZ Tray and the in-app preview share one predictable invoice layout.
+const PROFESSIONAL_PRINT_CSS = `
+@page { size: 80mm auto; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+    width: 100%;
+    min-width: 0;
+    font-family: Tahoma, Arial, 'DejaVu Sans', sans-serif;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.35;
+    direction: rtl;
+    unicode-bidi: plaintext;
+    color: #111827;
+    background: #fff;
+    text-align: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+.invoice-container {
+    width: 80mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 2.5mm 2.5mm;
+    display: block;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+.invoice-header {
+    margin: 0 0 2.2mm;
+    padding: 0 0 1.8mm;
+    text-align: center;
+    border-bottom: .35mm solid #000;
+    background: transparent;
+}
+.invoice-header h2 {
+    margin: 0;
+    font-size: 5mm;
+    line-height: 1.25;
+    font-weight: 800;
+    color: #0f172a;
+    background: transparent;
+}
+.invoice-title {
+    margin: 1.5mm 0 0;
+    font-size: 3.3mm;
+    line-height: 1.25;
+    font-weight: 800;
+    color: #1e293b;
+    background: transparent;
+}
+.invoice-details {
+    margin: 0 0 1.8mm;
+    padding: 0;
+}
+.info-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2mm;
+    margin: .8mm 0;
+    font-size: 2.55mm;
+    line-height: 1.25;
+}
+.info-row > span { min-width: 0; overflow-wrap: anywhere; }
+.info-row .lbl { font-weight: 800; white-space: nowrap; }
+.info-row .val { text-align: left; }
+.numeric {
+    direction: ltr;
+    unicode-bidi: isolate;
+    white-space: nowrap;
+    text-align: left;
+}
+.table {
+    width: 100%;
+    margin: 1.5mm 0 2mm;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.table thead { display: table-header-group; }
+.table tr { page-break-inside: avoid; }
+.table th, .table td {
+    padding: .9mm .7mm;
+    border: .35mm solid #000;
+    font-size: 2.55mm;
+    line-height: 1.2;
+    text-align: center;
+    vertical-align: middle;
+    color: #000;
+    background: #fff;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+}
+.table th {
+    font-weight: 800;
+    color: #000;
+    background: transparent;
+    white-space: nowrap;
+}
+.table .name { max-width: none; text-align: right; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.table td:not(.name) { white-space: nowrap; }
+.quantity-value { display: inline-block; direction: ltr; unicode-bidi: isolate; white-space: nowrap; text-align: center; }
+.total-section { margin-top: 1mm; page-break-inside: avoid; }
+.total-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2mm;
+    margin: 1mm 0;
+    font-size: 2.55mm;
+    line-height: 1.25;
+    color: #1e293b;
+}
+.total-row > span:last-child { white-space: nowrap; }
+.total-row.grand {
+    margin: 1.5mm 0 1mm;
+    padding: 1.2mm 0;
+    border-top: .35mm solid #000;
+    border-bottom: .35mm solid #000;
+    font-size: 3.5mm;
+    font-weight: 800;
+    color: #0f172a;
+}
+.invoice-footer {
+    margin-top: 2.5mm;
+    padding-top: 1.5mm;
+    border-top: .25mm solid #000;
+    text-align: center;
+    font-size: 2.6mm;
+    line-height: 1.45;
+    color: #000;
+}
+.invoice-footer p { margin: .5mm 0; }
+.no-print { display: none !important; }
+@media print {
+    .invoice-container { width: 80mm; max-width: 100%; padding: 2.5mm; }
+    .no-print { display: none !important; }
+}
+`
+
+const PROFESSIONAL_SCOPED_PRINT_CSS = `
+.thermal-preview {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    font-family: Tahoma, Arial, 'DejaVu Sans', sans-serif;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.35;
+    direction: rtl;
+    unicode-bidi: plaintext;
+    color: #111827;
+    background: #fff;
+    text-align: center;
+}
+.thermal-preview .invoice-container {
+    width: 80mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 2.5mm;
+    display: block;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+.thermal-preview .invoice-header { margin: 0 0 2.2mm; padding: 0 0 1.8mm; border-bottom: .35mm solid #000; text-align: center; background: transparent; }
+.thermal-preview .invoice-header h2 { margin: 0; font-size: 5mm; line-height: 1.25; font-weight: 800; color: #0f172a; background: transparent; }
+.thermal-preview .invoice-title { margin: 1.5mm 0 0; font-size: 3.3mm; line-height: 1.25; font-weight: 800; color: #1e293b; background: transparent; }
+.thermal-preview .invoice-details { margin: 0 0 1.8mm; padding: 0; }
+.thermal-preview .info-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; margin: .8mm 0; font-size: 2.55mm; line-height: 1.25; }
+.thermal-preview .info-row > span { min-width: 0; overflow-wrap: anywhere; }
+.thermal-preview .info-row .lbl { font-weight: 800; white-space: nowrap; }
+.thermal-preview .numeric { direction: ltr; unicode-bidi: isolate; white-space: nowrap; text-align: left; }
+.thermal-preview .table { width: 100%; margin: 1.5mm 0 2mm; border-collapse: collapse; table-layout: fixed; }
+.thermal-preview .table thead { display: table-header-group; }
+.thermal-preview .table tr { page-break-inside: avoid; }
+.thermal-preview .table th, .thermal-preview .table td { padding: .9mm .7mm; border: .35mm solid #000; font-size: 2.55mm; line-height: 1.2; text-align: center; vertical-align: middle; color: #000; background: #fff; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+.thermal-preview .table th { font-weight: 800; color: #000; background: transparent; white-space: nowrap; }
+.thermal-preview .table .name { max-width: none; text-align: right; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.thermal-preview .table td:not(.name) { white-space: nowrap; }
+.thermal-preview .quantity-value { display: inline-block; direction: ltr; unicode-bidi: isolate; white-space: nowrap; text-align: center; }
+.thermal-preview .total-section { margin-top: 1mm; page-break-inside: avoid; }
+.thermal-preview .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; margin: 1mm 0; font-size: 2.55mm; line-height: 1.25; color: #1e293b; }
+.thermal-preview .total-row > span:last-child { white-space: nowrap; }
+.thermal-preview .total-row.grand { margin: 1.5mm 0 1mm; padding: 1.2mm 0; border-top: .35mm solid #000; border-bottom: .35mm solid #000; font-size: 3.5mm; font-weight: 800; color: #0f172a; }
+.thermal-preview .invoice-footer { margin-top: 2.5mm; padding-top: 1.5mm; border-top: .25mm solid #000; text-align: center; font-size: 2.6mm; line-height: 1.45; color: #000; }
+.thermal-preview .invoice-footer p { margin: .5mm 0; }
+`
+
+export const PRINT_CSS = `${LEGACY_PRINT_CSS}\n${PROFESSIONAL_PRINT_CSS}`
+export const SCOPED_PRINT_CSS = `${LEGACY_SCOPED_PRINT_CSS}\n${PROFESSIONAL_SCOPED_PRINT_CSS}`
+
 function getA4OverrideCss(paperSize: string): string {
     if (paperSize !== 'A4') return ''
     return `
     @media print { @page { size: A4 portrait; margin: 10mm; } }
-    .invoice-container { max-width: 190mm !important; font-size: 14px; padding: 10mm; }
+    .invoice-container { width: 190mm !important; max-width: 190mm !important; font-size: 14px; padding: 10mm; }
     .invoice-header h2 { font-size: 8mm !important; }
     .invoice-title { font-size: 5mm !important; }
     .info-row { font-size: 4.5mm !important; margin: 2mm 0 !important; }
@@ -328,6 +546,8 @@ export function buildReceiptInnerHTML(
         const isByWeight = unitType === 'weight'
         const isByLiter = unitType === 'liter'
         const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
+        const quantityText = isByWeight ? `${numberText(qty, 3)} kg` : (isByLiter ? `${numberText(qty, 2)} L` : qtyStr)
+        const qtyMarkup = `<span class="quantity-value" dir="ltr">${quantityText}</span>`
         const rawName = String(item.product_name ?? item.name ?? '')
         const rawSize = String(item.size_name ?? '').trim()
         const includesSize = rawSize !== ''
@@ -338,7 +558,7 @@ export function buildReceiptInnerHTML(
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
-            ${showQty ? `<td>${qtyStr}</td>` : ''}
+            ${showQty ? `<td>${qtyMarkup}</td>` : ''}
             ${showPrice ? `<td>${fd2(item.price ?? item.unit_price)}</td><td>${fd2(numeric(item.price ?? item.unit_price) * qty)}</td>` : ''}
         </tr>`
     }).join('')
@@ -368,6 +588,10 @@ export function buildReceiptInnerHTML(
     <div style="text-align: center; margin-bottom: 2.5mm;">
         <img src="${safeLogo}" alt="" style="max-height: 20mm; max-width: 40mm; object-fit: contain;" />
     </div>` : '';
+    const customerName = String(invoice.customer_name ?? '').trim()
+    const customerNameRow = customerName
+        ? `<div class="info-row customer-name-row"><span><span class="lbl">اسم العميل:</span> <span dir="auto">${escapeHtml(customerName)}</span></span></div>`
+        : ''
 
     return `
 <div class="invoice-container">
@@ -389,10 +613,12 @@ export function buildReceiptInnerHTML(
             <span><span class="lbl">الوقت:</span> ${ft(invoice.created_at)}</span>
             <span><span class="lbl">الكاشير:</span> ${escapeHtml(invoice.cashier_name)}</span>
         </div>
+        ${customerNameRow}
     </div>
 
     <!-- Items -->
     <table class="table">
+        ${itemColumnGroup(showQty, showPrice)}
         <thead>
             <tr>
                 <th>#</th>
@@ -484,16 +710,32 @@ export function buildPurchaseReceiptInnerHTML(
         const isByWeight = unitType === 'weight'
         const isByLiter = unitType === 'liter'
         const qtyStr = isByWeight ? `${qty.toFixed(3)} كجم` : (isByLiter ? `${qty.toFixed(2)} لتر` : fn(item.quantity))
+        const quantityText = isByWeight ? `${numberText(qty, 3)} kg` : (isByLiter ? `${numberText(qty, 2)} L` : qtyStr)
+        const qtyMarkup = `<span class="quantity-value" dir="ltr">${quantityText}</span>`
         const nameStr = escapeHtml(item.product_name ?? item.name ?? '')
             + (item.size_name ? ` (${escapeHtml(item.size_name)})` : '')
         return `
         <tr>
             <td>${fn(i + 1)}</td>
             <td class="name">${nameStr}</td>
-            ${showQty ? `<td>${qtyStr}</td>` : ''}
+            ${showQty ? `<td>${qtyMarkup}</td>` : ''}
             ${showPrice ? `<td>${fd2(item.cost ?? item.unit_cost)}</td><td>${fd2(numeric(item.cost ?? item.unit_cost) * qty)}</td>` : ''}
         </tr>`
     }).join('')
+
+    const purchaseSubtotal = (invoice.items ?? []).reduce((sum, item) => {
+        const quantity = numeric(item.quantity)
+        const unitCost = numeric(item.cost ?? item.unit_cost)
+        return sum + (quantity * unitCost)
+    }, 0)
+    const purchaseDiscount = numeric(invoice.discount)
+    const purchaseShippingCost = numeric(invoice.shipping_cost)
+    const purchaseDiscountRow = purchaseDiscount > 0
+        ? `<div class="total-row discount"><span>خصم المورد</span><span>- ${fc(purchaseDiscount)}</span></div>`
+        : ''
+    const purchaseShippingRow = purchaseShippingCost > 0
+        ? `<div class="total-row"><span>تكلفة الشحن</span><span>${fc(purchaseShippingCost)}</span></div>`
+        : ''
 
     const safeLogo = safeImageSource(storeLogo)
     const logoHtml = safeLogo ? `
@@ -521,6 +763,7 @@ export function buildPurchaseReceiptInnerHTML(
     </div>
 
     <table class="table">
+        ${itemColumnGroup(showQty, showPrice)}
         <thead>
             <tr>
                 <th>#</th>
@@ -534,6 +777,8 @@ export function buildPurchaseReceiptInnerHTML(
 
     ${showPrice ? `
     <div class="total-section">
+        <div class="total-row"><span>إجمالي الأصناف</span><span>${fc(purchaseSubtotal)}</span></div>
+        ${purchaseDiscountRow}${purchaseShippingRow}
         <div class="total-row grand"><span>الإجمالي</span><span>${fc(invoice.total)}</span></div>
         <div class="total-row"><span>عدد الأصناف</span><span>${fn(invoice.items_count)}</span></div>
     </div>` : ''}

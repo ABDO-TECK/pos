@@ -2,6 +2,7 @@
 
 namespace App\Helpers;
 
+use Throwable;
 
 /**
  * Logger — نظام تسجيل أحداث بمستويات متعددة.
@@ -79,14 +80,45 @@ class Logger
         }
 
         if (!is_dir(self::$logDir)) {
-            @mkdir(self::$logDir, 0755, true);
+            $previousUmask = umask(0077);
+            @mkdir(self::$logDir, 0700, true);
+            umask($previousUmask);
         }
+        @chmod(self::$logDir, 0700);
     }
 
     public static function getLogDirectory(): string
     {
         self::init();
         return self::$logDir;
+    }
+
+    public static function getTimezone(): \DateTimeZone
+    {
+        $configured = defined('APP_TIMEZONE')
+            ? (string) APP_TIMEZONE
+            : trim((string) (getenv('APP_TIMEZONE') ?: ''));
+
+        try {
+            return new \DateTimeZone($configured !== '' ? $configured : date_default_timezone_get());
+        } catch (\Throwable) {
+            return new \DateTimeZone('UTC');
+        }
+    }
+
+    /**
+     * Return safe diagnostic fields for an exception without exposing its
+     * message, SQL, filesystem paths, or connection details.
+     *
+     * @return array{reference: string, exception: string, code: int}
+     */
+    public static function exceptionContext(Throwable $exception): array
+    {
+        return [
+            'reference' => bin2hex(random_bytes(8)),
+            'exception' => get_class($exception),
+            'code' => (int) $exception->getCode(),
+        ];
     }
 
     /**
@@ -114,8 +146,9 @@ class Logger
 
         self::init();
 
-        $date     = date('Y-m-d');
-        $time     = date('Y-m-d H:i:s');
+        $now      = new \DateTimeImmutable('now', self::getTimezone());
+        $date     = $now->format('Y-m-d');
+        $time     = $now->format('Y-m-d H:i:s');
         $filePath = self::resolveLogPath($date);
 
         // بناء السطر بتنسيق JSON (Structured Logging)
@@ -123,6 +156,7 @@ class Logger
         $context = self::redactContext($context);
         $logData = [
             'timestamp' => $time,
+            'timezone'  => $now->getTimezone()->getName(),
             'level'     => $level,
             'message'   => $message,
             'context'   => $context
@@ -131,10 +165,13 @@ class Logger
 
         // كتابة ذرية (مع قفل)
         @file_put_contents($filePath, $line, FILE_APPEND | LOCK_EX);
+        @chmod($filePath, 0600);
 
         // أيضًا إرسال إلى error_log للتوافق مع أدوات المراقبة
         if (in_array($level, [self::ERROR, self::CRITICAL], true)) {
-            $contextStr = !empty($context) ? ' - Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+            $contextStr = !empty($context)
+                ? ' - Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : '';
             error_log("[POS][{$level}] {$message}{$contextStr}");
         }
     }
@@ -153,7 +190,15 @@ class Logger
             if (is_array($value)) {
                 $context[$key] = self::redactContext($value);
             } elseif (is_string($value)) {
-                $context[$key] = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value) ?? $value;
+                $cleaned = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value) ?? $value;
+                if (in_array($normalizedKey, ['url', 'referer'], true)) {
+                    $cleaned = preg_replace(
+                        '/([?&](?:token|key|secret|password)=)[^&]*/i',
+                        '$1[REDACTED]',
+                        $cleaned
+                    ) ?? '[invalid-url]';
+                }
+                $context[$key] = $cleaned;
             }
         }
 

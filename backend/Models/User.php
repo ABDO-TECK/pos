@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Config\Database;
+use App\Helpers\PasswordHasher;
 use PDO;
 
 
@@ -36,6 +37,11 @@ class User {
         );
         $stmt->execute([$email]);
         return $stmt->fetch() ?: null;
+    }
+
+    public function updatePasswordHash(int $userId, string $passwordHash): void {
+        $stmt = $this->db->prepare('UPDATE users SET password = ? WHERE id = ?');
+        $stmt->execute([$passwordHash, $userId]);
     }
 
     public function findByIdInCurrentBranch(int $id): ?array {
@@ -219,7 +225,7 @@ class User {
         
         if (!empty($filters['page']) && !empty($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, min(500, (int)$filters['limit']));
+            $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             
             $countStmt = $this->db->prepare('SELECT COUNT(*) FROM users WHERE branch_id = ?');
@@ -245,6 +251,7 @@ class User {
             ];
         }
 
+        $sql .= ' LIMIT 100';
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['branch_id' => $branchId]);
         return ['data' => $stmt->fetchAll()];
@@ -258,7 +265,7 @@ class User {
         $stmt->execute([
             'name'     => $data['name'],
             'email'    => $data['email'],
-            'password' => password_hash($data['password'], PASSWORD_DEFAULT),
+            'password' => PasswordHasher::hash($data['password']),
             'role'     => $data['role'] ?? 'cashier',
             'force_pw' => 1,
             'branch_id' => \App\Services\AuthService::getGlobalBranchId(),
@@ -288,7 +295,7 @@ class User {
         if (!empty($data['password'])) {
             $fields[] = 'password = :password';
             $fields[] = 'force_password_change = 0';
-            $params['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
+            $params['password'] = PasswordHasher::hash($data['password']);
         }
 
         $sql = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id AND branch_id = :branch_id';

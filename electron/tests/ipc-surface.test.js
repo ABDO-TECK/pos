@@ -57,7 +57,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
     Object.keys(exposed.electronAPI.updater).sort(),
     ['download', 'getStatus', 'install', 'onStatus']
   );
-  assert.deepEqual(Object.keys(exposed.posRuntime), ['getApiBaseUrl']);
+  assert.deepEqual(Object.keys(exposed.posRuntime).sort(), ['enableLanAccess', 'getApiBaseUrl']);
 
   await exposed.electronAPI.getVersion();
   await exposed.electronAPI.getQZCert();
@@ -66,6 +66,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   await exposed.electronAPI.updater.download();
   await exposed.electronAPI.updater.install();
   await exposed.posRuntime.getApiBaseUrl();
+  await exposed.posRuntime.enableLanAccess();
 
   assert.deepEqual(
     invocations.map(({ channel }) => channel),
@@ -77,6 +78,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
       'updater:download',
       'updater:install',
       'get-api-base-url',
+      'network:enable-lan',
     ]
   );
 
@@ -141,6 +143,7 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:download': readRepositoryFile('frontend/src/pages/settings/UpdateSection.tsx'),
     'updater:install': readRepositoryFile('frontend/src/pages/settings/UpdateSection.tsx'),
     'get-api-base-url': readRepositoryFile('frontend/src/main.tsx'),
+    'network:enable-lan': readRepositoryFile('frontend/src/pages/settings/NetworkAccessSection.tsx'),
   };
   const consumerMethodNames = {
     'get-version': 'getVersion',
@@ -150,6 +153,7 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:download': 'download',
     'updater:install': 'install',
     'get-api-base-url': 'getApiBaseUrl',
+    'network:enable-lan': 'enableLanAccess',
   };
 
   for (const [channel, consumerSource] of Object.entries(consumers)) {

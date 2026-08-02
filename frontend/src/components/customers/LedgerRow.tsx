@@ -1,19 +1,12 @@
 import type { MouseEventHandler } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatStatementDate } from '../../utils/formatters';
 
 const fmtDate = (s: string) => {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  return new Intl.DateTimeFormat('en-GB', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(d);
+  return formatStatementDate(d);
 };
 
 interface LedgerRowProps {
@@ -31,8 +24,8 @@ export default function LedgerRow({ row, onEdit, onDelete, onViewInvoice }: Ledg
     <tr style={{ borderBottom: '1px solid var(--border)', transition: 'background .1s' }}
         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
         onMouseLeave={e => e.currentTarget.style.background = ''}>
-      <td style={{ padding: '0.55rem 0.75rem', whiteSpace: 'nowrap', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-        {fmtDate(row.date)}
+      <td className="statement-date" dir="ltr" style={{ padding: '0.55rem 0.75rem', whiteSpace: 'nowrap', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+        <bdi dir="ltr">{fmtDate(row.date)}</bdi>
       </td>
       <td style={{ padding: '0.55rem 0.75rem' }}>
         <span style={{ fontSize: '0.85rem' }}>{row.description || '—'}</span>

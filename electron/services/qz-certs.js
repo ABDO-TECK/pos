@@ -13,8 +13,16 @@ const CERTS_DIR_NAME = 'qz-certs';
  */
 function getCertsDir() {
   const dir = path.join(app.getPath('userData'), CERTS_DIR_NAME);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
+}
+
+/**
+ * Return the private signing-key path in Electron's per-user writable data.
+ * This location is deliberately outside every HTTP document root.
+ */
+function getQZPrivateKeyPath() {
+  return path.join(getCertsDir(), 'private-key.pem');
 }
 
 /**
@@ -26,13 +34,13 @@ function getCertsDir() {
 async function ensureQZCerts(qzTrayDir, javaPath) {
   const certsDir = getCertsDir();
   const certPath = path.join(certsDir, 'digital-certificate.pem');
-  const keyPath  = path.join(certsDir, 'private-key.pem');
+  const keyPath  = getQZPrivateKeyPath();
   const flagPath = path.join(certsDir, 'ssl-installed.flag');
 
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     console.log('[QZ Certs] Certificates already exist for message signing');
     _copyOverrideCert(certPath, qzTrayDir);
-    _publishCertsForBrowser(certPath, keyPath);
+    _publishCertificateForBrowser(certPath);
     
     if (!fs.existsSync(flagPath)) {
       console.log('[QZ Certs] WSS SSL not installed silently. Installing now via QZ Tray certgen...');
@@ -84,15 +92,15 @@ async function ensureQZCerts(qzTrayDir, javaPath) {
   const keyPem  = forge.pki.privateKeyToPem(keys.privateKey);
 
   fs.writeFileSync(certPath, certPem, 'utf-8');
-  fs.writeFileSync(keyPath, keyPem, 'utf-8');
+  fs.writeFileSync(keyPath, keyPem, { encoding: 'utf-8', mode: 0o600 });
   console.log('[QZ Certs] Certificate saved to:', certPath);
   console.log('[QZ Certs] Private key saved to:', keyPath);
 
   // 5. نسخ الشهادة كـ override.crt
   _copyOverrideCert(certPath, qzTrayDir);
 
-  // 5.5 نشر الشهادة والمفتاح لمتصفحات الشبكة (الهواتف)
-  _publishCertsForBrowser(certPath, keyPath);
+  // 5.5 Publish the public certificate for LAN browsers.
+  _publishCertificateForBrowser(certPath);
   
   // 6. تشغيل التثبيت الصامت لشهادات الـ SSL الخاصة بـ QZ Tray
   await installSSLcertSilently(qzTrayDir, javaPath, flagPath);
@@ -148,11 +156,11 @@ function _copyOverrideCert(certPath, qzTrayDir) {
 }
 
 /**
- * ينشر الشهادة والمفتاح الخاص للوصول عبر HTTP (للأجهزة الخارجية كالهواتف).
- * - الشهادة → frontend/dist/digital-certificate.txt (يقدّمها PHP router)
- * - المفتاح → backend/storage/private-key.pem (يستخدمه sign-message.php)
+ * Publish only the public certificate for browser clients.
+ * The private key stays in Electron userData and is passed to PHP through
+ * QZ_PRIVATE_KEY_PATH; it must never be copied into an HTTP document root.
  */
-function _publishCertsForBrowser(certPath, keyPath) {
+function _publishCertificateForBrowser(certPath) {
   const { getBackendDir } = require('../utils/paths');
   const backendDir = getBackendDir();
   // Resolve project root from backend dir
@@ -170,16 +178,6 @@ function _publishCertsForBrowser(certPath, keyPath) {
     console.warn('[QZ Certs] Could not publish certificate to frontend/dist:', err.message);
   }
 
-  // 2. Copy private key to backend/storage/private-key.pem
-  try {
-    const storageDir = path.join(backendDir, 'storage');
-    if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
-    const destKey = path.join(storageDir, 'private-key.pem');
-    fs.copyFileSync(keyPath, destKey);
-    console.log('[QZ Certs] Private key published to:', destKey);
-  } catch (err) {
-    console.warn('[QZ Certs] Could not publish private key to backend/storage:', err.message);
-  }
 }
 
 /**
@@ -201,8 +199,20 @@ function getQZCertificate() {
  * @param {string} toSign - النص المراد توقيعه
  * @returns {string|null} - التوقيع بصيغة Base64، أو null عند الفشل
  */
+function normalizeQZDigest(toSign) {
+  if (typeof toSign !== 'string') return null;
+  const digest = toSign.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(digest) ? digest : null;
+}
+
 function signQZMessage(toSign) {
-  const keyPath = path.join(getCertsDir(), 'private-key.pem');
+  const digest = normalizeQZDigest(toSign);
+  if (!digest) {
+    console.warn('[QZ Certs] Rejected a non-digest signing payload');
+    return null;
+  }
+
+  const keyPath = getQZPrivateKeyPath();
   if (!fs.existsSync(keyPath)) return null;
 
   try {
@@ -210,7 +220,7 @@ function signQZMessage(toSign) {
     
     // استخدام مكتبة crypto المدمجة للتوقيع بشكل مطابق لـ openssl_sign في PHP
     const sign = crypto.createSign('SHA512');
-    sign.update(toSign, 'utf8');
+    sign.update(digest, 'utf8');
     sign.end();
     
     return sign.sign(keyPem, 'base64');
@@ -220,4 +230,10 @@ function signQZMessage(toSign) {
   }
 }
 
-module.exports = { ensureQZCerts, getQZCertificate, signQZMessage };
+module.exports = {
+  ensureQZCerts,
+  getQZCertificate,
+  getQZPrivateKeyPath,
+  normalizeQZDigest,
+  signQZMessage,
+};

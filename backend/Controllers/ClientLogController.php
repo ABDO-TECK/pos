@@ -46,30 +46,40 @@ class ClientLogController extends Controller
                 continue;
             }
 
-            $level   = strtoupper($logData['level'] ?? 'ERROR');
-            $message = '[CLIENT] ' . mb_substr((string) ($logData['message'] ?? 'Unknown error'), 0, 2000);
+            $level = strtolower((string) ($logData['level'] ?? ''));
+            if (!in_array($level, ['info', 'warning', 'error'], true)) {
+                continue;
+            }
+
+            $message = '[CLIENT] ' . mb_substr((string) ($logData['message'] ?? 'Unknown error'), 0, 1000);
 
             $context = [];
             if (!empty($logData['context']) && is_array($logData['context'])) {
-                $allowed = ['url', 'stack', 'component', 'userAgent', 'timestamp', 'userId', 'extra'];
+                $allowed = ['url', 'stack', 'component', 'userAgent', 'timestamp'];
                 foreach ($allowed as $key) {
                     if (isset($logData['context'][$key])) {
                         $encoded = is_string($logData['context'][$key])
                             ? $logData['context'][$key]
                             : json_encode($logData['context'][$key], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                        $context[$key] = mb_substr((string) $encoded, 0, 2000);
+                        $context[$key] = mb_substr((string) $encoded, 0, $key === 'stack' ? 8000 : 1000);
                     }
                 }
+            }
+
+            if (isset($context['url'])) {
+                $context['url'] = preg_replace(
+                    '/([?&](?:token|key|secret|password)=)[^&]*/i',
+                    '$1[REDACTED]',
+                    (string) $context['url']
+                ) ?? '[invalid-url]';
             }
 
             $context['client_ip'] = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
             match ($level) {
-                'CRITICAL' => Logger::critical($message, $context),
-                'ERROR'    => Logger::error($message, $context),
-                'WARNING'  => Logger::warning($message, $context),
-                'INFO'     => Logger::info($message, $context),
-                default    => Logger::error($message, $context),
+                'error'   => Logger::error($message, $context),
+                'warning' => Logger::warning($message, $context),
+                'info'    => Logger::info($message, $context),
             };
         }
 
@@ -82,8 +92,22 @@ class ClientLogController extends Controller
      */
     public function index()
     {
+        return $this->respondWithLogs(false);
+    }
+
+    /**
+     * GET /api/admin/error-logs
+     * Return client, server, and PHP runtime entries for the maintenance console.
+     */
+    public function all()
+    {
+        return $this->respondWithLogs(true);
+    }
+
+    private function respondWithLogs(bool $includeAll)
+    {
         $query = (new ClientLogIndexRequest($_GET))->normalized();
-        $result = $this->reader->paginate($query['level'], $query['limit'], $query['cursor']);
+        $result = $this->reader->paginate($query['level'], $query['limit'], $query['cursor'], $includeAll);
 
         return Response::success(
             $result['data'],

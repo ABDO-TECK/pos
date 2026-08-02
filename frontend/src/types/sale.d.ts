@@ -32,7 +32,7 @@ declare global {
     created_at?: string;
     cashier_name?: string;
     items?: SaleItem[];
-    invoice?: { id: number; status: string };
+    invoice?: { id: number; status: string; customer_name?: string };
     low_stock_alerts?: { product_id: number; name: string; quantity: number }[];
     driver_name?: string | null;
     vehicle_number?: string | null;

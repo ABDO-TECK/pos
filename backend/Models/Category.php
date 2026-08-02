@@ -21,7 +21,7 @@ class Category {
         // التحقق مما إذا كان هناك ترقيم (Pagination) مطلوب
         if (!empty($filters['page']) && !empty($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, min(500, (int)$filters['limit']));
+            $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             
             $countStmt = $this->db->prepare("SELECT COUNT(*) FROM {$this->table}");
@@ -47,6 +47,7 @@ class Category {
         }
 
         // إرجاع كل البيانات بدون صفحات
+        $sql .= ' LIMIT 100';
         $stmt = $this->db->prepare($sql);
         $stmt->execute();
         $data = $stmt->fetchAll();

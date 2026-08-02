@@ -7,14 +7,17 @@ use App\Core\Controller;
 use App\Helpers\Response;
 use App\Helpers\AuditLog;
 use App\Models\Product;
+use App\Services\AuthService;
 
 
 class InventoryController extends Controller {
 
     private Product $productModel;
+    private AuthService $authService;
 
-    public function __construct(Product $productModel) {
+    public function __construct(Product $productModel, AuthService $authService) {
         $this->productModel = $productModel;
+        $this->authService = $authService;
     }
 
     public function index() {
@@ -57,5 +60,4 @@ class InventoryController extends Controller {
         return Response::success($this->productModel->findById($id), 'Inventory adjusted');
     }
 }
-
 

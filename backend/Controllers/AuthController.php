@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\CookieHelper;
+use App\Helpers\PasswordHasher;
 use App\Helpers\Response;
 use App\Models\User;
 use App\Services\AuthService;
@@ -35,14 +36,20 @@ class AuthController extends Controller {
         $data = $request->validated();
 
         $user = $this->userModel->findForAuthentication($data['email']);
-        // Perform a real bcrypt verification even for an unknown account to
+        // Perform a real password verification even for an unknown account to
         // reduce email-enumeration timing differences.
         $passwordHash = $user['password']
-            ?? '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+            ?? PasswordHasher::dummyHash();
         $passwordValid = password_verify($data['password'], $passwordHash);
 
         if (!$user || !$passwordValid) {
             return Response::unauthorized('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+        }
+        if (PasswordHasher::needsRehash($passwordHash)) {
+            $this->userModel->updatePasswordHash(
+                (int) $user['id'],
+                PasswordHasher::hash($data['password'])
+            );
         }
         $token = $this->userModel->createToken($user['id']);
         $refreshToken = $this->userModel->createRefreshToken($user['id']);
@@ -136,6 +143,5 @@ class AuthController extends Controller {
         ];
     }
 }
-
 
 

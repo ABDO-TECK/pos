@@ -60,7 +60,11 @@ class SaleService implements SaleServiceInterface
 
             return $s;
         } catch (Throwable $e) {
-            return ['tax_enabled' => '0', 'tax_rate' => '15'];
+            return [
+                'tax_enabled' => '0',
+                'tax_rate' => '15',
+                'prevent_negative_stock' => '1',
+            ];
         }
     }
 
@@ -74,6 +78,9 @@ class SaleService implements SaleServiceInterface
      */
     public function enrichItems(array $items, bool $allowPriceOverride = false): array
     {
+        $settings = $this->getSettings();
+        $preventNegativeStock = (bool) (int) ($settings['prevent_negative_stock'] ?? 1);
+
         if (count($items) > 500) {
             return ['ok' => false, 'error' => 'A sale cannot contain more than 500 items', 'code' => 400];
         }
@@ -109,7 +116,7 @@ class SaleService implements SaleServiceInterface
                 return ['ok' => false, 'error' => "Product ID {$pid} not found", 'code' => 400];
             }
             $quantity = (float) $item['quantity'];
-            if ($quantity > (float) $product['quantity']) {
+            if ($preventNegativeStock && $quantity > (float) $product['quantity']) {
                 return ['ok' => false, 'error' => "Insufficient stock for product ID {$pid}", 'code' => 409];
             }
 
@@ -260,7 +267,8 @@ class SaleService implements SaleServiceInterface
         } catch (\JsonException $exception) {
             Logger::error('Stored sale idempotency response is invalid', [
                 'idempotency_key' => $key,
-                'error' => $exception->getMessage(),
+                'reference' => bin2hex(random_bytes(8)),
+                'exception' => get_class($exception),
             ]);
             return [
                 'status' => 'error',
@@ -401,7 +409,9 @@ class SaleService implements SaleServiceInterface
                 }
                 
                 // حذف قيود كشف الحساب القديمة الخاصة بهذه الفاتورة
-                $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$replaceInvoiceId]);
+                $this->db->prepare(
+                    'DELETE FROM customer_ledger WHERE invoice_id = ? AND branch_id = ?'
+                )->execute([$replaceInvoiceId, \App\Services\AuthService::getGlobalBranchId()]);
                 
                 $this->invoiceRepo->deleteItemsByInvoiceId($replaceInvoiceId);
 
@@ -470,7 +480,14 @@ class SaleService implements SaleServiceInterface
                 );
             }
             // Batch-update all product quantities in a single query
-            $this->productRepo->batchDecrementQuantity($decrements);
+            $preventNegativeStock = (bool) (int) ($this->getSettings()['prevent_negative_stock'] ?? 1);
+            if ($preventNegativeStock) {
+                // Keep the existing one-argument call for the guarded path;
+                // the repository default remains fail-closed for other callers.
+                $this->productRepo->batchDecrementQuantity($decrements);
+            } else {
+                $this->productRepo->batchDecrementQuantity($decrements, false);
+            }
 
             $invoice = $this->invoiceRepo->findById($invoiceId);
             if ($invoice === null) {
@@ -500,6 +517,7 @@ class SaleService implements SaleServiceInterface
             if ($customerId !== null && $replaceInvoiceId === 0) {
                 try {
                     \App\Helpers\JobQueue::dispatch('earn_loyalty_points', [
+                        'branch_id' => \App\Services\AuthService::getGlobalBranchId(),
                         'customer_id' => $customerId,
                         'invoice_id'  => $invoiceId,
                         'total'       => $totals['total'],
@@ -508,7 +526,8 @@ class SaleService implements SaleServiceInterface
                     Logger::warning('Unable to queue loyalty points after sale', [
                         'customer_id' => $customerId,
                         'invoice_id'  => $invoiceId,
-                        'error'       => $exception->getMessage(),
+                        'reference' => bin2hex(random_bytes(8)),
+                        'exception' => get_class($exception),
                     ]);
                 }
             }
@@ -519,7 +538,7 @@ class SaleService implements SaleServiceInterface
             if ($e->getMessage() === 'Invoice not found') {
                 return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
             }
-            Logger::error('Sale transaction failed', ['error' => $e->getMessage()]);
+            Logger::error('Sale transaction failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
         } catch (\RuntimeException $e) {
             if ($this->db->inTransaction()) {
@@ -528,13 +547,13 @@ class SaleService implements SaleServiceInterface
             if ($e->getMessage() === 'Insufficient stock or out-of-scope product') {
                 return ['ok' => false, 'error' => 'Insufficient stock', 'code' => 409];
             }
-            Logger::error('Sale transaction failed', ['error' => $e->getMessage()]);
+            Logger::error('Sale transaction failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            Logger::error('فشل إنشاء عملية بيع', ['error' => $e->getMessage()]);
+            Logger::error('فشل إنشاء عملية بيع', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
         }
 
@@ -634,7 +653,9 @@ class SaleService implements SaleServiceInterface
                 );
             }
             // حذف قيود كشف الحساب المرتبطة بهذه الفاتورة
-            $this->db->prepare('DELETE FROM customer_ledger WHERE invoice_id = ?')->execute([$invoiceId]);
+            $this->db->prepare(
+                'DELETE FROM customer_ledger WHERE invoice_id = ? AND branch_id = ?'
+            )->execute([$invoiceId, \App\Services\AuthService::getGlobalBranchId()]);
             
             // حذف الفاتورة (والعناصر المرتبطة بها تحذف تلقائياً بفضل ON DELETE CASCADE)
             if ($this->invoiceRepo->deleteLocked($invoiceId) !== 1) {
@@ -651,13 +672,13 @@ class SaleService implements SaleServiceInterface
             if (in_array($e->getMessage(), ['Invoice changed concurrently', 'Out-of-scope product'], true)) {
                 return ['ok' => false, 'error' => 'Invoice changed concurrently', 'code' => 409];
             }
-            Logger::error('Sale invoice deletion failed', ['error' => $e->getMessage()]);
+            Logger::error('Sale invoice deletion failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to delete invoice', 'code' => 500];
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            Logger::error('فشل حذف الفاتورة', ['error' => $e->getMessage()]);
+            Logger::error('فشل حذف الفاتورة', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to delete invoice', 'code' => 500];
         }
 

@@ -49,6 +49,7 @@ final class MySqlConcurrencyTest extends TestCase
         foreach ([
             'sale_idempotency_keys',
             'inventory_events',
+            'loyalty_transactions',
             'customer_ledger',
             'supplier_ledger',
             'invoice_items',

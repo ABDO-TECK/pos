@@ -103,7 +103,7 @@ test('backend PSR-4 source paths use Linux-correct casing', () => {
   ]
   const trackedPaths = execFileSync(
     'git',
-    ['ls-files', '-z', 'backend'],
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z', 'backend'],
     { cwd: repoRoot, encoding: 'utf8' },
   )
     .split('\0')
@@ -120,6 +120,7 @@ test('backend PSR-4 source paths use Linux-correct casing', () => {
   assert.deepEqual(trackedSourceDirectories, expectedSourceDirectories)
   assert.deepEqual(trackedPaths.filter((trackedPath) => trackedPath.startsWith('backend/Config/')), [
     'backend/Config/Database.php',
+    'backend/Config/DeploymentSecurity.php',
     'backend/Config/bindings.php',
     'backend/Config/config.php',
   ])
@@ -146,6 +147,7 @@ test('Electron manifest, lock, and hardened renderer APIs stay compatible', () =
   const electronVersion = lock.packages['node_modules/electron']?.version
   const mainSource = readFileSync(path.join(repoRoot, 'electron/main.js'), 'utf8')
 
+  assert.equal(manifest.scripts['build:phar'], 'node scripts/build-phar.mjs')
   assert.equal(manifest.devDependencies.electron, '^43.2.0')
   assert.match(electronVersion, /^43\./u)
   assert.ok(

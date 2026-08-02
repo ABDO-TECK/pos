@@ -38,14 +38,12 @@ class BackupController extends Controller {
      * POST multipart: الحقل sql_file
      */
     public function restore() {
-        if (!defined('ALLOW_WEB_RESTORE') || !ALLOW_WEB_RESTORE) {
-            return Response::error('استعادة النسخة الاحتياطية من الويب معطلة لأسباب أمنية. يرجى استخدام سطر الأوامر (CLI).', 403);
-        }
-
-        // Extra safety: never allow web restore in production regardless of ALLOW_WEB_RESTORE
-        if (defined('APP_ENV') && APP_ENV === 'production') {
-            \App\Helpers\Logger::warning('Web restore attempted in production — blocked');
-            return Response::error('استعادة النسخة الاحتياطية غير مسموحة في بيئة الإنتاج. استخدم CLI بدلاً من ذلك.', 403);
+        if (PHP_SAPI !== 'cli') {
+            \App\Helpers\Logger::warning('Web restore attempted — blocked');
+            return Response::error(
+                'Web restore is disabled; use the CLI restore command.',
+                410
+            );
         }
 
         // 1. التحقق من صحة الملف

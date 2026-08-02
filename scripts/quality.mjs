@@ -5,21 +5,29 @@ import path from 'node:path'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const isWindows = process.platform === 'win32'
-const npmCommand = isWindows ? 'npm.cmd' : 'npm'
+const bundledNpmCli = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
+const npmCli = isWindows
+  ? (process.env.npm_execpath && existsSync(process.env.npm_execpath)
+      ? process.env.npm_execpath
+      : bundledNpmCli)
+  : null
+const npmCommand = isWindows ? process.execPath : 'npm'
+const npmArgs = (args) => isWindows ? [npmCli, ...args] : args
+const npmDisplayCommand = isWindows ? 'npm.cmd' : 'npm'
 const dryRun = process.argv.includes('--dry-run')
 const skipInstall = process.argv.includes('--skip-install')
 const requireMySql = process.argv.includes('--require-mysql')
 
 export const qualitySteps = [
-  { label: 'Install root dependencies from lockfile', command: npmCommand, args: ['ci'] },
-  { label: 'Validate root dependency tree', command: npmCommand, args: ['ls', '--depth=0'] },
-  { label: 'Install frontend dependencies from lockfile', command: npmCommand, args: ['--prefix', 'frontend', 'ci'] },
-  { label: 'Validate frontend dependency tree', command: npmCommand, args: ['--prefix', 'frontend', 'ls', '--depth=0'] },
+  { label: 'Install root dependencies from lockfile', command: npmCommand, args: npmArgs(['ci']), displayCommand: npmDisplayCommand, displayArgs: ['ci'] },
+  { label: 'Validate root dependency tree', command: npmCommand, args: npmArgs(['ls', '--depth=0']), displayCommand: npmDisplayCommand, displayArgs: ['ls', '--depth=0'] },
+  { label: 'Install frontend dependencies from lockfile', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'ci']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'ci'] },
+  { label: 'Validate frontend dependency tree', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'ls', '--depth=0']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'ls', '--depth=0'] },
   { label: 'Run quality-runner regression tests', command: process.execPath, args: ['--test', 'scripts/quality.test.mjs'] },
-  { label: 'Lint frontend', command: npmCommand, args: ['--prefix', 'frontend', 'run', 'lint'] },
-  { label: 'Type-check frontend', command: npmCommand, args: ['--prefix', 'frontend', 'run', 'typecheck'] },
-  { label: 'Run frontend unit tests', command: npmCommand, args: ['--prefix', 'frontend', 'test'] },
-  { label: 'Build frontend', command: npmCommand, args: ['--prefix', 'frontend', 'run', 'build'] },
+  { label: 'Lint frontend', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'run', 'lint']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'run', 'lint'] },
+  { label: 'Type-check frontend', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'run', 'typecheck']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'run', 'typecheck'] },
+  { label: 'Run frontend unit tests', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'test']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'test'] },
+  { label: 'Build frontend', command: npmCommand, args: npmArgs(['--prefix', 'frontend', 'run', 'build']), displayCommand: npmDisplayCommand, displayArgs: ['--prefix', 'frontend', 'run', 'build'] },
 ]
 
 function collectTypeScriptFiles(root) {
@@ -155,8 +163,8 @@ function probeMySql(phpCommand, environment) {
   return classifyMySqlProbe(result.status)
 }
 
-function runStep({ label, command, args, environment = {} }) {
-  const printable = [command, ...args].join(' ')
+function runStep({ label, command, args, displayCommand = command, displayArgs = args, environment = {} }) {
+  const printable = [displayCommand, ...displayArgs].join(' ')
   console.log(`\n[quality] ${label}\n> ${printable}`)
   if (dryRun) {
     return

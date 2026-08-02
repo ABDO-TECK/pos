@@ -1,5 +1,6 @@
 import LedgerRow from '../../../components/customers/LedgerRow'
 import { formatCurrency } from '../../../utils/formatters'
+import '../../../styles/ledger-statement.css'
 
 interface CustomerEditEntryForm {
   type: string
@@ -28,13 +29,13 @@ export default function CustomerLedgerTable({
   if (!ledgerData) return null
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+    <div className="statement-table-shell" style={{ flex: 1, overflowY: 'auto', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
       {ledgerData.truncated && (
-        <div role="status" style={{ padding: '0.65rem 0.75rem', background: 'var(--warning-bg, #fff7dd)', color: 'var(--text)' }}>
+        <div className="statement-notice" role="status" style={{ padding: '0.65rem 0.75rem', background: 'var(--warning-bg, #fff7dd)', color: 'var(--text)' }}>
           يتم عرض أحدث 500 حركة من أصل {ledgerData.total_entries}. الرصيد الافتتاحي يلخّص الحركات الأقدم.
         </div>
       )}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+      <table className="statement-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
         <thead>
           <tr style={{ background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 1 }}>
             {['التاريخ', 'البيان', 'مدين', 'دائن', 'الرصيد', ''].map(h => (

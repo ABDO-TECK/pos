@@ -1,9 +1,9 @@
 # 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
 
-![Version](https://img.shields.io/badge/version-1.1.35-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.36-blue.svg)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
 ![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
-![Electron](https://img.shields.io/badge/Electron-30.0-47848F?logo=electron&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-43.2-47848F?logo=electron&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
 
@@ -28,7 +28,7 @@
 ### 🎨 الواجهة الأمامية (Frontend)
 - **الإطار:** React 19.2 + Vite
 - **إدارة الحالة:** Zustand
-- **التوجيه:** React Router 7.14
+- **التوجيه:** React Router 7.18.2
 - **قاعدة البيانات المحلية:** IndexedDB (idb)
 - **الرسوم البيانية:** Recharts
 
@@ -39,7 +39,7 @@
 - **المهام بالخلفية:** Job Queue & Event Dispatcher.
 
 ### 💻 تطبيق سطح المكتب (Desktop App)
-- **الإطار:** Electron 30.0
+- **الإطار:** Electron 43.2
 - **إدارة الخدمات:** تشغيل (PHP Server، MySQL المدمج، HTTPS Proxy) في الخلفية.
 - **التحديث التلقائي:** عبر GitHub Releases (electron-updater).
 
@@ -83,7 +83,7 @@
 ```bash
 docker-compose up -d --build
 ```
-سيكون النظام متاحاً على: `http://localhost:8080`
+سيكون النظام متاحاً على: `http://localhost:8000`
 
 ### الخيار الثاني: التشغيل المحلي (XAMPP / Node.js) للتطوير
 

@@ -13,52 +13,37 @@ use App\Middleware\RateLimiter;
 use App\Helpers\ErrorCodes;
 
 // ── Config (loads .env via EnvLoader) ─────────────────────────
-require_once __DIR__ . '/Config/config.php';
+// Configuration is loaded after the bootstrap handlers so deployment failures are recorded.
 
 // ── Composer Autoloader ───────────────────────────────────────
 if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
     die("Composer dependencies not installed. Please run 'composer install'.");
 }
 require_once __DIR__ . '/vendor/autoload.php';
+\App\Helpers\ErrorHandler::register();
+require_once __DIR__ . '/Config/config.php';
 
 // ── Auto-Migrate on Update (Self-Healing) ──────────────────────
-$pharRunning = \Phar::running(false);
-if ($pharRunning) {
-    $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (dirname($pharRunning) . '/storage');
-    $flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
-    if (!file_exists($flagFile) || filemtime($pharRunning) > filemtime($flagFile)) {
-        try {
-            require_once __DIR__ . '/Services/MigrationService.php';
-            $migrationResult = (new \App\Services\MigrationService())->runAllMigrations();
-            if (!empty($migrationResult['errors'])) {
-                throw new \RuntimeException(implode('; ', $migrationResult['errors']));
-            }
-        } catch (\Throwable $e) {
-            Logger::error('Auto-migration failed during boot', [
-                'error' => $e->getMessage(),
-                'file'  => $e->getFile(),
-                'line'  => $e->getLine(),
-            ]);
-            http_response_code(503);
-            header('Content-Type: application/json; charset=UTF-8');
-            echo json_encode([
-                'success' => false,
-                'message' => 'Database upgrade failed; service is unavailable.',
-                'data' => null,
-                'errors' => ['code' => 'MIGRATION_FAILED'],
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-    }
-} else {
-    // Development mode: run pending migrations on boot (hash-checked to avoid overhead)
+// Production and packaged deployments run migrations once before the HTTP
+// server starts. Local development may opt in explicitly.
+if (APP_ENV === 'development' && \App\Helpers\EnvLoader::getBool('AUTO_MIGRATE', false)) {
     try {
         require_once __DIR__ . '/Services/MigrationService.php';
-        (new \App\Services\MigrationService())->runAllMigrations();
+        $migrationResult = (new \App\Services\MigrationService())->runAllMigrations();
+        if (!empty($migrationResult['errors'])) {
+            throw new \RuntimeException(implode('; ', $migrationResult['errors']));
+        }
     } catch (\Throwable $e) {
-        Logger::error('Dev auto-migration failed during boot', [
-            'error' => $e->getMessage(),
-        ]);
+        Logger::error('Dev auto-migration failed during boot', Logger::exceptionContext($e));
+        http_response_code(503);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([
+            'success' => false,
+            'message' => 'Database migration failed; service is unavailable.',
+            'data' => null,
+            'errors' => ['code' => 'MIGRATION_FAILED'],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
     }
 }
 
@@ -121,7 +106,7 @@ set_exception_handler(function (Throwable $e) {
     }
 
     $message = (APP_DEBUG && APP_ENV !== 'production') ? $e->getMessage() : 'Internal server error';
-    Logger::critical($e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
+    Logger::critical('Unhandled application exception', Logger::exceptionContext($e));
     $resp = Response::serverError($message);
     http_response_code(500);
     echo json_encode($resp['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

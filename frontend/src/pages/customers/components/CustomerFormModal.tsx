@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { X } from 'lucide-react'
+import NumericInput from '../../../components/forms/NumericInput'
 
 interface CustomerFormData {
   name: string
@@ -66,7 +67,7 @@ export default function CustomerFormModal({ modal, setModal, form, setForm, hand
                 >{d.label}</button>
               ))}
             </div>
-            <input className="input" type="number" min="0" step="0.01" placeholder="0.00"
+            <NumericInput className="input" min="0" step="0.01" placeholder="0.00"
               value={form.initial_balance}
               onChange={e => setForm(f => ({ ...f, initial_balance: e.target.value }))} />
           </div>

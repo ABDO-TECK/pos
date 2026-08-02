@@ -99,6 +99,22 @@ final class LoggerRetentionTest extends TestCase
         }
     }
 
+    public function testWritesTimestampUsingApplicationTimezone(): void
+    {
+        Logger::info('timezone check');
+
+        $files = Logger::getLogFiles($this->logDir, true);
+        self::assertNotEmpty($files);
+        $entry = json_decode((string) (file($files[0], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES)[0] ?? ''), true);
+
+        self::assertIsArray($entry);
+        self::assertSame(\APP_TIMEZONE, $entry['timezone']);
+        self::assertSame(
+            (new \DateTimeImmutable('now', new \DateTimeZone(\APP_TIMEZONE)))->format('Y-m-d'),
+            substr((string) $entry['timestamp'], 0, 10)
+        );
+    }
+
     private function writeLogFile(string $name, string $contents): string
     {
         $path = $this->logDir . DIRECTORY_SEPARATOR . $name;

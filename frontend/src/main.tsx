@@ -88,12 +88,13 @@ if (!isAppProtocol && 'serviceWorker' in navigator) {
 }
 
 // منع تغيير الأرقام في حقول الإدخال عبر تحريك بكرة الماوس (scroll)
-document.addEventListener('wheel', () => {
+document.addEventListener('wheel', (event) => {
   const activeElement = document.activeElement as HTMLInputElement | null;
   if (activeElement?.type === 'number') {
-    activeElement.blur()
+    // Prevent accidental value changes without stealing focus from the field.
+    event.preventDefault()
   }
-})
+}, { passive: false })
 
 async function initApp() {
   if (typeof window.posRuntime?.getApiBaseUrl === 'function') {

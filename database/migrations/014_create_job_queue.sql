@@ -9,5 +9,6 @@ CREATE TABLE IF NOT EXISTS job_queue (
     last_error   TEXT DEFAULT NULL,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL DEFAULT NULL,
-    INDEX idx_status_priority (status, priority DESC, id ASC)
+    INDEX idx_status_priority (status, priority DESC, id ASC),
+    INDEX idx_status_created (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -40,7 +40,7 @@ class Expense
         $whereClause = implode(' AND ', $where);
 
         $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : 1;
-        $limit = isset($filters['limit']) ? max(1, min(1000, (int) $filters['limit'])) : 1000;
+        $limit = isset($filters['limit']) ? max(1, min(100, (int) $filters['limit'])) : 100;
 
         $countSql = "SELECT COUNT(*) FROM expenses e WHERE $whereClause";
         $countStmt = $this->db->prepare($countSql);

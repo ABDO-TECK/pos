@@ -12,6 +12,7 @@ import CustomerSection from './payment/CustomerSection'
 import styles from './PaymentModal.module.css'
 import { extractApiError } from '../../utils/apiError'
 import useAuthStore from '../../store/authStore'
+import NumericInput from '../forms/NumericInput'
 
 interface PaymentModalProps {
   onClose: () => void
@@ -43,6 +44,7 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(rebillingCustomerId ?? null)
   const [deposit, setDeposit]             = useState(0)           // العربون
   const [newCustomerData, setNewCustomerData] = useState<NewCustomerPayload | null>(null)
+  const [customerNameForReceipt, setCustomerNameForReceipt] = useState('')
 
   // ── delivery states ──────────────────────────────────────────────
   const [driverName, setDriverName] = useState('')
@@ -163,7 +165,12 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
           toast(`تحذير: ${p.name} — كمية منخفضة (${formatNumber(p.quantity)})`, { icon: '⚠️', duration: 5000 })
         )
       }
-      onSuccess(invoice, isCreditSale ? 0 : computedChange)
+      // The receipt name is intentionally print-only. Do not fall back to a
+      // selected customer's account name when this optional field is empty.
+      onSuccess({
+        ...invoice,
+        customer_name: customerNameForReceipt.trim() || undefined,
+      }, isCreditSale ? 0 : computedChange)
     } catch (err) {
       if (!navigator.onLine) {
         if (!authenticatedUser || authenticatedUser.branch_id <= 0) {
@@ -298,7 +305,7 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
                   الخصم (ج.م)
                 </label>
-                <input type="number" min={0} max={computedSubtotal} step="0.5" className="input"
+                <NumericInput min={0} max={computedSubtotal} step="0.5" className="input"
                   value={localDiscount} onChange={e => setLocalDiscount(parseFloat(e.target.value) || 0)} />
               </div>
 
@@ -309,7 +316,7 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
               {currentMethod.cashInput && !isCreditSale && (
                 <div>
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>المبلغ المدفوع (ج.م)</label>
-                  <input type="number" min={0} step="0.5" className="input input-lg"
+                  <NumericInput min={0} step="0.5" className="input input-lg"
                     value={localAmountPaid} onChange={e => setLocalAmountPaid(parseFloat(e.target.value) || 0)} />
                 </div>
               )}
@@ -342,6 +349,24 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
                 onDepositChange={setDeposit}
                 onCustomerSelect={handleCustomerSelect}
               />
+              <div className="form-group" style={{ marginTop: '0.25rem' }}>
+                <label htmlFor="invoice-customer-name" style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
+                  اسم العميل على الفاتورة (اختياري)
+                </label>
+                <input
+                  id="invoice-customer-name"
+                  type="text"
+                  className="input"
+                  maxLength={150}
+                  autoComplete="off"
+                  placeholder="مثال: أحمد محمد"
+                  value={customerNameForReceipt}
+                  onChange={(e) => setCustomerNameForReceipt(e.target.value)}
+                />
+                <small style={{ display: 'block', marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                  يظهر الاسم في الفاتورة عند الطباعة فقط
+                </small>
+              </div>
             </div>
           )}
 
@@ -360,8 +385,7 @@ export default function PaymentModal({ onClose, onSuccess }: PaymentModalProps) 
                 </div>
                 <div className="form-group">
                   <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>تكلفة الشحن (ج.م)</label>
-                  <input
-                    type="number"
+                  <NumericInput
                     min={0}
                     step="0.5"
                     className="input"

@@ -5,16 +5,19 @@ namespace App\Services;
 use App\Models\Expense;
 use App\Repositories\ExpenseCategoryRepository;
 use Exception;
+use PDO;
 use PDOException;
 
 class ExpenseService {
     
     private Expense $expenseModel;
     private ExpenseCategoryRepository $categoryRepo;
+    private PDO $db;
 
-    public function __construct(Expense $expenseModel, ExpenseCategoryRepository $categoryRepo) {
+    public function __construct(Expense $expenseModel, ExpenseCategoryRepository $categoryRepo, PDO $db) {
         $this->expenseModel = $expenseModel;
         $this->categoryRepo = $categoryRepo;
+        $this->db = $db;
     }
 
     // ── Expense Categories ─────────────────────────────────────
@@ -75,20 +78,23 @@ class ExpenseService {
         if (!$this->categoryRepo->findById($id)) {
             return ['ok' => false, 'error' => 'التصنيف غير موجود', 'code' => 404];
         }
-        $db = \App\Config\Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $this->categoryRepo->delete($id);
-            $db->commit();
+            $this->db->commit();
             return ['ok' => true];
         } catch (PDOException $e) {
-            $db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             if ($e->getCode() == 23000 || $e->getCode() === '23000') {
                 return ['ok' => false, 'error' => 'لا يمكن حذف هذا التصنيف لوجود مصروفات مرتبطة به', 'code' => 422];
             }
             throw $e;
         } catch (\Throwable $e) {
-            $db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }
@@ -118,15 +124,16 @@ class ExpenseService {
 
         $data['user_id'] = $authUser['id'];
 
-        $db = \App\Config\Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $id = $this->expenseModel->create($data);
-            $db->commit();
+            $this->db->commit();
             return $id;
         } catch (\Throwable $e) {
-            $db->rollBack();
-            throw new Exception('فشل في حفظ المصروف', 500);
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new Exception('فشل في حفظ المصروف', 500, $e);
         }
     }
 
@@ -147,14 +154,15 @@ class ExpenseService {
             throw new Exception('المصروف غير موجود', 404);
         }
 
-        $db = \App\Config\Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $this->expenseModel->update($id, $data);
-            $db->commit();
+            $this->db->commit();
         } catch (\Throwable $e) {
-            $db->rollBack();
-            throw new Exception('فشل في تحديث المصروف', 500);
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new Exception('فشل في تحديث المصروف', 500, $e);
         }
     }
 }

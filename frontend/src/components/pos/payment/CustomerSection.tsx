@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { getCustomers } from '../../../api/endpoints'
+import { useState } from 'react'
+import { getCustomerOption, searchCustomers } from '../../../api/endpoints'
 import { formatCurrency } from '../../../utils/formatters'
-import toast from 'react-hot-toast'
+import SearchableEntitySelect from '../../SearchableEntitySelect'
+import NumericInput from '../../forms/NumericInput'
 import styles from './CustomerSection.module.css'
 interface Props {
   isCreditSale: boolean
@@ -20,19 +21,9 @@ interface NewCustomer {
 }
 
 export default function CustomerSection({ isCreditSale, rebillingCustomerId, computedTotal, amountDue, deposit, onDepositChange, onCustomerSelect }: Props) {
-  const [customers, setCustomers] = useState<any[]>([])
-  const [customersLoading, setCustomersLoading] = useState(false)
   const [customerMode, setCustomerMode] = useState('existing')
   const [selectedCustomerId, setSelectedCustomerId] = useState(rebillingCustomerId ? String(rebillingCustomerId) : '')
   const [newCust, setNewCust] = useState({ name: '', phone: '', address: '' })
-
-  useEffect(() => {
-    setCustomersLoading(true)
-    getCustomers()
-      .then((r: any) => { const d = r.data.data; setCustomers(Array.isArray(d) ? d : (d?.data ?? [])) })
-      .catch(() => toast.error('فشل تحميل العملاء'))
-      .finally(() => setCustomersLoading(false))
-  }, [])
 
   const notifyNewCustomer = (customer: NewCustomer) => {
     onCustomerSelect(
@@ -85,15 +76,18 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
       </div>
 
       {customerMode === 'existing' && (
-        <select className="input" value={selectedCustomerId} onChange={e => handleExistingCustomerChange(e.target.value)}
-          style={{ fontFamily: 'inherit' }}>
-          <option value="">{customersLoading ? 'جارٍ التحميل...' : '— اختر عميلاً —'}</option>
-          {customers.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.name}{c.phone ? ` — ${c.phone}` : ''}{parseFloat(c.balance) > 0 ? ` (رصيد: ${formatCurrency(c.balance)})` : ''}
-            </option>
-          ))}
-        </select>
+        <SearchableEntitySelect<Customer>
+          value={selectedCustomerId}
+          onChange={(value) => handleExistingCustomerChange(value)}
+          searchOptions={searchCustomers}
+          loadOption={getCustomerOption}
+          searchPlaceholder="ابحث عن عميل بالاسم أو الهاتف..."
+          emptyLabel="— اختر عميلاً —"
+          loadingLabel="جارٍ التحميل..."
+          getOptionLabel={(customer) => (
+            `${customer.name}${customer.phone ? ` — ${customer.phone}` : ''}${Number(customer.balance) > 0 ? ` (رصيد: ${formatCurrency(customer.balance)})` : ''}`
+          )}
+        />
       )}
 
       {customerMode === 'new' && (
@@ -112,7 +106,7 @@ export default function CustomerSection({ isCreditSale, rebillingCustomerId, com
           <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
             العربون / المبلغ المقدَّم (ج.م) — اختياري
           </label>
-          <input className="input" type="number" min={0} max={computedTotal} step="0.5"
+          <NumericInput className="input" min={0} max={computedTotal} step="0.5"
             placeholder="0.00" value={deposit || ''}
             onChange={e => onDepositChange(Math.min(parseFloat(e.target.value) || 0, computedTotal))} />
           {amountDue > 0 && (

@@ -1,5 +1,6 @@
 import { X, PlusCircle } from 'lucide-react'
 import { formatCurrency } from '../../../utils/formatters'
+import NumericInput from '../../../components/forms/NumericInput'
 
 type PaymentType = 'credit' | 'debit'
 
@@ -60,7 +61,7 @@ export default function CustomerPaymentModal({
           </div>
           <div>
             <label className="label">المبلغ (ج.م) *</label>
-            <input className="input input-lg" type="number" min="0.01" step="0.01"
+            <NumericInput className="input input-lg" min="0.01" step="0.01"
               placeholder="0.00" value={payAmount}
               onChange={e => setPayAmount(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handlePayment()} />

@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { formatCurrency } from '../../../utils/formatters'
+import NumericInput from '../../../components/forms/NumericInput'
 
 type PurchasePaymentType = 'cash' | 'credit'
 
@@ -8,11 +9,11 @@ interface CreditPurchaseSectionProps {
   setPaymentType: Dispatch<SetStateAction<PurchasePaymentType>>
   deposit: number
   setDeposit: (deposit: number) => void
-  cartTotal: number
+  purchaseTotal: number
 }
 
-export default function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposit, cartTotal }: CreditPurchaseSectionProps) {
-  const amountDue = paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : 0
+export default function CreditPurchaseSection({ paymentType, setPaymentType, deposit, setDeposit, purchaseTotal }: CreditPurchaseSectionProps) {
+  const amountDue = paymentType === 'credit' ? Math.max(0, purchaseTotal - deposit) : 0
 
   return (
     <div style={{
@@ -46,9 +47,9 @@ export default function CreditPurchaseSection({ paymentType, setPaymentType, dep
             <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
               العربون / المبلغ المقدَّم (ج.م) — اختياري
             </label>
-            <input className="input" type="number" min={0} max={cartTotal} step="0.5"
+            <NumericInput className="input" min={0} max={purchaseTotal} step="0.5"
               placeholder="0.00" value={deposit || ''}
-              onChange={e => setDeposit(Math.min(parseFloat(e.target.value) || 0, cartTotal))} />
+              onChange={e => setDeposit(Math.min(parseFloat(e.target.value) || 0, purchaseTotal))} />
             {amountDue > 0 && (
               <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginTop: '0.2rem', fontWeight: 600 }}>
                 ⬅ المتبقي على الذمة: {formatCurrency(amountDue)}

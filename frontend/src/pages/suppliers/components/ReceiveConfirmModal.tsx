@@ -3,6 +3,7 @@ import { X, CheckCircle2, Truck, DollarSign, FileText } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
 import CreditPurchaseSection from './CreditPurchaseSection'
 import toast from 'react-hot-toast'
+import NumericInput from '../../../components/forms/NumericInput'
 
 interface ReceiveCartLine {
   product: Pick<Product, 'name'> & { size_name?: string | null }
@@ -12,9 +13,15 @@ interface ReceiveCartLine {
 
 interface DeliveryData {
   driver_name?: string
-  vehicle_number?: string
+  discount?: number
+  shipping_cost?: number
   delivery_date?: string
   delivery_notes?: string
+}
+
+const normalizeMoney = (value: unknown): number => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.round(Math.max(0, parsed) * 100) / 100 : 0
 }
 
 type PurchasePaymentType = 'cash' | 'credit'
@@ -48,23 +55,26 @@ export default function ReceiveConfirmModal({
 }: ReceiveConfirmModalProps) {
   // Delivery info state
   const [driverName, setDriverName] = useState('')
-  const [vehicleNumber, setVehicleNumber] = useState('')
+  const [discount, setDiscount] = useState(0)
+  const [shippingCost, setShippingCost] = useState(0)
   const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0])
   const [deliveryNotes, setDeliveryNotes] = useState('')
   const [activeTab, setActiveTab] = useState<'items' | 'payment' | 'delivery'>('items')
+  const invoiceTotal = Math.max(0, cartTotal - discount + shippingCost)
 
   const handleSubmit = useCallback(() => {
-    if (paymentType === 'credit' && deposit >= cartTotal) {
+    if (paymentType === 'credit' && deposit >= invoiceTotal) {
       toast.error('العربون يجب أن يكون أقل من إجمالي الفاتورة في الشراء الآجل')
       return
     }
     onConfirm({
       driver_name: driverName.trim() || undefined,
-      vehicle_number: vehicleNumber.trim() || undefined,
+      discount: discount > 0 ? discount : undefined,
+      shipping_cost: shippingCost > 0 ? shippingCost : undefined,
       delivery_date: deliveryDate || undefined,
       delivery_notes: deliveryNotes.trim() || undefined,
     })
-  }, [cartTotal, deliveryDate, deliveryNotes, deposit, driverName, onConfirm, paymentType, vehicleNumber])
+  }, [deliveryDate, deliveryNotes, deposit, discount, driverName, invoiceTotal, onConfirm, paymentType, shippingCost])
 
   // F12 key shortcut to trigger confirm
   useEffect(() => {
@@ -99,7 +109,7 @@ export default function ReceiveConfirmModal({
           </div>
           <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', padding: '0.75rem', textAlign: 'center', border: '1px solid var(--border)' }}>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>إجمالي الفاتورة</p>
-            <p style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--primary-d)' }}>{formatCurrency(cartTotal)}</p>
+            <p style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--primary-d)' }}>{formatCurrency(invoiceTotal)}</p>
           </div>
         </div>
 
@@ -219,12 +229,32 @@ export default function ReceiveConfirmModal({
 
           {activeTab === 'payment' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div className="form-group">
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>
+                  خصم المورد (ج.م)
+                </label>
+                <NumericInput
+                  className="input"
+                  min={0}
+                  max={cartTotal}
+                  step="0.01"
+                  value={discount || ''}
+                  placeholder="0.00"
+                  onChange={(e) => {
+                    const value = Number.parseFloat(e.target.value)
+                    setDiscount(Math.min(normalizeMoney(value), cartTotal))
+                  }}
+                />
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                  الإجمالي بعد الخصم: {formatCurrency(invoiceTotal)}
+                </div>
+              </div>
               <CreditPurchaseSection
                 paymentType={paymentType}
                 setPaymentType={setPaymentType}
                 deposit={deposit}
                 setDeposit={setDeposit}
-                cartTotal={cartTotal}
+                purchaseTotal={invoiceTotal}
               />
             </div>
           )}
@@ -243,13 +273,17 @@ export default function ReceiveConfirmModal({
                   />
                 </div>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>رقم السيارة</label>
-                  <input
-                    type="text"
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', display: 'block' }}>تكلفة الشحن / النقل (ج.م)</label>
+                  <NumericInput
                     className="input"
-                    placeholder="مثال: أ ب ج 123..."
-                    value={vehicleNumber}
-                    onChange={(e) => setVehicleNumber(e.target.value)}
+                    min={0}
+                    step="0.01"
+                    placeholder="0.00"
+                    value={shippingCost || ''}
+                    onChange={(e) => {
+                      const value = Number.parseFloat(e.target.value)
+                      setShippingCost(normalizeMoney(value))
+                    }}
                   />
                 </div>
               </div>
@@ -288,7 +322,7 @@ export default function ReceiveConfirmModal({
           >
             {loading ? <span className="spinner" /> : <CheckCircle2 size={20} />}
             {paymentType === 'credit' ? 'تأكيد الاستلام الآجل — ' : 'تأكيد الاستلام — '}
-            {formatCurrency(paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : cartTotal)}
+            {formatCurrency(paymentType === 'credit' ? Math.max(0, invoiceTotal - deposit) : invoiceTotal)}
             <kbd style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', background: 'rgba(255,255,255,0.2)', borderRadius: '4px', marginRight: '0.5rem', fontFamily: 'sans-serif' }}>F12</kbd>
           </button>
           <button

@@ -139,11 +139,15 @@ final class MySqlTestEnvironment
             ) ENGINE=InnoDB',
             'CREATE TABLE customers (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                branch_id INT NOT NULL DEFAULT 1,
                 name VARCHAR(150) NOT NULL,
                 phone VARCHAR(30) NULL,
                 address VARCHAR(255) NULL,
                 initial_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
-                deleted_at TIMESTAMP NULL
+                loyalty_points INT NOT NULL DEFAULT 0,
+                deleted_at TIMESTAMP NULL,
+                UNIQUE KEY uq_customers_branch_id (branch_id, id),
+                CONSTRAINT fk_test_customer_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
             ) ENGINE=InnoDB',
             'CREATE TABLE invoices (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -183,18 +187,23 @@ final class MySqlTestEnvironment
             ) ENGINE=InnoDB',
             'CREATE TABLE suppliers (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                branch_id INT NOT NULL DEFAULT 1,
                 name VARCHAR(150) NOT NULL,
                 phone VARCHAR(30) NULL,
                 email VARCHAR(150) NULL,
                 address VARCHAR(255) NULL,
                 initial_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
-                deleted_at TIMESTAMP NULL
+                deleted_at TIMESTAMP NULL,
+                UNIQUE KEY uq_suppliers_branch_id (branch_id, id),
+                CONSTRAINT fk_test_supplier_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
             ) ENGINE=InnoDB',
             'CREATE TABLE purchase_invoices (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 branch_id INT NOT NULL,
                 supplier_id INT NOT NULL,
                 total DECIMAL(12,2) NOT NULL DEFAULT 0,
+                discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+                shipping_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
                 items_count INT NOT NULL DEFAULT 0,
                 notes TEXT NULL,
                 driver_name VARCHAR(150) NULL,
@@ -222,6 +231,7 @@ final class MySqlTestEnvironment
             ) ENGINE=InnoDB',
             'CREATE TABLE customer_ledger (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                branch_id INT NOT NULL DEFAULT 1,
                 customer_id INT NOT NULL,
                 type VARCHAR(20) NOT NULL,
                 amount DECIMAL(12,2) NOT NULL,
@@ -229,11 +239,13 @@ final class MySqlTestEnvironment
                 invoice_id INT NULL,
                 created_by INT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT fk_test_customer_ledger_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+                CONSTRAINT fk_test_customer_ledger_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+                CONSTRAINT fk_test_customer_ledger_customer FOREIGN KEY (branch_id, customer_id) REFERENCES customers(branch_id, id),
                 CONSTRAINT fk_test_customer_ledger_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
             ) ENGINE=InnoDB',
             'CREATE TABLE supplier_ledger (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                branch_id INT NOT NULL DEFAULT 1,
                 supplier_id INT NOT NULL,
                 type VARCHAR(20) NOT NULL,
                 amount DECIMAL(12,2) NOT NULL,
@@ -241,8 +253,20 @@ final class MySqlTestEnvironment
                 purchase_invoice_id INT NULL,
                 created_by INT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT fk_test_supplier_ledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+                CONSTRAINT fk_test_supplier_ledger_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+                CONSTRAINT fk_test_supplier_ledger_supplier FOREIGN KEY (branch_id, supplier_id) REFERENCES suppliers(branch_id, id),
                 CONSTRAINT fk_test_supplier_ledger_invoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB',
+            'CREATE TABLE loyalty_transactions (
+                id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                customer_id INT NOT NULL,
+                invoice_id INT NULL,
+                points INT NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                description VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_test_loyalty_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                CONSTRAINT fk_test_loyalty_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
             ) ENGINE=InnoDB',
             'CREATE TABLE inventory_events (
                 id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -363,6 +387,22 @@ final class MySqlTestEnvironment
                     SELECT 1
                     FROM information_schema.innodb_trx
                     WHERE trx_mysql_thread_id = ? AND trx_state = 'LOCK WAIT'
+                )",
+            'information_schema.innodb_lock_waits' =>
+                'SELECT EXISTS(
+                    SELECT 1
+                    FROM information_schema.innodb_lock_waits AS lock_wait
+                    INNER JOIN information_schema.innodb_trx AS waiting_trx
+                        ON waiting_trx.trx_id = lock_wait.requesting_trx_id
+                    WHERE waiting_trx.trx_mysql_thread_id = ?
+                )',
+            'information_schema.processlist' =>
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM information_schema.processlist
+                    WHERE id = ?
+                      AND command = 'Query'
+                      AND state LIKE '%lock%'
                 )",
         ];
     }

@@ -69,7 +69,7 @@ class Invoice {
 
         // ── Pagination (اختياري) ──
         $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
-        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+        $limit = isset($filters['limit']) ? max(1, min(100, (int) $filters['limit'])) : null;
 
         if ($page !== null && $limit !== null) {
             $countSql = "SELECT COUNT(*) FROM invoices i WHERE $whereClause";
@@ -81,7 +81,7 @@ class Invoice {
             $sql = "SELECT i.*, u.name AS cashier_name, c.name AS customer_name
                     FROM invoices i
                     JOIN users u ON u.id = i.user_id
-                    LEFT JOIN customers c ON c.id = i.customer_id
+                    LEFT JOIN customers c ON c.id = i.customer_id AND c.branch_id = i.branch_id
                     WHERE $whereClause
                     ORDER BY i.created_at DESC, i.id DESC
                     LIMIT :pag_limit OFFSET :pag_offset";
@@ -112,11 +112,13 @@ class Invoice {
         }
 
         // ── بدون pagination — configurable limit ──
-        $defaultLimit = defined('INVOICE_DEFAULT_LIMIT') ? INVOICE_DEFAULT_LIMIT : 1000;
+        $defaultLimit = defined('INVOICE_DEFAULT_LIMIT')
+            ? max(1, min(100, (int) INVOICE_DEFAULT_LIMIT))
+            : 100;
         $sql = "SELECT i.*, u.name AS cashier_name, c.name AS customer_name
                 FROM invoices i
                 JOIN users u ON u.id = i.user_id
-                LEFT JOIN customers c ON c.id = i.customer_id
+                LEFT JOIN customers c ON c.id = i.customer_id AND c.branch_id = i.branch_id
                 WHERE $whereClause
                 ORDER BY i.created_at DESC, i.id DESC
                 LIMIT :inv_limit";
@@ -197,6 +199,8 @@ class Invoice {
     }
 
     public function create(array $data): int {
+        $this->assertCustomerInCurrentBranch($data['customer_id'] ?? null);
+
         $stmt = $this->db->prepare(
             'INSERT INTO invoices (branch_id, user_id, customer_id, subtotal, discount, tax, shipping_cost, total, payment_method, amount_paid, change_due, amount_due, status, driver_name, vehicle_number, delivery_date, delivery_notes)
              VALUES (:branch_id, :user_id, :customer_id, :subtotal, :discount, :tax, :shipping_cost, :total, :payment_method, :amount_paid, :change_due, :amount_due, :status, :driver_name, :vehicle_number, :delivery_date, :delivery_notes)'
@@ -323,6 +327,8 @@ class Invoice {
     }
 
     public function updateTotals(int $id, array $data): void {
+        $this->assertCustomerInCurrentBranch($data['customer_id'] ?? null);
+
         $stmt = $this->db->prepare(
             'UPDATE invoices SET
                 customer_id = :customer_id,
@@ -368,7 +374,11 @@ class Invoice {
         $stmt->execute([$status, $id, AuthService::getGlobalBranchId()]);
 
         if ($stmt->rowCount() > 0 && $status === 'completed') {
-            $this->db->prepare("UPDATE customer_ledger SET description = REPLACE(description, ' 🕒 (محجوزة - لم تُسلم)', '') WHERE invoice_id = ?")->execute([$id]);
+            $this->db->prepare(
+                "UPDATE customer_ledger
+                 SET description = REPLACE(description, ' 🕒 (محجوزة - لم تُسلم)', '')
+                 WHERE invoice_id = ? AND branch_id = ?"
+            )->execute([$id, AuthService::getGlobalBranchId()]);
         }
     }
 
@@ -380,6 +390,24 @@ class Invoice {
         $stmt = $this->db->prepare('DELETE FROM invoices WHERE id = ? AND branch_id = ?');
         $stmt->execute([$id, AuthService::getGlobalBranchId()]);
         return $stmt->rowCount();
+    }
+
+    private function assertCustomerInCurrentBranch(?int $customerId): void
+    {
+        if ($customerId === null) {
+            return;
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT 1
+             FROM customers
+             WHERE id = ? AND branch_id = ? AND deleted_at IS NULL
+             LIMIT 1'
+        );
+        $stmt->execute([$customerId, AuthService::getGlobalBranchId()]);
+        if (!$stmt->fetchColumn()) {
+            throw new \DomainException('Customer is outside the active branch.');
+        }
     }
 
 

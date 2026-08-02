@@ -3,6 +3,8 @@ const path = require('path');
 const http = require('http');
 const net = require('net');
 const fs = require('fs');
+const { getQZPrivateKeyPath } = require('./qz-certs');
+const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('../utils/php-runtime');
 
 let phpProcess = null;
 let serverInfo = null;
@@ -52,10 +54,113 @@ function stopPHP() {
   stopPhpServer();
 }
 
+function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
+  const {
+    getBackupsDir,
+    getDataDir,
+    getEnvPath,
+    getLogsDir,
+    getRuntimeMetadataPath,
+    getRuntimePortsPath,
+  } = require('../utils/paths');
+
+  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
+
+  return {
+    ...process.env,
+    DB_HOST: '127.0.0.1',
+    DB_PORT: String(mysqlPort),
+    DB_NAME: 'pos_db',
+    DB_USER: dbCredentials.user,
+    DB_PASS: dbCredentials.password,
+    // Backend self-updates remain disabled by default. Packaged desktop
+    // releases use electron-updater; source-mode updates require an explicit
+    // ENABLE_AUTO_UPDATE=true in the operator environment.
+    ENABLE_AUTO_UPDATE: process.env.ENABLE_AUTO_UPDATE || 'false',
+    // The bundled desktop runtime is loopback-only, even when a stale
+    // production APP_ENV is present in the persisted .env file. Keep LAN
+    // deployments on their configured environment so production checks still
+    // apply there.
+    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
+    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+    APP_TIMEZONE: resolveSystemTimeZone(),
+    ENV_PATH: getEnvPath(),
+    APP_STORAGE_DIR: getDataDir(),
+    QZ_PRIVATE_KEY_PATH: getQZPrivateKeyPath(),
+    DB_BACKUP_DIR: getBackupsDir(),
+    LOGS_PATH: getLogsDir(),
+    API_PORT: String(apiPort),
+    PORT: String(apiPort),
+    RUNTIME_METADATA_PATH: getRuntimeMetadataPath(),
+    RUNTIME_PORTS_PATH: getRuntimePortsPath(),
+  };
+}
+
+function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort }) {
+  const {
+    getBackendDir,
+    getLogsDir,
+    getTempDir,
+    getPhpPath,
+    isPackaged,
+  } = require('../utils/paths');
+  const backendDir = getBackendDir();
+  const phpBin = getPhpPath();
+  const phpRuntimeArgs = getPhpRuntimeArgs(phpBin, getTempDir());
+  const migrationArgs = isPackaged()
+    ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'migrate']
+    : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'migrate.php')];
+  const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort });
+
+  return new Promise((resolve, reject) => {
+    console.log('[Migration] Applying pending database migrations before starting PHP workers...');
+    const logStream = fs.createWriteStream(
+      path.join(getLogsDir(), 'database-migrations.log'),
+      { flags: 'a' },
+    );
+    const child = spawn(phpBin, migrationArgs, {
+      env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let settled = false;
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      logStream.write(data);
+      console.log('[Migration]', data.toString().trim());
+    });
+    child.stderr.on('data', (data) => {
+      logStream.write(data);
+      stderr = (stderr + data.toString()).slice(-8_192);
+    });
+    child.once('error', (error) => {
+      if (settled) return;
+      settled = true;
+      logStream.end();
+      reject(new Error(`Failed to start database migration: ${error.message}`));
+    });
+    child.once('close', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      logStream.end();
+
+      if (code !== 0) {
+        const detail = stderr.trim() || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
+        reject(new Error(`Database migration failed: ${detail}`));
+        return;
+      }
+
+      console.log('[Migration] Database schema is ready.');
+      resolve();
+    });
+  });
+}
+
 function startPhpServer(options = {}) {
   return new Promise(async (resolve, reject) => {
     try {
-      const { getPhpPath, getBackendDir, getConfigDir, getDataDir, getBackupsDir, getLogsDir, getTempDir, getEnvPath, getRuntimePortsPath, getRuntimeMetadataPath } = require('../utils/paths');
+      const { getPhpPath, getLogsDir, getTempDir, getRuntimePortsPath } = require('../utils/paths');
       const phpBin = getPhpPath();
       const backendEntryPath = resolveBackendEntryPath();
 
@@ -86,30 +191,25 @@ function startPhpServer(options = {}) {
         console.error(`[PHP] Failed to write runtime_ports.json:`, err);
       }
 
-      // Configure Env
       const env = {
-        ...process.env,
-        DB_HOST: '127.0.0.1',
-        DB_PORT: String(mysqlPort),
-        DB_NAME: 'pos_db',
-        DB_USER: dbCredentials.user,
-        DB_PASS: dbCredentials.password,
-        ENABLE_AUTO_UPDATE: 'true',
+        ...createBackendEnv({
+          mysqlPort,
+          dbCredentials,
+          apiPort: selectedPort,
+        }),
         PHP_CLI_SERVER_WORKERS: '4',
-        ENV_PATH: getEnvPath(),
-        APP_STORAGE_DIR: getDataDir(),
-        QZ_PRIVATE_KEY_PATH: path.join(getBackendDir(), 'storage', 'private-key.pem'),
-        DB_BACKUP_DIR: getBackupsDir(),
-        LOGS_PATH: getLogsDir(),
-        API_PORT: String(selectedPort),
-        PORT: String(selectedPort),
-        RUNTIME_METADATA_PATH: getRuntimeMetadataPath(),
-        RUNTIME_PORTS_PATH: getRuntimePortsPath()
       };
+
+      await runDatabaseMigrations({
+        mysqlPort,
+        dbCredentials,
+        apiPort: selectedPort,
+      });
 
       console.log(`[PHP] Spawning PHP Server pointing to: ${backendEntryPath}`);
       const sysTempDir = getTempDir();
       const args = [
+        ...getPhpRuntimeArgs(phpBin, sysTempDir),
         '-d', `sys_temp_dir=${sysTempDir}`,
         '-S', `127.0.0.1:${selectedPort}`,
         backendEntryPath
@@ -250,6 +350,7 @@ module.exports = {
   findAvailablePort,
   resolveBackendPharPath,
   resolveBackendEntryPath,
+  runDatabaseMigrations,
   startPhpServer,
   stopPhpServer,
   getPhpServerInfo,

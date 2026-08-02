@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT NOT NULL DEFAULT 1,
     name VARCHAR(200) NOT NULL,
     phone VARCHAR(30) NULL,
     address TEXT NULL,
@@ -177,8 +178,11 @@ CREATE TABLE IF NOT EXISTS customers (
     loyalty_points INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_customer_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT,
     INDEX idx_name (name),
-    INDEX idx_customers_deleted (deleted_at)
+    INDEX idx_customers_deleted (deleted_at),
+    INDEX idx_customers_branch_deleted_name (branch_id, deleted_at, name, id),
+    UNIQUE INDEX uq_customers_branch_id (branch_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -234,6 +238,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS suppliers (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT NOT NULL DEFAULT 1,
     name VARCHAR(200) NOT NULL,
     phone VARCHAR(30) NULL,
     email VARCHAR(150) NULL,
@@ -241,7 +246,10 @@ CREATE TABLE IF NOT EXISTS suppliers (
     initial_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'رصيد مبدئي — لمورد قديم له دين مسبق',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
-    INDEX idx_suppliers_deleted (deleted_at)
+    CONSTRAINT fk_supplier_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT,
+    INDEX idx_suppliers_deleted (deleted_at),
+    INDEX idx_suppliers_branch_deleted_name (branch_id, deleted_at, name, id),
+    UNIQUE INDEX uq_suppliers_branch_id (branch_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -251,6 +259,8 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     id INT AUTO_INCREMENT PRIMARY KEY,
     supplier_id INT NOT NULL,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    discount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    shipping_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     items_count INT NOT NULL DEFAULT 0,
     notes TEXT NULL,
     branch_id INT DEFAULT 1,
@@ -287,6 +297,7 @@ CREATE TABLE IF NOT EXISTS purchases (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customer_ledger (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT NOT NULL DEFAULT 1,
     customer_id INT NOT NULL,
     type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مبيعات آجلة), credit=دائن (دفعات)',
     amount DECIMAL(10,2) NOT NULL,
@@ -294,11 +305,13 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
     invoice_id INT NULL COMMENT 'رابط للفاتورة إن وجدت',
     created_by INT NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_ledger_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_customer_ledger_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ledger_customer FOREIGN KEY (branch_id, customer_id) REFERENCES customers(branch_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_ledger_invoice  FOREIGN KEY (invoice_id)  REFERENCES invoices(id)  ON DELETE SET NULL,
     INDEX idx_customer_ledger (customer_id),
     INDEX idx_ledger_created  (created_at),
-    INDEX idx_cl_customer_type (customer_id, type)
+    INDEX idx_cl_customer_type (customer_id, type),
+    INDEX idx_customer_ledger_branch_recent (branch_id, customer_id, created_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -306,6 +319,7 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS supplier_ledger (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    branch_id INT NOT NULL DEFAULT 1,
     supplier_id INT NOT NULL,
     type ENUM('debit','credit') NOT NULL COMMENT 'debit=مدين (مشتريات آجلة), credit=دائن (دفعات للمورد)',
     amount DECIMAL(10,2) NOT NULL,
@@ -313,11 +327,13 @@ CREATE TABLE IF NOT EXISTS supplier_ledger (
     purchase_invoice_id INT NULL COMMENT 'رابط لفاتورة المشتريات إن وجدت',
     created_by INT NULL COMMENT 'معرف المستخدم الذي سجّل القيد',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_sledger_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_supplier_ledger_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_sledger_supplier FOREIGN KEY (branch_id, supplier_id) REFERENCES suppliers(branch_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_sledger_pinvoice FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE SET NULL,
     INDEX idx_supplier_ledger (supplier_id),
     INDEX idx_sledger_created (created_at),
-    INDEX idx_sl_supplier_type (supplier_id, type)
+    INDEX idx_sl_supplier_type (supplier_id, type),
+    INDEX idx_supplier_ledger_branch_recent (branch_id, supplier_id, created_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -354,7 +370,8 @@ CREATE TABLE IF NOT EXISTS job_queue (
     last_error   TEXT DEFAULT NULL,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL DEFAULT NULL,
-    INDEX idx_status_priority (status, priority DESC, id ASC)
+    INDEX idx_status_priority (status, priority DESC, id ASC),
+    INDEX idx_status_created (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -437,6 +454,7 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('store_name', 'سوبر ماركت'),
 ('tax_enabled', '0'),
 ('tax_rate', '15'),
+('prevent_negative_stock', '1'),
 ('loyalty_enabled', '0'),
 ('loyalty_points_per_rial', '1'),
 ('loyalty_rial_per_point', '0.01');
@@ -522,3 +540,11 @@ INSERT IGNORE INTO schema_versions (version) VALUES
 ('023_review_indexes.sql'),
 ('024_create_rbac_tables.sql'),
 ('025_add_missing_permissions.sql');
+
+-- QZ signing is an explicit capability, not an implicit side effect of login.
+INSERT IGNORE INTO permissions (name, description)
+VALUES ('printing.use', 'Use QZ Tray printing and signing');
+INSERT IGNORE INTO role_permissions (role, permission_id)
+SELECT 'cashier', id FROM permissions WHERE name = 'printing.use';
+INSERT IGNORE INTO role_permissions (role, permission_id)
+SELECT 'manager', id FROM permissions WHERE name = 'printing.use';

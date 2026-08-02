@@ -4,6 +4,7 @@ import { formatNumber } from '../../utils/formatters'
 import toast from 'react-hot-toast'
 import { extractApiError } from '../../utils/apiError'
 import IconBadge from '../../components/common/IconBadge'
+import NumericInput from '../../components/forms/NumericInput'
 
 /* ── Barcode conflict helpers ── */
 
@@ -401,10 +402,9 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
                     }}
                     required
                   />
-                  <input
+                  <NumericInput
                     className="input input-sm"
                     style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
-                    type="number"
                     step="0.01"
                     placeholder="سعر البيع"
                     value={sz.price}
@@ -415,10 +415,9 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
                     }}
                     required
                   />
-                  <input
+                  <NumericInput
                     className="input input-sm"
                     style={{ fontSize: '0.78rem', height: '30px', padding: '0.2rem 0.4rem' }}
-                    type="number"
                     step="0.01"
                     placeholder="تكلفة"
                     value={sz.cost}
@@ -474,22 +473,22 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
           <div>
             <Label>سعر البيع الافتراضي *</Label>
-            <input className="input" type="number" step="0.01" min="0" {...f('price')} placeholder="0.00" required />
+            <NumericInput className="input" step="0.01" min="0" {...f('price')} placeholder="0.00" required />
           </div>
           <div>
             <Label>سعر التكلفة الافتراضي</Label>
-            <input className="input" type="number" step="0.01" min="0" {...f('cost')} placeholder="0.00" />
+            <NumericInput className="input" step="0.01" min="0" {...f('cost')} placeholder="0.00" />
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
           <div>
             <Label>{isByWeight ? 'الوزن الحالي (كجم)' : isByLiter ? 'الحجم الحالي (لتر)' : 'الكمية الحالية'}</Label>
-            <input className="input" type="number" min="0" step={isByPiece ? '1' : '0.001'} {...f('quantity')} placeholder="0" />
+            <NumericInput className="input" min="0" step={isByPiece ? '1' : '0.001'} {...f('quantity')} placeholder="0" />
           </div>
           <div>
             <Label>حد التنبيه المنخفض</Label>
-            <input className="input" type="number" min="0" {...f('low_stock_threshold')} placeholder="5" />
+            <NumericInput className="input" min="0" {...f('low_stock_threshold')} placeholder="5" />
           </div>
         </div>
 
@@ -503,7 +502,7 @@ export default function ProductForm({ form, setForm, categories, modalKey, allPr
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '0.4rem', marginBottom: '0.4rem' }}>
               <div>
                 <Label>قطع/صندوق</Label>
-                <input className="input input-sm" type="number" min="1" step="1" {...f('units_per_box')} placeholder="1" />
+                <NumericInput className="input input-sm" min="1" step="1" {...f('units_per_box')} placeholder="1" />
               </div>
               <div>
                 <Label>باركود الصندوق</Label>

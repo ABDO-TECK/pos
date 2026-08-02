@@ -7,6 +7,7 @@ use App\Services\ExpenseService;
 use App\Models\Expense;
 use App\Repositories\ExpenseCategoryRepository;
 use Exception;
+use PDO;
 use PDOException;
 
 use PHPUnit\Framework\MockObject\MockObject;
@@ -23,7 +24,9 @@ class ExpenseServiceTest extends TestCase
     {
         $this->expenseMock = $this->createMock(Expense::class);
         $this->categoryRepoMock = $this->createMock(ExpenseCategoryRepository::class);
-        $this->service = new ExpenseService($this->expenseMock, $this->categoryRepoMock);
+        $db = new PDO('sqlite::memory:');
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->service = new ExpenseService($this->expenseMock, $this->categoryRepoMock, $db);
     }
 
     // ── Expense CRUD (الاختبارات الأصلية) ──────────────────

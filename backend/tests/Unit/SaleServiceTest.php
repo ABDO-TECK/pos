@@ -236,6 +236,28 @@ class SaleServiceTest extends TestCase
         $this->assertSame(409, $result['code']);
     }
 
+    public function testEnrichItemsAllowsNegativeStockWhenPolicyIsDisabled(): void
+    {
+        $service = $this->getMockBuilder(SaleService::class)
+            ->setConstructorArgs([$this->invoiceMock, $this->productMock, $this->customerMock, $this->inventoryEventMock, $this->createMock(\PDO::class)])
+            ->onlyMethods(['getSettings'])
+            ->getMock();
+        $service->method('getSettings')->willReturn([
+            'prevent_negative_stock' => '0',
+            'tax_enabled' => '0',
+            'tax_rate' => '15',
+        ]);
+        $this->productMock->method('findByIds')
+            ->willReturn([1 => ['id' => 1, 'price' => 10, 'cost' => 5, 'quantity' => 2]]);
+
+        $result = $service->enrichItems([
+            ['product_id' => 1, 'quantity' => 3],
+        ]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(3.0, $result['items'][0]['quantity']);
+    }
+
     public function testCalculateTotalsChangeDue()
     {
         $service = $this->getMockBuilder(SaleService::class)

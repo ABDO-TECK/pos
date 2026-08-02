@@ -25,7 +25,7 @@ export default function POS() {
 
   const { items, clearCart, itemCount } = useCartStore()
   const { fetchProducts, products }     = useProductStore()
-  const { taxEnabled, taxRate }         = useSettingsStore()
+  const { taxEnabled, taxRate, preventNegativeStock } = useSettingsStore()
 
   const filteredProducts = useMemo(() => {
     const t = productSearch.trim().toLowerCase()
@@ -83,7 +83,12 @@ export default function POS() {
   }
 
   // Switch to cart tab automatically when an item is added on mobile
-  const handleAddItem = (product: any) => {
+  const handleAddItem = (product: any): boolean => {
+    const sellableProduct = product.sizes?.length > 0 ? product.sizes[0] : product
+    if (preventNegativeStock && Number(sellableProduct.quantity) <= 0) {
+      toast.error(`${sellableProduct.name} — نفد من المخزون`, { icon: '⚠️' })
+      return false
+    }
     if (product.sizes && product.sizes.length > 0) {
       const sizeProduct = product.sizes[0]
       useCartStore.getState().addItem({
@@ -96,6 +101,7 @@ export default function POS() {
       useCartStore.getState().addItem(product)
       toast.success(product.name, { duration: 800 })
     }
+    return true
   }
 
   return (
@@ -105,7 +111,7 @@ export default function POS() {
         {/* Barcode & Top Actions */}
         <div className="card" style={{ padding: '0.75rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
           <div style={{ flex: 1 }}>
-            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} />
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} allowOutOfStock={!preventNegativeStock} />
           </div>
           <button className="btn btn-ghost" onClick={() => setShowReserved(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
              <IconBadge icon={Clock} color="warning" shape="rounded" size={14} badgeSize={24} />
@@ -155,7 +161,7 @@ export default function POS() {
         {/* Barcode & Top Actions */}
         <div className="card" style={{ padding: '0.6rem', marginBottom: '0.6rem', display: 'flex', gap: '0.4rem' }}>
           <div style={{ flex: 1 }}>
-            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} />
+            <BarcodeInput key={barcodeInputKey} onFilterChange={setProductSearch} onAddProduct={handleAddItem} allowOutOfStock={!preventNegativeStock} />
           </div>
           <button className="btn btn-ghost btn-icon" onClick={() => setShowReserved(true)} title="المحجوزات" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
              <IconBadge icon={Clock} color="warning" shape="rounded" size={16} badgeSize={28} />
@@ -177,8 +183,7 @@ export default function POS() {
               <div className="product-grid">
                 {gridProducts.map(p => (
                   <ProductCard key={p.id} product={p} onAdd={() => {
-                    handleAddItem(p)
-                    if (itemCount >= 0) setMobileTab('cart')
+                    if (handleAddItem(p)) setMobileTab('cart')
                   }} />
                 ))}
               </div>

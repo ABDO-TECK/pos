@@ -3,7 +3,7 @@
 # ══════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build Frontend ────────────────────────────────────────
-FROM node:18-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /build
 
@@ -32,6 +32,7 @@ FROM php:8.2-apache AS production
 
 # تثبيت الإضافات المطلوبة
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
         libzip-dev \
         libpng-dev \
         libjpeg-dev \
@@ -59,14 +60,21 @@ RUN echo '<VirtualHost *:80>\n\
         RewriteRule . /index.html [L]\n\
     </Directory>\n\
     \n\
-    Alias /api /var/www/html/backend/api\n\
+    Alias /api /var/www/html/backend\n\
     <Directory /var/www/html/backend>\n\
         Options -Indexes +FollowSymLinks\n\
         AllowOverride All\n\
         Require all granted\n\
     </Directory>\n\
     \n\
-    <FilesMatch "\\.(env|log|sql|md)$">\n\
+    <Directory /var/www/html/backend/storage>\n\
+        Require all denied\n\
+    </Directory>\n\
+    <Directory /var/www/html/backend/logs>\n\
+        Require all denied\n\
+    </Directory>\n\
+    \n\
+    <FilesMatch "(^\\.|\\.(env|log|sql|md|pem|key|sqlite|sqlite-wal|sqlite-shm)$)">\n\
         Require all denied\n\
     </FilesMatch>\n\
     \n\
@@ -94,6 +102,9 @@ COPY --from=frontend-builder /build/dist/ ./frontend-dist/
 # نسخ ملفات قاعدة البيانات
 COPY database/ ./database/
 
+COPY docker-entrypoint.sh /usr/local/bin/pos-entrypoint
+RUN chmod 0755 /usr/local/bin/pos-entrypoint
+
 # إنشاء مجلد اللوج
 RUN mkdir -p ./backend/logs && chown -R www-data:www-data ./backend/logs
 
@@ -102,4 +113,4 @@ RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
 
-CMD ["apache2-foreground"]
+CMD ["pos-entrypoint"]

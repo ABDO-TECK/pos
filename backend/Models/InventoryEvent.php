@@ -52,12 +52,21 @@ class InventoryEvent
         return $stmt->fetchAll();
     }
 
+    public function getLatestId(): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COALESCE(MAX(id), 0) FROM inventory_events WHERE branch_id = ?'
+        );
+        $stmt->execute([AuthService::getGlobalBranchId()]);
+        return (int) $stmt->fetchColumn();
+    }
+
     /**
-     * تنظيف الأحداث القديمة (أكثر من ساعة).
-     * يُستدعى دورياً من SSE endpoint.
+     * Remove events older than the 24-hour synchronization window.
+     * Called by scheduled maintenance, never from a user request.
      */
     public function cleanup(): void
     {
-        $this->db->exec("DELETE FROM inventory_events WHERE created_at < NOW() - INTERVAL 1 HOUR");
+        $this->db->exec("DELETE FROM inventory_events WHERE created_at < NOW() - INTERVAL 24 HOUR");
     }
 }

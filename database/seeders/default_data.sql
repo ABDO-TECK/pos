@@ -16,6 +16,7 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('store_name', 'سوبر ماركت'),
 ('tax_enabled', '0'),
 ('tax_rate', '15'),
+('prevent_negative_stock', '1'),
 ('loyalty_enabled', '0'),
 ('loyalty_points_per_rial', '1'),
 ('loyalty_rial_per_point', '0.01');

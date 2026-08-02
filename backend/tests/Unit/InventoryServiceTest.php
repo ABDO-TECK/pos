@@ -185,8 +185,8 @@ class InventoryServiceTest extends TestCase
             ->with(15)
             ->willReturn([['product_id' => 3, 'quantity' => 4.0]]);
         $this->productMock->expects($this->once())
-            ->method('decrementQuantity')
-            ->with(3, 4.0);
+            ->method('batchDecrementQuantity')
+            ->with([['product_id' => 3, 'quantity' => 4.0]]);
         $this->supplierMock->expects($this->once())
             ->method('deletePurchaseInvoice')
             ->with(15)
@@ -225,7 +225,7 @@ class InventoryServiceTest extends TestCase
             ->willReturn(['id' => 21]);
         $this->supplierMock->method('getPurchaseInvoiceItems')
             ->willReturn([['product_id' => 8, 'quantity' => 2.0]]);
-        $this->productMock->method('decrementQuantity')
+        $this->productMock->method('batchDecrementQuantity')
             ->willThrowException(new \RuntimeException('Insufficient stock or out-of-scope product'));
         $this->supplierMock->expects($this->never())->method('deletePurchaseInvoice');
 
@@ -302,7 +302,7 @@ class InventoryServiceTest extends TestCase
             ->willReturnCallback(function () use (&$sequence): array {
                 $this->assertSame(1, $sequence);
                 $sequence = 2;
-                return ['id' => 30];
+                return ['id' => 30, 'supplier_id' => 4];
             });
         $this->supplierMock->expects($this->once())
             ->method('getPurchaseInvoiceItems')
@@ -312,9 +312,11 @@ class InventoryServiceTest extends TestCase
                 return [];
             });
         $this->supplierMock->method('updatePurchaseInvoiceTotals');
-        $this->supplierMock->method('createPurchase');
+        $this->supplierMock->method('createPurchases');
         $this->supplierMock->method('addLedgerEntry')->willReturn(1);
-        $this->productMock->method('findById')->willReturn(['id' => 9, 'quantity' => 5.0]);
+        $this->productMock->method('findByIds')->willReturn([
+            9 => ['id' => 9, 'quantity' => 5.0],
+        ]);
 
         $result = $this->service->processBulkPurchase([
             'supplier_id' => 4,

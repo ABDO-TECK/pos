@@ -17,7 +17,7 @@ class ExpenseCategory
 
     public function getAll(): array
     {
-        $stmt = $this->db->prepare('SELECT * FROM expense_categories ORDER BY name ASC');
+        $stmt = $this->db->prepare('SELECT * FROM expense_categories ORDER BY name ASC LIMIT 100');
         $stmt->execute();
         return $stmt->fetchAll();
     }

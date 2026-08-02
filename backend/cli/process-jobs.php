@@ -14,13 +14,16 @@ if (php_sapi_name() !== 'cli') {
     die('Forbidden: CLI only.');
 }
 
-require_once __DIR__ . '/../Config/config.php';
 require_once __DIR__ . '/../vendor/autoload.php';
+\App\Helpers\ErrorHandler::register();
+require_once __DIR__ . '/../Config/config.php';
 
 use App\Helpers\JobQueue;
 use App\Helpers\Logger;
 
 $daemon = in_array('--daemon', $argv, true);
+
+JobQueue::ensureMaintenanceJobs();
 
 echo "[JobWorker] Started at " . date('Y-m-d H:i:s') . "\n";
 
@@ -34,8 +37,12 @@ do {
             sleep(5);
         }
     } catch (\Throwable $e) {
-        Logger::error('JobWorker error', ['error' => $e->getMessage()]);
-        echo "[JobWorker] Error: {$e->getMessage()}\n";
+        $reference = bin2hex(random_bytes(8));
+        Logger::error('JobWorker error', [
+            'reference' => $reference,
+            'exception' => get_class($e),
+        ]);
+        echo "[JobWorker] Error. Reference: {$reference}\n";
         if ($daemon) sleep(10);
     }
 } while ($daemon);

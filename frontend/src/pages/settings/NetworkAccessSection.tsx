@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { Wifi, Copy, Check, Globe, Smartphone, HelpCircle, QrCode } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Wifi, Copy, Check, HelpCircle, QrCode } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getNetworkInfo } from '../../api/endpoints'
 import SectionTitle from '../../components/common/SectionTitle'
+import LocalQrCode from '../../components/LocalQrCode'
 
 interface NetworkInfoData {
   ips: string[]
@@ -10,12 +11,23 @@ interface NetworkInfoData {
   protocol: string
 }
 
+interface LanAccessData {
+  enabled: boolean
+  port: number
+  protocol: 'https'
+  firewallConfigured?: boolean
+  firewallRequired?: boolean
+  error?: string
+}
+
 export default function NetworkAccessSection() {
   const [loading, setLoading] = useState(true)
   const [networkInfo, setNetworkInfo] = useState<NetworkInfoData | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
-  const [qrErrors, setQrErrors] = useState<Record<string, boolean>>({})
+  const [lanAccess, setLanAccess] = useState<LanAccessData | null>(null)
+  const [lanAccessLoading, setLanAccessLoading] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const lanEnableRequested = useRef(false)
 
   useEffect(() => {
     getNetworkInfo()
@@ -37,6 +49,41 @@ export default function NetworkAccessSection() {
         setLoading(false)
       })
   }, [])
+
+  const requestLanAccess = useCallback(async () => {
+    const enableLanAccess = window.posRuntime?.enableLanAccess
+    if (typeof enableLanAccess !== 'function') {
+      setLanAccess({
+        enabled: false,
+        port: 8443,
+        protocol: 'https',
+        error: 'يجب تشغيل هذا الخيار من تطبيق سطح المكتب لفتح الوصول من الهاتف.',
+      })
+      return
+    }
+
+    setLanAccessLoading(true)
+    try {
+      const result = await enableLanAccess()
+      setLanAccess(result)
+    } catch (error) {
+      console.error('[LAN] Failed to enable phone access:', error)
+      setLanAccess({
+        enabled: false,
+        port: 8443,
+        protocol: 'https',
+        error: 'تعذر تفعيل الوصول من الهاتف. تحقق من إعدادات جدار الحماية.',
+      })
+    } finally {
+      setLanAccessLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (window.location.protocol !== 'app:' || lanEnableRequested.current) return
+    lanEnableRequested.current = true
+    void requestLanAccess()
+  }, [requestLanAccess])
 
   const handleCopy = (url: string) => {
     navigator.clipboard.writeText(url)
@@ -69,11 +116,20 @@ export default function NetworkAccessSection() {
   // Generate connection options based on local IPs
   const ips = networkInfo?.ips || []
   const connectionOptions: Array<{ label: string; url: string; note?: string; type: 'web' | 'electron-http' | 'electron-https' }> = []
+  const isElectron = window.location.protocol === 'app:'
 
   ips.forEach(ip => {
-    const isElectron = window.location.protocol === 'app:';
-    
-    if (currentPort === '5173') {
+    if (isElectron) {
+      const lanPort = lanAccess?.port || 8443
+      connectionOptions.push({
+        label: 'رابط النظام الآمن للهاتف (HTTPS)',
+        url: `https://${ip}:${lanPort}/`,
+        type: 'electron-https',
+        note: lanAccess?.enabled
+          ? 'افتح هذا الرابط من هاتف متصل بنفس شبكة Wi‑Fi. قد تحتاج إلى قبول الشهادة المحلية في أول زيارة.'
+          : 'جاري تفعيل خدمة الوصول المحلي. أعد المحاولة بعد السماح للتطبيق في جدار حماية Windows.',
+      })
+    } else if (currentPort === '5173') {
       // Vite development server
       connectionOptions.push({
         label: `عنوان الويب (Vite Dev)`,
@@ -81,7 +137,7 @@ export default function NetworkAccessSection() {
         type: 'web',
         note: 'مناسب للاختبار والتطوير من الجوال مباشرة.'
       })
-    } else if (isElectron || currentPort === '8080' || currentPort === '8443' || currentPort === '80' || currentPort === '443') {
+    } else if (currentPort === '8080' || currentPort === '8443' || currentPort === '80' || currentPort === '443') {
       // Electron or standard ports
       const httpPort = networkInfo?.port || '8080'
       connectionOptions.push({
@@ -116,6 +172,40 @@ export default function NetworkAccessSection() {
         يمكنك تشغيل وإدارة نظام المبيعات والمخازن مباشرة من هاتفك المحمول أو جهاز التابلت. 
         تأكد فقط من اتصال هاتفك <strong>بنفس شبكة الـ Wi-Fi</strong> المتصل بها هذا الكمبيوتر، ثم استخدم أحد الخيارات أدناه:
       </p>
+
+      {isElectron && (
+        <div
+          aria-live="polite"
+          style={{
+            padding: '0.75rem 1rem',
+            borderRadius: '8px',
+            backgroundColor: lanAccess?.enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+            border: `1px solid ${lanAccess?.enabled ? 'rgba(34, 197, 94, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+            color: lanAccess?.enabled ? 'var(--success, #16a34a)' : 'var(--warning, #b45309)',
+            fontSize: '0.82rem',
+          }}
+        >
+          {lanAccessLoading || lanAccess === null ? (
+            'جاري تفعيل خدمة الوصول المحلي الآمن…'
+          ) : lanAccess.enabled ? (
+            <>
+              تم تفعيل الوصول من الهاتف على المنفذ {lanAccess.port}.
+              {lanAccess.firewallRequired && ' اسمح للتطبيق عبر جدار حماية Windows ثم اضغط إعادة المحاولة.'}
+            </>
+          ) : (
+            <>
+              {lanAccess.error || 'لم يتم تفعيل الوصول من الهاتف.'}
+              <button
+                type="button"
+                onClick={() => void requestLanAccess()}
+                style={{ marginInlineStart: '0.75rem' }}
+              >
+                إعادة المحاولة
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {ips.length === 0 ? (
         <div style={{ 
@@ -257,26 +347,11 @@ export default function NetworkAccessSection() {
                 position: 'relative',
                 boxShadow: 'var(--shadow)'
               }}>
-                {!qrErrors[connectionOptions[selectedIdx].url] ? (
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(connectionOptions[selectedIdx].url)}`} 
-                    alt="QR Code" 
-                    style={{ width: '120px', height: '120px' }}
-                    onError={() => setQrErrors(prev => ({ ...prev, [connectionOptions[selectedIdx].url]: true }))}
-                  />
-                ) : (
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    padding: '0.5rem',
-                    textAlign: 'center'
-                  }}>
-                    <Globe size={20} style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }} />
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>يتطلب إنترنت لعرض رمز الـ QR</span>
-                  </div>
-                )}
+                <LocalQrCode
+                  value={connectionOptions[selectedIdx].url}
+                  size={120}
+                  title="QR Code"
+                />
               </div>
               
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.4', maxWidth: '200px' }}>

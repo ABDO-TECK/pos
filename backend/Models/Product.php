@@ -83,7 +83,7 @@ class Product {
 
         // ── Pagination (اختياري) ──
         $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
-        $limit = isset($filters['limit']) ? max(1, min(500, (int) $filters['limit'])) : null;
+        $limit = isset($filters['limit']) ? max(1, min(100, (int) $filters['limit'])) : null;
 
         if ($page !== null && $limit !== null) {
             // عدّ النتائج أولاً
@@ -135,10 +135,15 @@ class Product {
                 FROM products p
                 LEFT JOIN categories c ON c.id = p.category_id
                 WHERE $whereClause
-                ORDER BY p.name ASC, p.id ASC";
+                ORDER BY p.name ASC, p.id ASC
+                LIMIT :fallback_limit";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':fallback_limit', $limit ?? 100, \PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
         $this->attachAdditionalBarcodes($rows);
 
@@ -546,12 +551,77 @@ class Product {
     }
 
     /**
+     * Batch-increment quantities for multiple branch-scoped products.
+     *
+     * @param list<array{product_id:int,quantity:float}> $increments
+     */
+    public function batchIncrementQuantity(array $increments): void
+    {
+        if ($increments === []) {
+            return;
+        }
+
+        $cases = [];
+        $ids = [];
+        $params = ['branch_id' => \App\Services\AuthService::getGlobalBranchId()];
+        foreach ($increments as $index => $item) {
+            $cases[] = "WHEN id = :case_id_{$index} THEN quantity + :quantity_{$index}";
+            $ids[] = ":where_id_{$index}";
+            $params["case_id_{$index}"] = (int) $item['product_id'];
+            $params["quantity_{$index}"] = (float) $item['quantity'];
+            $params["where_id_{$index}"] = (int) $item['product_id'];
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE products SET quantity = CASE '
+            . implode(' ', $cases)
+            . ' ELSE quantity END WHERE id IN (' . implode(',', $ids) . ')'
+            . ' AND branch_id = :branch_id AND deleted_at IS NULL'
+        );
+        $stmt->execute($params);
+        if ($stmt->rowCount() !== count($increments)) {
+            throw new \RuntimeException('Out-of-scope product');
+        }
+    }
+
+    /**
+     * Update selected product costs in one branch-scoped statement.
+     *
+     * @param list<array{product_id:int,cost:float}> $updates
+     */
+    public function batchUpdateCosts(array $updates): void
+    {
+        if ($updates === []) {
+            return;
+        }
+
+        $cases = [];
+        $ids = [];
+        $params = ['branch_id' => \App\Services\AuthService::getGlobalBranchId()];
+        foreach ($updates as $index => $item) {
+            $cases[] = "WHEN id = :case_id_{$index} THEN :cost_{$index}";
+            $ids[] = ":where_id_{$index}";
+            $params["case_id_{$index}"] = (int) $item['product_id'];
+            $params["cost_{$index}"] = (float) $item['cost'];
+            $params["where_id_{$index}"] = (int) $item['product_id'];
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE products SET cost = CASE '
+            . implode(' ', $cases)
+            . ' ELSE cost END WHERE id IN (' . implode(',', $ids) . ')'
+            . ' AND branch_id = :branch_id AND deleted_at IS NULL'
+        );
+        $stmt->execute($params);
+    }
+
+    /**
      * Batch-decrement quantities for multiple products in a single query.
      * Uses CASE WHEN to update all rows atomically.
      *
      * @param array $decrements Array of ['product_id' => int, 'quantity' => float]
      */
-    public function batchDecrementQuantity(array $decrements): void
+    public function batchDecrementQuantity(array $decrements, bool $preventNegativeStock = true): void
     {
         if (empty($decrements)) return;
 
@@ -569,24 +639,30 @@ class Product {
             $checkQtyParam = ":check_qty_{$i}";
 
             $cases[] = "WHEN id = {$pidParam} THEN quantity - {$qtyParam}";
-            $stockChecks[] = "WHEN id = {$checkPidParam} THEN {$checkQtyParam}";
-            
+
             $params[$pidParam] = (int) $item['product_id'];
             $params[$qtyParam] = (float) $item['quantity'];
             $params[$wherePidParam] = (int) $item['product_id'];
-            $params[$checkPidParam] = (int) $item['product_id'];
-            $params[$checkQtyParam] = (float) $item['quantity'];
+            if ($preventNegativeStock) {
+                $stockChecks[] = "WHEN id = {$checkPidParam} THEN {$checkQtyParam}";
+                $params[$checkPidParam] = (int) $item['product_id'];
+                $params[$checkQtyParam] = (float) $item['quantity'];
+            }
 
             $ids[] = $wherePidParam;
             $i++;
         }
+
+        $stockConstraint = $preventNegativeStock
+            ? " AND quantity >= CASE " . implode(' ', $stockChecks) . " ELSE 0 END"
+            : '';
 
         $sql = "UPDATE products SET quantity = CASE "
              . implode(' ', $cases)
              . " ELSE quantity END"
              . " WHERE id IN (" . implode(',', $ids) . ")"
              . " AND branch_id = :branch_id"
-             . " AND quantity >= CASE " . implode(' ', $stockChecks) . " ELSE 0 END";
+             . $stockConstraint;
 
         $params[':branch_id'] = \App\Services\AuthService::getGlobalBranchId();
         $stmt = $this->db->prepare($sql);
@@ -604,7 +680,7 @@ class Product {
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
             $page  = max(1, (int)$filters['page']);
-            $limit = max(1, min(500, (int)$filters['limit']));
+            $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
 
@@ -614,7 +690,7 @@ class Product {
 
             $limitStr = "LIMIT :pag_limit OFFSET :pag_offset";
         } else {
-            $limitStr = "";
+            $limitStr = "LIMIT 100";
         }
 
         $stmt = $this->db->prepare(

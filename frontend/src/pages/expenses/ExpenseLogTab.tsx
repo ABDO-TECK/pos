@@ -4,6 +4,7 @@ import api from '../../api/axios'
 import { formatCurrency, formatShortDate } from '../../utils/formatters'
 import useAuthStore from '../../store/authStore'
 import { useConfirmStore } from '../../store/confirmStore'
+import NumericInput from '../../components/forms/NumericInput'
 
 export default function ExpenseLogTab() {
   const [expenses, setExpenses] = useState<any[]>([])
@@ -192,7 +193,7 @@ export default function ExpenseLogTab() {
 
               <div className="form-group">
                 <label>المبلغ *</label>
-                <input type="number" step="0.01" min="0" className="input" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required />
+                <NumericInput step="0.01" min="0" className="input" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required />
               </div>
 
               <div className="form-group">

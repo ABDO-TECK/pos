@@ -32,11 +32,11 @@ class PaginationTest extends TestCase
         unset($_GET['page'], $_GET['limit']);
     }
 
-    public function testNoPaginationReturnsNulls(): void
+    public function testNoPaginationUsesSafeDefaults(): void
     {
         $p = $this->ctrl->callGetPaginationParams();
-        $this->assertNull($p['page']);
-        $this->assertNull($p['limit']);
+        $this->assertSame(1, $p['page']);
+        $this->assertSame(20, $p['limit']);
     }
 
     public function testPageOnlyUsesDefaultLimit(): void

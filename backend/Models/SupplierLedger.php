@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AuthService;
 use PDO;
 
 class SupplierLedger {
@@ -26,9 +27,9 @@ class SupplierLedger {
             'SELECT COUNT(*) AS total_entries,
                     COALESCE(SUM(CASE WHEN type = "debit" THEN amount ELSE -amount END), 0) AS net_change
              FROM supplier_ledger
-             WHERE supplier_id = ?'
+             WHERE supplier_id = ? AND branch_id = ?'
         );
-        $summaryStmt->execute([$supplierId]);
+        $summaryStmt->execute([$supplierId, AuthService::getGlobalBranchId()]);
         $summary = $summaryStmt->fetch() ?: ['total_entries' => 0, 'net_change' => 0];
         $totalEntries = (int) $summary['total_entries'];
 
@@ -40,13 +41,13 @@ class SupplierLedger {
                 FROM supplier_ledger sl
                 LEFT JOIN users u ON u.id = sl.created_by
                 LEFT JOIN purchase_invoices pi ON pi.id = sl.purchase_invoice_id
-                WHERE sl.supplier_id = ?
+                WHERE sl.supplier_id = ? AND sl.branch_id = ?
                 ORDER BY sl.created_at DESC, sl.id DESC
                 LIMIT 500
              ) recent
              ORDER BY recent.created_at ASC, recent.id ASC'
         );
-        $stmt->execute([$supplierId]);
+        $stmt->execute([$supplierId, AuthService::getGlobalBranchId()]);
         $rows = $stmt->fetchAll();
 
         $entries    = [];
@@ -110,17 +111,36 @@ class SupplierLedger {
     /** إضافة قيد في كشف حساب المورد */
     public function addLedgerEntry(array $data): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO supplier_ledger (supplier_id, type, amount, description, purchase_invoice_id, created_by)
-             VALUES (:supplier_id, :type, :amount, :description, :purchase_invoice_id, :created_by)'
+            'INSERT INTO supplier_ledger (branch_id, supplier_id, type, amount, description, purchase_invoice_id, created_by)
+             SELECT s.branch_id, s.id, :type, :amount, :description, :purchase_invoice_id, :created_by
+             FROM suppliers s
+             WHERE s.id = :supplier_id
+               AND s.branch_id = :branch_id
+               AND s.deleted_at IS NULL
+               AND (
+                   :purchase_invoice_scope_id IS NULL
+                   OR EXISTS (
+                       SELECT 1 FROM purchase_invoices pi
+                       WHERE pi.id = :purchase_invoice_scope_id_match
+                         AND pi.branch_id = s.branch_id
+                         AND pi.supplier_id = s.id
+                   )
+               )'
         );
         $stmt->execute([
             'supplier_id'         => $data['supplier_id'],
+            'branch_id'           => AuthService::getGlobalBranchId(),
             'type'                => $data['type'],
             'amount'              => (float)$data['amount'],
             'description'         => $data['description'] ?? null,
             'purchase_invoice_id' => $data['purchase_invoice_id'] ?? null,
+            'purchase_invoice_scope_id' => $data['purchase_invoice_id'] ?? null,
+            'purchase_invoice_scope_id_match' => $data['purchase_invoice_id'] ?? null,
             'created_by'          => $data['created_by'] ?? null,
         ]);
+        if ($stmt->rowCount() !== 1) {
+            throw new \DomainException('Supplier or purchase invoice is outside the active branch.');
+        }
         return (int) $this->db->lastInsertId();
     }
 
@@ -131,26 +151,27 @@ class SupplierLedger {
                 type = :type,
                 amount = :amount,
                 description = :description
-             WHERE id = :id'
+             WHERE id = :id AND branch_id = :branch_id'
         );
         $stmt->execute([
             'type'        => $data['type'],
             'amount'      => (float)$data['amount'],
             'description' => $data['description'] ?? null,
             'id'          => $entryId,
+            'branch_id'   => AuthService::getGlobalBranchId(),
         ]);
     }
 
     /** الحصول على قيد واحد */
     public function getLedgerEntry(int $entryId): ?array {
-        $stmt = $this->db->prepare('SELECT * FROM supplier_ledger WHERE id = ?');
-        $stmt->execute([$entryId]);
+        $stmt = $this->db->prepare('SELECT * FROM supplier_ledger WHERE id = ? AND branch_id = ?');
+        $stmt->execute([$entryId, AuthService::getGlobalBranchId()]);
         return $stmt->fetch() ?: null;
     }
 
     /** حذف قيد من كشف الحساب */
     public function deleteLedgerEntry(int $entryId): void {
-        $stmt = $this->db->prepare('DELETE FROM supplier_ledger WHERE id = ?');
-        $stmt->execute([$entryId]);
+        $stmt = $this->db->prepare('DELETE FROM supplier_ledger WHERE id = ? AND branch_id = ?');
+        $stmt->execute([$entryId, AuthService::getGlobalBranchId()]);
     }
 }

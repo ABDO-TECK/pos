@@ -79,11 +79,14 @@ class EnvLoader
 
             self::$values[$key] = $value;
 
-            // تعيين في البيئة (لا نتجاوز متغيرات النظام الموجودة)
-            if (!array_key_exists($key, $_ENV)) {
+            // تعيين في البيئة (لا نتجاوز متغيرات النظام الموجودة). بعض PHP
+            // builds تستخدم variables_order لا يتضمن E، لذلك يجب فحص getenv()
+            // قبل ملء $_ENV وإلا ستتغلب قيم ملف .env على متغيرات التشغيل.
+            $environmentValue = getenv($key);
+            if (!array_key_exists($key, $_ENV) && $environmentValue === false) {
                 $_ENV[$key] = $value;
             }
-            if (getenv($key) === false) {
+            if ($environmentValue === false) {
                 putenv("{$key}={$value}");
             }
         }
@@ -92,17 +95,17 @@ class EnvLoader
     }
 
     /**
-     * قراءة قيمة من البيئة — يبحث بالترتيب: $_ENV → getenv() → القيم المحمّلة → الافتراضي.
+     * قراءة قيمة من البيئة — تعطي متغيرات التشغيل الخارجية الأولوية على ملف .env.
      */
     public static function get(string $key, string $default = ''): string
     {
-        if (isset($_ENV[$key])) {
-            return $_ENV[$key];
-        }
-
         $env = getenv($key);
         if ($env !== false) {
             return $env;
+        }
+
+        if (isset($_ENV[$key])) {
+            return (string) $_ENV[$key];
         }
 
         return self::$values[$key] ?? $default;

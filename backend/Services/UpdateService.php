@@ -17,6 +17,8 @@ class UpdateService
     private string $repoUrl;
     private string $localVersionFile;
     private string $rootDir;
+    /** @var list<string> */
+    private array $allowedUpdateHosts;
 
     private GitService $gitService;
     private FrontendBuildService $buildService;
@@ -35,6 +37,10 @@ class UpdateService
         $this->buildService     = $buildService;
         $this->backupService    = $backupService;
         $this->repoUrl          = \App\Helpers\EnvLoader::get('UPDATE_SERVER_URL', 'https://api.github.com/repos/ABDO-TECK/pos/contents/version.json?ref=main');
+        $this->allowedUpdateHosts = array_values(array_filter(array_map(
+            static fn (string $host): string => strtolower(trim($host)),
+            explode(',', \App\Helpers\EnvLoader::get('UPDATE_ALLOWED_HOSTS', 'api.github.com,raw.githubusercontent.com'))
+        ), static fn (string $host): bool => $host !== ''));
     }
 
     public function getRootDir(): string
@@ -69,13 +75,24 @@ class UpdateService
      */
     protected function fetchRemoteVersionDiagnostics(): array
     {
+        if (!$this->isAllowedUpdateUrl($this->repoUrl)) {
+            Logger::warning('fetchRemoteVersion rejected a non-allowlisted update URL', [
+                'host' => $this->updateHostForLog($this->repoUrl),
+                'error_code' => 'invalid_update_url',
+            ]);
+            return $this->remoteFailure('invalid_update_url', 'Configured update URL is not allowed.');
+        }
+
         $curlOptions = [
             CURLOPT_URL            => $this->repoUrl,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_TIMEOUT        => 15,
-            CURLOPT_FOLLOWLOCATION => true,
+            // Do not follow an attacker-controlled redirect to another host.
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_HTTPHEADER     => [
                 'Accept: application/vnd.github.v3.raw',
                 'Cache-Control: no-cache',
@@ -109,15 +126,17 @@ class UpdateService
         }
 
         $errorCode = $this->classifyRemoteFailure($httpCode, $curlErr, $curlErrNo);
-        $details = $curlErr !== ''
-            ? $curlErr
-            : ($httpCode > 0 ? "GitHub returned HTTP {$httpCode}." : 'No response received from GitHub.');
+        // Do not return cURL/socket diagnostics to an HTTP client. Keep those in
+        // protected logs and expose only an actionable, provider-neutral status.
+        $details = $httpCode > 0
+            ? "Update server returned HTTP {$httpCode}."
+            : 'Unable to contact the update server.';
 
         Logger::warning('fetchRemoteVersion failed', [
             'http_code' => $httpCode,
             'curl_err'  => $curlErr,
             'curl_errno' => $curlErrNo,
-            'checked_url' => $this->repoUrl,
+            'host' => $this->updateHostForLog($this->repoUrl),
             'error_code' => $errorCode,
         ]);
         return $this->remoteFailure($errorCode, $details, $httpCode);
@@ -174,7 +193,7 @@ class UpdateService
     {
         $lowerError = strtolower($curlErr);
 
-        if (!filter_var($this->repoUrl, FILTER_VALIDATE_URL)) {
+        if (!$this->isAllowedUpdateUrl($this->repoUrl)) {
             return 'invalid_update_url';
         }
 
@@ -195,6 +214,36 @@ class UpdateService
         }
 
         return $curlErrNo !== 0 ? 'github_network_timeout' : 'invalid_version_json';
+    }
+
+    private function isAllowedUpdateUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if ($scheme !== 'https' || $host === '' || !in_array($host, $this->allowedUpdateHosts, true)) {
+            return false;
+        }
+
+        // Credentials and non-TLS ports make an otherwise trusted hostname unsafe.
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+        if (isset($parts['port']) && (int) $parts['port'] !== 443) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function updateHostForLog(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        return is_string($host) && $host !== '' ? strtolower($host) : 'invalid';
     }
 
     private function remoteFailure(string $errorCode, string $details, int $httpCode = 0): array
@@ -329,6 +378,27 @@ class UpdateService
             ];
         }
 
+        if (!$this->isAllowedUpdateUrl($this->repoUrl)) {
+            return [
+                'ok' => false,
+                'error' => 'Automatic updates are not configured for an approved server.',
+                'code' => 400,
+                'data' => ['logs' => $output],
+            ];
+        }
+
+        $expectedCommit = strtolower(trim(
+            \App\Helpers\EnvLoader::get('UPDATE_COMMIT_SHA', '')
+        ));
+        if (!preg_match('/\A[0-9a-f]{40}\z/i', $expectedCommit)) {
+            return [
+                'ok' => false,
+                'error' => 'Update is disabled until UPDATE_COMMIT_SHA is configured.',
+                'code' => 503,
+                'data' => ['logs' => $output],
+            ];
+        }
+
         // الخطوة 0: تشخيص البيئة
         $output[] = '🔍 فحص البيئة...';
         $diag = $this->gitService->diagnoseGit();
@@ -343,8 +413,17 @@ class UpdateService
             $elapsed    = round(microtime(true) - $t0, 1);
             $output[]   = "✅ تم إنشاء النسخة الاحتياطية: " . basename($backupFile) . " ({$elapsed}s)";
         } catch (Throwable $e) {
-            Logger::error('Update: backup failed', ['error' => $e->getMessage()]);
-            return ['ok' => false, 'error' => 'فشل إنشاء نسخة احتياطية من قاعدة البيانات: ' . $e->getMessage(), 'code' => 500, 'data' => ['logs' => $output]];
+            $reference = bin2hex(random_bytes(8));
+            Logger::error('Update: backup failed', [
+                'reference' => $reference,
+                'exception' => get_class($e),
+            ]);
+            return [
+                'ok' => false,
+                'error' => "Backup failed. Reference: {$reference}",
+                'code' => 500,
+                'data' => ['logs' => $output],
+            ];
         }
 
         // الخطوة 2: جلب معلومات الإصدار البعيد
@@ -372,7 +451,7 @@ class UpdateService
                     'file_exists' => file_exists($gitDir),
                     'revOut' => $revOut
                 ]);
-                return ['ok' => false, 'error' => 'لا يمكن التحديث التلقائي: المجلد ليس مستنسخاً عبر Git (لا يوجد .git).' . "\n" . 'الحل: افتح Terminal وشغّل:' . "\n" . 'cd C:\xampp\htdocs && git clone https://github.com/ABDO-TECK/pos.git', 'code' => 400, 'data' => ['logs' => $output, 'diagnostics' => $diag]];
+                return ['ok' => false, 'error' => 'Automatic update is unavailable for this installation.', 'code' => 400, 'data' => ['logs' => $output]];
             }
         }
         $output[] = '✅ مجلد .git موجود';
@@ -395,7 +474,7 @@ class UpdateService
                     Logger::error('Update: git status failed after safe.directory fix', [
                         'output' => $testOut3, 'code' => $testCode3, 'diag' => $diag
                     ]);
-                    return ['ok' => false, 'error' => 'Git لا يعمل تحت Apache. ' . implode(' ', $testOut3), 'code' => 500, 'data' => ['logs' => $output, 'diagnostics' => $diag]];
+                    return ['ok' => false, 'error' => 'Unable to prepare the update repository.', 'code' => 500, 'data' => ['logs' => $output]];
                 }
             }
         }
@@ -432,7 +511,7 @@ class UpdateService
         $output[] = '📥 سحب التحديثات من GitHub...';
         $t0 = microtime(true);
 
-        [$fetchOut, $fetchCode] = $this->gitService->runGit(['fetch', 'origin', 'main', '--force']);
+        [$fetchOut, $fetchCode] = $this->gitService->runGit(['fetch', '--depth=1', 'origin', 'main', '--force']);
         $output = array_merge($output, array_filter($fetchOut, fn($l) => trim($l) !== ''));
 
         if ($fetchCode !== 0) {
@@ -440,9 +519,27 @@ class UpdateService
             return ['ok' => false, 'error' => 'فشل أمر git fetch — تحقق من اتصال الإنترنت ومن إعدادات المستودع.', 'code' => 500, 'data' => ['logs' => $output]];
         }
 
+        [$headOut, $headCode] = $this->gitService->runGit(['rev-parse', 'FETCH_HEAD']);
+        $fetchedCommit = strtolower(trim(implode("\n", $headOut)));
+        if ($headCode !== 0 || !hash_equals($expectedCommit, $fetchedCommit)) {
+            Logger::error('Update: fetched commit did not match the pinned release', [
+                'expected' => $expectedCommit,
+                'fetched' => $fetchedCommit,
+            ]);
+            return ['ok' => false, 'error' => 'The remote release does not match the trusted release.', 'code' => 409, 'data' => ['logs' => $output]];
+        }
+
+        [, $verifyCode] = $this->gitService->runGit(['verify-commit', '--strict', $fetchedCommit]);
+        if ($verifyCode !== 0) {
+            Logger::error('Update: release commit signature verification failed', [
+                'commit' => $fetchedCommit,
+            ]);
+            return ['ok' => false, 'error' => 'Release signature verification failed.', 'code' => 412, 'data' => ['logs' => $output]];
+        }
+
         $this->gitService->runGit(['stash', '--include-untracked']);
 
-        [$resetOut, $resetCode] = $this->gitService->runGit(['reset', '--hard', 'origin/main']);
+        [$resetOut, $resetCode] = $this->gitService->runGit(['reset', '--hard', $fetchedCommit]);
         $output = array_merge($output, array_filter($resetOut, fn($l) => trim($l) !== ''));
 
         if ($resetCode !== 0) {

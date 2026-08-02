@@ -98,6 +98,8 @@ class Database {
     private static function createConnection(): PDO {
         $port = defined('DB_PORT') ? DB_PORT : '3306';
         $dsn = 'mysql:host=' . DB_HOST . ';port=' . $port . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET;
+        $maxRetries = PHP_SAPI === 'cli' ? self::$maxRetries : 1;
+        $connectionTimeout = PHP_SAPI === 'cli' ? 5 : 2;
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -105,11 +107,11 @@ class Database {
             PDO::ATTR_PERSISTENT         => defined('DB_PERSISTENT') && DB_PERSISTENT,
             PDO::ATTR_STRINGIFY_FETCHES  => false,
             PDO::MYSQL_ATTR_FOUND_ROWS   => true,
-            PDO::ATTR_TIMEOUT            => 5,
+            PDO::ATTR_TIMEOUT            => $connectionTimeout,
         ];
 
         $lastError = null;
-        for ($attempt = 1; $attempt <= self::$maxRetries; $attempt++) {
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             try {
                 $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
                 // تعيين timeout للجلسة
@@ -122,10 +124,11 @@ class Database {
                 return $pdo;
             } catch (PDOException $e) {
                 $lastError = $e;
-                Logger::warning("Database connection attempt {$attempt}/" . self::$maxRetries . " failed", [
-                    'error' => $e->getMessage()
+                Logger::warning("Database connection attempt {$attempt}/{$maxRetries} failed", [
+                    'exception' => get_class($e),
+                    'code' => (int) $e->getCode(),
                 ]);
-                if ($attempt < self::$maxRetries) {
+                if ($attempt < $maxRetries) {
                     sleep(self::$retryDelay);
                 }
             }
@@ -133,7 +136,8 @@ class Database {
 
         // فشل الاتصال بعد كل المحاولات
         Logger::critical('Database connection failed after all retries', [
-            'error' => $lastError?->getMessage()
+            'exception' => $lastError ? get_class($lastError) : PDOException::class,
+            'code' => $lastError ? (int) $lastError->getCode() : 0,
         ]);
         throw $lastError;
     }

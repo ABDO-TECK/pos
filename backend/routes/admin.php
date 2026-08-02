@@ -26,9 +26,9 @@ $router->get('/api/settings',  [SettingsController::class, 'index',  [AuthMiddle
 $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
 
 // Updates
-$router->get('/api/update/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
-$router->post('/api/update/apply',    [UpdateController::class, 'apply',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
-$router->get('/api/update/changelog', [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
+$router->get('/api/update/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
+$router->post('/api/update/apply',    [UpdateController::class, 'apply',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_apply', 1, 300)]]);
+$router->get('/api/update/changelog', [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_changelog', 10, 60)]]);
 
 // Backup
 $router->get('/api/backup', [BackupController::class, 'download', [AuthMiddleware::class, PermissionMiddleware::require('backup.manage')]]);
@@ -48,6 +48,7 @@ $router->delete('/api/expenses/{id}', [ExpenseController::class, 'deleteExpense'
 // Health
 $router->get('/api/admin/health/slow-queries', [\App\Controllers\HealthController::class, 'slowQueries', [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
 $router->get('/api/admin/client-logs', [\App\Controllers\ClientLogController::class, 'index', [AuthMiddleware::class, PermissionMiddleware::require('audit.view')]]);
+$router->get('/api/admin/error-logs', [\App\Controllers\ClientLogController::class, 'all', [AuthMiddleware::class, PermissionMiddleware::require('audit.view')]]);
 
 // Audit Logs
 $router->get('/api/admin/audit-logs', [\App\Controllers\AuditLogController::class, 'index', [AuthMiddleware::class, PermissionMiddleware::require('audit.view')]]);

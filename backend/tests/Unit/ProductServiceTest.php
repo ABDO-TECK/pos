@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use App\Config\Database;
 use App\Services\ProductService;
 use App\Repositories\ProductRepository;
 use App\Models\PriceHistory;
@@ -15,12 +14,19 @@ class ProductServiceTest extends TestCase
     private ProductService $service;
     private ProductRepository $productRepoMock;
     private PriceHistory $priceHistoryMock;
+    private PDO $db;
 
     protected function setUp(): void
     {
         $this->productRepoMock = $this->createMock(ProductRepository::class);
         $this->priceHistoryMock = $this->createMock(PriceHistory::class);
-        $this->service = new ProductService($this->productRepoMock, $this->priceHistoryMock);
+        $this->db = new PDO('sqlite::memory:');
+        $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->service = new ProductService(
+            $this->productRepoMock,
+            $this->priceHistoryMock,
+            $this->db
+        );
         (new AuthService())->setBranchId(1);
     }
 
@@ -110,6 +116,23 @@ class ProductServiceTest extends TestCase
         $this->assertEquals('Test Product', $result['product']['name']);
     }
 
+    public function testCreateProductDoesNotExposeUnexpectedExceptionMessage(): void
+    {
+        $this->productRepoMock->method('assertBarcodesAvailable')
+            ->willThrowException(new \RuntimeException('SQLSTATE secret schema detail'));
+
+        $result = $this->service->createProduct([
+            'name' => 'Test Product',
+            'price' => 25.00,
+            'barcode' => '123456789',
+        ]);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(500, $result['code']);
+        $this->assertStringNotContainsString('SQLSTATE', $result['error']);
+        $this->assertStringNotContainsString('schema detail', $result['error']);
+    }
+
     public function testUpdateProductNotFound()
     {
         $this->productRepoMock->method('findById')
@@ -141,31 +164,23 @@ class ProductServiceTest extends TestCase
 
     public function testUpdateProductWithoutSizesDoesNotSynchronizeSizeChildren(): void
     {
-        $databaseProperty = (new \ReflectionClass(Database::class))->getProperty('instance');
-        $previousConnection = $databaseProperty->getValue();
-        $databaseProperty->setValue(null, new PDO('sqlite::memory:'));
+        $existingProduct = ['id' => 1, 'name' => 'Old', 'barcode' => '12345', 'price' => 10, 'cost' => 5];
+        $updatedProduct = ['id' => 1, 'name' => 'New Name', 'barcode' => '12345', 'price' => 15, 'cost' => 5];
+        $this->productRepoMock->expects($this->exactly(2))
+            ->method('findById')
+            ->with(1)
+            ->willReturnOnConsecutiveCalls($existingProduct, $updatedProduct);
+        $this->productRepoMock->expects($this->once())
+            ->method('update')
+            ->with(1, ['name' => 'New Name', 'price' => 15, 'barcode' => '12345']);
+        $this->productRepoMock->expects($this->once())
+            ->method('syncAdditionalBarcodes')
+            ->with(1, []);
+        $this->productRepoMock->expects($this->never())->method('delete');
 
-        try {
-            $existingProduct = ['id' => 1, 'name' => 'Old', 'barcode' => '12345', 'price' => 10, 'cost' => 5];
-            $updatedProduct = ['id' => 1, 'name' => 'New Name', 'barcode' => '12345', 'price' => 15, 'cost' => 5];
-            $this->productRepoMock->expects($this->exactly(2))
-                ->method('findById')
-                ->with(1)
-                ->willReturnOnConsecutiveCalls($existingProduct, $updatedProduct);
-            $this->productRepoMock->expects($this->once())
-                ->method('update')
-                ->with(1, ['name' => 'New Name', 'price' => 15, 'barcode' => '12345']);
-            $this->productRepoMock->expects($this->once())
-                ->method('syncAdditionalBarcodes')
-                ->with(1, []);
-            $this->productRepoMock->expects($this->never())->method('delete');
+        $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
 
-            $result = $this->service->updateProduct(1, ['name' => 'New Name', 'price' => 15]);
-
-            $this->assertTrue($result['ok']);
-        } finally {
-            $databaseProperty->setValue(null, $previousConnection);
-        }
+        $this->assertTrue($result['ok']);
     }
 
     public function testCatalogSnapshotUsesCursorWithoutCountAndResumes(): void

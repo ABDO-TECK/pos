@@ -1,20 +1,16 @@
 
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 
-import {
-  UserPlus, Search, ChevronRight, X, Trash2, Edit2,
-  PlusCircle, Phone, MapPin, BookOpen, ArrowRight, Download,
-} from 'lucide-react'
-import { exportCustomerLedgerPDF } from '../utils/pdfExport'
+import { BookOpen, Search, UserPlus } from 'lucide-react'
 import useQZPrinter from '../hooks/useQZPrinter'
-import { QZPrinterPicker, QZPrintButton } from '../components/QZPrinterUI'
+import { QZPrinterPicker } from '../components/QZPrinterUI'
 import useSettingsStore from '../store/settingsStore'
 import {
   getCustomers, getCustomer, createCustomer,
   updateCustomer, deleteCustomer, addCustomerPayment, updateCustomerLedgerEntry,
   deleteCustomerLedgerEntry, getSale
 } from '../api/endpoints'
-import { formatCurrency, formatNumber } from '../utils/formatters'
+import { formatCurrency } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import useAuthStore from '../store/authStore'
 import { useConfirmStore } from '../store/confirmStore'
@@ -25,6 +21,7 @@ import CustomerEditEntryModal from './customers/components/CustomerEditEntryModa
 import { extractApiError } from '../utils/apiError'
 import CustomerLedgerPanel from './customers/CustomerLedgerPanel'
 import SaleDetailModal from './sales/SaleDetailModal'
+import Pagination from '../components/Pagination'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -32,20 +29,24 @@ const emptyForm = { name: '', phone: '', address: '', initial_balance: '', balan
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Customers() {
-  const [customers, setCustomers]       = useState<any[]>([])
+  const [customers, setCustomers]       = useState<Customer[]>([])
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
+  const [serverSearch, setServerSearch] = useState('')
+  const [currentPage, setCurrentPage]   = useState(1)
+  const [totalPages, setTotalPages]     = useState(1)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { user } = useAuthStore()
   const { confirm } = useConfirmStore()
 
   // كشف الحساب
-  const [ledgerData, setLedgerData]     = useState<any>(null)   // { customer, entries, balance }
+  const [ledgerData, setLedgerData]     = useState<CustomerLedgerData | null>(null)
   const [ledgerLoading, setLedgerLoading] = useState(false)
 
   // modal العميل (إضافة / تعديل)
-  const [modal, setModal]               = useState<any>(null)   // 'create' | 'edit'
+  const [modal, setModal]               = useState<'create' | 'edit' | null>(null)
   const [form, setForm]                 = useState(emptyForm)
-  const [editId, setEditId]             = useState<any>(null)
+  const [editId, setEditId]             = useState<number | null>(null)
   const [saving, setSaving]             = useState(false)
 
   // modal الدفعة
@@ -56,11 +57,11 @@ export default function Customers() {
   const [payLoading, setPayLoading]     = useState(false)
 
   // modal التعديل للقيد
-  const [editEntryModal, setEditEntryModal] = useState<any>(null)
+  const [editEntryModal, setEditEntryModal] = useState<CustomerLedgerRow | null>(null)
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
-  const [selectedSale, setSelectedSale] = useState<any>(null)
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null)
   const [saleDetailLoading, setSaleDetailLoading] = useState(false)
 
   const handleViewInvoice = async (invoiceId: number) => {
@@ -81,7 +82,7 @@ export default function Customers() {
       const res = await deleteCustomerLedgerEntry(entryId)
       setLedgerData(res.data.data)
       toast.success('تم حذف القيد بنجاح')
-      load() // تحديث رصيد العميل في القائمة
+      void load(currentPage, serverSearch) // تحديث رصيد العميل في القائمة
     } catch (err) {
       toast.error(extractApiError(err, 'فشل حذف القيد'))
     }
@@ -92,29 +93,48 @@ export default function Customers() {
   const qz = useQZPrinter()
 
   // ── data ──
-  const load = async () => {
+  const load = useCallback(async (page: number, query: string, signal?: AbortSignal) => {
     setLoading(true)
     try {
-      const res = (await getCustomers()).data
-      const list = Array.isArray(res.data) ? res.data : ((res.data as any)?.data ?? [])
-      setCustomers(list)
+      const response = await getCustomers(
+        { page, limit: 20, search: query || undefined },
+        signal ? { signal } : undefined,
+      )
+      setCustomers(Array.isArray(response.data.data) ? response.data.data : [])
+      setCurrentPage(response.data.pagination?.page ?? page)
+      setTotalPages(response.data.pagination?.pages ?? 1)
     }
-    catch (err) { toast.error(extractApiError(err, 'فشل تحميل العملاء')) }
-    finally { setLoading(false) }
+    catch (err) {
+      if (!signal?.aborted) toast.error(extractApiError(err, 'فشل تحميل العملاء'))
+    }
+    finally {
+      if (!signal?.aborted) setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void load(currentPage, serverSearch, controller.signal)
+    return () => controller.abort()
+  }, [currentPage, load, serverSearch])
+
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+  }, [])
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setCurrentPage(1)
+      setServerSearch(value.trim())
+    }, 300)
   }
 
-  useEffect(() => { load() }, [])
-
-  const filtered = useMemo(() =>
-    customers.filter(c =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.phone || '').includes(search)
-    ), [customers, search])
-
   // ── ledger ──
-  const openLedger = async (c: any) => {
+  const openLedger = async (c: Customer) => {
     setLedgerLoading(true)
-    setLedgerData({ customer: c, entries: [], balance: 0 })
+    setLedgerData({ customer: c, entries: [], balance: 0, total_entries: 0, truncated: false })
     try {
       const res = await getCustomer(c.id)
       setLedgerData(res.data.data)
@@ -124,7 +144,7 @@ export default function Customers() {
 
   // ── CRUD ──
   const openCreate = () => { setForm(emptyForm); setEditId(null); setModal('create') }
-  const openEdit   = (c: any, e: any) => {
+  const openEdit   = (c: Customer, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     setForm({
       name: c.name, phone: c.phone || '', address: c.address || '',
@@ -140,15 +160,17 @@ export default function Customers() {
     setSaving(true)
     try {
       const rawBal = parseFloat(form.initial_balance) || 0
-      const { balance_direction, ...restForm } = form
       const payload = {
-        ...restForm,
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
         initial_balance: form.balance_direction === 'credit' ? -Math.abs(rawBal) : Math.abs(rawBal),
       }
       if (modal === 'create') {
         await createCustomer(payload)
         toast.success('تم إضافة العميل')
       } else {
+        if (editId === null) throw new Error('معرف العميل غير متاح')
         await updateCustomer(editId, payload)
         toast.success('تم تحديث العميل')
         // تحديث كشف الحساب إذا كان مفتوحاً لنفس العميل
@@ -158,24 +180,25 @@ export default function Customers() {
         }
       }
       setModal(null)
-      load()
+      void load(currentPage, serverSearch)
     } catch (err) { toast.error(extractApiError(err, 'حدث خطأ')) }
     finally { setSaving(false) }
   }
 
-  const handleDelete = async (c: any, e: any) => {
+  const handleDelete = async (c: Customer, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     if (!(await confirm(`هل تريد حذف العميل "${c.name}"؟`))) return
     try {
       await deleteCustomer(c.id)
       toast.success('تم الحذف')
       if (ledgerData?.customer?.id === c.id) setLedgerData(null)
-      load()
+      void load(currentPage, serverSearch)
     } catch (err) { toast.error(extractApiError(err, 'فشل الحذف')) }
   }
 
   // ── payment ──
   const handlePayment = async () => {
+    if (!ledgerData) return
     const amount = parseFloat(payAmount)
     if (!amount || amount <= 0) { toast.error('أدخل مبلغاً صحيحاً'); return }
     setPayLoading(true)
@@ -187,19 +210,20 @@ export default function Customers() {
       setPayDesc('دفعة نقدية')
       setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
-      load() // تحديث رصيد البطاقة
+      void load(currentPage, serverSearch) // تحديث رصيد البطاقة
     } catch (err) { toast.error(extractApiError(err, 'فشل التسجيل')) }
     finally { setPayLoading(false) }
   }
 
   const handleEditEntry = async () => {
+    if (!editEntryModal?.id) return
     if (!editEntryForm.amount || Number.isNaN(Number(editEntryForm.amount))) {
       toast.error('الرجاء إدخال مبلغ صحيح')
       return
     }
     setEditEntryLoading(true)
     try {
-      const res = await updateCustomerLedgerEntry(Number(editEntryModal.id), {
+      const res = await updateCustomerLedgerEntry(editEntryModal.id, {
         type: editEntryForm.type,
         amount: parseFloat(editEntryForm.amount),
         description: editEntryForm.description,
@@ -207,7 +231,7 @@ export default function Customers() {
       toast.success('تم تعديل القيد')
       setLedgerData(res.data.data) // Update UI
       setEditEntryModal(null)
-      load() // Refresh list balances
+      void load(currentPage, serverSearch) // Refresh list balances
     } catch (err) { toast.error(extractApiError(err, 'فشل تعديل القيد')) } finally {
       setEditEntryLoading(false)
     }
@@ -230,26 +254,27 @@ export default function Customers() {
         {/* بحث */}
         <div style={{ position: 'relative' }}>
           <Search size={15} style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input className="input" style={{ paddingRight: '2rem' }} placeholder="ابحث بالاسم أو الهاتف..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input" style={{ paddingRight: '2rem' }} placeholder="ابحث بالاسم أو الهاتف..." value={search} onChange={e => handleSearchChange(e.target.value)} />
         </div>
 
         {/* قائمة */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>جارٍ التحميل...</div>
-        ) : filtered.length === 0 ? (
+        ) : customers.length === 0 ? (
           <div className="empty-state"><BookOpen size={36} color="var(--border)" /><p>لا يوجد عملاء</p></div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto', flex: 1 }}>
-            {filtered.map(c => (
+            {customers.map(c => (
               <CustomerCard
                 key={c.id}
                 customer={c}
                 active={ledgerData?.customer?.id === c.id}
                 onClick={() => openLedger(c)}
-                onEdit={(e: any) => openEdit(c, e)}
-                onDelete={user?.role === 'admin' ? (e: any) => handleDelete(c, e) : undefined}
+                onEdit={(e) => openEdit(c, e)}
+                onDelete={user?.role === 'admin' ? (e) => handleDelete(c, e) : undefined}
               />
             ))}
+            <Pagination current={currentPage} total={totalPages} onPage={setCurrentPage} />
           </div>
         )}
       </div>

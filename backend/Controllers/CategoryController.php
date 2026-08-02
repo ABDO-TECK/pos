@@ -36,7 +36,7 @@ class CategoryController extends Controller {
             $result = $this->categoryService->createCategory($data);
             return Response::success($result, Messages::CATEGORY_CREATED, 201);
         } catch (\Throwable $e) {
-            Logger::error('Failed to create category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to create category', Logger::exceptionContext($e));
             return Response::error(Messages::CATEGORY_CREATE_FAIL, 500);
         }
     }
@@ -50,7 +50,7 @@ class CategoryController extends Controller {
             $result = $this->categoryService->updateCategory($id, $data);
             return Response::success($result, Messages::CATEGORY_UPDATED);
         } catch (\Throwable $e) {
-            Logger::error('Failed to update category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to update category', Logger::exceptionContext($e));
             return Response::error(Messages::CATEGORY_UPDATE_FAIL, 500);
         }
     }
@@ -61,10 +61,9 @@ class CategoryController extends Controller {
             $this->categoryService->deleteCategory($id);
             return Response::success(null, Messages::CATEGORY_DELETED);
         } catch (\Throwable $e) {
-            Logger::error('Failed to delete category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to delete category', Logger::exceptionContext($e));
             return Response::error(Messages::CATEGORY_DELETE_FAIL, 500);
         }
     }
 }
-
 

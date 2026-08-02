@@ -12,7 +12,7 @@ class Branch {
     }
 
     public function all(): array {
-        return $this->db->query('SELECT * FROM branches ORDER BY name')->fetchAll();
+        return $this->db->query('SELECT * FROM branches ORDER BY name LIMIT 100')->fetchAll();
     }
 
     public function findById(int $id): ?array {

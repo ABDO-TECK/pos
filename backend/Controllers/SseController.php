@@ -18,7 +18,7 @@ class SseController
     public function inventory(): void
     {
         header('Content-Type: text/event-stream', true);
-        header('Cache-Control: no-cache');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Connection: keep-alive');
         header('X-Accel-Buffering: no');
 
@@ -30,8 +30,7 @@ class SseController
 
         // إذا لم يُرسل last_id، ابدأ من آخر ID موجود
         if ($lastId === 0) {
-            $stmt = $db->query('SELECT COALESCE(MAX(id), 0) FROM inventory_events');
-            $lastId = (int)$stmt->fetchColumn();
+            $lastId = $model->getLatestId();
         }
 
         $events = $model->getAfter($lastId);
@@ -53,14 +52,10 @@ class SseController
             echo ": heartbeat\n\n";
         }
 
-        // تنظيف دوري (مرة كل 20 طلب تقريباً)
-        if (rand(1, 20) === 1) {
-            $model->cleanup();
-        }
+        // Cleanup is performed by the scheduled database event or maintenance job.
 
-        // إخبار المتصفح بإعادة الاتصال بعد 3 ثوانٍ
-        echo "retry: 3000\n\n";
+        // Reconnect at most four times per minute to bound request pressure.
+        echo "retry: 15000\n\n";
         flush();
     }
 }
-

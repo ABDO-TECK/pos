@@ -54,9 +54,7 @@ class EventDispatcher
                 $callback($data);
             } catch (\Throwable $e) {
                 // لا نوقف التطبيق بسبب خطأ في مستمع
-                Logger::warning("Event listener error for '{$event}'", [
-                    'error' => $e->getMessage(),
-                ]);
+                Logger::warning("Event listener error for '{$event}'", Logger::exceptionContext($e));
             }
         }
     }

@@ -7,6 +7,7 @@ use App\Core\Container;
 use App\Services\MigrationService;
 use mysqli;
 use App\Contracts\BackupServiceInterface;
+use App\Helpers\Logger;
 use PDO;
 use RuntimeException;
 
@@ -186,11 +187,20 @@ class BackupService implements BackupServiceInterface {
      */
     public function restoreFromSql(string $sqlContent): array
     {
+        if (PHP_SAPI !== 'cli') {
+            throw new RuntimeException('SQL restore is CLI-only');
+        }
+
         // ── استخدام mysqli بدلاً من PDO ──
         // السبب: PDO لا يدعم multi_query() اللازمة لتنفيذ ملف SQL كامل
         $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
         if ($mysqli->connect_errno) {
-            return ['ok' => false, 'error' => 'فشل الاتصال بقاعدة البيانات: ' . $mysqli->connect_error, 'code' => 500];
+            $reference = bin2hex(random_bytes(8));
+            Logger::error('Backup restore database connection failed', [
+                'reference' => $reference,
+                'code' => $mysqli->connect_errno,
+            ]);
+            return ['ok' => false, 'error' => "Database restore failed. Reference: {$reference}", 'code' => 500];
         }
         $mysqli->set_charset('utf8mb4');
 
@@ -199,9 +209,13 @@ class BackupService implements BackupServiceInterface {
         $mysqli->query("SET FOREIGN_KEY_CHECKS=0");
 
         if (!$mysqli->multi_query($sqlContent)) {
-            $err = $mysqli->error;
+            $reference = bin2hex(random_bytes(8));
+            Logger::error('Backup restore execution failed', [
+                'reference' => $reference,
+                'code' => $mysqli->errno,
+            ]);
             $mysqli->close();
-            return ['ok' => false, 'error' => 'فشل تنفيذ الاستعادة: ' . $err, 'code' => 500];
+            return ['ok' => false, 'error' => "Database restore failed. Reference: {$reference}", 'code' => 500];
         }
 
         do {
@@ -212,9 +226,13 @@ class BackupService implements BackupServiceInterface {
                 break;
             }
             if (!$mysqli->next_result()) {
-                $err = $mysqli->error;
+                $reference = bin2hex(random_bytes(8));
+                Logger::error('Backup restore result processing failed', [
+                    'reference' => $reference,
+                    'code' => $mysqli->errno,
+                ]);
                 $mysqli->close();
-                return ['ok' => false, 'error' => 'فشل أثناء الاستعادة: ' . $err, 'code' => 500];
+                return ['ok' => false, 'error' => "Database restore failed. Reference: {$reference}", 'code' => 500];
             }
         } while (true);
 

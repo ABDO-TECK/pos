@@ -1,4 +1,5 @@
 import api from './axios'
+import type { AxiosRequestConfig } from 'axios'
 import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './constants'
 
 // Auth
@@ -72,8 +73,16 @@ export const getLowStock = (params?: ApiQueryParams) => api.get<ApiResponse<Prod
 export const adjustInventory = (id: number | string, data: { type: 'add' | 'subtract' | 'set'; quantity: number }) => api.put<ApiResponse<Product>>(`/inventory/${id}`, data)
 
 // Suppliers
-export const getSuppliers = (params?: ApiQueryParams) => api.get<ApiResponse<Supplier[]>>('/suppliers', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
-export const getSupplier = (id: number | string) => api.get<ApiResponse<Supplier>>(`/suppliers/${id}`)
+export const getSuppliers = (params?: ApiQueryParams, config?: AxiosRequestConfig) => api.get<ApiResponse<Supplier[]>>('/suppliers', { ...config, params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
+export const getSupplier = (id: number | string, config?: AxiosRequestConfig) => api.get<ApiResponse<SupplierLedgerData>>(`/suppliers/${id}`, config)
+export const searchSuppliers = async (search: string, signal?: AbortSignal): Promise<Supplier[]> => {
+  const response = await getSuppliers({ page: 1, limit: 20, search: search || undefined }, { signal })
+  return Array.isArray(response.data.data) ? response.data.data : []
+}
+export const getSupplierOption = async (id: number, signal?: AbortSignal): Promise<Supplier | null> => {
+  const response = await getSupplier(id, { signal })
+  return response.data.data?.supplier ?? null
+}
 export const createSupplier = (data: Partial<Supplier>) => api.post<ApiResponse<Supplier>>('/suppliers', data)
 export const updateSupplier = (id: number | string, data: Partial<Supplier>) => api.put<ApiResponse<Supplier>>(`/suppliers/${id}`, data)
 export const deleteSupplier = (id: number | string) => api.delete<ApiResponse<null>>(`/suppliers/${id}`)
@@ -97,7 +106,8 @@ export const getSettings = () => api.get<ApiResponse<AppSettings>>('/settings')
 export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiResponse<AppSettings>>('/settings', data)
 
 // Updates
-export const checkUpdate = (config?: any) => api.get<ApiResponse<UpdateCheckResult>>('/update/check', config)
+type UpdateRequestConfig = AxiosRequestConfig & { hideGlobalError?: boolean }
+export const checkUpdate = (config?: UpdateRequestConfig) => api.get<ApiResponse<UpdateCheckResult>>('/update/check', config)
 export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', force ? { force: true } : null, { timeout: 300_000 })
 
 // Backup
@@ -128,8 +138,16 @@ export const addSupplierPayment = (id: number | string, data: PaymentPayload) =>
 export const getProfitReport = (params?: ApiQueryParams) => api.get<ApiResponse<ProfitReport>>('/reports/profit', { params })
 
 // Customers
-export const getCustomers    = (params?: ApiQueryParams)           => api.get<ApiResponse<Customer[]>>('/customers', { params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
-export const getCustomer     = (id: number | string)         => api.get<ApiResponse<CustomerLedgerData>>(`/customers/${id}`)
+export const getCustomers    = (params?: ApiQueryParams, config?: AxiosRequestConfig) => api.get<ApiResponse<Customer[]>>('/customers', { ...config, params: { page: DEFAULT_PAGE, limit: DEFAULT_PAGE_SIZE, ...params } })
+export const getCustomer     = (id: number | string, config?: AxiosRequestConfig) => api.get<ApiResponse<CustomerLedgerData>>(`/customers/${id}`, config)
+export const searchCustomers = async (search: string, signal?: AbortSignal): Promise<Customer[]> => {
+  const response = await getCustomers({ page: 1, limit: 20, search: search || undefined }, { signal })
+  return Array.isArray(response.data.data) ? response.data.data : []
+}
+export const getCustomerOption = async (id: number, signal?: AbortSignal): Promise<Customer | null> => {
+  const response = await getCustomer(id, { signal })
+  return response.data.data?.customer ?? null
+}
 export const createCustomer  = (data: Partial<Customer>)       => api.post<ApiResponse<Customer>>('/customers', data)
 export const updateCustomer  = (id: number | string, data: Partial<Customer>)   => api.put<ApiResponse<Customer>>(`/customers/${id}`, data)
 export const deleteCustomer  = (id: number | string)         => api.delete<ApiResponse<null>>(`/customers/${id}`)

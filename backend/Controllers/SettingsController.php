@@ -38,7 +38,7 @@ class SettingsController extends Controller {
     public function update() {
         $request = new SettingsRequest($this->getBody());
         $data = $request->validated();
-        $allowed = ['store_name', 'tax_enabled', 'tax_rate', 'loyalty_enabled', 'loyalty_points_per_rial', 'loyalty_rial_per_point', 'store_logo'];
+        $allowed = ['store_name', 'tax_enabled', 'tax_rate', 'prevent_negative_stock', 'loyalty_enabled', 'loyalty_points_per_rial', 'loyalty_rial_per_point', 'store_logo'];
 
         return $this->withTransaction(function ($db) use ($data, $allowed) {
             $stmt = $db->prepare(
@@ -62,5 +62,4 @@ class SettingsController extends Controller {
         });
     }
 }
-
 

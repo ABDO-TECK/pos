@@ -89,6 +89,30 @@ final class ClientLogReaderTest extends TestCase
         self::assertFalse($result['pagination']['has_more']);
     }
 
+    public function testIncludesServerRuntimeEntriesForMaintenanceView(): void
+    {
+        $this->writeEntries('pos-2026-07-28.log', [
+            $this->entry('2026-07-28 10:00:00', 'ERROR', '[CLIENT] browser error'),
+            $this->entry('2026-07-28 10:01:00', 'CRITICAL', 'Fatal PHP error: call to undefined function'),
+        ]);
+
+        $result = (new ClientLogReader($this->logDir))->paginate('all', 10, null, true);
+
+        self::assertSame(['Fatal PHP error: call to undefined function', '[CLIENT] browser error'], array_column($result['data'], 'message'));
+        self::assertSame(['server', 'client'], array_column($result['data'], 'source'));
+    }
+
+    public function testNormalizesLegacyBerlinTimestampsToApplicationTimezone(): void
+    {
+        $this->writeEntries('pos-2026-08-02.log', [
+            $this->entry('2026-08-02 04:00:00', 'ERROR', 'legacy timestamp'),
+        ]);
+
+        $result = (new ClientLogReader($this->logDir))->paginate('all', 10, null, true);
+
+        self::assertSame('2026-08-02 05:00:00', $result['data'][0]['created_at']);
+    }
+
     public function testSkipsStructuredEntriesWithUnsafeFieldTypes(): void
     {
         $this->writeEntries('pos-2026-07-28.log', [
@@ -145,6 +169,11 @@ final class ClientLogReaderTest extends TestCase
     {
         $this->expectException(ValidationException::class);
         new ClientLogIndexRequest(['limit' => '101']);
+    }
+
+    public function testRequestDefaultsToTenRowsPerPage(): void
+    {
+        self::assertSame(10, (new ClientLogIndexRequest([]))->normalized()['limit']);
     }
 
     /**

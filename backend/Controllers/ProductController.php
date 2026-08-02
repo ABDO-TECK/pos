@@ -36,7 +36,7 @@ class ProductController extends Controller {
             'category_id' => $this->getParam('category_id'),
             'low_stock'   => $this->getParam('low_stock'),
             'page'        => max(1, (int) $this->getParam('page', 1)),
-            'limit'       => max(1, min(500, (int) $this->getParam('limit', 100))),
+            'limit'       => max(1, min(100, (int) $this->getParam('limit', 100))),
         ];
 
         $result = $this->productModel->all($filters);
@@ -102,7 +102,11 @@ class ProductController extends Controller {
             $result = $this->productService->createProduct($data);
 
             if (!$result['ok']) {
-                return Response::error($result['error'], $result['code'], null, ErrorCodes::VALIDATION_FAILED);
+                $code = $result['code'] ?? 500;
+                $errorCode = $code >= 500
+                    ? ErrorCodes::SERVER_ERROR
+                    : ErrorCodes::VALIDATION_FAILED;
+                return Response::error($result['error'], $code, null, $errorCode);
             }
             return Response::success($result['product'], 'Product created', 201);
         } catch (ValidationException $e) {
@@ -121,9 +125,13 @@ class ProductController extends Controller {
 
             if (!$result['ok']) {
                 $code = $result['code'] ?? 500;
-                return $code === 404
-                    ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
-                    : Response::error($result['error'], $code, null, ErrorCodes::VALIDATION_FAILED);
+                if ($code === 404) {
+                    return Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND);
+                }
+                $errorCode = $code >= 500
+                    ? ErrorCodes::SERVER_ERROR
+                    : ErrorCodes::VALIDATION_FAILED;
+                return Response::error($result['error'], $code, null, $errorCode);
             }
             AuditLog::log($this->authService->id(), 'update_product', 'product', $id, null, $data);
             return Response::success($result['product'], 'Product updated');
@@ -177,9 +185,13 @@ class ProductController extends Controller {
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
-            return $code === 404
-                ? Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND)
-                : Response::error($result['error'], $code, null, ErrorCodes::PRODUCT_IN_USE);
+            if ($code === 404) {
+                return Response::notFound($result['error'], ErrorCodes::PRODUCT_NOT_FOUND);
+            }
+            $errorCode = $code >= 500
+                ? ErrorCodes::SERVER_ERROR
+                : ErrorCodes::PRODUCT_IN_USE;
+            return Response::error($result['error'], $code, null, $errorCode);
         }
         AuditLog::log($this->authService->id(), 'delete_product', 'product', $id);
         return Response::success(null, 'Product deleted');

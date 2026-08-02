@@ -52,7 +52,7 @@ class AuditLog
             ]);
         } catch (\Throwable $e) {
             // لا نوقف التطبيق إذا فشل التسجيل — نسجل في Logger فقط
-            Logger::error('Audit log failed', ['error' => $e->getMessage()]);
+            Logger::error('Audit log failed', Logger::exceptionContext($e));
         }
     }
 

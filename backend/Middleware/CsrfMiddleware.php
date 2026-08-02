@@ -70,6 +70,11 @@ class CsrfMiddleware {
         // 1. Explicit env var has highest priority
         $secret = \App\Helpers\EnvLoader::get('CSRF_SECRET', '');
         if ($secret !== '') {
+            if (preg_match('/\A[a-f0-9]{64,}\z/i', $secret) !== 1) {
+                throw new \RuntimeException(
+                    'CSRF_SECRET must be at least 32 random bytes encoded as hex'
+                );
+            }
             return $secret;
         }
 

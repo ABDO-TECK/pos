@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { X, Edit2 } from 'lucide-react'
 import type { SupplierEntryForm, SupplierLedgerEntry } from './SupplierLedgerTable'
+import NumericInput from '../../../components/forms/NumericInput'
 
 interface SupplierEditEntryModalProps {
   editEntryModal: SupplierLedgerEntry | null
@@ -49,7 +50,7 @@ export default function SupplierEditEntryModal({
           </div>
           <div>
             <label className="label">المبلغ</label>
-            <input className="input" type="number" min="0" step="0.01" value={editEntryForm.amount} onChange={e => setEditEntryForm({ ...editEntryForm, amount: e.target.value })} autoFocus />
+            <NumericInput className="input" min="0" step="0.01" value={editEntryForm.amount} onChange={e => setEditEntryForm({ ...editEntryForm, amount: e.target.value })} autoFocus />
           </div>
           <div>
             <label className="label">البيان (اختياري)</label>

@@ -15,6 +15,14 @@ interface Window {
   electronAPI?: ElectronAPI;
   posRuntime?: {
     getApiBaseUrl: () => Promise<string | null>;
+    enableLanAccess: () => Promise<{
+      enabled: boolean;
+      port: number;
+      protocol: 'https';
+      firewallConfigured?: boolean;
+      firewallRequired?: boolean;
+      error?: string;
+    }>;
   };
   API_BASE_URL?: string;
 }

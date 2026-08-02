@@ -122,20 +122,22 @@ interface BarcodeCameraScannerProps {
 export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const onResultRef = useRef(onResult)
-  onResultRef.current = onResult
+  const cameraAvailable = ensureCameraApi()
 
-  const [error, setError] = useState<string | null>(null)
-  const [starting, setStarting] = useState(true)
+  useEffect(() => {
+    onResultRef.current = onResult
+  }, [onResult])
+
+  const [error, setError] = useState<string | null>(
+    cameraAvailable ? null : cameraUnavailableMessage(),
+  )
+  const [starting, setStarting] = useState(cameraAvailable)
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return undefined
 
-    if (!ensureCameraApi()) {
-      setStarting(false)
-      setError(cameraUnavailableMessage())
-      return undefined
-    }
+    if (!cameraAvailable) return undefined
 
     const reader = new BrowserMultiFormatReader(buildReaderHints())
     let finished = false
@@ -321,7 +323,7 @@ export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCamer
     return () => {
       stopAll()
     }
-  }, [])
+  }, [cameraAvailable])
 
   const ui = (
     <div

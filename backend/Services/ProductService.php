@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
-use App\Config\Database;
 use App\Helpers\Logger;
 use App\Models\Product;
 use App\Models\PriceHistory;
 use App\Repositories\ProductRepository;
 use App\Contracts\ProductServiceInterface;
 use Exception;
+use PDO;
 use PDOException;
 use Throwable;
 
@@ -22,11 +22,13 @@ class ProductService implements ProductServiceInterface
 {
     private ProductRepository $productRepo;
     private PriceHistory $priceHistory;
+    private PDO $db;
 
-    public function __construct(ProductRepository $productRepo, PriceHistory $priceHistory)
+    public function __construct(ProductRepository $productRepo, PriceHistory $priceHistory, PDO $db)
     {
         $this->productRepo = $productRepo;
         $this->priceHistory = $priceHistory;
+        $this->db = $db;
     }
 
     // ── Create product ──────────────────────────────────────
@@ -54,7 +56,7 @@ class ProductService implements ProductServiceInterface
         if (!empty($data['box_barcode'])) {
             $extrasToCheck[] = $data['box_barcode'];
         }
-        $db = Database::getInstance();
+        $db = $this->db;
         $db->beginTransaction();
         try {
             $this->productRepo->assertBarcodesAvailable(null, $main, $extrasToCheck);
@@ -103,14 +105,14 @@ class ProductService implements ProductServiceInterface
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            Logger::error('فشل إضافة المنتج', ['error' => $e->getMessage()]);
+            Logger::error('فشل إضافة المنتج', \App\Helpers\Logger::exceptionContext($e));
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
             }
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'فشل إنشاء المنتج: ' . $e->getMessage(), 'code' => 500];
+            return ['ok' => false, 'error' => 'تعذر إنشاء المنتج. حاول مرة أخرى.', 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -145,7 +147,7 @@ class ProductService implements ProductServiceInterface
         if (!empty($data['box_barcode'])) {
             $extrasToCheck[] = $data['box_barcode'];
         }
-        $db = Database::getInstance();
+        $db = $this->db;
         $db->beginTransaction();
         try {
             $this->productRepo->assertBarcodesAvailable($id, $main, $extrasToCheck);
@@ -235,14 +237,14 @@ class ProductService implements ProductServiceInterface
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
-            Logger::error('فشل تحديث المنتج', ['error' => $e->getMessage()]);
+            Logger::error('فشل تحديث المنتج', \App\Helpers\Logger::exceptionContext($e));
             if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
             }
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'فشل تحديث المنتج: ' . $e->getMessage(), 'code' => 500];
+            return ['ok' => false, 'error' => 'تعذر تحديث المنتج. حاول مرة أخرى.', 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -337,7 +339,7 @@ class ProductService implements ProductServiceInterface
             ];
         }
 
-        $db = Database::getInstance();
+        $db = $this->db;
         $db->beginTransaction();
         try {
             $this->productRepo->delete($id);
@@ -347,11 +349,11 @@ class ProductService implements ProductServiceInterface
             if ($e->getCode() === '23000' || str_contains($e->getMessage(), '1451')) {
                 return ['ok' => false, 'error' => 'لا يمكن حذف المنتج لأنه مرتبط بسجلات أخرى في النظام.', 'code' => 409];
             }
-            Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
+            Logger::error('فشل حذف المنتج', \App\Helpers\Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'فشل حذف المنتج', 'code' => 500];
         } catch (Throwable $e) {
             $db->rollBack();
-            Logger::error('فشل حذف المنتج', ['error' => $e->getMessage()]);
+            Logger::error('فشل حذف المنتج', \App\Helpers\Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'فشل حذف المنتج', 'code' => 500];
         }
 

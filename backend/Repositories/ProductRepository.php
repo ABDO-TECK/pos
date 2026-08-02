@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Models\Product;
 use App\Repositories\CachedRepository;
+use App\Services\AuthService;
 
 /**
  * ProductRepository — طبقة وسيطة بين ProductService و Product Model.
@@ -31,11 +32,16 @@ class ProductRepository implements RepositoryInterface
 
     public function all(array $filters = []): array
     {
+        $cacheContext = [
+            'branch_id' => AuthService::getGlobalBranchId(),
+            'filters' => $filters,
+        ];
+
         return CachedRepository::wrap(
             'products',
             fn() => $this->model->all($filters),
             300,
-            json_encode($filters)
+            json_encode($cacheContext, JSON_THROW_ON_ERROR)
         );
     }
 
@@ -147,14 +153,29 @@ class ProductRepository implements RepositoryInterface
         $this->model->incrementQuantity($id, $qty);
     }
 
+    public function batchIncrementQuantity(array $increments): void
+    {
+        $this->model->batchIncrementQuantity($increments);
+    }
+
+    public function batchUpdateCosts(array $updates): void
+    {
+        $this->model->batchUpdateCosts($updates);
+    }
+
     public function decrementQuantity(int $id, float $qty): void
     {
         $this->model->decrementQuantity($id, $qty);
     }
 
-    public function batchDecrementQuantity(array $decrements): void
+    public function batchDecrementQuantity(array $decrements, bool $preventNegativeStock = true): void
     {
-        $this->model->batchDecrementQuantity($decrements);
+        if ($preventNegativeStock) {
+            // Preserve the guarded legacy call shape for existing consumers.
+            $this->model->batchDecrementQuantity($decrements);
+        } else {
+            $this->model->batchDecrementQuantity($decrements, false);
+        }
     }
 
     public function getLowStockByProductIds(array $ids): array

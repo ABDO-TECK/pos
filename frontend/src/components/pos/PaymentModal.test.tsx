@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PaymentModal from './PaymentModal'
 import useCartStore from '../../store/cartStore'
 import useSettingsStore from '../../store/settingsStore'
-import { createSale, getCustomers } from '../../api/endpoints'
+import { createSale, getCustomerOption, getCustomers, searchCustomers } from '../../api/endpoints'
 import { savePendingSale } from '../../utils/idb'
 import useAuthStore from '../../store/authStore'
 
@@ -21,7 +21,9 @@ vi.mock('react-hot-toast', () => ({
 
 vi.mock('../../api/endpoints', () => ({
   createSale: vi.fn(),
+  getCustomerOption: vi.fn(),
   getCustomers: vi.fn(),
+  searchCustomers: vi.fn(),
 }))
 
 vi.mock('../../utils/idb', () => ({
@@ -44,6 +46,8 @@ describe('PaymentModal customer creation', () => {
     vi.mocked(getCustomers).mockResolvedValue({
       data: { data: [] },
     } as never)
+    vi.mocked(searchCustomers).mockResolvedValue([])
+    vi.mocked(getCustomerOption).mockResolvedValue(null)
     vi.mocked(createSale).mockResolvedValue({
       data: {
         data: {
@@ -236,6 +240,55 @@ describe('PaymentModal customer creation', () => {
       shipping_cost: 15,
       amount_paid: 115,
     }))
+  })
+
+  it('passes the optional customer name to the printable invoice', async () => {
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
+    const onSuccess = vi.fn()
+    useCartStore.setState({
+      items: [{
+        id: 1,
+        name: 'Product',
+        price: 100,
+        quantity: 1,
+        subtotal: 100,
+      }],
+      paymentMethod: 'cash',
+      rebillingInvoiceId: null,
+      rebillingCustomerId: null,
+      rebillingAmountPaid: 0,
+      rebillingPaymentMethod: null,
+      rebillingShippingCost: 0,
+    })
+
+    await act(async () => {
+      root.render(<PaymentModal onClose={vi.fn()} onSuccess={onSuccess} />)
+    })
+
+    const customerTab = [...container.querySelectorAll('button')]
+      .find((button) => (button.textContent ?? '').includes('العميل'))
+    if (!customerTab) throw new Error('Customer tab not found')
+    act(() => customerTab.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const customerNameInput = container.querySelector<HTMLInputElement>('#invoice-customer-name')
+    if (!customerNameInput) throw new Error('Optional customer name input not found')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(customerNameInput, 'Alice & Sons')
+      customerNameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const checkoutButton = container.querySelector<HTMLButtonElement>('button.btn-primary.btn-lg')
+    if (!checkoutButton) throw new Error('Checkout button not found')
+    await act(async () => {
+      checkoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({ customer_name: 'Alice & Sons' }),
+      0,
+    )
   })
 
   it('retains one UUID v4 across an ambiguous online retry', async () => {

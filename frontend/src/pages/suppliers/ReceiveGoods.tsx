@@ -3,7 +3,7 @@ import { Trash2, ShoppingCart, Check, Package } from 'lucide-react'
 import BarcodeInput from '../../components/pos/BarcodeInput'
 import useProductStore from '../../store/productStore'
 import toast from 'react-hot-toast'
-import { getSuppliers, createBulkPurchase, getPurchaseInvoice } from '../../api/endpoints'
+import { createBulkPurchase, getPurchaseInvoice, getSupplierOption, searchSuppliers } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 import { extractApiError } from '../../utils/apiError'
 import ReceiveGoodsProductCard from './components/ReceiveGoodsProductCard'
@@ -11,6 +11,7 @@ import ReceiveGoodsCartLine from './components/ReceiveGoodsCartLine'
 import ReceiveConfirmModal from './components/ReceiveConfirmModal'
 import PurchaseReceiptModal from './components/PurchaseReceiptModal'
 import styles from '../Suppliers.module.css'
+import SearchableEntitySelect from '../../components/SearchableEntitySelect'
 
 type ReceivingProduct = Product & { scanned_as_box?: boolean }
 
@@ -22,9 +23,15 @@ interface ReceiveCartLine {
 
 interface DeliveryData {
   driver_name?: string
-  vehicle_number?: string
+  discount?: number
+  shipping_cost?: number
   delivery_date?: string
   delivery_notes?: string
+}
+
+const normalizeMoney = (value: unknown): number => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.round(Math.max(0, parsed) * 100) / 100 : 0
 }
 
 interface ReceiveGoodsProps {
@@ -38,7 +45,7 @@ interface ReceiveGoodsProps {
 
 /* ──────────────────────────── Receive Goods (POS-like) ── */
 export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId, invoiceId, setInvoiceId }: ReceiveGoodsProps) {
-  const [suppliers, setSuppliers]     = useState<Supplier[]>([])
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [search, setSearch]           = useState('')
   const [loading, setLoading]         = useState(false)
@@ -61,14 +68,11 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
       })
     : allProducts
 
-  const selectedSupplier = suppliers.find(s => String(s.id) === String(supplierId))
-
   useEffect(() => {
     let fetchInFlight = false
     const fetchAll = (isInitial = false) => {
       if (fetchInFlight) return
       fetchInFlight = true
-      getSuppliers().then((response) => setSuppliers(response.data.data ?? [])).catch(() => {})
       if (isInitial) setLoading(true)
       useProductStore.getState().fetchProducts({}, true)
         .then((list) => {
@@ -182,7 +186,10 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
     if (cart.length === 0) { toast.error('السلة فارغة'); return }
     setConfirming(true)
     try {
-      const amountDue = paymentType === 'credit' ? Math.max(0, cartTotal - deposit) : 0
+      const discount = normalizeMoney(deliveryData.discount)
+      const shippingCost = normalizeMoney(deliveryData.shipping_cost)
+      const invoiceTotal = Math.max(0, cartTotal - discount + shippingCost)
+      const amountDue = paymentType === 'credit' ? Math.max(0, invoiceTotal - deposit) : 0
       const res = await createBulkPurchase({
         replace_invoice_id: invoiceId,
         supplier_id: Number.parseInt(supplierId, 10),
@@ -295,10 +302,19 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
           )}
         </div>
         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>المورد</label>
-        <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-          <option value="">اختر مورد…</option>
-          {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <SearchableEntitySelect<Supplier>
+          value={supplierId}
+          onChange={(value, supplier) => {
+            setSupplierId(value)
+            setSelectedSupplier(supplier)
+          }}
+          searchOptions={searchSuppliers}
+          loadOption={getSupplierOption}
+          onOptionResolved={setSelectedSupplier}
+          searchPlaceholder="ابحث عن مورد بالاسم أو الهاتف..."
+          emptyLabel="اختر مورد…"
+          loadingLabel="جارٍ التحميل..."
+        />
       </div>
 
       {/* Items — scrollable, bounded by parent height */}
@@ -394,7 +410,7 @@ export default function ReceiveGoods({ cart, setCart, supplierId, setSupplierId,
 
       {showConfirmModal && (
         <ReceiveConfirmModal
-          supplier={selectedSupplier}
+          supplier={selectedSupplier ?? undefined}
           cart={cart}
           cartTotal={cartTotal}
           cartCount={cartCount}

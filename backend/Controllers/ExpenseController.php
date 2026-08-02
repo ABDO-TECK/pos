@@ -44,7 +44,7 @@ class ExpenseController extends Controller
                 return Response::success($result['category']);
             });
         } catch (Throwable $e) {
-            Logger::error('Failed to create expense category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to create expense category', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء إضافة التصنيف', 500);
         }
     }
@@ -61,7 +61,7 @@ class ExpenseController extends Controller
                 return Response::success($result['category']);
             });
         } catch (Throwable $e) {
-            Logger::error('Failed to update expense category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to update expense category', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء تعديل التصنيف', 500);
         }
     }
@@ -76,7 +76,7 @@ class ExpenseController extends Controller
             }
             return Response::success(['message' => 'تم الحذف بنجاح']);
         } catch (Throwable $e) {
-            Logger::error('Failed to delete expense category', ['error' => $e->getMessage()]);
+            Logger::error('Failed to delete expense category', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء الحذف', 500);
         }
     }
@@ -122,7 +122,7 @@ class ExpenseController extends Controller
         } catch (Throwable $e) {
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);
-            Logger::error('Failed to create expense', ['error' => $e->getMessage()]);
+            Logger::error('Failed to create expense', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء تسجيل المصروف', 500);
         }
     }
@@ -144,7 +144,7 @@ class ExpenseController extends Controller
             $code = $e->getCode() ?: 500;
             if ($code === 400) return Response::error($e->getMessage(), 400);
             if ($code === 404) return Response::error($e->getMessage(), 404);
-            Logger::error('Failed to update expense', ['error' => $e->getMessage()]);
+            Logger::error('Failed to update expense', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء تعديل المصروف', 500);
         }
     }
@@ -161,7 +161,7 @@ class ExpenseController extends Controller
                 return Response::success(['message' => 'تم حذف المصروف بنجاح']);
             });
         } catch (Throwable $e) {
-            Logger::error('Failed to delete expense', ['error' => $e->getMessage()]);
+            Logger::error('Failed to delete expense', Logger::exceptionContext($e));
             return Response::error('حدث خطأ أثناء الحذف', 500);
         }
     }

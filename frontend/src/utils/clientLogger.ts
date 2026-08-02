@@ -13,12 +13,6 @@ interface ClientLogEntry {
   context?: Record<string, unknown>
 }
 
-// Helper: read a cookie by name
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-  return match ? decodeURIComponent(match[2]) : null
-}
-
 // ── Isolated Axios instance for logs ──────────────────────────
 const loggerApi = axios.create({
   baseURL: '/api/v1',
@@ -60,7 +54,7 @@ async function flush() {
 
   try {
     await loggerApi.post('/client-log', { logs: batch })
-  } catch (err) { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
+  } catch { // إذا فشل الإرسال، لا نعيد المحاولة لتجنب الحلقات اللانهائية
     console.warn('[clientLogger] Failed to send log batch')
   }
 
@@ -151,13 +145,18 @@ if (typeof window !== 'undefined') {
     const rawBase = window.API_BASE_URL || ''
     const url = `${rawBase}/api/v1/client-log`
     const batch = queue.splice(0, MAX_QUEUE)
-    try {
-      navigator.sendBeacon(
-        url,
-        new Blob([JSON.stringify({ logs: batch })], { type: 'application/json' }),
-      )
-    } catch {
+    const csrfSignature = getCsrfSignature()
+    void fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfSignature ? { 'X-XSRF-TOKEN': csrfSignature } : {}),
+      },
+      body: JSON.stringify({ logs: batch }),
+    }).catch(() => {
       // لا شيء يمكن فعله — الصفحة تُغلق
-    }
+    })
   })
 }

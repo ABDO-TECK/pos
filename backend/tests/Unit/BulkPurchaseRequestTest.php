@@ -14,6 +14,8 @@ class BulkPurchaseRequestTest extends TestCase
             'supplier_id' => 1,
             'payment_type' => 'credit',
             'deposit' => 5,
+            'discount' => '1.25',
+            'shipping_cost' => '2.50',
             'items' => [[
                 'product_id' => '2',
                 'quantity' => '1.5',
@@ -31,6 +33,8 @@ class BulkPurchaseRequestTest extends TestCase
             'cost' => 10.25,
             'update_cost' => true,
         ], $validated['items'][0]);
+        $this->assertSame('1.25', $validated['discount']);
+        $this->assertSame('2.50', $validated['shipping_cost']);
     }
 
     public function testRejectsInvalidNestedPurchaseItem(): void

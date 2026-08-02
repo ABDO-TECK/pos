@@ -8,10 +8,19 @@ use App\Repositories\SupplierRepository;
 use App\Services\AuthService;
 use App\Services\InventoryService;
 use App\Services\SupplierService;
+use PDO;
 use PHPUnit\Framework\TestCase;
 
 class SupplierControllerTest extends TestCase
 {
+    private PDO $db;
+
+    protected function setUp(): void
+    {
+        $this->db = new PDO('sqlite::memory:');
+        $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    }
+
     /**
      * @runInSeparateProcess
      */
@@ -33,7 +42,7 @@ class SupplierControllerTest extends TestCase
             ->willReturn(['id' => 1, 'name' => 'مورد تجريبي', 'phone' => '05555']);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock, $this->db])
             ->onlyMethods(['getBody'])
             ->getMock();
 
@@ -60,7 +69,7 @@ class SupplierControllerTest extends TestCase
         $authServiceMock = $this->createMock(AuthService::class);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock, $this->db])
             ->onlyMethods(['getBody'])
             ->getMock();
 
@@ -90,7 +99,7 @@ class SupplierControllerTest extends TestCase
             ->with(999)
             ->willReturn(null);
 
-        $controller = new SupplierController($supplierModelMock, $supplierServiceMock, $authServiceMock);
+        $controller = new SupplierController($supplierModelMock, $supplierServiceMock, $authServiceMock, $this->db);
 
         $response = $controller->destroy('999');
 
@@ -117,7 +126,7 @@ class SupplierControllerTest extends TestCase
             ->willReturn(['supplier' => ['id' => 1], 'entries' => [], 'balance' => 0.0]);
 
         $controller = $this->getMockBuilder(SupplierController::class)
-            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock])
+            ->setConstructorArgs([$supplierModelMock, $supplierServiceMock, $authServiceMock, $this->db])
             ->onlyMethods(['getBody'])
             ->getMock();
 

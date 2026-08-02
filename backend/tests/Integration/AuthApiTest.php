@@ -5,6 +5,7 @@ namespace Tests\Integration;
 use App\Controllers\AuthController;
 use App\Models\User;
 use App\Services\AuthService;
+use App\Helpers\PasswordHasher;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -36,6 +37,13 @@ class AuthApiTest extends TestCase
             ->method('createToken')
             ->with(1)
             ->willReturn('fake_token_123');
+
+        $userModelMock->expects($this->once())
+            ->method('updatePasswordHash')
+            ->with(
+                1,
+                $this->callback(static fn (string $hash): bool => !PasswordHasher::needsRehash($hash))
+            );
 
         $controller = $this->getMockBuilder(AuthController::class)
             ->setConstructorArgs([$userModelMock, $authServiceMock])
@@ -84,6 +92,9 @@ class AuthApiTest extends TestCase
                 'role' => 'admin',
                 'branch_id' => 7,
             ]);
+
+        $userModelMock->expects($this->never())
+            ->method('updatePasswordHash');
 
         $controller = $this->getMockBuilder(AuthController::class)
             ->setConstructorArgs([$userModelMock, $authServiceMock])

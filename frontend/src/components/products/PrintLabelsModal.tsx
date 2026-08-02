@@ -4,6 +4,7 @@ import { buildLabelHTML, LabelProduct } from '../../utils/barcodeLabelBuilder'
 import useQZPrinter from '../../../src/hooks/useQZPrinter'
 import PrinterPickerModal from '../pos/receipt/PrinterPickerModal'
 import toast from 'react-hot-toast'
+import NumericInput from '../forms/NumericInput'
 
 interface Props {
   products: LabelProduct[]
@@ -70,8 +71,7 @@ export default function PrintLabelsModal({ products, onClose }: Props) {
             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>
               عدد النسخ لكل منتج
             </label>
-            <input 
-              type="number" 
+            <NumericInput
               className="input input-lg" 
               min={1} 
               max={100}

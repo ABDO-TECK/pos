@@ -13,6 +13,7 @@ final class ClientLogReader
     private const READ_CHUNK_BYTES = 8192;
     private const MAX_LINE_BYTES = 65536;
     private const CURSOR_VERSION = 1;
+    private const LEGACY_LOG_TIMEZONE = 'Europe/Berlin';
 
     private string $logDir;
 
@@ -26,12 +27,13 @@ final class ClientLogReader
     }
 
     /**
+     * @param bool $includeAll When true, include server/runtime entries in addition to client entries.
      * @return array{
-     *     data: list<array{id: string, created_at: mixed, level: mixed, message: mixed, context: mixed}>,
+     *     data: list<array{id: string, created_at: mixed, level: mixed, message: mixed, context: mixed, source: string}>,
      *     pagination: array{page: int, limit: int, next_cursor: ?string, has_more: bool}
      * }
      */
-    public function paginate(string $level, int $limit, ?string $cursor = null): array
+    public function paginate(string $level, int $limit, ?string $cursor = null, bool $includeAll = false): array
     {
         $files = Logger::getLogFiles($this->logDir, true);
         $cursorState = $this->decodeCursor($cursor, $level, $files);
@@ -56,7 +58,12 @@ final class ClientLogReader
                 }
 
                 $message = $entry['message'] ?? '';
-                if (!is_string($message) || !str_starts_with($message, '[CLIENT]')) {
+                if (!is_string($message)) {
+                    continue;
+                }
+
+                $isClientEntry = str_starts_with($message, '[CLIENT]');
+                if (!$includeAll && !$isClientEntry) {
                     continue;
                 }
 
@@ -76,10 +83,14 @@ final class ClientLogReader
 
                 $logs[] = [
                     'id' => hash('sha256', basename($file) . ':' . $lineData['offset'] . ':' . $lineData['line']),
-                    'created_at' => $entry['timestamp'] ?? null,
+                    'created_at' => $this->normalizeTimestamp(
+                        $entry['timestamp'] ?? null,
+                        $entry['timezone'] ?? null
+                    ),
                     'level' => $rawLevel,
                     'message' => $message,
                     'context' => $context,
+                    'source' => $isClientEntry ? 'client' : 'server',
                 ];
 
                 if (count($logs) === $limit) {
@@ -108,6 +119,27 @@ final class ClientLogReader
                 'has_more' => false,
             ],
         ];
+    }
+
+    private function normalizeTimestamp(mixed $timestamp, mixed $sourceTimezone): ?string
+    {
+        if (!is_string($timestamp) || trim($timestamp) === '') {
+            return null;
+        }
+
+        $targetTimezone = Logger::getTimezone();
+        $sourceTimezoneName = is_string($sourceTimezone) && trim($sourceTimezone) !== ''
+            ? trim($sourceTimezone)
+            : self::LEGACY_LOG_TIMEZONE;
+
+        try {
+            $sourceTimezoneObject = new \DateTimeZone($sourceTimezoneName);
+            $date = new \DateTimeImmutable($timestamp, $sourceTimezoneObject);
+            return $date->setTimezone($targetTimezone)->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            // Preserve an unparseable value for diagnostics instead of hiding it.
+            return $timestamp;
+        }
     }
 
     /**

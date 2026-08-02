@@ -13,6 +13,29 @@ namespace App\Helpers;
  */
 class JobQueue
 {
+    private static bool $maintenanceChecked = false;
+
+    public static function ensureMaintenanceJobs(): void
+    {
+        if (self::$maintenanceChecked) {
+            return;
+        }
+        self::$maintenanceChecked = true;
+
+        $db = \App\Config\Database::getInstance();
+        $stmt = $db->query(
+            "SELECT COUNT(*) FROM job_queue
+             WHERE job_name IN ('cleanup_old_jobs', 'cleanup_old_logs')
+               AND status IN ('pending', 'processing')
+               AND created_at >= NOW() - INTERVAL 1 DAY"
+        );
+
+        if ((int) $stmt->fetchColumn() === 0) {
+            self::dispatch('cleanup_old_jobs', ['days' => 7], -10);
+            self::dispatch('cleanup_old_logs', ['days' => 30], -10);
+        }
+    }
+
     /**
      * إضافة مهمة جديدة للطابور.
      */
@@ -38,15 +61,21 @@ class JobQueue
      */
     public static function processNext(): bool
     {
-        $db = \App\Config\Database::getInstance();
-        $db->beginTransaction();
+        $db = null;
         try {
+            $db = \App\Config\Database::getInstance();
+            $db->beginTransaction();
+
+            // Keep this query compatible with the MariaDB versions bundled
+            // with XAMPP. The optional non-blocking row-lock clause is not
+            // available on older releases; this short FOR UPDATE transaction
+            // still prevents two workers from claiming the same pending job.
             $stmt = $db->prepare(
                 'SELECT * FROM job_queue
                  WHERE status = "pending" AND attempts < max_attempts
                  ORDER BY priority DESC, id ASC
                  LIMIT 1
-                 FOR UPDATE SKIP LOCKED'
+                 FOR UPDATE'
             );
             $stmt->execute();
             $job = $stmt->fetch(\PDO::FETCH_ASSOC);
@@ -68,18 +97,26 @@ class JobQueue
                 $db->prepare('UPDATE job_queue SET status = "completed", completed_at = NOW() WHERE id = ?')
                    ->execute([$job['id']]);
             } catch (\Throwable $e) {
+                $reference = bin2hex(random_bytes(8));
                 Logger::error("Job failed: {$job['job_name']}", [
-                    'id' => $job['id'], 'error' => $e->getMessage()
+                    'id' => $job['id'],
+                    'reference' => $reference,
+                    'exception' => get_class($e),
                 ]);
                 $newStatus = ((int)$job['attempts'] + 1 >= (int)$job['max_attempts']) ? 'failed' : 'pending';
                 $db->prepare('UPDATE job_queue SET status = ?, last_error = ? WHERE id = ?')
-                   ->execute([$newStatus, $e->getMessage(), $job['id']]);
+                   ->execute([$newStatus, "Reference: {$reference}", $job['id']]);
             }
 
             return true;
         } catch (\Throwable $e) {
-            $db->rollBack();
-            Logger::error('Job queue error', ['error' => $e->getMessage()]);
+            if ($db instanceof \PDO && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            Logger::error('Job queue error', [
+                'exception' => get_class($e),
+                'code' => (int) $e->getCode(),
+            ]);
             return false;
         }
     }
@@ -89,7 +126,11 @@ class JobQueue
         $handlers = [
             'backup_database' => function (array $p) {
                 $service = new \App\Services\BackupService();
-                $service->createBackup();
+                $storageDir = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR');
+                $backupDir = $storageDir
+                    ? rtrim((string) $storageDir, '/\\') . '/backups'
+                    : dirname(__DIR__) . '/storage/backups';
+                $service->createBackupFile($backupDir);
             },
             'cleanup_old_logs' => function (array $p) {
                 $logsPath = $_ENV['LOGS_PATH'] ?? getenv('LOGS_PATH');
@@ -98,7 +139,7 @@ class JobQueue
                     $logsPath = $storageDir ? $storageDir . '/logs' : __DIR__ . '/../logs';
                 }
                 $dir = rtrim($logsPath, '/\\') . '/';
-                $days = $p['days'] ?? 30;
+                $days = max(1, min(3650, (int) ($p['days'] ?? 30)));
                 $cutoff = strtotime("-{$days} days");
                 foreach (glob($dir . '*.log') as $file) {
                     if (filemtime($file) < $cutoff) {
@@ -108,10 +149,16 @@ class JobQueue
             },
             'cleanup_old_jobs' => function (array $p) {
                 $db = \App\Config\Database::getInstance();
-                $days = $p['days'] ?? 7;
-                $db->prepare(
-                    "DELETE FROM job_queue WHERE status IN ('completed','failed') AND created_at < NOW() - INTERVAL ? DAY"
-                )->execute([$days]);
+                $days = max(1, min(3650, (int) ($p['days'] ?? 7)));
+                $db->exec(
+                    "DELETE FROM job_queue
+                     WHERE status IN ('completed','failed')
+                       AND created_at < NOW() - INTERVAL {$days} DAY"
+                );
+            },
+            'cleanup_inventory_events' => function (array $p) {
+                $db = \App\Config\Database::getInstance();
+                (new \App\Models\InventoryEvent($db))->cleanup();
             },
             'send_low_stock_alert' => function (array $p) {
                 $productId = $p['product_id'] ?? 0;
@@ -123,13 +170,25 @@ class JobQueue
                 Logger::info('Audit: ' . ($p['action'] ?? 'unknown'), $p);
             },
             'earn_loyalty_points' => function (array $p) {
+                $branchId  = (int) ($p['branch_id'] ?? 0);
                 $customerId = $p['customer_id'] ?? 0;
                 $invoiceId  = $p['invoice_id'] ?? 0;
                 $total      = (float)($p['total'] ?? 0);
-                if ($customerId <= 0 || $invoiceId <= 0 || $total <= 0) return;
-                
-                $loyalty = new \App\Services\LoyaltyService();
-                $points  = $loyalty->earnPoints($customerId, $invoiceId, $total);
+                if ($branchId <= 0 || $customerId <= 0 || $invoiceId <= 0 || $total <= 0) return;
+
+                $auth = new \App\Services\AuthService();
+                $previousBranchId = \App\Services\AuthService::getGlobalBranchId();
+                $auth->setBranchId($branchId);
+                try {
+                    $db = \App\Config\Database::getInstance();
+                    $loyalty = new \App\Services\LoyaltyService(
+                        new \App\Repositories\LoyaltyRepository($db),
+                        $db
+                    );
+                    $points = $loyalty->earnPoints($customerId, $invoiceId, $total);
+                } finally {
+                    $auth->setBranchId($previousBranchId);
+                }
                 if ($points > 0) {
                     Logger::info("Loyalty: earned {$points} points", [
                         'customer_id' => $customerId,

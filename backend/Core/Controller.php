@@ -2,8 +2,15 @@
 
 namespace App\Core;
 
+use PDO;
 
 abstract class Controller {
+    private ?PDO $transactionDb = null;
+
+    protected function setTransactionDatabase(PDO $db): void
+    {
+        $this->transactionDb = $db;
+    }
 
     protected function getBody(): array {
         return RequestBody::readJson();
@@ -67,18 +74,12 @@ abstract class Controller {
      *
      * @param int $defaultLimit الحد الافتراضي لعدد النتائج (20)
      * @param int $maxLimit     الحد الأقصى المسموح (500)
-     * @return array{page: int|null, limit: int|null}
+     * @return array{page: int, limit: int}
      */
-    protected function getPaginationParams(int $defaultLimit = 20, int $maxLimit = 500): array
+    protected function getPaginationParams(int $defaultLimit = 20, int $maxLimit = 100): array
     {
-        $page  = $this->getParam('page');
-        $limit = $this->getParam('limit');
-
-        // إرجاع null للسماح للموديلات بجلب جميع البيانات (مطلوب للـ Offline POS)
-        if ($page === null && $limit === null) {
-            return ['page' => null, 'limit' => null];
-        }
-
+        $page  = $this->getParam('page', 1);
+        $limit = $this->getParam('limit', $defaultLimit);
         return [
             'page'  => max(1, (int) ($page ?? 1)),
             'limit' => max(1, min($maxLimit, (int) ($limit ?? $defaultLimit))),
@@ -95,7 +96,7 @@ abstract class Controller {
      */
     protected function withTransaction(callable $callback): mixed
     {
-        $db = \App\Config\Database::getInstance();
+        $db = $this->transactionDb ?? \App\Config\Database::getInstance();
         $db->beginTransaction();
         try {
             $result = $callback($db);

@@ -56,6 +56,12 @@ class SupplierRepository implements RepositoryInterface
         return $this->purchaseInvoiceModel->createPurchase($data);
     }
 
+    /** @param list<array<string,mixed>> $items */
+    public function createPurchases(array $items): int
+    {
+        return $this->purchaseInvoiceModel->createPurchases($items);
+    }
+
     public function getPurchaseInvoices(array $filters = []): array
     {
         return $this->purchaseInvoiceModel->getPurchaseInvoices($filters);

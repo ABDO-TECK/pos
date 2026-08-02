@@ -7,9 +7,9 @@ class ContainerTest extends TestCase
     public function testBindResolvesCorrectClass()
     {
         $c = new Container();
-        $c->bind('FakeInterface', \App\Models\Product::class);
+        $c->bind('FakeInterface', \stdClass::class);
         $instance = $c->get('FakeInterface');
-        $this->assertInstanceOf(\App\Models\Product::class, $instance);
+        $this->assertInstanceOf(\stdClass::class, $instance);
     }
 
     public function testSingletonReturnsSameInstance()

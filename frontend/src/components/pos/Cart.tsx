@@ -3,6 +3,7 @@ import { Trash2, Plus, Minus, ShoppingCart, Package } from 'lucide-react'
 import useCartStore from '../../store/cartStore'
 import useProductStore from '../../store/productStore'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
+import NumericInput from '../forms/NumericInput'
 
 export default function Cart() {
   const { items, removeItem, updateQuantity, updatePrice, rebillingInvoiceId } = useCartStore()
@@ -195,8 +196,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
 
         {/* Unit price (Editable) */}
         <div style={{ minWidth: '60px', textAlign: 'left', flexShrink: 0, marginTop: '0.1rem' }}>
-          <input
-            type="number"
+          <NumericInput
             min="0"
             step="0.01"
             value={item.price}
@@ -290,8 +290,7 @@ function CartItem({ item, onRemove, onUpdateQty, onUpdatePrice }: CartItemProps)
           >
             <Minus size={14} />
           </button>
-          <input
-            type="number"
+          <NumericInput
             min={unitMode === 'kg' || unitMode === 'liter' ? 0.001 : 1}
             step={unitMode === 'kg' || unitMode === 'liter' ? '0.001' : '1'}
             value={displayQty}

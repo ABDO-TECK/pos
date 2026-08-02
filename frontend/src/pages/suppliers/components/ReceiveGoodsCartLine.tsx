@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Minus, Trash2, Package } from 'lucide-react'
 import { formatCurrency, formatNumber } from '../../../utils/formatters'
+import NumericInput from '../../../components/forms/NumericInput'
 
 export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, onRemove, onSwitchProduct, allProducts }: any) {
   const product     = line.product
@@ -159,8 +160,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
         <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>
           التكلفة للوحدة
         </label>
-        <input
-          type="number"
+        <NumericInput
           min="0"
           step="0.01"
           className="input"
@@ -232,8 +232,7 @@ export default function ReceiveGoodsCartLine({ line, onUpdateQty, onUpdateCost, 
           >
             <Minus size={14} />
           </button>
-          <input
-            type="number"
+          <NumericInput
             min={unitMode === 'kg' || unitMode === 'liter' ? 0.001 : 1}
             step={unitMode === 'kg' || unitMode === 'liter' ? '0.001' : '1'}
             value={displayQty}

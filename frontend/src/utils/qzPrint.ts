@@ -9,8 +9,8 @@
  *
  * Digital signature:
  *  • Tries to load /digital-certificate.txt from the public folder.
- *  • If the file is absent, falls back to "unsigned / anonymous" mode — fine for
- *    development and internal networks.
+ *  • If the file is absent, unsigned mode is permitted only in Vite development;
+ *    production rejects missing certificates/signatures.
  *  • sign-message.php lives in backend/ and is accessible at
  *    /pos/backend/sign-message.php (Apache serves it directly because it is a
  *    real file — the .htaccess rewrite condition is !-f).
@@ -84,44 +84,46 @@ function ensureSecurity(): void {
     const cfg = getCfg()
     const electronApi = getElectronQZApi()
 
+    const allowUnsignedDevelopment = import.meta.env.DEV
+
     if (electronApi?.getQZCert && electronApi.signQZMessage) {
         // ═══ Electron Mode: الشهادة والتوقيع عبر IPC ═══
-        qz.security.setCertificatePromise((resolve) => {
+        qz.security.setCertificatePromise((resolve, reject) => {
             electronApi.getQZCert()
                 .then((cert: string | null) => {
                     if (cert) { resolve(cert) }
-                    else {
-                        console.warn('[QZ] No certificate from Electron — using unsigned mode')
-                        resolve()
-                    }
+                    else if (allowUnsignedDevelopment) resolve()
+                    else reject(new Error('[QZ] Electron certificate is unavailable'))
                 })
-                .catch(() => { resolve() })
+                .catch(reject)
         })
 
         qz.security.setSignatureAlgorithm('SHA512')
 
-        qz.security.setSignaturePromise((toSign) => (resolve) => {
+        qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
             electronApi.signQZMessage(toSign)
                 .then((sig: string | null) => {
                     if (sig) resolve(sig)
-                    else resolve()
+                    else if (allowUnsignedDevelopment) resolve()
+                    else reject(new Error('[QZ] Electron signature is unavailable'))
                 })
-                .catch(() => { resolve() })
+                .catch(reject)
         })
     } else {
         // ═══ Browser Mode: الطريقة القديمة (fetch) — Fallback للمتصفح العادي ═══
-        qz.security.setCertificatePromise((resolve) => {
+        qz.security.setCertificatePromise((resolve, reject) => {
             fetch(cfg.certUrl, { cache: 'no-store', headers: { 'Content-Type': 'text/plain' } })
                 .then((r: Response) => {
-                    if (r.ok) { r.text().then((certificate) => resolve(certificate)) }
-                    else { console.warn('[QZ] digital-certificate.txt not found — unsigned mode'); resolve() }
+                    if (r.ok) { r.text().then((certificate) => resolve(certificate), reject) }
+                    else if (allowUnsignedDevelopment) resolve()
+                    else reject(new Error('[QZ] Digital certificate is unavailable'))
                 })
-                .catch(() => { console.warn('[QZ] Could not fetch certificate — unsigned mode'); resolve() })
+                .catch(reject)
         })
 
         qz.security.setSignatureAlgorithm('SHA512')
 
-        qz.security.setSignaturePromise((toSign) => (resolve) => {
+        qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
             fetch(`${cfg.signUrl}?request=${encodeURIComponent(toSign)}`, {
                 cache: 'no-store', credentials: 'include',
                 headers: { 'Content-Type': 'text/plain' },
@@ -130,12 +132,13 @@ function ensureSecurity(): void {
                     if (r.ok) {
                         r.text().then((signature) => {
                             if (signature) resolve(signature)
-                            else resolve()
+                            else if (allowUnsignedDevelopment) resolve()
+                            else reject(new Error('[QZ] Signature is unavailable'))
                         })
                     }
-                    else { console.warn('[QZ] sign-message returned', r.status, '— unsigned mode'); resolve() }
+                    else reject(new Error(`[QZ] sign-message returned ${r.status}`))
                 })
-                .catch(() => { resolve() })
+                .catch(reject)
         })
     }
 

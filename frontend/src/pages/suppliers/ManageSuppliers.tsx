@@ -1,35 +1,76 @@
 
-import { useState, useEffect } from 'react'
-import { Plus, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Plus, Search, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../../api/endpoints'
 import { formatCurrency } from '../../utils/formatters'
 import { useConfirmStore } from '../../store/confirmStore'
 import { extractApiError } from '../../utils/apiError'
+import Pagination from '../../components/Pagination'
+import NumericInput from '../../components/forms/NumericInput'
+
+interface SupplierForm {
+  name: string
+  phone: string
+  email: string
+  address: string
+  initial_balance: string
+  balance_direction: 'debit' | 'credit'
+}
+
+const emptySupplierForm: SupplierForm = {
+  name: '',
+  phone: '',
+  email: '',
+  address: '',
+  initial_balance: '',
+  balance_direction: 'debit',
+}
 
 export default function ManageSuppliers() {
-  const [suppliers, setSuppliers] = useState<any[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading]     = useState(false)
   const [showForm, setShowForm]   = useState(false)
-  const [editing, setEditing]     = useState<any>(null)
-  const [form, setForm]           = useState({ name: '', phone: '', email: '', address: '', initial_balance: '', balance_direction: 'debit' })
+  const [editing, setEditing]     = useState<Supplier | null>(null)
+  const [form, setForm]           = useState<SupplierForm>(emptySupplierForm)
+  const [search, setSearch]       = useState('')
+  const [serverSearch, setServerSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { confirm }               = useConfirmStore()
 
-  const load = async () => {
+  const load = useCallback(async (page: number, query: string) => {
     setLoading(true)
     try {
-      const res = (await getSuppliers()).data
-      const list = Array.isArray(res.data) ? res.data : ((res as any).data?.data ?? [])
-      setSuppliers(list)
+      const response = await getSuppliers({ page, limit: 20, search: query || undefined })
+      setSuppliers(Array.isArray(response.data.data) ? response.data.data : [])
+      setCurrentPage(response.data.pagination?.page ?? page)
+      setTotalPages(response.data.pagination?.pages ?? 1)
     }
     catch (err) { toast.error(extractApiError(err, 'فشل تحميل الموردين')) }
     finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    void load(currentPage, serverSearch)
+  }, [currentPage, load, serverSearch])
+
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+  }, [])
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setCurrentPage(1)
+      setServerSearch(value.trim())
+    }, 300)
   }
 
-  useEffect(() => { load() }, [])
-
-  const openNew  = () => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '', initial_balance: '', balance_direction: 'debit' }); setShowForm(true) }
-  const openEdit = (s: any) => {
+  const openNew  = () => { setEditing(null); setForm(emptySupplierForm); setShowForm(true) }
+  const openEdit = (s: Supplier) => {
     setEditing(s);
     setForm({
       name: s.name, phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '',
@@ -39,33 +80,46 @@ export default function ManageSuppliers() {
     setShowForm(true)
   }
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     try {
       const rawBal = parseFloat(form.initial_balance) || 0
-      const { balance_direction, ...restForm } = form
       const payload = {
-        ...restForm,
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
         initial_balance: form.balance_direction === 'credit' ? -Math.abs(rawBal) : Math.abs(rawBal),
       }
       if (editing) await updateSupplier(editing.id, payload)
       else await createSupplier(payload)
       toast.success(editing ? 'تم التحديث' : 'تمت الإضافة')
       setShowForm(false)
-      load()
+      void load(currentPage, serverSearch)
     } catch (err) { toast.error(extractApiError(err, 'فشلت العملية')) }
   }
 
-  const handleDelete = async (id: any) => {
+  const handleDelete = async (id: number) => {
     if (!(await confirm('حذف هذا المورد؟'))) return
-    try { await deleteSupplier(id); toast.success('تم الحذف'); load() }
+    try { await deleteSupplier(id); toast.success('تم الحذف'); void load(currentPage, serverSearch) }
     catch (err) { toast.error(extractApiError(err, 'فشل الحذف')) }
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div>
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <button onClick={openNew} className="btn btn-primary"><Plus size={16} /> إضافة مورد</button>
+        <div style={{ position: 'relative', flex: '1 1 240px' }}>
+          <Search size={16} style={{ position: 'absolute', right: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="search"
+            className="input"
+            style={{ paddingRight: '2.2rem' }}
+            value={search}
+            onChange={(event) => handleSearchChange(event.target.value)}
+            placeholder="ابحث باسم المورد أو الهاتف..."
+          />
+        </div>
       </div>
 
       <div className="card">
@@ -88,7 +142,7 @@ export default function ManageSuppliers() {
               </thead>
               <tbody>
                 {suppliers.map(s => {
-                  const bal = parseFloat(s.balance) || 0
+                  const bal = Number(s.balance) || 0
                   return (
                   <tr key={s.id}>
                     <td style={{ fontWeight: 600 }}>
@@ -111,6 +165,7 @@ export default function ManageSuppliers() {
                 )})}
               </tbody>
             </table>
+            <Pagination current={currentPage} total={totalPages} onPage={setCurrentPage} />
           </div>
         )}
       </div>
@@ -132,7 +187,8 @@ export default function ManageSuppliers() {
                 <div key={fi.key}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem' }}>{fi.label}</label>
                   <input type={fi.type} className="input" required={fi.required}
-                    value={(form as any)[fi.key]} onChange={e => setForm({ ...form, [fi.key]: e.target.value })}
+                    value={form[fi.key as keyof Pick<SupplierForm, 'name' | 'phone' | 'email' | 'address'>]}
+                    onChange={e => setForm({ ...form, [fi.key]: e.target.value })}
                   />
                 </div>
               ))}
@@ -142,10 +198,10 @@ export default function ManageSuppliers() {
                   حدد اتجاه الرصيد المبدئي ثم أدخل المبلغ، وإلا اتركه 0
                 </p>
                 <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
-                  {[
+                  {([
                     { id: 'debit',  label: '⬅ هو مدين لي',  color: 'var(--danger)',  bg: 'rgba(239,68,68,.1)' },
                     { id: 'credit', label: '➡ أنا مدين له', color: 'var(--secondary)', bg: 'rgba(59,130,246,.1)' },
-                  ].map(d => (
+                  ] as const).map(d => (
                     <button key={d.id} type="button" onClick={() => setForm(f => ({ ...f, balance_direction: d.id }))}
                       style={{
                         flex: 1, padding: '0.4rem', fontSize: '0.82rem', fontWeight: 600,
@@ -158,7 +214,7 @@ export default function ManageSuppliers() {
                     >{d.label}</button>
                   ))}
                 </div>
-                <input className="input" type="number" min="0" step="0.01" placeholder="0.00"
+                <NumericInput className="input" min="0" step="0.01" placeholder="0.00"
                   value={form.initial_balance}
                   onChange={e => setForm(f => ({ ...f, initial_balance: e.target.value }))} />
               </div>

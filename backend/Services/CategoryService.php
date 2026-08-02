@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Repositories\CategoryRepository;
 use App\Helpers\Cache;
 use App\Helpers\EventDispatcher;
-use App\Config\Database;
+use PDO;
 use Throwable;
 use Exception;
 
@@ -16,10 +16,10 @@ use Exception;
  */
 class CategoryService {
 
-    private CategoryRepository $categoryRepo;
-
-    public function __construct(CategoryRepository $categoryRepo) {
-        $this->categoryRepo = $categoryRepo;
+    public function __construct(
+        private CategoryRepository $categoryRepo,
+        private PDO $db,
+    ) {
     }
 
     /**
@@ -55,16 +55,17 @@ class CategoryService {
      * @throws Exception في حال فشل الإنشاء
      */
     public function createCategory(array $data): array {
-        $db = Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $id = $this->categoryRepo->create(['name' => $data['name']]);
             EventDispatcher::dispatch('category.created', ['id' => $id]);
-            $db->commit();
+            $this->db->commit();
             return ['id' => $id, 'name' => $data['name']];
         } catch (Throwable $e) {
-            $db->rollBack();
-            throw new Exception('فشل إنشاء الفئة', 500);
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new Exception('فشل إنشاء الفئة', 500, $e);
         }
     }
 
@@ -77,16 +78,17 @@ class CategoryService {
      * @throws Exception في حال فشل التحديث
      */
     public function updateCategory(int $id, array $data): array {
-        $db = Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $this->categoryRepo->update($id, ['name' => $data['name']]);
             EventDispatcher::dispatch('category.updated', ['id' => $id]);
-            $db->commit();
+            $this->db->commit();
             return ['id' => $id, 'name' => $data['name']];
         } catch (Throwable $e) {
-            $db->rollBack();
-            throw new Exception('فشل تحديث الفئة', 500);
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new Exception('فشل تحديث الفئة', 500, $e);
         }
     }
 
@@ -98,15 +100,16 @@ class CategoryService {
      * @throws Exception في حال فشل الحذف
      */
     public function deleteCategory(int $id): void {
-        $db = Database::getInstance();
-        $db->beginTransaction();
+        $this->db->beginTransaction();
         try {
             $this->categoryRepo->delete($id);
             EventDispatcher::dispatch('category.deleted', ['id' => $id]);
-            $db->commit();
+            $this->db->commit();
         } catch (Throwable $e) {
-            $db->rollBack();
-            throw new Exception('فشل حذف الفئة', 500);
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new Exception('فشل حذف الفئة', 500, $e);
         }
     }
 }

@@ -1,7 +1,6 @@
 
-import { useState, useEffect, useMemo } from 'react'
-import { Plus, Edit2, Search, X, Package } from 'lucide-react'
-import useSettingsStore from '../../store/settingsStore'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Plus, Search, Package } from 'lucide-react'
 import { exportSupplierLedgerPDF } from '../../utils/pdfExport'
 import useQZPrinter from '../../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../../components/QZPrinterUI'
@@ -13,21 +12,16 @@ import SupplierEditEntryModal from './components/SupplierEditEntryModal'
 import SupplierLedgerTable from './components/SupplierLedgerTable'
 import PurchaseReceiptModal from './components/PurchaseReceiptModal'
 import { extractApiError } from '../../utils/apiError'
-
-const fmtLedgerDate = (s: any) => {
-  if (!s) return '—'
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return '—'
-  return new Intl.DateTimeFormat('en-GB', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(d)
-}
+import Pagination from '../../components/Pagination'
 
 export default function SupplierAccounts() {
-  const [suppliers, setSuppliers]       = useState<any[]>([])
+  const [suppliers, setSuppliers]       = useState<Supplier[]>([])
   const [loading, setLoading]           = useState(true)
   const [search, setSearch]             = useState('')
+  const [serverSearch, setServerSearch] = useState('')
+  const [currentPage, setCurrentPage]   = useState(1)
+  const [totalPages, setTotalPages]     = useState(1)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // كشف الحساب
   const [ledgerData, setLedgerData]     = useState<any>(null)
@@ -45,18 +39,14 @@ export default function SupplierAccounts() {
   const [editEntryForm, setEditEntryForm] = useState({ type: 'debit', amount: '', description: '' })
   const [editEntryLoading, setEditEntryLoading] = useState(false)
 
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
-  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null)
 
   const handleViewInvoice = async (invoiceId: number) => {
-    setInvoiceLoading(true)
     try {
       const res = await getPurchaseInvoice(invoiceId)
       setSelectedInvoice(res.data.data)
     } catch (err) {
       toast.error(extractApiError(err, 'فشل تحميل تفاصيل الفاتورة'))
-    } finally {
-      setInvoiceLoading(false)
     }
   }
 
@@ -66,36 +56,44 @@ export default function SupplierAccounts() {
       const res = await deleteSupplierLedgerEntry(entryId)
       setLedgerData(res.data.data)
       toast.success('تم حذف القيد بنجاح')
-      load() // تحديث رصيد المورد في القائمة
+      void load(currentPage, serverSearch) // تحديث رصيد المورد في القائمة
     } catch (err) {
       toast.error(extractApiError(err, 'فشل حذف القيد'))
     }
   }
 
   const qz = useQZPrinter()
-  const settings = useSettingsStore()
-
-  const load = async () => {
+  const load = useCallback(async (page: number, query: string) => {
     setLoading(true)
     try {
-      const res = (await getSuppliers()).data
-      const list = Array.isArray(res.data) ? res.data : ((res as any).data?.data ?? [])
-      setSuppliers(list)
+      const response = await getSuppliers({ page, limit: 20, search: query || undefined })
+      setSuppliers(Array.isArray(response.data.data) ? response.data.data : [])
+      setCurrentPage(response.data.pagination?.page ?? page)
+      setTotalPages(response.data.pagination?.pages ?? 1)
     }
     catch (err) { toast.error(extractApiError(err, 'فشل تحميل الموردين')) }
     finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    void load(currentPage, serverSearch)
+  }, [currentPage, load, serverSearch])
+
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+  }, [])
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setCurrentPage(1)
+      setServerSearch(value.trim())
+    }, 300)
   }
 
-  useEffect(() => { load() }, [])
-
-  const filtered = useMemo(() =>
-    suppliers.filter(s =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      (s.phone || '').includes(search)
-    ), [suppliers, search])
-
   // ── ledger ──
-  const openLedger = async (s: any) => {
+  const openLedger = async (s: Supplier) => {
     setLedgerLoading(true)
     setLedgerData({ supplier: s, entries: [], balance: 0 })
     try {
@@ -118,7 +116,7 @@ export default function SupplierAccounts() {
       setPayDesc('دفعة نقدية للمورد')
       setPayType('credit')
       toast.success(`تم تسجيل دفعة ${formatCurrency(amount)}`)
-      load()
+      void load(currentPage, serverSearch)
     } catch (err) { toast.error(extractApiError(err, 'فشل التسجيل')) }
     finally { setPayLoading(false) }
   }
@@ -138,7 +136,7 @@ export default function SupplierAccounts() {
       toast.success('تم تعديل القيد')
       setLedgerData(res.data.data) // Update UI
       setEditEntryModal(null)
-      load() // Refresh list balances
+      void load(currentPage, serverSearch) // Refresh list balances
     } catch (err) { toast.error(extractApiError(err, 'فشل تعديل القيد')) } finally {
       setEditEntryLoading(false)
     }
@@ -155,17 +153,17 @@ export default function SupplierAccounts() {
 
         <div style={{ position: 'relative' }}>
           <Search size={15} style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input className="input" style={{ paddingRight: '2rem' }} placeholder="ابحث بالاسم أو الهاتف..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input" style={{ paddingRight: '2rem' }} placeholder="ابحث بالاسم أو الهاتف..." value={search} onChange={e => handleSearchChange(e.target.value)} />
         </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>جارٍ التحميل...</div>
-        ) : filtered.length === 0 ? (
+        ) : suppliers.length === 0 ? (
           <div className="empty-state"><Package size={36} color="var(--border)" /><p>لا يوجد موردون</p></div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto', flex: 1 }}>
-            {filtered.map(s => {
-              const bal = parseFloat(s.balance) || 0
+            {suppliers.map(s => {
+              const bal = Number(s.balance) || 0
               return (
                 <div
                   key={s.id}
@@ -198,6 +196,7 @@ export default function SupplierAccounts() {
                 </div>
               )
             })}
+            <Pagination current={currentPage} total={totalPages} onPage={setCurrentPage} />
           </div>
         )}
       </div>

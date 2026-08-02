@@ -1,14 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
-import { Trash2, ShoppingCart, X, Eye, Printer } from 'lucide-react'
+import { useCallback, useState, useEffect, useRef } from 'react'
+import { Trash2, ShoppingCart, X, Eye } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import useSettingsStore from '../../store/settingsStore'
 import { browserPrintPurchase, buildPurchaseReceiptHTML } from '../../utils/receiptBuilder'
 import useQZPrinter from '../../hooks/useQZPrinter'
 import { QZPrinterPicker, QZPrintButton } from '../../components/QZPrinterUI'
 import Pagination from '../../components/Pagination'
+import SearchableEntitySelect from '../../components/SearchableEntitySelect'
 import toast from 'react-hot-toast'
 import {
-  getSuppliers, getPurchaseInvoices, getPurchaseInvoice, deletePurchaseInvoice,
+  deletePurchaseInvoice, getPurchaseInvoice, getPurchaseInvoices,
+  getSupplierOption, searchSuppliers,
 } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatDate } from '../../utils/formatters'
 import { useConfirmStore } from '../../store/confirmStore'
@@ -65,7 +67,6 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
   const [filters, setFilters]         = useState<PurchaseFilters>({ date: '', month: '', year: '', search: '' })
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages]   = useState(1)
-  const [suppliers, setSuppliers]     = useState<Supplier[]>([])
   const searchTimer                   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const user                          = useAuthStore((s) => s.user)
   const isAdmin                       = user?.role === 'admin'
@@ -75,11 +76,7 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
   const [hidePrices, setHidePrices] = useState(false)
   const [hideQuantities, setHideQuantities] = useState(false)
 
-  useEffect(() => {
-    getSuppliers().then((response) => setSuppliers(response.data.data ?? [])).catch(console.error)
-  }, [])
-
-  const load = async (f: PurchaseFilters = filters, supId = filterSupplier, p = 1) => {
+  const load = useCallback(async (f: PurchaseFilters, supId: string, p: number) => {
     setLoading(true)
     try {
       const params: Record<string, string | number> = { page: p, limit: 15 }
@@ -102,9 +99,11 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
     } catch (err) { toast.error(extractApiError(err, 'فشل تحميل فواتير المشتريات')) } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    void load({ date: '', month: '', year: '', search: '' }, '', 1)
+  }, [load])
 
   const handleFilter = (key: keyof PurchaseFilters, val: string) => {
     const next = { ...filters, [key]: val }
@@ -172,10 +171,15 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
           </div>
           <div className="form-group">
             <label style={labelSt}>المورد</label>
-            <select className="input" value={filterSupplier} onChange={e => handleSupplierFilter(e.target.value)}>
-              <option value="">الكل</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <SearchableEntitySelect<Supplier>
+              value={filterSupplier}
+              onChange={(value) => handleSupplierFilter(value)}
+              searchOptions={searchSuppliers}
+              loadOption={getSupplierOption}
+              searchPlaceholder="ابحث عن مورد..."
+              emptyLabel="الكل"
+              loadingLabel="جارٍ التحميل..."
+            />
           </div>
           <div className="form-group">
             <label style={labelSt}>تاريخ محدد</label>
@@ -289,11 +293,12 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
                   <InfoCard label="المورد" value={selected.supplier_name} />
                   <InfoCard label="التاريخ" value={formatDate(selected.created_at)} />
                   <InfoCard label="إجمالي الفاتورة" value={formatCurrency(selected.total)} />
+                  {Number(selected.discount) > 0 && <InfoCard label="خصم المورد" value={formatCurrency(selected.discount)} />}
                   <InfoCard label="إجمالي عدد الجرعات / الأصناف" value={formatNumber(selected.items_count)} />
                 </div>
 
                 {/* Delivery Info */}
-                {(selected.driver_name || selected.vehicle_number || selected.delivery_date || selected.delivery_notes) && (
+                {(selected.driver_name || Number(selected.shipping_cost) > 0 || selected.delivery_date || selected.delivery_notes) && (
                   <div style={{
                     background: 'var(--bg)',
                     border: '1px solid var(--border)',
@@ -306,7 +311,7 @@ export default function PurchaseHistory({ onReturnToCart }: PurchaseHistoryProps
                     </h4>
                     <div className="resp-2col" style={{ gap: '0.5rem', fontSize: '0.8rem' }}>
                       {selected.driver_name && <div><strong>السائق:</strong> {selected.driver_name}</div>}
-                      {selected.vehicle_number && <div><strong>رقم السيارة:</strong> {selected.vehicle_number}</div>}
+                      {Number(selected.shipping_cost) > 0 && <div><strong>تكلفة الشحن:</strong> {formatCurrency(selected.shipping_cost)}</div>}
                       {selected.delivery_date && <div><strong>تاريخ التسليم:</strong> {formatDate(selected.delivery_date)}</div>}
                       {selected.delivery_notes && <div style={{ gridColumn: '1/-1', whiteSpace: 'pre-wrap' }}><strong>ملاحظات التسليم:</strong><br/>{selected.delivery_notes}</div>}
                     </div>

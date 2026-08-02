@@ -18,9 +18,9 @@ class FrontendBuildService {
 
         $frontendDir = $this->rootDir . DIRECTORY_SEPARATOR . 'frontend';
         if (stripos(PHP_OS_FAMILY, 'Windows') !== false) {
-            $npmCmd = 'cmd /c "cd /d ' . escapeshellarg($frontendDir) . ' && npm install --no-audit --no-fund 2>&1"';
+            $npmCmd = 'cmd /c "cd /d ' . escapeshellarg($frontendDir) . ' && npm ci --ignore-scripts --no-audit --no-fund 2>&1"';
         } else {
-            $npmCmd = 'cd ' . escapeshellarg($frontendDir) . ' && npm install --no-audit --no-fund 2>&1';
+            $npmCmd = 'cd ' . escapeshellarg($frontendDir) . ' && npm ci --ignore-scripts --no-audit --no-fund 2>&1';
         }
 
         $npmOut = [];
@@ -30,7 +30,7 @@ class FrontendBuildService {
         if ($npmRet !== 0) {
             Logger::warning('Update: npm install failed', ['output' => $npmOut, 'code' => $npmRet]);
             $output[] = "⚠️ npm install فشل (رمز: {$npmRet}) — ({$elapsed}s)";
-            $output[] = '  ↳ شغّل: cd frontend && npm install يدوياً';
+            $output[] = '  ↳ Run: cd frontend && npm ci manually';
             return false;
         } else {
             $output[] = "✅ تم تثبيت الحزم ({$elapsed}s)";
@@ -80,7 +80,7 @@ class FrontendBuildService {
         if (!$dir) return;
 
         if (!is_dir($dst)) {
-            mkdir($dst, 0777, true);
+            mkdir($dst, 0750, true);
         }
 
         while (($file = readdir($dir)) !== false) {

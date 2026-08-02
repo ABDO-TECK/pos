@@ -47,7 +47,8 @@ class LoyaltyService implements LoyaltyServiceInterface {
             return $points;
         } catch (\Throwable $e) {
             $this->db->rollBack();
-            throw new \Exception('فشل في إضافة نقاط الولاء: ' . $e->getMessage());
+            \App\Helpers\Logger::error('Failed to award loyalty points', \App\Helpers\Logger::exceptionContext($e));
+            throw new \RuntimeException('Unable to award loyalty points', 0, $e);
         }
     }
 
@@ -75,7 +76,11 @@ class LoyaltyService implements LoyaltyServiceInterface {
             return $discount;
         } catch (\Throwable $e) {
             $this->db->rollBack();
-            throw $e;
+            if ($e->getMessage() === 'رصيد النقاط غير كافي') {
+                throw $e;
+            }
+            \App\Helpers\Logger::error('Failed to redeem loyalty points', \App\Helpers\Logger::exceptionContext($e));
+            throw new \RuntimeException('Unable to redeem loyalty points', 0, $e);
         }
     }
 

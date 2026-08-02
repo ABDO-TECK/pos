@@ -4,10 +4,12 @@ import { getReportSummary, getTopProducts } from '../../api/endpoints'
 import { formatCurrency, formatNumber } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
 import { Coins, Box, TrendingUp, TrendingDown, Sparkles, Calendar, FileText, AlertTriangle, BarChart3, Gem } from 'lucide-react'
+import useReportChartTheme from './components/useReportChartTheme'
 
 export default function SummaryTab() {
   const [summary, setSummary] = useState<any>(null)
   const [topProducts, setTopProducts] = useState<any[]>([])
+  const chartTheme = useReportChartTheme()
 
   useEffect(() => {
     getReportSummary().then((r) => setSummary(r.data.data))
@@ -40,10 +42,16 @@ export default function SummaryTab() {
           <h3 style={{ fontWeight: 700, marginBottom: '1rem', fontSize: '1rem' }}>أفضل المنتجات مبيعًا</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={topProducts} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} width={80} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => [v, 'مبيعات']} />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: chartTheme.axis }} width={80} />
+              <YAxis tick={{ fontSize: 11, fill: chartTheme.axis }} />
+              <Tooltip
+                formatter={(v) => [v, 'مبيعات']}
+                contentStyle={{ backgroundColor: chartTheme.tooltipBackground, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
+                labelStyle={{ color: chartTheme.tooltipText }}
+                itemStyle={{ color: chartTheme.tooltipText }}
+                cursor={{ fill: chartTheme.cursor }}
+              />
               <Bar dataKey="total_sold" fill="#22c55e" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

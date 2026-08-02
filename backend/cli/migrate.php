@@ -7,8 +7,9 @@ if (php_sapi_name() !== 'cli') {
     die('Forbidden: This script can only be run from the command line.');
 }
 
-require_once __DIR__ . '/../Config/config.php';
 require_once __DIR__ . '/../vendor/autoload.php';
+\App\Helpers\ErrorHandler::register();
+require_once __DIR__ . '/../Config/config.php';
 
 echo "Running Migrations...\n";
 echo "=====================\n";

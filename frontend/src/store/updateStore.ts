@@ -1,34 +1,11 @@
 import { create } from 'zustand'
 import { checkUpdate } from '../api/endpoints'
 
-interface ChangelogEntry {
-  version: string;
-  date: string;
-  changes: string[];
-}
-
-interface UpdateData {
-  has_update: boolean;
-  updateAvailable?: boolean;
-  latest_version: string | null;
-  latestVersion?: string | null;
-  current_version: string | null;
-  currentVersion?: string | null;
-  changelog: ChangelogEntry[];
-  status?: string;
-  message?: string;
-  checkedUrl?: string;
-  errorCode?: string | null;
-  details?: string | null;
-  updates_disabled?: boolean;
-  updates_unreachable?: boolean;
-}
-
 interface UpdateState {
   hasUpdate: boolean;
   latestVersion: string | null;
   currentVersion: string | null;
-  changelog: ChangelogEntry[];
+  changelog: UpdateCheckResult['changelog'];
   lastChecked: number | null;
   isChecking: boolean;
   updatesDisabled: boolean;
@@ -36,7 +13,7 @@ interface UpdateState {
   updatesUnreachable: boolean;
   updateErrorMessage: string;
   silentCheck: () => Promise<void>;
-  forceCheck: () => Promise<UpdateData | undefined>;
+  forceCheck: () => Promise<UpdateCheckResult | undefined>;
 }
 
 const useUpdateStore = create<UpdateState>((set, get) => ({
@@ -62,7 +39,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ isChecking: true })
     try {
       const res = await checkUpdate({ hideGlobalError: true })
-      const data = res.data.data as any
+      const data = res.data.data
       
       let localVersion = data?.current_version || null;
       if (window.electronAPI && window.electronAPI.getVersion) {
@@ -80,7 +57,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
         updatesUnreachable: data?.updates_unreachable || false,
         updateErrorMessage: data?.updates_unreachable ? formatUpdateError(data) : '',
       })
-    } catch (err) {
+    } catch {
       // Catch all errors quietly, never toast/throw/rethrow
       set({
         updatesUnreachable: true,
@@ -95,7 +72,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ isChecking: true })
     try {
       const res = await checkUpdate({ hideGlobalError: true })
-      const data = res.data.data as any
+      const data = res.data.data
       
       let localVersion = data?.current_version || null;
       if (window.electronAPI && window.electronAPI.getVersion) {
@@ -127,7 +104,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
   }
 }))
 
-function formatUpdateError(data: Partial<UpdateData> | undefined): string {
+function formatUpdateError(data: Partial<UpdateCheckResult> | undefined): string {
   const baseMessage = data?.message || 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'
   const errorCode = data?.errorCode || data?.status
   const details = data?.details

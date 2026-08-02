@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import { extractApiError } from '../utils/apiError'
 import IconBadge from '../components/common/IconBadge'
+import NumericInput from '../components/forms/NumericInput'
 
 export default function Inventory() {
   const [products, setProducts] = useState<any[]>([])
@@ -168,9 +169,8 @@ export default function Inventory() {
             </div>
             <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>المنتج: <strong>{editModal.name}</strong></p>
             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>الكمية الجديدة</label>
-            <input 
+            <NumericInput
               className="input input-lg" 
-              type="number" 
               step={editModal.unit_type === 'weight' || editModal.unit_type === 'liter' ? '0.001' : '1'} 
               value={newQty} 
               onChange={(e) => setNewQty(parseFloat(e.target.value) || 0)} 

@@ -3,8 +3,10 @@ declare global {
     id: number;
     name: string;
     phone: string | null;
+    email?: string | null;
     address: string | null;
     balance: number;
+    initial_balance?: number;
     created_at?: string;
   }
 
@@ -30,8 +32,11 @@ declare global {
     user_id: number;
     user_name?: string;
     total: number;
+    discount?: number | null;
+    shipping_cost?: number | null;
     notes?: string | null;
     driver_name?: string | null;
+    /** Legacy data only; new purchase forms use shipping_cost instead. */
     vehicle_number?: string | null;
     delivery_date?: string | null;
     delivery_notes?: string | null;
@@ -49,9 +54,18 @@ declare global {
     deposit?: number;
     replace_invoice_id?: number | null;
     driver_name?: string;
-    vehicle_number?: string;
+    discount?: number;
+    shipping_cost?: number;
     delivery_date?: string;
     delivery_notes?: string;
+  }
+
+  interface SupplierLedgerData {
+    supplier: Supplier;
+    entries: LedgerEntry[];
+    balance: number;
+    total_entries?: number;
+    truncated?: boolean;
   }
 }
 

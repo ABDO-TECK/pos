@@ -1,6 +1,14 @@
 Options -Indexes
 RewriteEngine On
 
+# Runtime data and secrets are never public HTTP resources. These rules apply
+# before the generic front-controller rewrite and also protect existing files.
+RewriteRule ^(?:storage|logs)(?:/|$) - [F,L,NC]
+
+<FilesMatch "(^\.|\.(?:pem|key|sqlite(?:-wal|-shm)?|log|sql)$)">
+    Require all denied
+</FilesMatch>
+
 # ── حماية Adminer: منع الوصول في الإنتاج ──────────────────────
 # في بيئة الإنتاج، يتم حظر الوصول تماماً لملفات adminer
 # في بيئة التطوير، يُسمح فقط من localhost (127.0.0.1 / ::1)

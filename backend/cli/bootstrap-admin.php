@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+\App\Helpers\ErrorHandler::register();
 require dirname(__DIR__) . '/Config/config.php';
 
 use App\Config\Database;
+use App\Helpers\PasswordHasher;
 
 $email = filter_var(getenv('INITIAL_ADMIN_EMAIL') ?: '', FILTER_VALIDATE_EMAIL);
 $password = (string) (getenv('INITIAL_ADMIN_PASSWORD') ?: '');
@@ -46,7 +48,7 @@ try {
     $statement->execute([
         'name' => $name,
         'email' => $email,
-        'password' => password_hash($password, PASSWORD_DEFAULT),
+        'password' => PasswordHasher::hash($password),
         'role' => 'admin',
     ]);
 

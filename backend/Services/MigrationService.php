@@ -10,6 +10,9 @@ use PDOException;
 
 class MigrationService {
 
+    private const MIGRATION_LOCK_NAME = 'pos_schema_migrations';
+    private const MIGRATION_LOCK_TIMEOUT_SECONDS = 60;
+
     private PDO $db;
     private string $migrationsPath;
     private string $flagFile;
@@ -33,8 +36,29 @@ class MigrationService {
      */
     public function runAllMigrations(bool $force = false): array {
         if (!is_dir($this->migrationsPath)) {
-            return ['executed' => 0, 'errors' => ["Migrations directory not found: {$this->migrationsPath}"]];
+            return [
+                'executed' => 0,
+                'errors' => ["Migrations directory not found: {$this->migrationsPath}"],
+                'skipped' => false,
+            ];
         }
+
+        if (!$this->acquireMigrationLock()) {
+            return [
+                'executed' => 0,
+                'errors' => ['Timed out waiting for the database migration lock.'],
+                'skipped' => false,
+            ];
+        }
+
+        try {
+            return $this->runPendingMigrations($force);
+        } finally {
+            $this->releaseMigrationLock();
+        }
+    }
+
+    private function runPendingMigrations(bool $force): array {
 
         // ── Smart skip: لا حاجة للتنفيذ إذا لم تتغير الملفات ──
         if (!$force && $this->isUpToDate()) {
@@ -77,6 +101,27 @@ class MigrationService {
             'errors' => $errors,
             'skipped' => false
         ];
+    }
+
+    private function acquireMigrationLock(): bool {
+        $stmt = $this->db->prepare('SELECT GET_LOCK(:lock_name, :timeout_seconds)');
+        $stmt->bindValue(':lock_name', self::MIGRATION_LOCK_NAME, PDO::PARAM_STR);
+        $stmt->bindValue(':timeout_seconds', self::MIGRATION_LOCK_TIMEOUT_SECONDS, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return (int) $stmt->fetchColumn() === 1;
+    }
+
+    private function releaseMigrationLock(): void {
+        try {
+            $stmt = $this->db->prepare('SELECT RELEASE_LOCK(:lock_name)');
+            $stmt->execute(['lock_name' => self::MIGRATION_LOCK_NAME]);
+        } catch (\Throwable $e) {
+            Logger::warning('Failed to release the database migration lock', [
+                'reference' => bin2hex(random_bytes(8)),
+                'exception' => get_class($e),
+            ]);
+        }
     }
 
     // ── Flag-based smart skip ─────────────────────────────────
@@ -180,8 +225,9 @@ class MigrationService {
                 }
 
                 Logger::error("Migration failed: $file", [
-                    'error' => $e->getMessage(),
-                    'sql'   => mb_substr($sql, 0, 300),
+                    'reference' => bin2hex(random_bytes(8)),
+                    'exception' => get_class($e),
+                    'code' => (int) $e->getCode(),
                 ]);
                 return false;
             }

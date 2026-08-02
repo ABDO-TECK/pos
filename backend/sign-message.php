@@ -8,9 +8,9 @@
  * Key file location is configured via QZ_PRIVATE_KEY_PATH in .env:
  *   QZ_PRIVATE_KEY_PATH="C:/private/private-key.pem"
  *
- * If the variable is not set, the following fallback paths are tried:
- *   - C:/private/private-key.pem
- *   - (backend)/storage/private-key.pem
+ * If the variable is not set, C:/private/private-key.pem is tried for
+ * backward-compatible server deployments. Keys beneath the HTTP document
+ * root are intentionally unsupported.
  *
  * To use unsigned / anonymous mode (development only), set:
  *   QZ_PRIVATE_KEY_PATH=""
@@ -26,6 +26,7 @@ use App\Helpers\EnvLoader;
 $envPath = getenv('ENV_PATH') ?: $baseDir . '/.env';
 EnvLoader::load($envPath);
 require_once __DIR__ . '/vendor/autoload.php';
+\App\Helpers\ErrorHandler::register();
 require_once __DIR__ . '/Config/config.php';
 
 // Allow CORS — restricted to known origins only (security fix)
@@ -42,9 +43,9 @@ $allowedSignOrigins = [
     'app://pos-app',
     'app://.',
 ];
-// Also allow LAN IPs for thermal printing from tablets on local network
+// Also allow LAN IPs only when explicitly enabled for thermal printing.
 $signOriginAllowed = in_array($origin, $allowedSignOrigins, true);
-if (!$signOriginAllowed && $origin !== '') {
+if (!$signOriginAllowed && EnvLoader::getBool('CORS_ALLOW_LAN', false) && $origin !== '') {
     $signOriginAllowed = \App\Helpers\NetworkHelper::isLanOrigin($origin);
 }
 if ($signOriginAllowed && $origin !== '') {
@@ -89,7 +90,7 @@ if ($accessToken === '') {
 
 $db = \App\Config\Database::getInstance();
 $authStatement = $db->prepare(
-    'SELECT t.user_id
+    'SELECT t.user_id, u.role, u.branch_id
      FROM tokens t
      JOIN users u ON u.id = t.user_id
      WHERE t.token = ?
@@ -100,10 +101,24 @@ $authStatement = $db->prepare(
      LIMIT 1'
 );
 $authStatement->execute([hash('sha256', $accessToken)]);
-$authenticatedUserId = $authStatement->fetchColumn();
-if ($authenticatedUserId === false) {
+$authenticatedUser = $authStatement->fetch(\PDO::FETCH_ASSOC);
+if (!is_array($authenticatedUser)) {
     http_response_code(401);
     echo 'Invalid authentication token';
+    exit(1);
+}
+
+$authenticatedUserId = (int) $authenticatedUser['user_id'];
+$authService = new \App\Services\AuthService();
+$authService->setUser([
+    'id' => $authenticatedUserId,
+    'role' => (string) $authenticatedUser['role'],
+    'branch_id' => (int) $authenticatedUser['branch_id'],
+]);
+
+if (!\App\Middleware\PermissionMiddleware::allows($authService, 'printing.use')) {
+    http_response_code(403);
+    echo 'Printing permission required';
     exit(1);
 }
 
@@ -120,10 +135,7 @@ if ($envKeyPath !== '' && file_exists($envKeyPath)) {
     $KEY = $envKeyPath;
 } else {
     // Fallback paths (only used when .env key is not set)
-    $possibleKeys = [
-        'C:/private/private-key.pem',
-        $baseDir . '/storage/private-key.pem',
-    ];
+    $possibleKeys = ['C:/private/private-key.pem'];
     foreach ($possibleKeys as $path) {
         if (file_exists($path)) { $KEY = $path; break; }
     }
@@ -131,6 +143,12 @@ if ($envKeyPath !== '' && file_exists($envKeyPath)) {
 
 // ── Anonymous / unsigned fallback (if no key file exists) ─────────────────
 if ($KEY === null) {
+    if (defined('APP_ENV') && APP_ENV !== 'development') {
+        http_response_code(503);
+        echo 'QZ signing is not configured';
+        exit(1);
+    }
+
     // In unsigned mode QZ Tray's security.setSignaturePromise should call
     // resolve() with no argument. We just return an empty body so the JS
     // resolve() fallback in qzPrint.js takes over.
@@ -140,9 +158,11 @@ if ($KEY === null) {
 }
 
 // ── Sign the request ───────────────────────────────────────────────────────
-$req = $_GET['request'] ?? '';
+$req = \App\Security\QzRequestPolicy::normalizeDigest(
+    (string) ($_GET['request'] ?? '')
+);
 
-if ($req === '' || strlen($req) > 2048) {
+if ($req === null) {
     http_response_code(400);
     echo 'Invalid request parameter';
     exit(1);

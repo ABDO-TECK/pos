@@ -20,4 +20,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 contextBridge.exposeInMainWorld('posRuntime', {
   getApiBaseUrl: () => ipcRenderer.invoke('get-api-base-url'),
+  enableLanAccess: () => ipcRenderer.invoke('network:enable-lan'),
 });

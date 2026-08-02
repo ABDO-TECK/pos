@@ -41,7 +41,12 @@ class ReportController extends Controller {
     }
 
     public function topProducts() {
-        $limit    = (int)$this->getParam('limit', 10);
+        $limit = filter_var(
+            $this->getParam('limit', 10),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 1, 'max_range' => 100]]
+        );
+        $limit = $limit ?: 10;
         $fromDate = $this->getParam('from');
         $toDate   = $this->getParam('to');
         $products = $this->reportService->getTopProducts($limit, $fromDate, $toDate);
@@ -60,5 +65,4 @@ class ReportController extends Controller {
         return Response::cacheable($summary, 120);
     }
 }
-
 

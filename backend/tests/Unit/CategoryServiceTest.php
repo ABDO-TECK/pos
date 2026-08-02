@@ -6,16 +6,20 @@ use PHPUnit\Framework\TestCase;
 use App\Services\CategoryService;
 use App\Repositories\CategoryRepository;
 use Exception;
+use PDO;
 
 class CategoryServiceTest extends TestCase
 {
     private CategoryService $service;
     private $categoryRepoMock;
+    private PDO $db;
 
     protected function setUp(): void
     {
         $this->categoryRepoMock = $this->createMock(CategoryRepository::class);
-        $this->service = new CategoryService($this->categoryRepoMock);
+        $this->db = new PDO('sqlite::memory:');
+        $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->service = new CategoryService($this->categoryRepoMock, $this->db);
     }
 
     public function testGetAll()

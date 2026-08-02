@@ -23,7 +23,21 @@ class LedgerPdfService
         if (!$d) return '—';
         $ts = strtotime($d);
         if ($ts === false) return '—';
-        return date('d M Y, H:i', $ts);
+        // Keep the Arabic month name while isolating the complete value in an
+        // LTR container so the month/day order remains stable in HTML and PDF.
+        $months = [
+            1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+            5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+            9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر',
+        ];
+        $month = $months[(int) date('n', $ts)] ?? '';
+        $meridiem = date('A', $ts) === 'AM' ? 'ص' : 'م';
+
+        $rtlEmbed = "\u{202B}";
+        $directionalPop = "\u{202C}";
+
+        return date('d', $ts) . '/' . $rtlEmbed . $month . $directionalPop . '/' . date('Y', $ts)
+            . ' - ' . date('h:i', $ts) . ' ' . $rtlEmbed . $meridiem . $directionalPop;
     }
 
     /* ── mPDF factory ─────────────────────────────────────────── */
@@ -52,33 +66,45 @@ class LedgerPdfService
     public function getCss(): string
     {
         return '
+        @page { margin: 15mm 12mm; }
+        * { box-sizing: border-box; }
         body {
-            font-family: xbriyaz, sans-serif;
-            font-size: 13px;
-            color: #222222;
+            font-family: xbriyaz, Tahoma, Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.45;
+            color: #1e293b;
+            background: #ffffff;
             direction: rtl;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
         table { width: 100%; border-collapse: collapse; }
-        .header-table { border-bottom: 2px solid #333333; margin-bottom: 20px; padding-bottom: 10px; }
-        .header-title { font-size: 24px; font-weight: bold; color: #111111; margin: 0; padding: 0; }
-        .header-subtitle { font-size: 14px; color: #555555; margin-top: 5px; }
-        .header-meta { font-size: 12px; color: #444444; line-height: 1.6; text-align: left; }
-        .summary-table { margin-bottom: 25px; }
-        .summary-table td { width: 25%; padding: 10px; border: 1px solid #dddddd; text-align: center; background-color: #f9f9f9; }
-        .summary-label { font-size: 11px; color: #666666; text-transform: uppercase; }
-        .summary-val { font-size: 16px; font-weight: bold; color: #222222; margin-top: 4px; }
-        .ledger-table { margin-bottom: 15px; }
-        .ledger-table thead th { background-color: #f2f2f2; color: #333333; font-weight: bold; padding: 10px; border: 1px solid #cccccc; text-align: right; font-size: 12px; }
+        .header-table { border-bottom: 2px solid #1f4e79; margin-bottom: 16px; padding-bottom: 10px; }
+        .header-title { font-size: 23px; line-height: 1.25; font-weight: bold; color: #0f172a; margin: 0; padding: 0; }
+        .header-subtitle { font-size: 13px; color: #475569; margin-top: 6px; }
+        .header-meta { font-size: 11px; color: #475569; line-height: 1.65; text-align: left; }
+        .header-meta strong { color: #1e293b; }
+        .summary-table { margin-bottom: 18px; }
+        .summary-table td { width: 25%; padding: 9px 7px; border: 1px solid #cbd5e1; text-align: center; background-color: #f8fafc; }
+        .summary-label { font-size: 10px; color: #64748b; }
+        .summary-val { margin-top: 4px; font: 700 14px/1.3 Arial, Tahoma, sans-serif; color: #0f172a; direction: ltr; unicode-bidi: isolate; }
+        .ledger-table { margin-bottom: 14px; page-break-inside: auto; }
+        .ledger-table thead { display: table-header-group; }
+        .ledger-table thead th { background-color: #e8f0f7; color: #1e3a5f; font-weight: bold; padding: 8px 7px; border: 1px solid #b8c8d8; text-align: right; font-size: 11px; }
         .ledger-table thead th.center { text-align: center; }
-        .ledger-table tbody td { padding: 8px 10px; border: 1px solid #eeeeee; font-size: 12px; color: #333333; }
-        .ledger-table tfoot td { background-color: #f2f2f2; color: #222222; font-weight: bold; padding: 10px; border: 1px solid #cccccc; font-size: 12px; }
-        .col-num { width: 5%; text-align: center; }
-        .col-date { width: 15%; text-align: right; }
-        .col-desc { width: 35%; text-align: right; }
-        .col-debit { width: 15%; text-align: right; color: #333333; }
-        .col-credit { width: 15%; text-align: right; color: #333333; }
-        .col-bal { width: 15%; text-align: right; font-weight: bold; }
-        .footer-table { border-top: 1px solid #dddddd; padding-top: 10px; font-size: 10px; color: #777777; margin-top: 20px; }
+        .ledger-table tbody tr { page-break-inside: avoid; }
+        .ledger-table tbody tr:nth-child(even) td { background-color: #f8fafc; }
+        .ledger-table tbody td { padding: 7px; border: 1px solid #e2e8f0; font-size: 11px; color: #334155; }
+        .ledger-table tfoot td { background-color: #e2e8f0; color: #0f172a; font-weight: bold; padding: 8px 7px; border: 1px solid #b8c8d8; font-size: 11px; }
+        .col-num { width: 5%; text-align: center; direction: ltr; }
+        .col-date { width: 17%; text-align: left; direction: ltr; unicode-bidi: bidi-override; white-space: nowrap; }
+        .date-value { display: inline-block; direction: ltr; unicode-bidi: bidi-override; white-space: nowrap; }
+        .col-desc { width: 33%; text-align: right; }
+        .col-debit { width: 15%; text-align: left; direction: ltr; unicode-bidi: isolate; color: #b42318; white-space: nowrap; }
+        .col-credit { width: 15%; text-align: left; direction: ltr; unicode-bidi: isolate; color: #047857; white-space: nowrap; }
+        .col-bal { width: 15%; text-align: left; direction: ltr; unicode-bidi: isolate; font-weight: bold; white-space: nowrap; }
+        .numeric { direction: ltr; unicode-bidi: isolate; white-space: nowrap; }
+        .footer-table { border-top: 1px solid #cbd5e1; padding-top: 8px; font-size: 9px; color: #64748b; margin-top: 18px; }
         ';
     }
 
@@ -92,9 +118,10 @@ class LedgerPdfService
         $totalDebit  = $p['totalDebit'];
         $totalCredit = $p['totalCredit'];
         $storeName   = $p['storeName'];
-        $now         = $this->fmtDate(date('Y-m-d H:i:s'));
+        $now         = '<span class="date-value" dir="ltr">' . $this->fmtDate(date('Y-m-d H:i:s')) . '</span>';
         $balAbs      = $this->fmtCurrency(abs($balance));
         $balWord     = $balance > 0 ? $p['balDebitWord'] : $p['balCreditWord'];
+        $title       = htmlspecialchars((string)($p['title'] ?? ''), ENT_QUOTES, 'UTF-8');
 
         $metaRows = '<strong>' . $p['entityLabel'] . ':</strong> ' . htmlspecialchars($entity['name'] ?? '') . '<br>';
         if (!empty($entity['phone']))   $metaRows .= '<strong>رقم الهاتف:</strong> ' . htmlspecialchars($entity['phone']) . '<br>';
@@ -106,7 +133,7 @@ class LedgerPdfService
         <table class="header-table">
           <tr>
             <td style="vertical-align: top; width: 60%;">
-              <div class="header-title">' . $p['title'] . '</div>
+              <div class="header-title">' . $title . '</div>
               <div class="header-subtitle">' . htmlspecialchars($storeName) . '</div>
             </td>
             <td class="header-meta" style="vertical-align: top; width: 40%;">
@@ -144,7 +171,7 @@ class LedgerPdfService
             $html .= '
             <tr>
               <td class="col-num">' . ($i + 1) . '</td>
-              <td class="col-date">' . $this->fmtDate($row['date'] ?? null) . '</td>
+              <td class="col-date" dir="ltr"><span class="date-value" dir="ltr">' . $this->fmtDate($row['date'] ?? null) . '</span></td>
               <td class="col-desc">' . $desc . '</td>
               <td class="col-debit">' . ($isDebit ? $this->fmtCurrency((float)$row['debit']) : '—') . '</td>
               <td class="col-credit">' . ($isCredit ? $this->fmtCurrency((float)$row['credit']) : '—') . '</td>
@@ -153,7 +180,7 @@ class LedgerPdfService
         }
 
         $html .= '</tbody><tfoot><tr>
-              <td colspan="3" style="text-align: left;">الإجمالي الكلي</td>
+              <td colspan="3" style="text-align: right;">الإجمالي الكلي</td>
               <td class="col-debit">' . $this->fmtCurrency($totalDebit) . '</td>
               <td class="col-credit">' . $this->fmtCurrency($totalCredit) . '</td>
               <td class="col-bal">' . $balAbs . ' <span style="font-size:10px; font-weight:normal; color:#555;">' . $balWord . '</span></td>

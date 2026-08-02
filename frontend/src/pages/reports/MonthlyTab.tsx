@@ -4,12 +4,15 @@ import { getMonthlyReport } from '../../api/endpoints'
 import { formatCurrency, formatNumber, formatShortDate } from '../../utils/formatters'
 import { SCard, profitColor } from './components/SCard'
 import { Coins, Box, TrendingUp, TrendingDown, Sparkles, FileText, RefreshCw } from 'lucide-react'
+import NumericInput from '../../components/forms/NumericInput'
+import useReportChartTheme from './components/useReportChartTheme'
 
 export default function MonthlyTab() {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [year, setYear] = useState(new Date().getFullYear())
   const [monthly, setMonthly] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const chartTheme = useReportChartTheme()
 
   const loadMonthly = async () => {
     setLoading(true)
@@ -31,7 +34,7 @@ export default function MonthlyTab() {
             <option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('ar-EG', { month: 'long' })}</option>
           ))}
         </select>
-        <input type="number" className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value))} />
+        <NumericInput className="input" style={{ maxWidth: '100px' }} value={year} onChange={(e) => setYear(parseInt(e.target.value, 10) || new Date().getFullYear())} />
         <button className="btn btn-primary" onClick={loadMonthly} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
           {loading ? <span className="spinner" /> : <RefreshCw size={14} />} عرض
         </button>
@@ -54,10 +57,16 @@ export default function MonthlyTab() {
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={monthly.daily_breakdown.map((d: any) => ({ ...d, label: formatShortDate(d.date) }))}
                   margin={{ top: 5, right: 10, left: 10, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => [formatCurrency(v as number), 'الإيراد']} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: chartTheme.axis }} angle={-30} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 11, fill: chartTheme.axis }} />
+                  <Tooltip
+                    formatter={(v) => [formatCurrency(v as number), 'الإيراد']}
+                    contentStyle={{ backgroundColor: chartTheme.tooltipBackground, border: `1px solid ${chartTheme.tooltipBorder}`, color: chartTheme.tooltipText }}
+                    labelStyle={{ color: chartTheme.tooltipText }}
+                    itemStyle={{ color: chartTheme.tooltipText }}
+                    cursor={{ fill: chartTheme.cursor }}
+                  />
                   <Bar dataKey="total_revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
