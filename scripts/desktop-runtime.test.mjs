@@ -9,6 +9,7 @@ import { readRuntimeManifest, validateRuntimeDirectory } from './verify-desktop-
 
 const packageManifest = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'))
 const mainSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'electron', 'main.js'), 'utf8')
+const prepareRuntimeSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'prepare-desktop-runtime.ps1'), 'utf8')
 
 test('strict desktop runtime verification accepts the pinned manifest and required files', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'pos-desktop-runtime-'))
@@ -51,6 +52,11 @@ test('electron-builder keeps the runtime manifest in extraResources, outside app
   assert.equal(buildFiles.some((entry) => String(entry).toLowerCase().includes('portable')), false)
   assert.ok(extraResources.some((entry) => entry.from === 'portable' && entry.to === 'portable'))
   assert.ok(extraResources.some((entry) => Array.isArray(entry.filter) && entry.filter.includes('**/*')))
+})
+
+test('portable runtime preparation supports Windows PowerShell 5.1', () => {
+  assert.doesNotMatch(prepareRuntimeSource, /^\s*New-Item[^\r\n]*-LiteralPath/m)
+  assert.match(prepareRuntimeSource, /New-Item\s+-ItemType\s+Directory\s+-Path\s+\$BuildToolsDir/)
 })
 
 test('main startup propagates the selected MariaDB port through PHP and reset flows', () => {

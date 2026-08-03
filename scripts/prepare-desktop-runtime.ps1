@@ -75,7 +75,10 @@ function Copy-DirectoryContents {
     param([string] $Source, [string] $Destination)
 
     if (-not (Test-Path -LiteralPath $Destination -PathType Container)) {
-        New-Item -ItemType Directory -LiteralPath $Destination -Force | Out-Null
+        # New-Item in Windows PowerShell 5.1 does not expose -LiteralPath.
+        # These paths are generated inside the repository's verified runtime
+        # directories, so -Path is safe and keeps the script CI-compatible.
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     }
     Get-ChildItem -LiteralPath $Source -Force | Copy-Item -Destination $Destination -Recurse -Force
 }
@@ -108,12 +111,12 @@ if (-not $Force -and (Test-PreparedManifest)) {
     exit 0
 }
 
-New-Item -ItemType Directory -LiteralPath $BuildToolsDir -Force | Out-Null
-New-Item -ItemType Directory -LiteralPath $PortableDir -Force | Out-Null
+New-Item -ItemType Directory -Path $BuildToolsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 $downloadDirectory = Join-Path $BuildToolsDir 'desktop-runtime-downloads'
 $workDirectory = Join-Path $BuildToolsDir ("desktop-runtime-work-" + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -LiteralPath $downloadDirectory -Force | Out-Null
-New-Item -ItemType Directory -LiteralPath $workDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $workDirectory -Force | Out-Null
 Assert-ContainedPath $workDirectory $BuildToolsDir
 
 try {
