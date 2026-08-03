@@ -793,10 +793,12 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) { app.quit(); }
 
 app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  // Closing the window normally hides it in the tray. A second launch from
+  // the desktop shortcut must wake that hidden window before focusing it.
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
 });
 
 app.whenReady().then(async () => {
