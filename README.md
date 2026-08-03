@@ -185,7 +185,7 @@ unset INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
 ## 📝 الترخيص (License)
 هذا النظام مخصص للاستخدام التجاري الخاص. لا يُسمح بإعادة التوزيع أو البيع دون إذن مسبق.
 
-## Desktop first run and factory reset
+## Desktop first run and factory reset 
 
 The desktop runtime keeps its database and logs in the per-user application
 data directory, so a new installation starts with an empty database and no
