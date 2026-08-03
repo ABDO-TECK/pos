@@ -539,21 +539,21 @@ function applyMysqlStartupInfo(info) {
 function getStartupUserMessage(error) {
   const code = error?.code;
   if (code === 'RUNTIME_PHP_MISSING' || code === 'RUNTIME_EXECUTABLE_MISSING' || code === 'RUNTIME_PHP_SPAWN_FAILED') {
-    return 'The bundled PHP runtime is missing or could not start. Reinstall the verified POS installer; the release must contain portable/php/php.exe.';
+    return 'ملفات تشغيل PHP المضمنة مفقودة أو تعذر تشغيلها. أعد تثبيت نسخة POS الموثوقة؛ يجب أن تحتوي الحزمة على portable/php/php.exe.';
   }
   if (code === 'RUNTIME_MYSQL_MISSING' || code === 'RUNTIME_MYSQL_SPAWN_FAILED') {
-    return 'The bundled MariaDB runtime is missing or could not start. Reinstall the verified POS installer; the release must contain portable/mysql/bin/mysqld.exe and mysql.exe.';
+    return 'ملفات تشغيل MariaDB المضمنة مفقودة أو تعذر تشغيلها. أعد تثبيت نسخة POS الموثوقة؛ يجب أن تحتوي الحزمة على portable/mysql/bin/mysqld.exe وmysql.exe.';
   }
   if (code === 'RUNTIME_BACKEND_MISSING' || code === 'RUNTIME_BACKEND_ENTRY_MISSING') {
-    return 'The packaged backend is incomplete. Reinstall the verified POS installer.';
+    return 'حزمة النظام الخلفية غير مكتملة. أعد تثبيت نسخة POS الموثوقة.';
   }
   if (code === 'MYSQL_START_TIMEOUT' || code === 'MYSQL_PROCESS_EXITED' || code === 'MYSQL_PROCESS_ERROR') {
-    return 'MariaDB did not become ready. Retry once; if it continues, open Diagnostics and inspect mysql-server.log.';
+    return 'لم تصبح MariaDB جاهزة. أعد المحاولة مرة واحدة؛ وإذا استمرت المشكلة افتح التشخيص وراجع سجل mysql-server.log.';
   }
   if (code === 'PHP_SERVER_NOT_READY' || code === 'PHP_PROCESS_EXITED' || code === 'PHP_PROCESS_ERROR') {
-    return 'PHP did not become ready. Retry once; if it continues, open Diagnostics and inspect php-server.log.';
+    return 'لم يصبح خادم PHP جاهزًا. أعد المحاولة مرة واحدة؛ وإذا استمرت المشكلة افتح التشخيص وراجع سجل php-server.log.';
   }
-  return error?.message || 'The POS runtime could not start. Open Diagnostics for details.';
+  return error?.message || 'تعذر تشغيل مكونات نظام POS. افتح التشخيص لمعرفة التفاصيل.';
 }
 
 function captureStartupError(error, { stage = null, attempts = 0 } = {}) {
@@ -623,17 +623,17 @@ async function startCoreRuntime({ maxAttempts = 2, healthTimeout = 60000, resetB
     if (attempt > 1) await stopRuntimeServices();
 
     try {
-      setSplashStatus('Starting the bundled database...');
+      setSplashStatus('جاري تشغيل قاعدة البيانات...');
       const mysqlInfo = await startMySQL(mysqlPort, { maxStartupAttempts: 3 });
       applyMysqlStartupInfo(mysqlInfo);
       console.log(`[Main] MariaDB started successfully on port ${mysqlPort}`);
 
-      setSplashStatus('Starting the backend server...');
+      setSplashStatus('جاري تشغيل الخادم...');
       const phpServerInfo = await startPHP(phpPort, mysqlPort, dbCredentials);
       phpPort = phpServerInfo.port;
       console.log(`[Main] PHP Server started successfully on port ${phpPort}`);
 
-      setSplashStatus('Checking runtime readiness...');
+      setSplashStatus('التحقق من جاهزية النظام...');
       const { waitForHealth } = require('./services/php-server');
       await waitForHealth(phpServerInfo.baseUrl, { maxTime: healthTimeout });
       return { mysqlInfo, phpServerInfo };
@@ -717,7 +717,7 @@ async function startPostStartupServices() {
   startLogCleanup();
   startJobWorker();
 
-  setSplashStatus('Starting the printing service...');
+  setSplashStatus('جاري تشغيل خدمة الطباعة...');
   try {
     const { getJavaPath, getQZTrayPath } = require('./utils/paths');
     const qzTrayDir = path.dirname(getQZTrayPath());

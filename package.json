@@ -6,7 +6,7 @@
     "main":  "electron/main.js",
     "scripts":  {
                     "electron:dev":  "electron .",
-                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js electron/tests/runtime-process.test.js scripts/desktop-runtime.test.mjs",
+                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js electron/tests/runtime-process.test.js electron/tests/arabic-ui-text.test.js scripts/desktop-runtime.test.mjs",
                     "build:phar":  "node scripts/build-phar.mjs",
                     "prepare:desktop-runtime":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-desktop-runtime.ps1",
                     "verify:desktop-runtime":  "node scripts/verify-desktop-runtime.mjs --strict",
