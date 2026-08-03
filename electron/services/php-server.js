@@ -1,27 +1,41 @@
-const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
 const net = require('net');
 const fs = require('fs');
 const { getQZPrivateKeyPath } = require('./qz-certs');
 const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('../utils/php-runtime');
+const { createRuntimeError } = require('../utils/runtime-error');
+const { formatSpawnError, spawnRuntimeProcess } = require('../utils/runtime-process');
 
 let phpProcess = null;
 let serverInfo = null;
 let lastHealthResponse = null;
+let lastPhpError = null;
 
-function findAvailablePort(preferredPort) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', (err) => {
-      resolve(findAvailablePort(preferredPort + 1));
-    });
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(preferredPort);
+function findAvailablePort(preferredPort, { maxPort = 65535 } = {}) {
+  return new Promise((resolve, reject) => {
+    let port = Number(preferredPort) || 8080;
+
+    const check = () => {
+      if (port > maxPort) {
+        reject(new Error(`No available TCP port found from ${preferredPort}`));
+        return;
+      }
+
+      const server = net.createServer();
+      server.once('error', () => {
+        server.close(() => {
+          port += 1;
+          check();
+        });
       });
-    });
-    server.listen(preferredPort, '127.0.0.1');
+      server.once('listening', () => {
+        server.close(() => resolve(port));
+      });
+      server.listen(port, '127.0.0.1');
+    };
+
+    check();
   });
 }
 
@@ -42,14 +56,18 @@ function getPhpServerInfo() {
 }
 
 function stopPhpServer() {
-  if (phpProcess) {
-    phpProcess.kill();
-    phpProcess = null;
-  }
+  const processToStop = phpProcess;
+  phpProcess = null;
   serverInfo = null;
+
+  if (!processToStop || processToStop.killed) return;
+  try {
+    processToStop.kill();
+  } catch (error) {
+    console.warn('[PHP] Failed to stop PHP process:', error.message);
+  }
 }
 
-// Wrapper for existing code
 function stopPHP() {
   stopPhpServer();
 }
@@ -73,14 +91,7 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
     DB_NAME: 'pos_db',
     DB_USER: dbCredentials.user,
     DB_PASS: dbCredentials.password,
-    // Backend self-updates remain disabled by default. Packaged desktop
-    // releases use electron-updater; source-mode updates require an explicit
-    // ENABLE_AUTO_UPDATE=true in the operator environment.
     ENABLE_AUTO_UPDATE: process.env.ENABLE_AUTO_UPDATE || 'false',
-    // The bundled desktop runtime is loopback-only, even when a stale
-    // production APP_ENV is present in the persisted .env file. Keep LAN
-    // deployments on their configured environment so production checks still
-    // apply there.
     APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
     DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
     APP_TIMEZONE: resolveSystemTimeZone(),
@@ -96,6 +107,27 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
   };
 }
 
+function getEntryArgs(backendDir, isPackaged, args) {
+  return isPackaged
+    ? [path.join(backendDir, 'backend.phar'), ...args]
+    : [path.join(backendDir, 'cli', `${args[0]}.php`), ...args.slice(1)];
+}
+
+function getProcessOutputTail(value, maxLength = 8192) {
+  return String(value || '').slice(-maxLength);
+}
+
+function createPhpProcessError(code, message, details, cause) {
+  const error = createRuntimeError(code, message, details);
+  if (cause) error.cause = cause;
+  lastPhpError = {
+    code,
+    message,
+    details,
+  };
+  return error;
+}
+
 function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort }) {
   const {
     getBackendDir,
@@ -106,161 +138,299 @@ function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort }) {
   } = require('../utils/paths');
   const backendDir = getBackendDir();
   const phpBin = getPhpPath();
-  const phpRuntimeArgs = getPhpRuntimeArgs(phpBin, getTempDir());
-  const migrationArgs = isPackaged()
-    ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'migrate']
-    : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'migrate.php')];
+  const migrationArgs = [
+    ...getPhpRuntimeArgs(phpBin, getTempDir()),
+    ...getEntryArgs(backendDir, isPackaged(), ['migrate']),
+  ];
   const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort });
+  const cwd = backendDir;
 
   return new Promise((resolve, reject) => {
     console.log('[Migration] Applying pending database migrations before starting PHP workers...');
-    const logStream = fs.createWriteStream(
-      path.join(getLogsDir(), 'database-migrations.log'),
-      { flags: 'a' },
-    );
-    const child = spawn(phpBin, migrationArgs, {
-      env,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let settled = false;
+    const logPath = path.join(getLogsDir(), 'database-migrations.log');
+    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+    let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      logStream.end();
+      callback(value);
+    };
+
+    let child;
+    try {
+      child = spawnRuntimeProcess(phpBin, migrationArgs, {
+        cwd,
+        env,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      finish(reject, error);
+      return;
+    }
 
     child.stdout.on('data', (data) => {
       logStream.write(data);
+      stdout = getProcessOutputTail(`${stdout}${data.toString()}`);
       console.log('[Migration]', data.toString().trim());
     });
     child.stderr.on('data', (data) => {
       logStream.write(data);
-      stderr = (stderr + data.toString()).slice(-8_192);
+      stderr = getProcessOutputTail(`${stderr}${data.toString()}`);
     });
     child.once('error', (error) => {
-      if (settled) return;
-      settled = true;
-      logStream.end();
-      reject(new Error(`Failed to start database migration: ${error.message}`));
+      finish(reject, createPhpProcessError(
+        error.code === 'ENOENT' ? 'RUNTIME_PHP_SPAWN_FAILED' : 'PHP_MIGRATION_SPAWN_FAILED',
+        formatSpawnError(error, { executable: phpBin, args: migrationArgs, cwd }),
+        { stage: 'database-migrations', stdout, stderr, cwd, executable: phpBin },
+        error,
+      ));
     });
     child.once('close', (code, signal) => {
-      if (settled) return;
-      settled = true;
-      logStream.end();
-
       if (code !== 0) {
         const detail = stderr.trim() || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
-        reject(new Error(`Database migration failed: ${detail}`));
+        finish(reject, createPhpProcessError(
+          'PHP_MIGRATION_FAILED',
+          `Database migration failed: ${detail}`,
+          { stage: 'database-migrations', stdout, stderr, code, signal, cwd, executable: phpBin },
+        ));
         return;
       }
 
+      finish(resolve);
       console.log('[Migration] Database schema is ready.');
-      resolve();
     });
   });
 }
 
-function startPhpServer(options = {}) {
-  return new Promise(async (resolve, reject) => {
+function waitForPhpReady(port, child, {
+  timeoutMs = 30000,
+  executable = child.spawnfile,
+  args = child.spawnargs,
+  cwd = null,
+} = {}) {
+  const startTime = Date.now();
+  const intervalMs = 200;
+
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    let settled = false;
+    let lastError = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onError = (error) => fail(createPhpProcessError(
+      error.code === 'ENOENT' ? 'RUNTIME_PHP_SPAWN_FAILED' : 'PHP_PROCESS_ERROR',
+      formatSpawnError(error, { executable, args, cwd }),
+      { stage: 'php-server', port, executable, args, cwd, originalCode: error.code || null },
+      error,
+    ));
+    const onExit = (code, signal) => {
+      fail(createPhpProcessError(
+        'PHP_PROCESS_EXITED',
+        `PHP server exited before becoming ready (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
+        { stage: 'php-server', port, code, signal, lastError: lastError ? lastError.message : null },
+      ));
+    };
+
+    child.once('error', onError);
+    child.once('exit', onExit);
+
+    const check = () => {
+      if (settled) return;
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= timeoutMs) {
+        fail(createPhpProcessError(
+          'PHP_SERVER_NOT_READY',
+          `PHP server did not listen on 127.0.0.1:${port} within ${timeoutMs}ms.`,
+          { stage: 'php-server', port, timeoutMs, lastError: lastError ? lastError.message : null },
+        ));
+        return;
+      }
+
+      const request = http.get(`http://127.0.0.1:${port}/`, (response) => {
+        response.resume();
+        response.once('end', succeed);
+      });
+      request.setTimeout(1000, () => request.destroy(new Error('PHP readiness request timed out')));
+      request.once('error', (error) => {
+        lastError = error;
+        timer = setTimeout(check, intervalMs);
+      });
+    };
+
+    check();
+  });
+}
+
+async function startPhpServer(options = {}) {
+  const {
+    getPhpPath,
+    getLogsDir,
+    getTempDir,
+    getRuntimePortsPath,
+    getBackendDir,
+    isPackaged,
+  } = require('../utils/paths');
+  const phpBin = getPhpPath();
+  const backendDir = getBackendDir();
+  const backendEntryPath = resolveBackendEntryPath();
+  const preferredPort = options.preferredPort || 8080;
+  const mysqlPort = options.mysqlPort || 3307;
+  const dbCredentials = options.dbCredentials;
+  const maxStartupAttempts = Math.max(1, Number(options.maxStartupAttempts) || 2);
+
+  if (!dbCredentials?.user || !dbCredentials?.password) {
+    throw createPhpProcessError(
+      'PHP_DATABASE_CREDENTIALS_MISSING',
+      'Dedicated database credentials are required before PHP can start.',
+      { stage: 'php-server' },
+    );
+  }
+  if (!fs.existsSync(backendDir) || !fs.statSync(backendDir).isDirectory()) {
+    throw createPhpProcessError(
+      'RUNTIME_BACKEND_MISSING',
+      `Packaged backend directory is missing: ${backendDir}`,
+      { stage: 'php-server', backendDir },
+    );
+  }
+  if (!fs.existsSync(backendEntryPath) || !fs.statSync(backendEntryPath).isFile()) {
+    throw createPhpProcessError(
+      'RUNTIME_BACKEND_ENTRY_MISSING',
+      `Packaged backend entry point is missing: ${backendEntryPath}`,
+      { stage: 'php-server', backendEntryPath, backendDir },
+    );
+  }
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxStartupAttempts; attempt += 1) {
+    const selectedPort = await findAvailablePort(preferredPort + attempt - 1);
     try {
-      const { getPhpPath, getLogsDir, getTempDir, getRuntimePortsPath } = require('../utils/paths');
-      const phpBin = getPhpPath();
-      const backendEntryPath = resolveBackendEntryPath();
-
-      const preferredPort = options.preferredPort || 8080;
-      const mysqlPort = options.mysqlPort || 3307;
-      const dbCredentials = options.dbCredentials;
-      if (!dbCredentials?.user || !dbCredentials?.password) {
-        throw new Error('Dedicated database credentials are required');
-      }
-
-      console.log(`[PHP] Finding available port starting from preferred port ${preferredPort}...`);
-      const selectedPort = await findAvailablePort(preferredPort);
-      const isFallback = (selectedPort !== preferredPort);
-      console.log(`[PHP] Requested port: ${preferredPort}, Selected port: ${selectedPort}, Fallback occurred: ${isFallback ? 'Yes' : 'No'}`);
-
-      // Write runtime_ports.json
-      const portsPath = getRuntimePortsPath();
-      const portsData = {
-        apiPort: selectedPort,
-        apiBaseUrl: `http://localhost:${selectedPort}`,
-        updatedAt: new Date().toISOString()
-      };
-      
-      try {
-        fs.writeFileSync(portsPath, JSON.stringify(portsData, null, 2));
-        console.log(`[PHP] Wrote runtime_ports.json to ${portsPath}`);
-      } catch (err) {
-        console.error(`[PHP] Failed to write runtime_ports.json:`, err);
-      }
+      console.log(`[PHP] Startup attempt ${attempt}/${maxStartupAttempts}; selected port ${selectedPort}.`);
+      await runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort: selectedPort });
 
       const env = {
-        ...createBackendEnv({
-          mysqlPort,
-          dbCredentials,
-          apiPort: selectedPort,
-        }),
+        ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: selectedPort }),
         PHP_CLI_SERVER_WORKERS: '4',
       };
-
-      await runDatabaseMigrations({
-        mysqlPort,
-        dbCredentials,
-        apiPort: selectedPort,
-      });
-
-      console.log(`[PHP] Spawning PHP Server pointing to: ${backendEntryPath}`);
       const sysTempDir = getTempDir();
       const args = [
         ...getPhpRuntimeArgs(phpBin, sysTempDir),
         '-d', `sys_temp_dir=${sysTempDir}`,
         '-S', `127.0.0.1:${selectedPort}`,
-        backendEntryPath
+        backendEntryPath,
       ];
 
-      phpProcess = spawn(phpBin, args, { env, windowsHide: true });
+      const child = spawnRuntimeProcess(phpBin, args, {
+        cwd: backendDir,
+        env,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      phpProcess = child;
 
-      // Pipe output to log file
-      const logFile = path.join(getLogsDir(), 'php-server.log');
-      const logStream = fs.createWriteStream(logFile, { flags: 'a' });
-      phpProcess.stdout.pipe(logStream);
-      phpProcess.stderr.pipe(logStream);
-
-      // Handle stderr logging to console for development visibility
-      phpProcess.stderr.on('data', (data) => {
-        console.log('[PHP]', data.toString().trim());
+      // Keep a listener for the lifetime of the process. Node emits an
+      // asynchronous `error` event for missing executables and loader/DLL
+      // failures; without a listener Electron treats it as an uncaught main
+      // process exception even after the readiness check has completed.
+      child.on('error', (error) => {
+        lastPhpError = {
+          code: error.code || 'PHP_PROCESS_ERROR',
+          message: formatSpawnError(error, { executable: phpBin, args, cwd: backendDir }),
+          details: { stage: 'php-process', port: selectedPort, executable: phpBin, cwd: backendDir },
+        };
+        console.error('[PHP] Process error:', lastPhpError.message);
+      });
+      child.on('exit', (code, signal) => {
+        if (phpProcess !== child) return;
+        if (code !== 0) {
+          lastPhpError = {
+            code: 'PHP_PROCESS_EXITED',
+            message: `PHP server exited (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
+            details: { stage: 'php-process', port: selectedPort, code, signal, executable: phpBin, cwd: backendDir },
+          };
+        }
       });
 
+      const logFile = path.join(getLogsDir(), 'php-server.log');
+      const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+      child.stdout.pipe(logStream, { end: false });
+      child.stderr.pipe(logStream, { end: false });
+      child.stderr.on('data', (data) => console.log('[PHP]', data.toString().trim()));
+      child.once('close', () => logStream.end());
+
+      await waitForPhpReady(selectedPort, child, {
+        executable: phpBin,
+        args,
+        cwd: backendDir,
+      });
       serverInfo = {
-        pid: phpProcess.pid,
+        pid: child.pid,
         port: selectedPort,
-        baseUrl: `http://localhost:${selectedPort}`,
+        baseUrl: `http://127.0.0.1:${selectedPort}`,
         backendEntryPath,
-        pharPath: backendEntryPath
+        pharPath: isPackaged() ? backendEntryPath : null,
+        executablePath: phpBin,
+        workingDirectory: backendDir,
       };
+      lastPhpError = null;
+      console.log(`[PHP] Server is listening on ${serverInfo.baseUrl}.`);
 
-      // wait for PHP readiness (simple HTTP ping)
-      let attempts = 0;
-      const check = setInterval(() => {
-        attempts++;
-        http.get(`http://127.0.0.1:${selectedPort}/`, (res) => {
-          clearInterval(check);
-          resolve(serverInfo);
-        }).on('error', () => {
-          if (attempts > 50) {
-            clearInterval(check);
-            reject(new Error(`PHP server failed to start on port ${selectedPort}`));
-          }
-        });
-      }, 200);
+      const portsPath = getRuntimePortsPath();
+      const portsData = {
+        mysqlPort: Number(mysqlPort),
+        apiPort: selectedPort,
+        apiBaseUrl: serverInfo.baseUrl,
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        fs.mkdirSync(path.dirname(portsPath), { recursive: true });
+        fs.writeFileSync(portsPath, JSON.stringify(portsData, null, 2));
+      } catch (error) {
+        console.warn('[PHP] Failed to write runtime_ports.json:', error.message);
+      }
 
-    } catch (err) {
-      reject(err);
+      return serverInfo;
+    } catch (error) {
+      lastError = error;
+      if (phpProcess && !phpProcess.killed) {
+        try { phpProcess.kill(); } catch { /* best effort */ }
+      }
+      phpProcess = null;
+      serverInfo = null;
+      if (error.code && !['PHP_PROCESS_EXITED', 'PHP_SERVER_NOT_READY'].includes(error.code)) break;
+      if (attempt < maxStartupAttempts) await new Promise((resolve) => setTimeout(resolve, 500));
     }
-  });
+  }
+
+  throw lastError || createPhpProcessError(
+    'PHP_SERVER_START_FAILED',
+    'PHP server failed to start.',
+    { stage: 'php-server', executable: phpBin, workingDirectory: backendDir },
+  );
 }
 
-// Wrapper for existing code
 async function startPHP(port, mysqlPort, dbCredentials) {
-  const info = await startPhpServer({ preferredPort: port, mysqlPort, dbCredentials });
-  return info;
+  return startPhpServer({ preferredPort: port, mysqlPort, dbCredentials });
 }
 
 function waitForHealth(baseUrl, options = {}) {
@@ -270,16 +440,32 @@ function waitForHealth(baseUrl, options = {}) {
 
   return new Promise((resolve, reject) => {
     let attempt = 0;
+    let settled = false;
+    let timer = null;
 
-    function nextCheck() {
-      attempt++;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      callback(value);
+    };
+    const schedule = () => {
+      timer = setTimeout(nextCheck, delay);
+      delay = Math.min(delay * 1.5, 5000);
+    };
+    const nextCheck = () => {
+      if (settled) return;
+      attempt += 1;
       const elapsed = Date.now() - startTime;
       if (elapsed >= maxTime) {
-        return reject(new Error(`Timeout: Backend health check failed after ${elapsed}ms (${attempt} attempts)`));
+        finish(reject, createPhpProcessError(
+          'PHP_HEALTH_TIMEOUT',
+          `Backend health check failed after ${elapsed}ms (${attempt} attempts).`,
+          { stage: 'health-check', baseUrl, attempts: attempt, lastResponse: lastHealthResponse },
+        ));
+        return;
       }
 
-      console.log(`[Health] Attempt #${attempt} connecting to ${baseUrl}/api/health (Elapsed: ${elapsed}ms)...`);
-      
       const req = http.get(`${baseUrl}/api/health`, (res) => {
         let rawData = '';
         res.on('data', (chunk) => { rawData += chunk; });
@@ -289,54 +475,41 @@ function waitForHealth(baseUrl, options = {}) {
               const body = JSON.parse(rawData);
               lastHealthResponse = body;
               if (body.critical_failed === false) {
-                if (body.status === 'degraded') {
-                  console.warn(`[Health] Backend is ready but degraded! Checks:`, body.checks);
-                } else {
-                  console.log(`[Health] Backend is healthy and ready! Status: ${body.status}`);
-                }
-                resolve(body);
+                finish(resolve, body);
               } else {
-                console.error(`[Health] Backend reported critical_failed=true! Checks:`, body.checks);
-                setTimeout(nextCheck, delay);
-                delay = Math.min(delay * 1.5, 5000);
+                schedule();
               }
-            } catch (err) {
-              console.error(`[Health] Parse error for health check response:`, err.message);
+            } catch (error) {
               lastHealthResponse = {
                 status: 'failed',
                 critical_failed: true,
-                error: `Parse error: ${err.message}. Raw: ${rawData.substring(0, 200)}`,
-                checks: null
+                error: `Parse error: ${error.message}. Raw: ${rawData.substring(0, 200)}`,
+                checks: null,
               };
-              setTimeout(nextCheck, delay);
-              delay = Math.min(delay * 1.5, 5000);
+              schedule();
             }
           } else {
-            console.warn(`[Health] Received non-200 status code: ${res.statusCode}`);
             lastHealthResponse = {
               status: 'failed',
               critical_failed: true,
               error: `HTTP status code ${res.statusCode}`,
-              checks: null
+              checks: null,
             };
-            setTimeout(nextCheck, delay);
-            delay = Math.min(delay * 1.5, 5000);
+            schedule();
           }
         });
       });
-
-      req.on('error', (err) => {
-        console.warn(`[Health] Connection error: ${err.message}`);
+      req.setTimeout(2000, () => req.destroy(new Error('Health request timed out')));
+      req.on('error', (error) => {
         lastHealthResponse = {
           status: 'failed',
           critical_failed: true,
-          error: `Connection error: ${err.message}`,
-          checks: null
+          error: `Connection error: ${error.message}`,
+          checks: null,
         };
-        setTimeout(nextCheck, delay);
-        delay = Math.min(delay * 1.5, 5000);
+        schedule();
       });
-    }
+    };
 
     nextCheck();
   });
@@ -344,6 +517,10 @@ function waitForHealth(baseUrl, options = {}) {
 
 function getLastHealthResponse() {
   return lastHealthResponse;
+}
+
+function getLastPhpError() {
+  return lastPhpError;
 }
 
 module.exports = {
@@ -358,5 +535,6 @@ module.exports = {
   startPHP,
   stopPHP,
   waitForHealth,
-  getLastHealthResponse
+  getLastHealthResponse,
+  getLastPhpError,
 };

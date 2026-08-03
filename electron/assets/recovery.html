@@ -257,6 +257,8 @@
     <div class="alert-message" id="error-msg">جاري تحميل حالة الخطأ...</div>
     
     <div class="meta-grid">
+      <div>Startup stage: <span id="error-stage">N/A</span></div>
+      <div>Error code: <span id="error-code">N/A</span></div>
       <div>وقت الفشل: <span id="error-time">N/A</span></div>
       <div>عنوان الخادم: <span id="error-url">N/A</span></div>
     </div>
@@ -420,6 +422,10 @@
       document.getElementById('error-time').textContent = err.timestamp ? new Date(err.timestamp).toLocaleString('ar-EG') : 'غير متوفر';
       document.getElementById('error-url').textContent = err.apiBaseUrl || 'غير متوفر';
 
+      document.getElementById('error-msg').textContent = err.userMessage || err.message || 'Startup failed.';
+      document.getElementById('error-stage').textContent = err.startupStage || 'N/A';
+      document.getElementById('error-code').textContent = err.code || 'N/A';
+
       const checksContainer = document.getElementById('checks-container');
       checksContainer.innerHTML = '';
       if (err.failedChecks) {
@@ -448,6 +454,20 @@
     }
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function formatDiagnostic(value) {
+    if (value === null || value === undefined) return 'N/A';
+    return escapeHtml(typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+  }
+
   async function toggleDiagnostics() {
     const panel = document.getElementById('diagnostics-panel');
     const btn = document.getElementById('btn-diagnostics');
@@ -467,15 +487,15 @@
         content.innerHTML = `
           <div class="diagnostics-item">
             <div class="diagnostics-label">مجلد البيانات الرئيسي (Data Directory):</div>
-            <div class="diagnostics-val">${diag.selectedDataDir || 'N/A'}</div>
+            <div class="diagnostics-val">${escapeHtml(diag.selectedDataDir || 'N/A')}</div>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">مجلد الإعدادات (Config Directory):</div>
-            <div class="diagnostics-val">${diag.configDir || 'N/A'}</div>
+            <div class="diagnostics-val">${escapeHtml(diag.configDir || 'N/A')}</div>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">مجلد سجلات التشغيل (Logs Directory):</div>
-            <div class="diagnostics-val">${diag.logsDir || 'N/A'}</div>
+            <div class="diagnostics-val">${escapeHtml(diag.logsDir || 'N/A')}</div>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">المنافذ الحالية (runtime_ports.json):</div>
@@ -496,6 +516,14 @@
           <div class="diagnostics-item">
             <div class="diagnostics-label">استعادة MySQL (MySQL Rollback):</div>
             <pre class="diagnostics-val">${diag.runtimeMetadata && diag.runtimeMetadata.mysqlRollback ? JSON.stringify(diag.runtimeMetadata.mysqlRollback, null, 2) : 'غير متوفر'}</pre>
+          </div>
+          <div class="diagnostics-item">
+            <div class="diagnostics-label">Bundled runtime discovery:</div>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.runtimeDiagnostics)}</pre>
+          </div>
+          <div class="diagnostics-item">
+            <div class="diagnostics-label">Last process errors:</div>
+            <pre class="diagnostics-val">${formatDiagnostic({ php: diag.lastPhpError, mysql: diag.lastMysqlError })}</pre>
           </div>
         `;
       } catch (err) {

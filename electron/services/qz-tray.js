@@ -1,5 +1,5 @@
-const { spawn } = require('child_process');
 const net = require('net');
+const { formatSpawnError, spawnRuntimeProcess } = require('../utils/runtime-process');
 
 let qzProcess = null;
 
@@ -32,17 +32,24 @@ function startQZTray() {
 
     console.log('[QZ Tray] Starting...', { javaPath, qzTrayJar, qzTrayDir });
 
-    qzProcess = spawn(javaPath, [
-      '-Xms64m',
-      '-Xmx256m',
-      '-Djna.nosys=true',
-      '-jar', qzTrayJar,
-      '--headless',    // بدون System Tray icon (لأن Electron له tray خاص)
-    ], {
-      windowsHide: true,
-      cwd: qzTrayDir,
-      env: { ...process.env },
-    });
+    try {
+      qzProcess = spawnRuntimeProcess(javaPath, [
+        '-Xms64m',
+        '-Xmx256m',
+        '-Djna.nosys=true',
+        '-jar', qzTrayJar,
+        '--headless',    // بدون System Tray icon (لأن Electron له tray خاص)
+      ], {
+        windowsHide: true,
+        cwd: qzTrayDir,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      console.warn('[QZ Tray]', formatSpawnError(err, { executable: javaPath, cwd: qzTrayDir }));
+      resolve();
+      return;
+    }
 
     qzProcess.stdout.on('data', (data) => {
       console.log('[QZ Tray]', data.toString().trim());
@@ -53,7 +60,10 @@ function startQZTray() {
     });
 
     qzProcess.on('error', (err) => {
-      console.error('[QZ Tray] Process error:', err.message);
+      console.warn('[QZ Tray] Process error:', formatSpawnError(err, { executable: javaPath, cwd: qzTrayDir }));
+      clearInterval(check);
+      qzProcess = null;
+      resolve();
     });
 
     qzProcess.on('exit', (code) => {

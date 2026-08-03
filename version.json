@@ -1,7 +1,8 @@
 {
-    "version":  "1.1.39",
+    "version":  "1.1.40",
     "released_at":  "2026-08-03",
     "changelog":  [
+                      "v1.1.40: Fix Windows desktop startup by packaging and verifying pinned portable PHP and MariaDB runtimes, resolving executable paths and ports deterministically, handling spawn failures, and improving recovery diagnostics and retries.",
                       "إصلاح حرج: استعادة كلمة مرور الحساب القديم بعد استعادة نسخة احتياطية، مع إعادة تفعيله فقط عند تطابق علامة ترحيل الأمان.",
                       "إصلاح: عرض أخطاء استعادة كلمة المرور برسالة مفهومة بدلاً من JSON الخام.",
                       "تحسين: تهيئة البيانات الافتراضية وإنشاء مدير مؤقت عند استعادة نسخة احتياطية لا تحتوي على مستخدمين.",

@@ -1,93 +1,359 @@
-const { spawn, execSync, execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
 const fs = require('fs');
 const { getMysqlPaths } = require('../utils/paths');
+const { createRuntimeError } = require('../utils/runtime-error');
+const { formatSpawnError, getRuntimeSpawnOptions, spawnRuntimeProcess } = require('../utils/runtime-process');
 
 let mysqlProcess = null;
 let mysqlPort = null;
+let lastMysqlError = null;
 
-function startMySQL(port) {
-  mysqlPort = port;
+function findAvailablePort(preferredPort, { maxPort = 65535 } = {}) {
   return new Promise((resolve, reject) => {
-    const { mysqldPath, dataDir, baseDir } = getMysqlPaths();
-    // تهيئة قاعدة البيانات إذا لم تكن موجودة في مسار الـ userData
-    if (!fs.existsSync(dataDir) || fs.readdirSync(dataDir).length === 0) {
-      console.log('[MySQL] Initializing new database directory at:', dataDir);
-      try {
-        if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-        const installDbPath = path.join(baseDir, 'bin', 'mysql_install_db.exe');
-        execSync(`"${installDbPath}" --datadir="${dataDir}"`, { windowsHide: true });
-      } catch (err) {
-        console.error('[MySQL Init Error]', err.message);
+    let port = Number(preferredPort) || 3307;
+
+    const check = () => {
+      if (port > maxPort) {
+        reject(new Error(`No available MySQL TCP port found from ${preferredPort}`));
+        return;
       }
+
+      const server = net.createServer();
+      server.once('error', () => {
+        server.close(() => {
+          port += 1;
+          check();
+        });
+      });
+      server.once('listening', () => {
+        server.close(() => resolve(port));
+      });
+      server.listen(port, '127.0.0.1');
+    };
+
+    check();
+  });
+}
+
+function getOutputTail(value, maxLength = 12000) {
+  return String(value || '').slice(-maxLength);
+}
+
+function setLastMysqlError(code, message, details, cause) {
+  lastMysqlError = { code, message, details };
+  const error = createRuntimeError(code, message, details);
+  if (cause) error.cause = cause;
+  return error;
+}
+
+function isMysqlDataDirectoryInitialized(dataDir) {
+  if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) return false;
+
+  const systemDatabase = path.join(dataDir, 'mysql');
+  const dataFiles = [
+    path.join(dataDir, 'ibdata1'),
+    path.join(dataDir, 'aria_log_control'),
+    path.join(dataDir, 'ib_logfile0'),
+  ];
+  return fs.existsSync(systemDatabase) && dataFiles.some((candidate) => fs.existsSync(candidate));
+}
+
+function runMysqlExecutable(executable, args, { cwd, input, encoding = 'utf8', maxBuffer = 16 * 1024 * 1024 } = {}) {
+  const options = getRuntimeSpawnOptions(executable, {
+    cwd,
+    windowsHide: true,
+    stdio: input === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+  });
+  const commandOptions = {
+    ...options,
+    encoding,
+    maxBuffer,
+  };
+  if (input !== undefined) commandOptions.input = input;
+  return execFileSync(executable, args, commandOptions);
+}
+
+function initializeMysqlDataDirectory(runtimePaths) {
+  const { dataDir, binaryDir, baseDir, initializerPath, mysqldPath } = runtimePaths;
+  if (isMysqlDataDirectoryInitialized(dataDir)) return { initialized: false };
+
+  fs.mkdirSync(dataDir, { recursive: true });
+  if (fs.readdirSync(dataDir).length > 0) {
+    throw setLastMysqlError(
+      'MYSQL_DATA_DIRECTORY_INVALID',
+      `The MySQL data directory is incomplete and was not changed: ${dataDir}`,
+      { stage: 'mysql-initialize', dataDir, binaryDir },
+    );
+  }
+
+  const initAttempts = [];
+  const attemptResults = [];
+  if (initializerPath) {
+    initAttempts.push({
+      executable: initializerPath,
+      args: [`--datadir=${dataDir}`],
+    });
+  }
+  initAttempts.push({
+    executable: mysqldPath,
+    args: ['--initialize-insecure', `--datadir=${dataDir}`, `--basedir=${baseDir}`],
+  });
+
+  for (const attempt of initAttempts) {
+    try {
+      console.log(`[MySQL] Initializing data directory with ${path.basename(attempt.executable)}.`);
+      runMysqlExecutable(attempt.executable, attempt.args, { cwd: binaryDir });
+      if (isMysqlDataDirectoryInitialized(dataDir)) return { initialized: true };
+      attemptResults.push({
+        ...attempt,
+        result: 'completed_without_initialized_marker',
+      });
+    } catch (error) {
+      attemptResults.push({ error: error.message, executable: attempt.executable });
+    }
+  }
+
+  throw setLastMysqlError(
+    'MYSQL_INITIALIZATION_FAILED',
+    `MySQL could not initialize its data directory: ${dataDir}`,
+    { stage: 'mysql-initialize', dataDir, binaryDir, attempts: attemptResults },
+  );
+}
+
+function waitForMysqlReady(port, child, {
+  timeoutMs = 30000,
+  executable = child.spawnfile,
+  args = child.spawnargs,
+  cwd = null,
+} = {}) {
+  const startTime = Date.now();
+
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    let settled = false;
+    let lastSocketError = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const onError = (error) => finish(reject, setLastMysqlError(
+      error.code === 'ENOENT' ? 'RUNTIME_MYSQL_SPAWN_FAILED' : 'MYSQL_PROCESS_ERROR',
+      formatSpawnError(error, { executable, args, cwd }),
+      { stage: 'mysql-start', port, executable, args, cwd, originalCode: error.code || null },
+      error,
+    ));
+    const onExit = (code, signal) => finish(reject, setLastMysqlError(
+      'MYSQL_PROCESS_EXITED',
+      `MySQL exited before becoming ready (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
+      { stage: 'mysql-start', port, code, signal, lastSocketError: lastSocketError?.message || null },
+    ));
+
+    child.once('error', onError);
+    child.once('exit', onExit);
+
+    const check = () => {
+      if (settled) return;
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= timeoutMs) {
+        finish(reject, setLastMysqlError(
+          'MYSQL_START_TIMEOUT',
+          `MySQL did not listen on 127.0.0.1:${port} within ${timeoutMs}ms.`,
+          { stage: 'mysql-start', port, timeoutMs, lastSocketError: lastSocketError?.message || null },
+        ));
+        return;
+      }
+
+      const socket = new net.Socket();
+      socket.setTimeout(750);
+      socket.once('connect', () => {
+        socket.destroy();
+        finish(resolve);
+      });
+      socket.once('error', (error) => {
+        lastSocketError = error;
+        socket.destroy();
+        timer = setTimeout(check, 250);
+      });
+      socket.once('timeout', () => {
+        lastSocketError = new Error('MySQL readiness socket timed out');
+        socket.destroy();
+        timer = setTimeout(check, 250);
+      });
+      socket.connect(port, '127.0.0.1');
+    };
+
+    check();
+  });
+}
+
+function sqlLiteral(value) {
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+}
+
+function initDatabase(port, runtimePaths = getMysqlPaths()) {
+  const { mysqlPath, binaryDir } = runtimePaths;
+  const { getDatabaseDir } = require('../utils/paths');
+  const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
+  if (!fs.existsSync(schemaFile) || !fs.statSync(schemaFile).isFile()) {
+    throw setLastMysqlError(
+      'RUNTIME_SCHEMA_MISSING',
+      `The packaged database schema is missing: ${schemaFile}`,
+      { stage: 'mysql-database-init', schemaFile },
+    );
+  }
+
+  try {
+    runMysqlExecutable(mysqlPath, [
+      '-u', 'root',
+      `--port=${port}`,
+      '--default-character-set=utf8mb4',
+      '-e',
+      'CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+    ], { cwd: binaryDir });
+
+    const result = runMysqlExecutable(mysqlPath, [
+      '-u', 'root',
+      `--port=${port}`,
+      'pos_db',
+      '-e',
+      'SHOW TABLES',
+    ], { cwd: binaryDir });
+    const freshInstall = !String(result).includes('users');
+
+    if (freshInstall) {
+      runMysqlExecutable(mysqlPath, [
+        '-u', 'root',
+        `--port=${port}`,
+        '--default-character-set=utf8mb4',
+        'pos_db',
+      ], { cwd: binaryDir, input: fs.readFileSync(schemaFile) });
+    } else {
+      repairCorruptedTables(mysqlPath, binaryDir, port);
     }
 
-    mysqlProcess = spawn(mysqldPath, [
+    const appPassword = crypto.randomBytes(32).toString('hex');
+    const appUser = sqlLiteral('pos_app');
+    const appHost = sqlLiteral('127.0.0.1');
+    const password = sqlLiteral(appPassword);
+    runMysqlExecutable(mysqlPath, [
+      '-u', 'root',
       `--port=${port}`,
-      `--datadir=${dataDir}`,
-      `--basedir=${baseDir}`,
+      '-e',
+      `CREATE USER IF NOT EXISTS ${appUser}@${appHost} IDENTIFIED BY ${password}; ALTER USER ${appUser}@${appHost} IDENTIFIED BY ${password}; GRANT ALL PRIVILEGES ON pos_db.* TO ${appUser}@${appHost}; FLUSH PRIVILEGES;`,
+    ], { cwd: binaryDir });
+
+    return { user: 'pos_app', password: appPassword, freshInstall };
+  } catch (error) {
+    console.error('[MySQL Init]', error.message);
+    if (error.code && error.details) throw error;
+    throw setLastMysqlError(
+      'MYSQL_DATABASE_INIT_FAILED',
+      `MySQL database initialization failed: ${error.message}`,
+      { stage: 'mysql-database-init', port, mysqlPath, binaryDir },
+      error,
+    );
+  }
+}
+
+async function startMySQL(preferredPort = 3307, options = {}) {
+  const runtimePaths = getMysqlPaths();
+  const maxStartupAttempts = Math.max(1, Number(options.maxStartupAttempts) || 3);
+  const startupTimeoutMs = Math.max(5000, Number(options.startupTimeoutMs) || 30000);
+  initializeMysqlDataDirectory(runtimePaths);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxStartupAttempts; attempt += 1) {
+    const selectedPort = await findAvailablePort(Number(preferredPort) + attempt - 1);
+    const args = [
+      `--port=${selectedPort}`,
+      `--datadir=${runtimePaths.dataDir}`,
+      `--basedir=${runtimePaths.baseDir}`,
       '--standalone',
       '--console',
       '--skip-networking=0',
       '--bind-address=127.0.0.1',
-    ], { windowsHide: true });
+    ];
+    let child;
 
-    // انتظار جاهزية MySQL
-    let attempts = 0;
-    const check = setInterval(() => {
-      attempts++;
-      const sock = new net.Socket();
-      sock.setTimeout(500);
-      sock.connect(port, '127.0.0.1', () => {
-        sock.destroy();
-        clearInterval(check);
-        // تأكد من وجود قاعدة البيانات
-        initDatabase(port).then(resolve).catch(reject);
+    try {
+      console.log(`[MySQL] Startup attempt ${attempt}/${maxStartupAttempts}; selected port ${selectedPort}.`);
+      child = spawnRuntimeProcess(runtimePaths.mysqldPath, args, {
+        cwd: runtimePaths.binaryDir,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      sock.on('error', () => { sock.destroy(); });
-      sock.on('timeout', () => { sock.destroy(); });
-      if (attempts > 30) {
-        clearInterval(check);
-        reject(new Error('MySQL failed to start'));
-      }
-    }, 500);
-  });
-}
+      mysqlProcess = child;
+      mysqlPort = selectedPort;
 
-async function initDatabase(port) {
-  const { mysqlPath } = getMysqlPaths();
-  const { getBackendDir, getDatabaseDir } = require('../utils/paths');
-  const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
-  try {
-    // إنشاء قاعدة البيانات إذا لم تكن موجودة مع دعم اللغة العربية
-    execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 -e "CREATE DATABASE IF NOT EXISTS pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"`,
-      { windowsHide: true });
-    // فحص إذا الجداول موجودة
-    const result = execSync(
-      `"${mysqlPath}" -u root --port=${port} pos_db -e "SHOW TABLES" 2>&1`,
-      { encoding: 'utf-8', windowsHide: true }
-    );
-    const freshInstall = !result.includes('users');
-    if (freshInstall) {
-      // أول تشغيل — تحميل الـ schema مع فرض ترميز utf8mb4
-      execSync(`"${mysqlPath}" -u root --port=${port} --default-character-set=utf8mb4 pos_db < "${schemaFile}"`,
-        { windowsHide: true, shell: true });
-    } else {
-      // إصلاح الجداول التالفة ("doesn't exist in engine")
-      repairCorruptedTables(mysqlPath, port);
+      const { getLogsDir } = require('../utils/paths');
+      const logStream = fs.createWriteStream(path.join(getLogsDir(), 'mysql-server.log'), { flags: 'a' });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (data) => {
+        stdout = getOutputTail(`${stdout}${data.toString()}`);
+        logStream.write(data);
+      });
+      child.stderr.on('data', (data) => {
+        stderr = getOutputTail(`${stderr}${data.toString()}`);
+        logStream.write(data);
+      });
+      child.once('close', () => logStream.end());
+      // Keep an error listener after readiness too; an async ENOENT or a
+      // runtime DLL failure must never become an uncaught Electron exception.
+      child.on('error', (error) => {
+        lastMysqlError = {
+          code: error.code || 'MYSQL_PROCESS_ERROR',
+          message: formatSpawnError(error, { executable: runtimePaths.mysqldPath, args, cwd: runtimePaths.binaryDir }),
+          details: { stage: 'mysql-process', port: selectedPort, stdout, stderr },
+        };
+        console.error('[MySQL] Process error:', lastMysqlError.message);
+      });
+
+      await waitForMysqlReady(selectedPort, child, {
+        timeoutMs: startupTimeoutMs,
+        executable: runtimePaths.mysqldPath,
+        args,
+        cwd: runtimePaths.binaryDir,
+      });
+      const credentials = initDatabase(selectedPort, runtimePaths);
+      lastMysqlError = null;
+      return {
+        ...credentials,
+        port: selectedPort,
+        runtime: {
+          serverPath: runtimePaths.mysqldPath,
+          clientPath: runtimePaths.mysqlPath,
+          workingDirectory: runtimePaths.binaryDir,
+          dataDir: runtimePaths.dataDir,
+        },
+      };
+    } catch (error) {
+      lastError = error;
+      if (child && !child.killed) {
+        try { child.kill(); } catch { /* best effort */ }
+      }
+      if (mysqlProcess === child) mysqlProcess = null;
+      if (error.code && !['MYSQL_PROCESS_EXITED', 'MYSQL_START_TIMEOUT', 'MYSQL_PROCESS_ERROR'].includes(error.code)) break;
+      if (attempt < maxStartupAttempts) await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const appPassword = crypto.randomBytes(32).toString('hex');
-    execSync(
-      `"${mysqlPath}" -u root --port=${port} -e "GRANT ALL PRIVILEGES ON pos_db.* TO 'pos_app'@'127.0.0.1' IDENTIFIED BY '${appPassword}'"`,
-      { windowsHide: true }
-    );
-    return { user: 'pos_app', password: appPassword, freshInstall };
-  } catch (e) {
-    console.error('[MySQL Init]', e.message);
-    throw e;
   }
+
+  throw lastError || setLastMysqlError(
+    'MYSQL_START_FAILED',
+    'MySQL/MariaDB failed to start after all startup attempts.',
+    { stage: 'mysql-start', preferredPort, runtime: runtimePaths },
+  );
 }
 
 /**
@@ -96,7 +362,8 @@ async function initDatabase(port) {
  * first so no application connection can write during the reset.
  */
 async function resetDatabase(port) {
-  const { mysqlPath } = getMysqlPaths();
+  const runtimePaths = getMysqlPaths();
+  const { mysqlPath, binaryDir } = runtimePaths;
   const { getDatabaseDir } = require('../utils/paths');
   const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
 
@@ -104,81 +371,118 @@ async function resetDatabase(port) {
     throw new Error('The packaged database schema is missing');
   }
 
-  execFileSync(mysqlPath, [
+  runMysqlExecutable(mysqlPath, [
     '-u', 'root',
     `--port=${port}`,
     '-e',
     'DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
-  ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-
-  const schema = fs.readFileSync(schemaFile);
-  execFileSync(mysqlPath, [
+  ], { cwd: binaryDir });
+  runMysqlExecutable(mysqlPath, [
     '-u', 'root',
     `--port=${port}`,
     '--default-character-set=utf8mb4',
-  ], {
-    input: schema,
-    windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    maxBuffer: 16 * 1024 * 1024,
-  });
+    'pos_db',
+  ], { cwd: binaryDir, input: fs.readFileSync(schemaFile) });
 
-  return initDatabase(port);
+  return { ...initDatabase(port, runtimePaths), port };
 }
 
-function repairCorruptedTables(mysqlPath, port) {
+function repairCorruptedTables(mysqlPath, binaryDir, port) {
   try {
-    // نتحقق من جدول واحد رئيسي (users) بدلاً من 14 جدول لتسريع التشغيل
-    execSync(
-      `"${mysqlPath}" -u root --port=${port} pos_db -e "SELECT id FROM users LIMIT 1" 2>&1`,
-      { encoding: 'utf-8', windowsHide: true }
-    );
-  } catch (err) {
-    if (err.message && err.message.includes("doesn't exist in engine")) {
-      console.log(`[MySQL Repair] Database corruption detected. Repairing schema...`);
-      // إجبار إعادة تحميل الهيكل لتنظيف الجداول التالفة
+    runMysqlExecutable(mysqlPath, [
+      '-u', 'root',
+      `--port=${port}`,
+      'pos_db',
+      '-e',
+      'SELECT id FROM users LIMIT 1',
+    ], { cwd: binaryDir });
+  } catch (error) {
+    if (error.message && error.message.includes("doesn't exist in engine")) {
+      console.log('[MySQL Repair] Database corruption detected. Repairing schema.');
       const { getDatabaseDir } = require('../utils/paths');
       const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
       try {
-        // Drop database and recreate to start fresh, since InnoDB corruption is hard to fix per-table
-        execSync(`"${mysqlPath}" -u root --port=${port} -e "DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db;"`, { windowsHide: true });
-        execSync(`"${mysqlPath}" -u root --port=${port} pos_db < "${schemaFile}"`, { windowsHide: true, shell: true });
-        console.log('[MySQL Repair] Schema reloaded successfully');
-      } catch (e) {
-        console.error('[MySQL Repair] Schema reload failed:', e.message);
+        runMysqlExecutable(mysqlPath, [
+          '-u', 'root',
+          `--port=${port}`,
+          '-e',
+          'DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db;',
+        ], { cwd: binaryDir });
+        runMysqlExecutable(mysqlPath, [
+          '-u', 'root',
+          `--port=${port}`,
+          'pos_db',
+        ], { cwd: binaryDir, input: fs.readFileSync(schemaFile) });
+        console.log('[MySQL Repair] Schema reloaded successfully.');
+      } catch (repairError) {
+        console.error('[MySQL Repair] Schema reload failed:', repairError.message);
+        throw repairError;
       }
+    } else {
+      throw error;
     }
   }
 }
 
 function stopMySQL() {
+  const processToStop = mysqlProcess;
+  const portToStop = mysqlPort;
+  mysqlProcess = null;
+  mysqlPort = null;
+
+  if (!processToStop) return Promise.resolve();
+
+  const runtimePaths = (() => {
+    try { return getMysqlPaths(); } catch { return null; }
+  })();
+  if (!runtimePaths?.mysqlAdminPath || !portToStop) {
+    try { processToStop.kill(); } catch { /* best effort */ }
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => {
-    if (!mysqlProcess) {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
       resolve();
-      return;
-    }
-    const { baseDir } = getMysqlPaths();
-    const mysqladmin = path.join(baseDir, 'bin', 'mysqladmin.exe');
-    if (require('fs').existsSync(mysqladmin) && mysqlPort) {
-      console.log(`[MySQL] Requesting clean shutdown via mysqladmin on port ${mysqlPort}...`);
-      const { exec } = require('child_process');
-      exec(`"${mysqladmin}" -u root --port=${mysqlPort} shutdown`, { windowsHide: true }, (err) => {
-        if (err) {
-          console.warn('[MySQL] mysqladmin shutdown failed, falling back to process kill:', err.message);
-          if (mysqlProcess) {
-            mysqlProcess.kill();
-          }
-        }
-        mysqlProcess = null;
-        resolve();
-      });
-    } else {
-      console.log('[MySQL] Killing process directly...');
-      mysqlProcess.kill();
-      mysqlProcess = null;
-      setTimeout(resolve, 1000);
-    }
+    };
+    const killFallback = () => {
+      try {
+        if (!processToStop.killed) processToStop.kill();
+      } catch { /* best effort */ }
+      finish();
+    };
+
+    processToStop.once('exit', finish);
+    execFile(runtimePaths.mysqlAdminPath, ['-u', 'root', `--port=${portToStop}`, 'shutdown'], {
+      cwd: runtimePaths.binaryDir,
+      windowsHide: true,
+      timeout: 5000,
+    }, (error) => {
+      if (error) {
+        console.warn('[MySQL] mysqladmin shutdown failed; terminating process:', error.message);
+        killFallback();
+        return;
+      }
+      setTimeout(killFallback, 1000);
+    });
+    setTimeout(killFallback, 2500);
   });
 }
 
-module.exports = { startMySQL, stopMySQL, resetDatabase };
+function getLastMysqlError() {
+  return lastMysqlError;
+}
+
+module.exports = {
+  findAvailablePort,
+  initDatabase,
+  initializeMysqlDataDirectory,
+  isMysqlDataDirectoryInitialized,
+  startMySQL,
+  stopMySQL,
+  resetDatabase,
+  getLastMysqlError,
+  waitForMysqlReady,
+};

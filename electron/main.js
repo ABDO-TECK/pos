@@ -1,7 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, protocol, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
 
 // Register app scheme as privileged before app ready
 protocol.registerSchemesAsPrivileged([
@@ -28,6 +27,8 @@ const { startQZTray, stopQZTray } = require('./services/qz-tray');
 const { ensureQZCerts, getQZCertificate, signQZMessage } = require('./services/qz-certs');
 const { configureFirewall } = require('./services/firewall');
 const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('./utils/php-runtime');
+const { serializeRuntimeError } = require('./utils/runtime-error');
+const { formatSpawnError, spawnRuntimeProcess } = require('./utils/runtime-process');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -123,14 +124,19 @@ function startJobWorker() {
     LOGS_PATH: getLogsDir(),
   };
 
-  const worker = spawn(phpPath, workerArgs, {
+  const worker = spawnRuntimeProcess(phpPath, workerArgs, {
+    cwd: backendDir,
     stdio: 'ignore',
     detached: false,
     windowsHide: true,
     env: workerEnv,
   });
   jobWorkerProcess = worker;
-  worker.on('error', (err) => console.warn('[JobWorker] Failed to start:', err.message));
+  worker.on('error', (err) => console.warn('[JobWorker] Failed to start:', formatSpawnError(err, {
+    executable: phpPath,
+    args: workerArgs,
+    cwd: backendDir,
+  })));
   worker.on('exit', () => {
     if (jobWorkerProcess === worker) jobWorkerProcess = null;
   });
@@ -158,12 +164,18 @@ function runBackendCli(args, input = null) {
   const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort });
 
   return new Promise((resolve, reject) => {
-    const child = spawn(phpPath, commandArgs, {
-      env,
-      windowsHide: true,
-      shell: false,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let child;
+    try {
+      child = spawnRuntimeProcess(phpPath, commandArgs, {
+        cwd: backendDir,
+        env,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
     let stdout = '';
     let stderr = '';
     const maxOutput = 12 * 1024;
@@ -173,7 +185,11 @@ function runBackendCli(args, input = null) {
     child.stderr.on('data', (data) => {
       stderr = (stderr + data.toString()).slice(-maxOutput);
     });
-    child.once('error', (error) => reject(new Error(`Failed to start backend command: ${error.message}`)));
+    child.once('error', (error) => reject(new Error(formatSpawnError(error, {
+      executable: phpPath,
+      args: commandArgs,
+      cwd: backendDir,
+    }))));
     child.once('close', (code, signal) => {
       if (code === 0) {
         resolve({ stdout, stderr });
@@ -367,7 +383,8 @@ async function factoryResetDesktop() {
   await stopHttpsProxy();
 
   try {
-    dbCredentials = await resetDatabase(mysqlPort);
+    const resetInfo = await resetDatabase(mysqlPort);
+    applyMysqlStartupInfo(resetInfo);
     clearFactoryResetRuntimeState();
 
     // Start PHP only while the schema is migrated and default data/admin are
@@ -493,6 +510,282 @@ function saveSessionCookies(cookiesPath, cookies) {
 function loadSessionCookies(cookiesPath) {
   if (!fs.existsSync(cookiesPath)) return {};
   return JSON.parse(safeStorage.decryptString(fs.readFileSync(cookiesPath)));
+}
+
+function setSplashStatus(message) {
+  if (!splash || splash.isDestroyed()) return;
+  try {
+    splash.webContents.executeJavaScript(
+      `document.getElementById('status').textContent = ${JSON.stringify(message)}`
+    ).catch(() => {});
+  } catch {
+    // The splash can be closing while a retry is cleaning up the runtime.
+  }
+}
+
+function applyMysqlStartupInfo(info) {
+  if (!info || typeof info !== 'object') {
+    throw new Error('MySQL startup returned no runtime information');
+  }
+  const reportedPort = Number(info.port);
+  if (!Number.isInteger(reportedPort) || reportedPort < 1 || reportedPort > 65535) {
+    throw new Error('MySQL startup returned an invalid TCP port');
+  }
+  mysqlPort = reportedPort;
+  dbCredentials = info;
+  return info;
+}
+
+function getStartupUserMessage(error) {
+  const code = error?.code;
+  if (code === 'RUNTIME_PHP_MISSING' || code === 'RUNTIME_EXECUTABLE_MISSING' || code === 'RUNTIME_PHP_SPAWN_FAILED') {
+    return 'The bundled PHP runtime is missing or could not start. Reinstall the verified POS installer; the release must contain portable/php/php.exe.';
+  }
+  if (code === 'RUNTIME_MYSQL_MISSING' || code === 'RUNTIME_MYSQL_SPAWN_FAILED') {
+    return 'The bundled MariaDB runtime is missing or could not start. Reinstall the verified POS installer; the release must contain portable/mysql/bin/mysqld.exe and mysql.exe.';
+  }
+  if (code === 'RUNTIME_BACKEND_MISSING' || code === 'RUNTIME_BACKEND_ENTRY_MISSING') {
+    return 'The packaged backend is incomplete. Reinstall the verified POS installer.';
+  }
+  if (code === 'MYSQL_START_TIMEOUT' || code === 'MYSQL_PROCESS_EXITED' || code === 'MYSQL_PROCESS_ERROR') {
+    return 'MariaDB did not become ready. Retry once; if it continues, open Diagnostics and inspect mysql-server.log.';
+  }
+  if (code === 'PHP_SERVER_NOT_READY' || code === 'PHP_PROCESS_EXITED' || code === 'PHP_PROCESS_ERROR') {
+    return 'PHP did not become ready. Retry once; if it continues, open Diagnostics and inspect php-server.log.';
+  }
+  return error?.message || 'The POS runtime could not start. Open Diagnostics for details.';
+}
+
+function captureStartupError(error, { stage = null, attempts = 0 } = {}) {
+  const phpServer = require('./services/php-server');
+  const mysqlServer = require('./services/mysql-server');
+  let runtimeDiagnostics = null;
+  try {
+    runtimeDiagnostics = require('./utils/paths').getRuntimeDiagnostics();
+  } catch (diagnosticError) {
+    runtimeDiagnostics = { error: diagnosticError.message };
+  }
+
+  const serialized = serializeRuntimeError(error);
+  const lastResponse = phpServer.getLastHealthResponse();
+  lastStartupError = {
+    ...serialized,
+    userMessage: getStartupUserMessage(error),
+    timestamp: new Date().toISOString(),
+    startupStage: stage || error?.details?.stage || 'startup',
+    apiBaseUrl: `http://127.0.0.1:${phpPort}`,
+    mysqlPort,
+    phpPort,
+    attempts,
+    failedChecks: lastResponse ? lastResponse.checks : null,
+    lastHealthResult: lastResponse,
+    lastPhpError: phpServer.getLastPhpError(),
+    lastMysqlError: mysqlServer.getLastMysqlError(),
+    runtimeDiagnostics,
+  };
+  return lastStartupError;
+}
+
+const NON_RETRYABLE_STARTUP_CODES = new Set([
+  'RUNTIME_PHP_MISSING',
+  'RUNTIME_MYSQL_MISSING',
+  'RUNTIME_EXECUTABLE_MISSING',
+  'RUNTIME_WORKING_DIRECTORY_MISSING',
+  'RUNTIME_PHP_SPAWN_FAILED',
+  'RUNTIME_MYSQL_SPAWN_FAILED',
+  'RUNTIME_BACKEND_MISSING',
+  'RUNTIME_BACKEND_ENTRY_MISSING',
+  'RUNTIME_SCHEMA_MISSING',
+  'PHP_DATABASE_CREDENTIALS_MISSING',
+  'PHP_MIGRATION_FAILED',
+  'MYSQL_DATA_DIRECTORY_INVALID',
+  'MYSQL_INITIALIZATION_FAILED',
+  'MYSQL_DATABASE_INIT_FAILED',
+]);
+
+async function stopRuntimeServices() {
+  await stopJobWorker();
+  stopPHP();
+  stopQZTray();
+  try {
+    await stopHttpsProxy();
+  } catch (error) {
+    console.warn('[Runtime] Failed to stop HTTPS proxy during recovery:', error.message);
+  }
+  await stopMySQL();
+}
+
+async function startCoreRuntime({ maxAttempts = 2, healthTimeout = 60000, resetBeforeStart = false } = {}) {
+  if (resetBeforeStart) await stopRuntimeServices();
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (attempt > 1) await stopRuntimeServices();
+
+    try {
+      setSplashStatus('Starting the bundled database...');
+      const mysqlInfo = await startMySQL(mysqlPort, { maxStartupAttempts: 3 });
+      applyMysqlStartupInfo(mysqlInfo);
+      console.log(`[Main] MariaDB started successfully on port ${mysqlPort}`);
+
+      setSplashStatus('Starting the backend server...');
+      const phpServerInfo = await startPHP(phpPort, mysqlPort, dbCredentials);
+      phpPort = phpServerInfo.port;
+      console.log(`[Main] PHP Server started successfully on port ${phpPort}`);
+
+      setSplashStatus('Checking runtime readiness...');
+      const { waitForHealth } = require('./services/php-server');
+      await waitForHealth(phpServerInfo.baseUrl, { maxTime: healthTimeout });
+      return { mysqlInfo, phpServerInfo };
+    } catch (error) {
+      lastError = error;
+      captureStartupError(error, {
+        stage: error?.details?.stage || 'startup',
+        attempts: attempt,
+      });
+      console.error(`[Runtime] Startup attempt ${attempt}/${maxAttempts} failed:`, error.message);
+
+      try {
+        await stopRuntimeServices();
+      } catch (cleanupError) {
+        console.warn('[Runtime] Failed to clean up after startup failure:', cleanupError.message);
+      }
+
+      if (attempt >= maxAttempts || NON_RETRYABLE_STARTUP_CODES.has(error.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+    }
+  }
+
+  throw lastError || new Error('POS runtime failed to start');
+}
+
+function startLogCleanup() {
+  const {
+    getPhpPath,
+    getBackendDir,
+    getDataDir,
+    getEnvPath,
+    getLogsDir,
+    getTempDir,
+    isPackaged,
+  } = require('./utils/paths');
+  const phpPath = getPhpPath();
+  const backendDir = getBackendDir();
+  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
+  const { createBackendEnv } = require('./services/php-server');
+  const maintenanceEnv = {
+    ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
+    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
+    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+    APP_TIMEZONE: resolveSystemTimeZone(),
+    APP_STORAGE_DIR: getDataDir(),
+    ENV_PATH: getEnvPath(),
+    LOGS_PATH: getLogsDir(),
+  };
+  const phpRuntimeArgs = getPhpRuntimeArgs(phpPath, getTempDir());
+  const cleanupArgs = isPackaged()
+    ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'cleanup-logs']
+    : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'cleanup-logs.php')];
+
+  try {
+    const cleanupProcess = spawnRuntimeProcess(phpPath, cleanupArgs, {
+      cwd: backendDir,
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+      env: maintenanceEnv,
+    });
+    cleanupProcess.on('error', (error) => console.warn('[LogCleanup] Failed to start:', formatSpawnError(error, {
+      executable: phpPath,
+      args: cleanupArgs,
+      cwd: backendDir,
+    })));
+    cleanupProcess.unref();
+  } catch (error) {
+    console.warn('[LogCleanup] Failed to start:', formatSpawnError(error, {
+      executable: phpPath,
+      args: cleanupArgs,
+      cwd: backendDir,
+    }));
+  }
+}
+
+async function startPostStartupServices() {
+  setSplashStatus('Preparing the POS database...');
+  await initializeFreshRuntime({ seed: dbCredentials.freshInstall === true });
+  await startHttpsProxy(phpPort, 8443);
+  startLogCleanup();
+  startJobWorker();
+
+  setSplashStatus('Starting the printing service...');
+  try {
+    const { getJavaPath, getQZTrayPath } = require('./utils/paths');
+    const qzTrayDir = path.dirname(getQZTrayPath());
+    await ensureQZCerts(qzTrayDir, getJavaPath());
+  } catch (error) {
+    console.warn('[QZ Certs] Skipped cert generation:', error.message);
+  }
+  await startQZTray();
+}
+
+function createMainWindow() {
+  const window = new BrowserWindow({
+    width: 1280, height: 800,
+    minWidth: 1024, minHeight: 600,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#1a1d2e',
+      symbolColor: '#f3f4f6',
+      height: 36,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      sandbox: true,
+    },
+  });
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('app://pos-app/')) event.preventDefault();
+  });
+  window.setMenu(null);
+  window.maximize();
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
+      event.preventDefault();
+      window.webContents.reload();
+    }
+    if (input.control && ['+', '=', '-', '0'].includes(input.key)) {
+      event.preventDefault();
+      const currentZoom = window.webContents.getZoomFactor();
+      if (input.key === '+' || input.key === '=') window.webContents.setZoomFactor(currentZoom + 0.1);
+      else if (input.key === '-') window.webContents.setZoomFactor(currentZoom - 0.1);
+      else window.webContents.setZoomFactor(1.0);
+    }
+  });
+  window.on('close', (event) => {
+    if (!forceQuit) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
+  return window;
+}
+
+async function showMainApplication() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+  mainWindow = createMainWindow();
+  await mainWindow.loadURL('app://pos-app/index.html');
+  if (splash && !splash.isDestroyed()) splash.close();
+  if (!tray || tray.isDestroyed?.()) {
+    tray = null;
+    createTray();
+  }
+  setupAutoUpdater(mainWindow);
 }
 
 // منع تشغيل أكثر من نسخة
@@ -976,6 +1269,13 @@ app.whenReady().then(async () => {
       }
     }
 
+    let runtimeDiagnostics = null;
+    try {
+      runtimeDiagnostics = require('./utils/paths').getRuntimeDiagnostics();
+    } catch (error) {
+      runtimeDiagnostics = { error: error.message };
+    }
+
     return {
       selectedDataDir: getDataDir(),
       configDir: getConfigDir(),
@@ -988,45 +1288,36 @@ app.whenReady().then(async () => {
       lastMigrationEvent,
       fileMigrations,
       mysqlMigration,
-      conflicts
+      conflicts,
+      runtimeDiagnostics,
+      startupError: lastStartupError,
+      lastPhpError: phpServer.getLastPhpError(),
+      lastMysqlError: require('./services/mysql-server').getLastMysqlError(),
     };
   });
   ipcMain.handle('recovery:retry-startup', async (event) => {
     assertRecoveryRenderer(event);
     console.log('[Recovery] Retry startup requested by user.');
     try {
-      const phpServer = require('./services/php-server');
-      console.log('[Recovery] Stopping PHP and WebSocket servers...');
-      phpServer.stopPhpServer();
-      
-      console.log('[Recovery] Restarting PHP server...');
-      const phpServerInfo = await phpServer.startPhpServer({
-        preferredPort: phpPort,
-        mysqlPort,
-        dbCredentials,
-      });
-      phpPort = phpServerInfo.port;
-      console.log(`[Recovery] PHP Server restarted on port ${phpPort}`);
-
-      console.log('[Recovery] Awaiting readiness check...');
-      await phpServer.waitForHealth(phpServerInfo.baseUrl, { maxTime: 15000 });
-
-      console.log('[Recovery] Startup success! Transitioning to main application frontend...');
-      mainWindow.loadURL('app://pos-app/index.html');
+      console.log('[Recovery] Stopping both runtime services before retry.');
+      await startCoreRuntime({ maxAttempts: 2, healthTimeout: 30000, resetBeforeStart: true });
+      await startPostStartupServices();
+      console.log(`[Recovery] Runtime restarted with MariaDB on ${mysqlPort} and PHP on ${phpPort}.`);
+      await showMainApplication();
       lastStartupError = null;
       return { success: true };
     } catch (err) {
       console.error('[Recovery] Retry startup failed:', err.message);
-      const phpServer = require('./services/php-server');
-      const lastResponse = phpServer.getLastHealthResponse();
-      lastStartupError = {
-        message: err.message,
-        timestamp: new Date().toISOString(),
-        apiBaseUrl: `http://127.0.0.1:${phpPort}`,
-        attempts: 0,
-        failedChecks: lastResponse ? lastResponse.checks : null
-      };
-      return { success: false, error: err.message };
+      try {
+        await stopRuntimeServices();
+      } catch (cleanupError) {
+        console.warn('[Recovery] Failed to clean up after retry:', cleanupError.message);
+      }
+      const errorRecord = captureStartupError(err, {
+        stage: err?.details?.stage || 'recovery-retry',
+        attempts: 2,
+      });
+      return { success: false, error: errorRecord.userMessage, code: errorRecord.code };
     }
   });
 
@@ -1112,174 +1403,70 @@ app.whenReady().then(async () => {
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل قاعدة البيانات...'`
     );
-    dbCredentials = await startMySQL(mysqlPort);
+    await startCoreRuntime({ maxAttempts: 2 });
 
     // 3. تشغيل PHP
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل الخادم...'`
     );
-    const phpServerInfo = await startPHP(phpPort, mysqlPort, dbCredentials);
-    phpPort = phpServerInfo.port;
-    console.log(`[Main] PHP Server started successfully on port ${phpPort}`);
 
     // ── Wait for Health Check ──
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'التحقق من جاهزية النظام...'`
     );
-    const { waitForHealth } = require('./services/php-server');
-    await waitForHealth(phpServerInfo.baseUrl);
+    // startCoreRuntime completed the health check using the actual selected ports.
 
     // Fresh desktop installs contain no interactive user by design. Seed the
     // packaged defaults and create a one-time administrator credential only
     // when the database is empty; existing upgrades retain their data.
-    await initializeFreshRuntime({ seed: dbCredentials.freshInstall === true });
-
-    await startHttpsProxy(phpPort, 8443);
+    await startPostStartupServices();
 
     // Run log maintenance and the job worker without delaying startup.
-    const {
-      getPhpPath,
-      getBackendDir,
-      getDataDir,
-      getEnvPath,
-      getLogsDir,
-      getTempDir,
-      isPackaged,
-    } = require('./utils/paths');
-    const phpPath = getPhpPath();
-    const backendDir = getBackendDir();
-    const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
-    const { createBackendEnv } = require('./services/php-server');
-    const maintenanceEnv = {
-      ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
-      APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-      DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
-      APP_TIMEZONE: resolveSystemTimeZone(),
-      APP_STORAGE_DIR: getDataDir(),
-      ENV_PATH: getEnvPath(),
-      LOGS_PATH: getLogsDir(),
-    };
-    const phpRuntimeArgs = getPhpRuntimeArgs(phpPath, getTempDir());
-    const cleanupArgs = isPackaged()
-      ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'cleanup-logs']
-      : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'cleanup-logs.php')];
-    const cleanupProcess = spawn(phpPath, cleanupArgs, {
-      stdio: 'ignore',
-      detached: true,
-      windowsHide: true,
-      env: maintenanceEnv,
-    });
-    cleanupProcess.on('error', err => console.warn('[LogCleanup] Failed to start:', err.message));
-    cleanupProcess.unref();
 
     // Keep the worker owned by Electron. A detached worker survives app
     // restarts and can continue running an older backend indefinitely.
-    startJobWorker();
 
     // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
     splash.webContents.executeJavaScript(
       `document.getElementById('status').textContent = 'جاري تشغيل خدمة الطباعة...'`
     );
-    try {
-      const { getJavaPath, getQZTrayPath } = require('./utils/paths');
-      const qzTrayDir = require('path').dirname(getQZTrayPath());
-      await ensureQZCerts(qzTrayDir, getJavaPath());
-    } catch (err) {
-      console.warn('[QZ Certs] Skipped cert generation:', err.message);
-    }
-    await startQZTray();
 
     // 4. فتح النافذة الرئيسية
-    mainWindow = new BrowserWindow({
-      width: 1280, height: 800,
-      minWidth: 1024, minHeight: 600,
-      icon: path.join(__dirname, 'assets', 'icon.png'),
-      titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#1a1d2e', // Matches the sidebar/header background color
-        symbolColor: '#f3f4f6', // Light gray icons
-        height: 36 // Matches standard title bar height
-      },
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        webSecurity: true,
-        sandbox: true
-      }
-    });
+    await showMainApplication();
 
-    // تحميل الـ frontend عبر custom protocol
-    mainWindow.loadURL('app://pos-app/index.html');
-    mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    mainWindow.webContents.on('will-navigate', (event, url) => {
-      if (!url.startsWith('app://pos-app/')) event.preventDefault();
-    });
-    mainWindow.setMenu(null); // إخفاء القائمة العلوية
-    mainWindow.maximize(); // تكبير الشاشة بالكامل
-
-    // تمكين الـ Zoom وتحديث الصفحة
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      // تحديث الصفحة عن طريق F5 أو Ctrl+R
-      if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
-        event.preventDefault();
-        mainWindow.webContents.reload();
-      }
-
-      // التقريب والإبعاد عن طريق Ctrl + / Ctrl - / Ctrl 0
-      if (input.control && ['+', '=', '-', '0'].includes(input.key)) {
-        event.preventDefault();
-        const currentZoom = mainWindow.webContents.getZoomFactor();
-        if (input.key === '+' || input.key === '=') {
-          mainWindow.webContents.setZoomFactor(currentZoom + 0.1);
-        } else if (input.key === '-') {
-          mainWindow.webContents.setZoomFactor(currentZoom - 0.1);
-        } else if (input.key === '0') {
-          mainWindow.webContents.setZoomFactor(1.0);
-        }
-      }
-    });
-
-    splash.close();
-
-    // 5. System Tray
-    createTray();
-
-    // 6. فحص التحديثات التلقائية
-    setupAutoUpdater(mainWindow);
-
-    mainWindow.on('close', (e) => {
-      if (!forceQuit) {
-        e.preventDefault();
-        mainWindow.hide(); // إخفاء بدل الإغلاق
-      }
-    });
 
   } catch (err) {
     console.error('[Recovery] Entering Recovery Mode due to startup failure:', err.message);
-    enterRecoveryMode(err);
+    captureStartupError(err, {
+      stage: err?.details?.stage || 'startup',
+      attempts: err?.details?.attempts || 1,
+    });
+    await enterRecoveryMode(err);
   }
 });
 
-function enterRecoveryMode(err) {
+async function enterRecoveryMode(err) {
   if (splash) {
     try {
       splash.close();
     } catch (e) {}
   }
 
-  const phpServer = require('./services/php-server');
-  const lastResponse = phpServer.getLastHealthResponse();
+  try {
+    await stopRuntimeServices();
+  } catch (cleanupError) {
+    console.warn('[Recovery] Failed to stop runtime services:', cleanupError.message);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+  if (tray && !tray.isDestroyed?.()) {
+    tray.destroy();
+  }
+  tray = null;
 
-  lastStartupError = {
-    message: err.message,
-    timestamp: new Date().toISOString(),
-    apiBaseUrl: `http://127.0.0.1:${phpPort}`,
-    attempts: 0,
-    failedChecks: lastResponse ? lastResponse.checks : null
-  };
-
-  if (!mainWindow) {
+  {
     mainWindow = new BrowserWindow({
       width: 1280, height: 800,
       minWidth: 1024, minHeight: 600,
@@ -1302,7 +1489,7 @@ function enterRecoveryMode(err) {
     mainWindow.maximize();
   }
 
-  mainWindow.loadFile(path.join(__dirname, 'assets', 'recovery.html'));
+  await mainWindow.loadFile(path.join(__dirname, 'assets', 'recovery.html'));
 }
 
 function createTray() {

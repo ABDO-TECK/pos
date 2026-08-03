@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "php": {
+    "distribution": "PHP for Windows",
+    "version": "8.2.30",
+    "url": "https://windows.php.net/downloads/releases/php-8.2.30-nts-Win32-vs16-x64.zip",
+    "sha256": "40cc8fd11cd96e7292528d2a086aeef8db738d1da7d8b1cd8e846d18c13fbcb0",
+    "archiveName": "php-8.2.30-nts-Win32-vs16-x64.zip",
+    "requiredFiles": [
+      "php/php.exe",
+      "php/php.ini",
+      "php/ext/php_mbstring.dll",
+      "php/ext/php_mysqli.dll",
+      "php/ext/php_pdo_mysql.dll"
+    ]
+  },
+  "mysql": {
+    "distribution": "MariaDB Community Server",
+    "version": "10.4.32",
+    "url": "https://dlm.mariadb.com/3560101/MariaDB/mariadb-10.4.32/winx64-packages/mariadb-10.4.32-winx64.zip",
+    "sha256": "c7239062b1e491c8292ed53f38da633f0642c9e5b78a08673fdb4919ee7194bc",
+    "archiveName": "mariadb-10.4.32-winx64.zip",
+    "requiredFiles": [
+      "mysql/bin/mysqld.exe",
+      "mysql/bin/mysql.exe",
+      "mysql/bin/mysqladmin.exe",
+      "mysql/bin/mysql_install_db.exe"
+    ]
+  }
+}

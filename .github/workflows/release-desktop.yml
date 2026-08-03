@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build and publish (for example v1.1.39)
+        description: Release tag to build and publish (for example v1.1.40)
         required: true
         type: string
 
@@ -45,8 +45,17 @@ jobs:
       - name: Build backend PHAR
         run: npm run build:phar
 
+      - name: Prepare pinned portable PHP and MariaDB runtimes
+        run: npm run prepare:desktop-runtime
+
+      - name: Verify portable runtime before packaging
+        run: npm run verify:desktop-runtime
+
       - name: Build Windows installer
         run: npx electron-builder --win --publish never
+
+      - name: Verify packaged runtime contents
+        run: node scripts/verify-desktop-runtime.mjs --root dist-electron/win-unpacked/resources/portable --strict
 
       - name: Upload verified release assets
         shell: pwsh

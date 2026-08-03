@@ -132,7 +132,10 @@ function getPhpRuntimeArgs(phpPath, writableDirectory) {
     const sourceIni = fs.readFileSync(sourceIniPath, 'utf8');
     const sanitized = sanitizePhpIni(sourceIni, phpDirectory);
     if (sanitized.missingExtensions === 0) {
-      return baseArgs;
+      // Do not depend on PHP's current working directory when the app is
+      // launched from an NSIS shortcut. Point the CLI at the runtime's own
+      // configuration explicitly.
+      return ['-c', sourceIniPath, ...baseArgs];
     }
 
     fs.mkdirSync(writableDirectory, { recursive: true });

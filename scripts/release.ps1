@@ -782,6 +782,8 @@ function Invoke-ElectronBuild {
     if ($CleanDist -or $Mode -in @('build', 'repo', 'electron', 'all')) {
         Remove-DistElectron
     }
+    Invoke-Checked 'Preparing pinned portable PHP and MariaDB runtimes' { npm run prepare:desktop-runtime }
+    Invoke-Checked 'Verifying portable runtime before packaging' { npm run verify:desktop-runtime }
     Invoke-Checked 'Building Electron NSIS installer' { npx electron-builder --win --publish never }
     if (-not $DryRun) {
         Test-ElectronOutput (Get-EffectiveVersion)
@@ -836,6 +838,11 @@ function Test-ElectronOutput {
     Assert-FileExists (Join-Path $UnpackedPath 'resources/app.asar') 'Packaged app.asar'
     Assert-FileExists (Join-Path $UnpackedPath 'resources/app.asar.unpacked/backend/backend.phar') 'Packaged backend/backend.phar'
     Assert-FileExists (Join-Path $UnpackedPath 'resources/app.asar.unpacked/backend/certs/cacert.pem') 'Packaged backend/certs/cacert.pem'
+    Assert-FileExists (Join-Path $UnpackedPath 'resources/portable/php/php.exe') 'Packaged portable PHP runtime'
+    Assert-FileExists (Join-Path $UnpackedPath 'resources/portable/mysql/bin/mysqld.exe') 'Packaged portable MariaDB server'
+    Assert-FileExists (Join-Path $UnpackedPath 'resources/portable/mysql/bin/mysql.exe') 'Packaged portable MariaDB client'
+    Assert-FileExists (Join-Path $UnpackedPath 'resources/portable/runtime-manifest.json') 'Packaged portable runtime manifest'
+    Invoke-Checked 'Verifying packaged portable runtime probes' { node scripts/verify-desktop-runtime.mjs --root (Join-Path $UnpackedPath 'resources/portable') --strict }
 
     $script:ElectronArtifacts = [PSCustomObject]@{
         LatestYml = $latestPath

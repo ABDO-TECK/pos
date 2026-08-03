@@ -1,15 +1,17 @@
 {
     "name":  "pos-desktop",
-    "version":  "1.1.39",
+    "version":  "1.1.40",
     "description":  "POS Desktop Application",
     "author":  "POS Developer",
     "main":  "electron/main.js",
     "scripts":  {
                     "electron:dev":  "electron .",
-                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js",
+                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js electron/tests/runtime-process.test.js scripts/desktop-runtime.test.mjs",
                     "build:phar":  "node scripts/build-phar.mjs",
-                    "electron:build":  "npm run build:phar \u0026\u0026 electron-builder --win --publish never",
-                    "electron:publish":  "npm run build:phar \u0026\u0026 electron-builder --win --publish always",
+                    "prepare:desktop-runtime":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-desktop-runtime.ps1",
+                    "verify:desktop-runtime":  "node scripts/verify-desktop-runtime.mjs --strict",
+                    "electron:build":  "npm run build:phar \u0026\u0026 npm run prepare:desktop-runtime \u0026\u0026 npm run verify:desktop-runtime \u0026\u0026 electron-builder --win --publish never",
+                    "electron:publish":  "npm run build:phar \u0026\u0026 npm run prepare:desktop-runtime \u0026\u0026 npm run verify:desktop-runtime \u0026\u0026 electron-builder --win --publish always",
                     "frontend:build":  "cd frontend \u0026\u0026 npm run build",
                     "quality":  "node scripts/quality.mjs",
                     "test:quality":  "node --test scripts/quality.test.mjs"
