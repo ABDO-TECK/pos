@@ -1,0 +1,67 @@
+name: Build desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and publish (for example v1.1.39)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring,openssl,phar,sqlite3
+          coverage: none
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Build frontend
+        run: npm run frontend:build
+
+      - name: Build backend PHAR
+        run: npm run build:phar
+
+      - name: Build Windows installer
+        run: npx electron-builder --win --publish never
+
+      - name: Upload verified release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $installer = "dist-electron/POS-System-Setup-$version.exe"
+          $blockmap = "$installer.blockmap"
+          if (-not (Test-Path -LiteralPath $installer)) {
+            throw "Installer was not created: $installer"
+          }
+          if (-not (Test-Path -LiteralPath $blockmap)) {
+            throw "Blockmap was not created: $blockmap"
+          }
+          gh release upload $env:RELEASE_TAG $installer $blockmap dist-electron/latest.yml --repo $env:REPOSITORY --clobber
