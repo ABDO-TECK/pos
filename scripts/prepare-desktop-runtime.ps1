@@ -52,6 +52,22 @@ function Test-PreparedManifest {
     }
 }
 
+function Get-Sha256 {
+    param([string] $Path)
+
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
+        $algorithm.Dispose()
+    }
+}
+
 function Get-VerifiedArchive {
     param(
         [object] $Runtime,
@@ -64,7 +80,7 @@ function Get-VerifiedArchive {
         Invoke-WebRequest -UseBasicParsing -Uri $Runtime.url -OutFile $archivePath
     }
 
-    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-Sha256 $archivePath
     if ($actualHash -ne ([string] $Runtime.sha256).ToLowerInvariant()) {
         throw "SHA-256 mismatch for $($Runtime.archiveName). Expected $($Runtime.sha256), got $actualHash."
     }

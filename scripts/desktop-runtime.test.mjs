@@ -56,6 +56,8 @@ test('electron-builder keeps the runtime manifest in extraResources, outside app
 
 test('portable runtime preparation supports Windows PowerShell 5.1', () => {
   assert.doesNotMatch(prepareRuntimeSource, /^\s*New-Item[^\r\n]*-LiteralPath/m)
+  assert.doesNotMatch(prepareRuntimeSource, /Get-FileHash/)
+  assert.match(prepareRuntimeSource, /\[System\.Security\.Cryptography\.SHA256\]::Create\(\)/)
   assert.match(prepareRuntimeSource, /New-Item\s+-ItemType\s+Directory\s+-Path\s+\$BuildToolsDir/)
 })
 
