@@ -441,7 +441,7 @@
           if (key === 'version') checkLabel = 'إصدار النظام (System Version)';
 
           checkEl.innerHTML = `
-            <span class="check-name">${checkLabel}</span>
+            <span class="check-name">${escapeHtml(checkLabel)}</span>
             <span class="check-status status-${check.status === 'ok' ? 'ok' : 'failed'}">
               ${check.status === 'ok' ? 'سليم' : 'فشل'}
             </span>
@@ -499,23 +499,23 @@
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">المنافذ الحالية (runtime_ports.json):</div>
-            <pre class="diagnostics-val">${diag.runtimePorts ? JSON.stringify(diag.runtimePorts, null, 2) : 'غير متوفر'}</pre>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.runtimePorts)}</pre>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">تفاصيل الخادم الخلفي (PHP Server Info):</div>
-            <pre class="diagnostics-val">${diag.phpServerInfo ? JSON.stringify(diag.phpServerInfo, null, 2) : 'غير متوفر'}</pre>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.phpServerInfo)}</pre>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">تقرير الفحص الأخير (Last Health Result):</div>
-            <pre class="diagnostics-val">${diag.lastHealthResult ? JSON.stringify(diag.lastHealthResult, null, 2) : 'غير متوفر'}</pre>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.lastHealthResult)}</pre>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">ملخص هجرة MySQL (MySQL Migration):</div>
-            <pre class="diagnostics-val">${diag.mysqlMigration ? JSON.stringify(diag.mysqlMigration, null, 2) : 'غير متوفر'}</pre>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.mysqlMigration)}</pre>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">استعادة MySQL (MySQL Rollback):</div>
-            <pre class="diagnostics-val">${diag.runtimeMetadata && diag.runtimeMetadata.mysqlRollback ? JSON.stringify(diag.runtimeMetadata.mysqlRollback, null, 2) : 'غير متوفر'}</pre>
+            <pre class="diagnostics-val">${formatDiagnostic(diag.runtimeMetadata?.mysqlRollback)}</pre>
           </div>
           <div class="diagnostics-item">
             <div class="diagnostics-label">Bundled runtime discovery:</div>
@@ -527,7 +527,7 @@
           </div>
         `;
       } catch (err) {
-        content.innerHTML = `<div style="font-size:13px;color:var(--danger);">فشل جمع التشخيص: ${err.message}</div>`;
+        content.innerHTML = `<div style="font-size:13px;color:var(--danger);">فشل جمع التشخيص: ${escapeHtml(err.message)}</div>`;
       }
     }
   }
