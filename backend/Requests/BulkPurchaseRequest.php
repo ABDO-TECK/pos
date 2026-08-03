@@ -45,7 +45,7 @@ class BulkPurchaseRequest extends FormRequest {
 
             $itemErrors = Validator::validate($item, [
                 'product_id' => 'required|integer|min_value:1',
-                'quantity'   => 'required|numeric|min_value:0|max_value:99999999',
+                'quantity'   => 'required|numeric|min_value:0|max_value:9999999.999',
                 'cost'       => 'required|numeric|min_value:0|max_value:99999999',
             ]);
 

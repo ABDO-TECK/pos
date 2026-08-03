@@ -7,6 +7,22 @@ import { extractApiError } from '../../utils/apiError'
 
 type BarcodeScannerProps = { onResult: (text: string) => void; onClose: () => void }
 
+const INTERACTIVE_TARGET_SELECTOR = [
+  'input',
+  'textarea',
+  'select',
+  'button',
+  'a',
+  'label',
+  'form',
+  '[contenteditable="true"]',
+  '[role="button"]',
+  '[role="dialog"]',
+  '[aria-modal="true"]',
+  '.modal-overlay',
+  '.sidebar-overlay',
+].join(', ')
+
 const beep = () => {
   try {
     const AudioContextConstructor = window.AudioContext
@@ -38,6 +54,7 @@ const SCANNER_DEBOUNCE = 280
 export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfStock = false }: { onFilterChange?: (value: string) => void, onAddProduct?: (product: Product) => void, allowOutOfStock?: boolean }) {
   const inputRef      = useRef<HTMLInputElement>(null)
   const debounceTimer = useRef<number>(0)
+  const animationFrame = useRef<number | null>(null)
   const lastTypeTime  = useRef(0)
   const typeCount     = useRef(0)
   const busyRef       = useRef(false)
@@ -56,14 +73,23 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
   useEffect(() => {
     if (!isDesktop) return;
     const refocus = (e: globalThis.MouseEvent) => {
-      const tag = e.target instanceof HTMLElement ? e.target.tagName : ''
-      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag)) return
-      inputRef.current?.focus()
+      const target = e.target instanceof Element ? e.target : null
+      if (target?.closest(INTERACTIVE_TARGET_SELECTOR)) return
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return
+      inputRef.current?.focus({ preventScroll: true })
     }
-    inputRef.current?.focus()
+    inputRef.current?.focus({ preventScroll: true })
     document.addEventListener('click', refocus)
     return () => document.removeEventListener('click', refocus)
   }, [isDesktop])
+
+  useEffect(() => () => {
+    clearTimeout(debounceTimer.current)
+    if (animationFrame.current !== null) {
+      cancelAnimationFrame(animationFrame.current)
+      animationFrame.current = null
+    }
+  }, [])
 
   const handleSearch = useCallback(async (barcode: string) => {
     const trimmed = barcode.trim()
@@ -123,7 +149,9 @@ export default function BarcodeInput({ onFilterChange, onAddProduct, allowOutOfS
     typeCount.current = 0
     busyRef.current = false
 
-    requestAnimationFrame(() => {
+    if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current)
+    animationFrame.current = requestAnimationFrame(() => {
+      animationFrame.current = null
       const el = inputRef.current
       if (isDesktop) el?.focus()
       const rest = (el?.value ?? '').trim()

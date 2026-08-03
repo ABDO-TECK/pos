@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Wifi, Copy, Check, HelpCircle, QrCode } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getNetworkInfo } from '../../api/endpoints'
@@ -24,10 +24,14 @@ export default function NetworkAccessSection() {
   const [loading, setLoading] = useState(true)
   const [networkInfo, setNetworkInfo] = useState<NetworkInfoData | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
-  const [lanAccess, setLanAccess] = useState<LanAccessData | null>(null)
+  const [lanAccess, setLanAccess] = useState<LanAccessData>({
+    enabled: false,
+    port: 8443,
+    protocol: 'https',
+    error: 'لم يتم تفعيل الوصول من الهاتف. اضغط تفعيل عند الحاجة فقط.',
+  })
   const [lanAccessLoading, setLanAccessLoading] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const lanEnableRequested = useRef(false)
 
   useEffect(() => {
     getNetworkInfo()
@@ -79,11 +83,35 @@ export default function NetworkAccessSection() {
     }
   }, [])
 
-  useEffect(() => {
-    if (window.location.protocol !== 'app:' || lanEnableRequested.current) return
-    lanEnableRequested.current = true
-    void requestLanAccess()
+  const handleEnableLanAccess = useCallback(async () => {
+    if (!window.confirm('Enable HTTPS access from devices on the local network?')) {
+      return
+    }
+    await requestLanAccess()
   }, [requestLanAccess])
+
+  const handleDisableLanAccess = useCallback(async () => {
+    const disableLanAccess = window.posRuntime?.disableLanAccess
+    if (typeof disableLanAccess !== 'function') return
+    if (!window.confirm('Disable HTTPS access from devices on the local network?')) {
+      return
+    }
+
+    setLanAccessLoading(true)
+    try {
+      setLanAccess(await disableLanAccess())
+    } catch (error) {
+      console.error('[LAN] Failed to disable phone access:', error)
+      setLanAccess({
+        enabled: true,
+        port: 8443,
+        protocol: 'https',
+        error: 'تعذر إيقاف الوصول من الهاتف. تحقق من إعدادات جدار الحماية.',
+      })
+    } finally {
+      setLanAccessLoading(false)
+    }
+  }, [])
 
   const handleCopy = (url: string) => {
     navigator.clipboard.writeText(url)
@@ -185,22 +213,29 @@ export default function NetworkAccessSection() {
             fontSize: '0.82rem',
           }}
         >
-          {lanAccessLoading || lanAccess === null ? (
-            'جاري تفعيل خدمة الوصول المحلي الآمن…'
+          {lanAccessLoading ? (
+            'جاري تحديث حالة الوصول المحلي الآمن…'
           ) : lanAccess.enabled ? (
             <>
               تم تفعيل الوصول من الهاتف على المنفذ {lanAccess.port}.
               {lanAccess.firewallRequired && ' اسمح للتطبيق عبر جدار حماية Windows ثم اضغط إعادة المحاولة.'}
+              <button
+                type="button"
+                onClick={() => void handleDisableLanAccess()}
+                style={{ marginInlineStart: '0.75rem' }}
+              >
+                إيقاف الوصول
+              </button>
             </>
           ) : (
             <>
               {lanAccess.error || 'لم يتم تفعيل الوصول من الهاتف.'}
               <button
                 type="button"
-                onClick={() => void requestLanAccess()}
+                onClick={() => void handleEnableLanAccess()}
                 style={{ marginInlineStart: '0.75rem' }}
               >
-                إعادة المحاولة
+                تفعيل الوصول
               </button>
             </>
           )}

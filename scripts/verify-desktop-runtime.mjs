@@ -83,6 +83,19 @@ export function validateRuntimeDirectory(runtimeRoot, { strict = false, runProbe
     probes.mysql = runProbe(mysqlPath, ['--version'], path.dirname(mysqlPath))
     if (!probes.php.ok) errors.push(`PHP executable probe failed: ${probes.php.error || probes.php.output || probes.php.status}`)
     if (!probes.mysql.ok) errors.push(`MySQL/MariaDB executable probe failed: ${probes.mysql.error || probes.mysql.output || probes.mysql.status}`)
+    if (probes.php.ok) {
+      probes.phpExtensions = runProbe(
+        phpPath,
+        [
+          '-r',
+          "if (!extension_loaded('pdo_mysql') || !extension_loaded('pdo_sqlite')) { fwrite(STDERR, 'pdo_mysql and pdo_sqlite are required'); exit(1); } echo implode(',', PDO::getAvailableDrivers());",
+        ],
+        path.dirname(phpPath),
+      )
+      if (!probes.phpExtensions.ok) {
+        errors.push(`PHP PDO extension probe failed: ${probes.phpExtensions.error || probes.phpExtensions.output || probes.phpExtensions.status}`)
+      }
+    }
     if (strict && probes.php.ok && !new RegExp(`PHP ${manifest.php.version.replaceAll('.', '\\.')}(?:\\s|$)`, 'i').test(probes.php.output)) {
       errors.push(`PHP executable did not report version ${manifest.php.version}`)
     }
@@ -107,7 +120,7 @@ function main() {
     process.exitCode = 1
     return
   }
-  console.log(`[desktop-runtime] Verified PHP ${result.probes.php.output.split(/\r?\n/u)[0]} and MariaDB ${result.probes.mysql.output.split(/\r?\n/u)[0]}`)
+  console.log(`[desktop-runtime] Verified PHP ${result.probes.php.output.split(/\r?\n/u)[0]}, PDO drivers ${result.probes.phpExtensions.output}, and MariaDB ${result.probes.mysql.output.split(/\r?\n/u)[0]}`)
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()

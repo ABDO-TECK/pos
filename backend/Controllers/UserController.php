@@ -108,7 +108,7 @@ class UserController extends Controller {
             \App\Middleware\PermissionMiddleware::clearPermissionCache();
 
             // Audit log: track who updated whom
-            \App\Helpers\AuditLog::log(
+            \App\Helpers\AuditLog::logOrFail(
                 (int) $auth['id'],
                 $isSelf ? 'update_own_profile' : 'update_user',
                 'user',
@@ -118,7 +118,7 @@ class UserController extends Controller {
             );
 
             if ($passwordChanged) {
-                \App\Helpers\AuditLog::log(
+                \App\Helpers\AuditLog::logOrFail(
                     (int) $auth['id'],
                     $isSelf ? 'password_changed_sessions_revoked' : 'admin_password_reset_sessions_revoked',
                     'user',
@@ -162,7 +162,7 @@ class UserController extends Controller {
             $this->userRepo->delete($id);
             \App\Middleware\PermissionMiddleware::clearPermissionCache();
 
-            \App\Helpers\AuditLog::log(
+            \App\Helpers\AuditLog::logOrFail(
                 (int) $auth['id'],
                 'deactivate_user',
                 'user',
@@ -173,5 +173,4 @@ class UserController extends Controller {
         });
     }
 }
-
 

@@ -21,10 +21,12 @@ test('desktop startup and recovery UI keep user-facing status text in Arabic', (
   assert.match(main, /جاري تشغيل قاعدة البيانات/);
   assert.match(main, /جاري تشغيل الخادم/);
   assert.match(main, /التحقق من جاهزية النظام/);
+  assert.match(main, /جاري تهيئة قاعدة البيانات/);
   assert.match(main, /جاري تشغيل خدمة الطباعة/);
   assert.match(recovery, /وضع استرداد نظام نقاط البيع/);
   assert.match(recovery, /مرحلة بدء التشغيل/);
   assert.match(recovery, /رمز الخطأ/);
   assert.doesNotMatch(main, /Starting the bundled database|Starting the backend server|Checking runtime readiness/);
+  assert.doesNotMatch(main, /Preparing the POS database/);
   assert.doesNotMatch(recovery, /POS System Recovery Mode|Startup stage:|Error code:/);
 });

@@ -43,8 +43,10 @@ class Response {
         $ifNoneMatch = trim($ifNoneMatch, '"W/ ');
 
         $headers = [
-            'Cache-Control' => "no-cache, must-revalidate",
-            'ETag'          => 'W/"' . $etag . '"'
+            'Cache-Control' => 'private, no-store',
+            'Pragma'        => 'no-cache',
+            'Vary'          => 'Authorization, Cookie',
+            'ETag'          => 'W/"' . $etag . '"',
         ];
 
         if ($ifNoneMatch !== '' && $ifNoneMatch === $etag) {

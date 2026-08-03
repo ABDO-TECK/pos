@@ -103,6 +103,14 @@ final class PasswordRecoveryService
                  WHERE user_id = :user_id'
             )->execute(['user_id' => $userId]);
 
+            // Password recovery is complete only if its security event is
+            // durably recorded in the same transaction.
+            AuditLog::logOrFail(null, 'local_password_recovery', 'user', $userId, null, [
+                'sessions_revoked' => true,
+                'reactivated' => $reactivated,
+                'source' => 'desktop_recovery',
+            ]);
+
             $this->db->commit();
         } catch (\Throwable $exception) {
             if ($this->db->inTransaction()) {
@@ -111,13 +119,6 @@ final class PasswordRecoveryService
             Logger::error('Local password recovery failed', Logger::exceptionContext($exception));
             throw $exception;
         }
-
-        // No password or reset token is ever written to the audit trail.
-        AuditLog::log(null, 'local_password_recovery', 'user', $userId, null, [
-            'sessions_revoked' => true,
-            'reactivated' => $reactivated,
-            'source' => 'desktop_recovery',
-        ]);
 
         return ['ok' => true, 'user_id' => $userId, 'reactivated' => $reactivated];
     }

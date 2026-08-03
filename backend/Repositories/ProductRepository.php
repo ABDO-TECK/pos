@@ -80,7 +80,7 @@ class ProductRepository implements RepositoryInterface
      * Fetch only quantities for multiple product IDs.
      *
      * @param  int[]  $ids
-     * @return array<int, int>  product_id => quantity
+     * @return array<int, float>  product_id => quantity
      */
     public function getQuantitiesByIds(array $ids): array
     {

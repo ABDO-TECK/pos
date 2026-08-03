@@ -7,7 +7,6 @@ use App\Core\ValidationException;
 use App\Helpers\ErrorCodes;
 use App\Helpers\EventDispatcher;
 use App\Helpers\Response;
-use App\Helpers\AuditLog;
 use App\Models\Product;
 use App\Models\PriceHistory;
 use App\Requests\ProductRequest;
@@ -121,7 +120,11 @@ class ProductController extends Controller {
             $request = new ProductRequest($body);
             $data = $request->validated();
 
-            $result = $this->productService->updateProduct($id, $data);
+            $result = $this->productService->updateProduct(
+                $id,
+                $data,
+                $this->authService->id()
+            );
 
             if (!$result['ok']) {
                 $code = $result['code'] ?? 500;
@@ -133,7 +136,6 @@ class ProductController extends Controller {
                     : ErrorCodes::VALIDATION_FAILED;
                 return Response::error($result['error'], $code, null, $errorCode);
             }
-            AuditLog::log($this->authService->id(), 'update_product', 'product', $id, null, $data);
             return Response::success($result['product'], 'Product updated');
         } catch (ValidationException $e) {
             return Response::error($this->productValidationMessage($e->getErrors()), 422, $e->getErrors(), ErrorCodes::VALIDATION_FAILED);
@@ -181,7 +183,10 @@ class ProductController extends Controller {
 
     public function destroy(string $id) {
         $id = $this->resolveId($id);
-        $result = $this->productService->deleteProduct($id);
+        $result = $this->productService->deleteProduct(
+            $id,
+            $this->authService->id()
+        );
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -193,7 +198,6 @@ class ProductController extends Controller {
                 : ErrorCodes::PRODUCT_IN_USE;
             return Response::error($result['error'], $code, null, $errorCode);
         }
-        AuditLog::log($this->authService->id(), 'delete_product', 'product', $id);
         return Response::success(null, 'Product deleted');
     }
 }

@@ -26,10 +26,20 @@ declare global {
   }
 
   interface UpdateApplyResult {
-    message: string;
-    latest_version: string;
-    changelog: { version: string; date: string; changes: string[] }[];
-    logs: string[];
+    job_id: number;
+    status: 'queued';
+  }
+
+  interface UpdateJobResult {
+    id: number;
+    job_name: 'apply_update';
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    attempts: number;
+    max_attempts: number;
+    last_error: string | null;
+    failure_code: number | null;
+    created_at: string;
+    completed_at: string | null;
   }
 }
 

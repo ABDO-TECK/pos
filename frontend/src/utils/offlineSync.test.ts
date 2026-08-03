@@ -72,6 +72,28 @@ describe('offline sale ownership and authentication pauses', () => {
     expect(mocks.deletePendingSale).toHaveBeenCalledWith(1, ownerA, expect.any(Function))
   })
 
+  it('uses bounded concurrency when draining a large queue', async () => {
+    const sales = Array.from({ length: 8 }, (_, index) => queuedSale(index + 1, 1, 10))
+    mocks.getPendingSales.mockResolvedValue(sales)
+    mocks.getPendingSale.mockImplementation(async (localId: number) => (
+      sales.find((sale) => sale.localId === localId) ?? null
+    ))
+
+    let activeRequests = 0
+    let peakRequests = 0
+    mocks.createSale.mockImplementation(async () => {
+      activeRequests += 1
+      peakRequests = Math.max(peakRequests, activeRequests)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      activeRequests -= 1
+    })
+
+    await syncPendingSales(ownerA)
+
+    expect(mocks.createSale).toHaveBeenCalledTimes(8)
+    expect(peakRequests).toBeLessThanOrEqual(4)
+  })
+
   it.each([401, 403])('preserves retry state when the API returns %s', async (status) => {
     const sale = queuedSale(1, 1, 10)
     mocks.getPendingSales.mockResolvedValue([sale])

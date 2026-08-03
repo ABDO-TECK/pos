@@ -10,6 +10,7 @@ import ConfirmModal from './components/common/ConfirmModal'
 import ForcePasswordChangeModal from './components/common/ForcePasswordChangeModal'
 import { useInventorySSE } from './hooks/useInventorySSE'
 import { ConflictResolutionDialog } from './components/ConflictResolutionDialog'
+import { useConfirmStore } from './store/confirmStore'
 
 /**
  * Retry wrapper for lazy imports — handles transient network/SSL failures.
@@ -89,6 +90,25 @@ function SSELoader() {
   return null
 }
 
+/**
+ * Global dialogs must not survive the session boundary. Otherwise a dialog
+ * opened on a protected page can leave a full-screen hit target over /login
+ * after logout, making the login fields appear to ignore mouse input.
+ */
+function SessionInteractionReset() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+
+  useEffect(() => {
+    if (isAuthenticated) return
+
+    useConfirmStore.getState().reset()
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) activeElement.blur()
+  }, [isAuthenticated])
+
+  return null
+}
+
 function AppShell() {
   const themeMode = useThemeStore((s) => s.mode)
   const toastStyle = {
@@ -106,6 +126,7 @@ function AppShell() {
       <ConfirmModal />
       <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
       <ConflictResolutionDialog />
+      <SessionInteractionReset />
       <SettingsLoader />
       <SSELoader />
       <Suspense fallback={<PageLoader />}>

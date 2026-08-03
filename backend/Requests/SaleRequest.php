@@ -12,8 +12,8 @@ class SaleRequest extends FormRequest {
             'idempotency_key' => 'required|string|uuid_v4',
             'items'          => 'required|array|min_items:1|max_items:500',
             'payment_method' => 'required|in:cash,card,vodafone_cash,instapay,other_wallet,credit',
-            'discount'       => 'numeric',
-            'amount_paid'    => 'numeric',
+            'discount'       => 'numeric|min_value:0|max_value:99999999.99',
+            'amount_paid'    => 'numeric|min_value:0|max_value:99999999.99',
             'customer_id'    => 'integer',
             'new_customer'   => 'array',
             'invoice_id'     => 'integer',
@@ -88,7 +88,7 @@ class SaleRequest extends FormRequest {
 
             $itemErrors = Validator::validate($item, [
                 'product_id' => 'required|integer|min_value:1',
-                'quantity'   => 'required|numeric|min_value:0|max_value:99999999',
+                'quantity'   => 'required|numeric|min_value:0|max_value:9999999.999',
                 'price'      => 'numeric|min_value:0|max_value:99999999',
             ]);
 

@@ -113,7 +113,12 @@ function Configure-PortablePhp {
         $ini = [regex]::Replace($ini, '(?m)^\s*;?\s*extension_dir\s*=.*$', 'extension_dir="ext"', 1)
     }
 
-    foreach ($extension in @('curl', 'fileinfo', 'gd', 'mbstring', 'mysqli', 'openssl', 'pdo_mysql', 'sodium', 'zip')) {
+    foreach ($extension in @('curl', 'fileinfo', 'gd', 'mbstring', 'mysqli', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'sodium', 'zip')) {
+        $activePattern = "(?m)^\s*extension\s*=\s*(?:php_)?$([regex]::Escape($extension))(?:\.dll)?\s*$"
+        if ($ini -match $activePattern) {
+            continue
+        }
+
         $pattern = "(?m)^\s*;\s*extension\s*=\s*(?:php_)?$([regex]::Escape($extension))(?:\.dll)?\s*$"
         if ($ini -match $pattern) {
             $ini = [regex]::Replace($ini, $pattern, "extension=$extension", 1)

@@ -51,6 +51,14 @@ interface Window {
       firewallRequired?: boolean;
       error?: string;
     }>;
+    disableLanAccess: () => Promise<{
+      enabled: boolean;
+      port: number;
+      protocol: 'https';
+      firewallConfigured?: boolean;
+      firewallRequired?: boolean;
+      error?: string;
+    }>;
   };
   API_BASE_URL?: string;
 }

@@ -14,6 +14,8 @@ const prepareRuntimeSource = readFileSync(path.join(path.dirname(fileURLToPath(i
 test('strict desktop runtime verification accepts the pinned manifest and required files', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'pos-desktop-runtime-'))
   const manifest = readRuntimeManifest()
+  assert.ok(manifest.php.requiredFiles.includes('php/libsqlite3.dll'))
+  assert.ok(manifest.php.requiredFiles.includes('php/ext/php_pdo_sqlite.dll'))
   try {
     for (const relativePath of [...manifest.php.requiredFiles, ...manifest.mysql.requiredFiles]) {
       const filePath = path.join(root, relativePath)
@@ -59,6 +61,7 @@ test('portable runtime preparation supports Windows PowerShell 5.1', () => {
   assert.doesNotMatch(prepareRuntimeSource, /Get-FileHash/)
   assert.match(prepareRuntimeSource, /\[System\.Security\.Cryptography\.SHA256\]::Create\(\)/)
   assert.match(prepareRuntimeSource, /New-Item\s+-ItemType\s+Directory\s+-Path\s+\$BuildToolsDir/)
+  assert.match(prepareRuntimeSource, /pdo_sqlite/)
 })
 
 test('main startup propagates the selected MariaDB port through PHP and reset flows', () => {

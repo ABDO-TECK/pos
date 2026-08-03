@@ -125,7 +125,7 @@ class ProductService implements ProductServiceInterface
      *
      * @return array ['ok' => true, 'product' => [...]] أو ['ok' => false, 'error' => string, 'code' => int]
      */
-    public function updateProduct(int $id, array $data): array
+    public function updateProduct(int $id, array $data, ?int $actorId = null): array
     {
         $validationError = $this->validateNestedProductData($data);
         if ($validationError !== null) {
@@ -234,6 +234,16 @@ class ProductService implements ProductServiceInterface
                 }
             }
 
+            if ($actorId !== null) {
+                \App\Helpers\AuditLog::logOrFail(
+                    $actorId,
+                    'update_product',
+                    'product',
+                    $id,
+                    $product,
+                    $data
+                );
+            }
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -314,7 +324,7 @@ class ProductService implements ProductServiceInterface
      *
      * @return array ['ok' => true] أو ['ok' => false, 'error' => string, 'code' => int]
      */
-    public function deleteProduct(int $id): array
+    public function deleteProduct(int $id, ?int $actorId = null): array
     {
         $product = $this->productRepo->findById($id);
         if (!$product) {
@@ -343,6 +353,16 @@ class ProductService implements ProductServiceInterface
         $db->beginTransaction();
         try {
             $this->productRepo->delete($id);
+            if ($actorId !== null) {
+                \App\Helpers\AuditLog::logOrFail(
+                    $actorId,
+                    'delete_product',
+                    'product',
+                    $id,
+                    $product,
+                    null
+                );
+            }
             $db->commit();
         } catch (PDOException $e) {
             $db->rollBack();

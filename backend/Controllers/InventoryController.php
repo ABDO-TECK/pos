@@ -6,6 +6,7 @@ use App\Config\Database;
 use App\Core\Controller;
 use App\Helpers\Response;
 use App\Helpers\AuditLog;
+use App\Helpers\Logger;
 use App\Models\Product;
 use App\Services\AuthService;
 
@@ -48,16 +49,50 @@ class InventoryController extends Controller {
         $product = $this->productModel->findById($id);
         if (!$product) return Response::notFound('Product not found');
 
-        $newQty = (int)$data['quantity'];
+        $newQty = (float) $data['quantity'];
         if ($newQty < 0) return Response::error('الكمية لا يمكن أن تكون سالبة', 400);
 
-        $db   = Database::getInstance();
-        $stmt = $db->prepare('UPDATE products SET quantity = ? WHERE id = ? AND branch_id = ?');
-        $stmt->execute([$newQty, $id, $this->authService->branchId()]);
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            // Lock the row before applying the adjustment so the audit snapshot
+            // and the write are based on the same branch-scoped state.
+            $lockStmt = $db->prepare(
+                'SELECT *
+                 FROM products
+                 WHERE id = ? AND branch_id = ? AND deleted_at IS NULL
+                 FOR UPDATE'
+            );
+            $lockStmt->execute([$id, $this->authService->branchId()]);
+            $lockedProduct = $lockStmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$lockedProduct) {
+                throw new \RuntimeException('Product changed concurrently');
+            }
 
-        AuditLog::log($this->authService->id(), 'adjust_inventory', 'product', $id, null, $data);
+            $stmt = $db->prepare(
+                'UPDATE products
+                 SET quantity = ?
+                 WHERE id = ? AND branch_id = ?'
+            );
+            $stmt->execute([$newQty, $id, $this->authService->branchId()]);
+
+            AuditLog::logOrFail(
+                $this->authService->id(),
+                'adjust_inventory',
+                'product',
+                $id,
+                $lockedProduct,
+                $data
+            );
+            $db->commit();
+        } catch (\Throwable $exception) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            Logger::error('Inventory adjustment failed', Logger::exceptionContext($exception));
+            return Response::serverError('Failed to adjust inventory');
+        }
 
         return Response::success($this->productModel->findById($id), 'Inventory adjusted');
     }
 }
-

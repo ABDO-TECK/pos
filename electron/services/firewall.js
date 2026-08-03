@@ -66,4 +66,39 @@ function configureFirewall() {
   });
 }
 
-module.exports = { configureFirewall };
+function removeFirewall() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      return resolve(true);
+    }
+
+    try {
+      const command = 'netsh advfirewall firewall delete rule name="POS System - SSL Port 8443"';
+      sudo.exec(command, { name: 'POS System' }, (error, stdout, stderr) => {
+        if (error) {
+          console.error('[Firewall] Failed to remove LAN rule:', error.message);
+          resolve(false);
+          return;
+        }
+
+        try {
+          const flagPath = getFirewallFlagPath();
+          if (fs.existsSync(flagPath)) {
+            fs.unlinkSync(flagPath);
+          }
+        } catch (flagError) {
+          console.error('[Firewall] Failed to clear rule flag:', flagError.message);
+        }
+
+        if (stdout) console.log('[Firewall] Removal output:', stdout);
+        if (stderr) console.warn('[Firewall] Removal warning:', stderr);
+        resolve(true);
+      });
+    } catch (error) {
+      console.error('[Firewall] Error removing firewall rule:', error.message);
+      resolve(false);
+    }
+  });
+}
+
+module.exports = { configureFirewall, removeFirewall };

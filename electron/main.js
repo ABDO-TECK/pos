@@ -25,7 +25,7 @@ const {
 } = require('./services/https-proxy');
 const { startQZTray, stopQZTray } = require('./services/qz-tray');
 const { ensureQZCerts, getQZCertificate, signQZMessage } = require('./services/qz-certs');
-const { configureFirewall } = require('./services/firewall');
+const { configureFirewall, removeFirewall } = require('./services/firewall');
 const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('./utils/php-runtime');
 const { serializeRuntimeError } = require('./utils/runtime-error');
 const { formatSpawnError, spawnRuntimeProcess } = require('./utils/runtime-process');
@@ -711,7 +711,7 @@ function startLogCleanup() {
 }
 
 async function startPostStartupServices() {
-  setSplashStatus('Preparing the POS database...');
+  setSplashStatus('جاري تهيئة قاعدة البيانات...');
   await initializeFreshRuntime({ seed: dbCredentials.freshInstall === true });
   await startHttpsProxy(phpPort, 8443);
   startLogCleanup();
@@ -1067,6 +1067,29 @@ app.whenReady().then(async () => {
         port: 8443,
         protocol: 'https',
         error: 'LAN access could not be enabled. Check the local firewall and try again.',
+      };
+    }
+  });
+  ipcMain.handle('network:disable-lan', async (event) => {
+    assertTrustedAppRenderer(event);
+    try {
+      await stopHttpsProxy();
+      process.env.POS_LAN_ENABLED = 'false';
+      const firewallRemoved = await removeFirewall();
+      return {
+        enabled: false,
+        port: 8443,
+        protocol: 'https',
+        firewallConfigured: !firewallRemoved,
+        firewallRequired: !firewallRemoved,
+      };
+    } catch (err) {
+      console.error('[LAN] Failed to disable phone access:', err.message);
+      return {
+        enabled: true,
+        port: 8443,
+        protocol: 'https',
+        error: 'LAN access could not be disabled. Check the local firewall settings.',
       };
     }
   });

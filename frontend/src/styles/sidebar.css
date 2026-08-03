@@ -42,6 +42,28 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * Electron treats drag regions as non-interactive hit areas. Keep every
+ * control and modal surface out of those regions so a stale/expanded drag
+ * ancestor can never swallow a click intended for a form field.
+ */
+button,
+input,
+select,
+textarea,
+a,
+label,
+form,
+[role="button"],
+[contenteditable="true"],
+.card,
+.modal-overlay,
+.modal,
+.modal-content,
+.sidebar-overlay {
+  -webkit-app-region: no-drag;
+}
+
 .sidebar-nav {
   flex: 1;
   padding: 0.75rem 0.5rem;

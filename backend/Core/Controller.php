@@ -81,7 +81,7 @@ abstract class Controller {
         $page  = $this->getParam('page', 1);
         $limit = $this->getParam('limit', $defaultLimit);
         return [
-            'page'  => max(1, (int) ($page ?? 1)),
+            'page'  => max(1, min(1000, (int) ($page ?? 1))),
             'limit' => max(1, min($maxLimit, (int) ($limit ?? $defaultLimit))),
         ];
     }

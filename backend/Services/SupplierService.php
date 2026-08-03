@@ -6,6 +6,9 @@ use App\Contracts\SupplierServiceInterface;
 use Exception;
 
 class SupplierService implements SupplierServiceInterface {
+    private const MAX_QUANTITY = 9999999.999;
+    private const MAX_MONEY = 99999999.99;
+
     
     private \App\Repositories\SupplierLedgerRepository $ledgerRepo;
     private \App\Repositories\SupplierRepository $supplierRepo;
@@ -88,6 +91,25 @@ class SupplierService implements SupplierServiceInterface {
     }
 
     public function recordSinglePurchase(array $data): array {
+        $quantity = (float) ($data['quantity'] ?? 0);
+        $cost = (float) ($data['cost'] ?? 0);
+        if (
+            !is_numeric($data['quantity'] ?? null)
+            || !is_finite($quantity)
+            || $quantity <= 0
+            || $quantity > self::MAX_QUANTITY
+            || !is_numeric($data['cost'] ?? null)
+            || !is_finite($cost)
+            || $cost < 0
+            || $cost > self::MAX_MONEY
+            || !is_finite($quantity * $cost)
+            || $quantity * $cost > self::MAX_MONEY
+        ) {
+            throw new Exception('Purchase quantity and cost must be finite and valid', 422);
+        }
+        $data['quantity'] = $quantity;
+        $data['cost'] = $cost;
+
         $product = $this->productRepo->findById((int)$data['product_id']);
         if (!$product) {
             throw new Exception('Product not found', 404);
@@ -102,11 +124,16 @@ class SupplierService implements SupplierServiceInterface {
         $db->beginTransaction();
         try {
             $this->supplierRepo->createPurchase($data);
-            $this->productRepo->getModel()->incrementQuantity((int)$data['product_id'], (int)$data['quantity']);
+            $this->productRepo->getModel()->incrementQuantity(
+                (int) $data['product_id'],
+                $quantity
+            );
             $db->commit();
         } catch (\Throwable $e) {
-            $db->rollBack();
-            throw new Exception('Failed to record purchase', 500);
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw new Exception('Failed to record purchase', 500, $e);
         }
 
         return ['product' => $this->productRepo->findById((int)$data['product_id'])];

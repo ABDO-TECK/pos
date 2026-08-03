@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Helpers\Response;
+use App\Helpers\JobQueue;
 use App\Services\AuthService;
 use App\Helpers\EnvLoader;
 use App\Core\Controller;
@@ -45,15 +46,32 @@ class UpdateController extends Controller {
         $body  = $this->getBody();
         $force = isset($body['force']) && filter_var($body['force'], FILTER_VALIDATE_BOOLEAN);
 
-        $result = $this->updateService->applyUpdate($force);
+        $jobId = JobQueue::dispatchUnique(
+            'apply_update',
+            [
+                'force' => $force,
+                'requested_by' => (int) $user['id'],
+            ],
+            10,
+            1
+        );
 
-        if (!$result['ok']) {
-            return Response::error(
-                $result['error'],
-                $result['code'] ?? 500
-            );
+        return Response::success(
+            [
+                'job_id' => $jobId,
+                'status' => 'queued',
+            ],
+            'Update queued',
+            202
+        );
+    }
+
+    public function status(string $id) {
+        $job = JobQueue::find($this->resolveId($id));
+        if (!$job || $job['job_name'] !== 'apply_update') {
+            return Response::notFound('Update job not found');
         }
 
-        return Response::success($result['data']);
+        return Response::success($job);
     }
 }

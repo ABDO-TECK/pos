@@ -9,9 +9,11 @@
     "requiredFiles": [
       "php/php.exe",
       "php/php.ini",
+      "php/libsqlite3.dll",
       "php/ext/php_mbstring.dll",
       "php/ext/php_mysqli.dll",
-      "php/ext/php_pdo_mysql.dll"
+      "php/ext/php_pdo_mysql.dll",
+      "php/ext/php_pdo_sqlite.dll"
     ]
   },
   "mysql": {

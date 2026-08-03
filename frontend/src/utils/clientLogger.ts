@@ -30,7 +30,7 @@ loggerApi.interceptors.request.use((config) => {
   // Prepend dynamic API base URL if available in Electron runtime
   const dynamicBase = window.API_BASE_URL
   if (dynamicBase) {
-    config.baseURL = `${dynamicBase}/api/v1`
+    config.baseURL = `${dynamicBase.replace(/\/+$/, '')}/api/v1`
   }
   return config
 })
@@ -142,7 +142,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (queue.length === 0) return
 
-    const rawBase = window.API_BASE_URL || ''
+    const rawBase = (window.API_BASE_URL || '').replace(/\/+$/, '')
     const url = `${rawBase}/api/v1/client-log`
     const batch = queue.splice(0, MAX_QUEUE)
     const csrfSignature = getCsrfSignature()

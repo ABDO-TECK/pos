@@ -39,20 +39,106 @@ class JobQueue
     /**
      * إضافة مهمة جديدة للطابور.
      */
-    public static function dispatch(string $job, array $payload = [], int $priority = 0): int
+    public static function dispatch(
+        string $job,
+        array $payload = [],
+        int $priority = 0,
+        int $maxAttempts = 3
+    ): int
     {
         $db = \App\Config\Database::getInstance();
         $stmt = $db->prepare(
-            'INSERT INTO job_queue (job_name, payload, priority, status, created_at)
-             VALUES (:job, :payload, :priority, :status, NOW())'
+            'INSERT INTO job_queue
+                (job_name, payload, priority, max_attempts, status, created_at)
+             VALUES
+                (:job, :payload, :priority, :max_attempts, :status, NOW())'
         );
         $stmt->execute([
-            'job'      => $job,
-            'payload'  => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            'priority' => $priority,
-            'status'   => 'pending',
+            'job'          => $job,
+            'payload'      => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            'priority'     => $priority,
+            'max_attempts' => max(1, min(10, $maxAttempts)),
+            'status'       => 'pending',
         ]);
         return (int) $db->lastInsertId();
+    }
+
+    /**
+     * Enqueue at most one pending/processing job of a given name.
+     */
+    public static function dispatchUnique(
+        string $job,
+        array $payload = [],
+        int $priority = 0,
+        int $maxAttempts = 3
+    ): int {
+        $db = \App\Config\Database::getInstance();
+        $db->beginTransaction();
+
+        try {
+            $existing = $db->prepare(
+                "SELECT id
+                 FROM job_queue
+                 WHERE job_name = ?
+                   AND status IN ('pending', 'processing')
+                 ORDER BY id ASC
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $existing->execute([$job]);
+            $existingId = $existing->fetchColumn();
+            if ($existingId !== false) {
+                $db->commit();
+                return (int) $existingId;
+            }
+
+            $stmt = $db->prepare(
+                'INSERT INTO job_queue
+                    (job_name, payload, priority, max_attempts, status, created_at)
+                 VALUES
+                    (:job, :payload, :priority, :max_attempts, :status, NOW())'
+            );
+            $stmt->execute([
+                'job'          => $job,
+                'payload'      => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                'priority'     => $priority,
+                'max_attempts' => max(1, min(10, $maxAttempts)),
+                'status'       => 'pending',
+            ]);
+
+            $id = (int) $db->lastInsertId();
+            $db->commit();
+            return $id;
+        } catch (\Throwable $exception) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public static function find(int $id): ?array
+    {
+        $stmt = \App\Config\Database::getInstance()->prepare(
+            'SELECT id, job_name, status, attempts, max_attempts,
+                    last_error, failure_code, created_at, completed_at
+             FROM job_queue
+             WHERE id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$id]);
+        $job = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$job) {
+            return null;
+        }
+
+        $job['id'] = (int) $job['id'];
+        $job['attempts'] = (int) $job['attempts'];
+        $job['max_attempts'] = (int) $job['max_attempts'];
+        $job['failure_code'] = $job['failure_code'] === null
+            ? null
+            : (int) $job['failure_code'];
+        return $job;
     }
 
     /**
@@ -94,7 +180,7 @@ class JobQueue
             try {
                 $handler = self::resolveHandler($job['job_name']);
                 $handler(json_decode($job['payload'], true) ?? []);
-                $db->prepare('UPDATE job_queue SET status = "completed", completed_at = NOW() WHERE id = ?')
+                $db->prepare('UPDATE job_queue SET status = "completed", last_error = NULL, failure_code = NULL, completed_at = NOW() WHERE id = ?')
                    ->execute([$job['id']]);
             } catch (\Throwable $e) {
                 $reference = bin2hex(random_bytes(8));
@@ -104,8 +190,12 @@ class JobQueue
                     'exception' => get_class($e),
                 ]);
                 $newStatus = ((int)$job['attempts'] + 1 >= (int)$job['max_attempts']) ? 'failed' : 'pending';
-                $db->prepare('UPDATE job_queue SET status = ?, last_error = ? WHERE id = ?')
-                   ->execute([$newStatus, "Reference: {$reference}", $job['id']]);
+                $failureCode = $e instanceof JobFailure ? (int) $e->getCode() : null;
+                $lastError = $e instanceof JobFailure
+                    ? $e->getMessage()
+                    : "Reference: {$reference}";
+                $db->prepare('UPDATE job_queue SET status = ?, last_error = ?, failure_code = ? WHERE id = ?')
+                   ->execute([$newStatus, $lastError, $failureCode, $job['id']]);
             }
 
             return true;
@@ -194,6 +284,19 @@ class JobQueue
                         'customer_id' => $customerId,
                         'invoice_id'  => $invoiceId,
                     ]);
+                }
+            },
+            'apply_update' => static function (array $p): void {
+                $container = new \App\Core\Container();
+                /** @var \App\Services\UpdateService $service */
+                $service = $container->get(\App\Services\UpdateService::class);
+                $result = $service->applyUpdate((bool) ($p['force'] ?? false));
+
+                if (!($result['ok'] ?? false)) {
+                    throw new JobFailure(
+                        (string) ($result['error'] ?? 'Update failed'),
+                        (int) ($result['code'] ?? 500)
+                    );
                 }
             },
         ];

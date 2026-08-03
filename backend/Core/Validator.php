@@ -78,8 +78,11 @@ class Validator {
                 }
 
                 // numeric
-                elseif ($r === 'numeric' && !is_numeric($value)) {
-                    $errors[$field][] = "{$field} يجب أن يكون رقماً";
+                elseif (
+                    $r === 'numeric'
+                    && (!is_numeric($value) || !is_finite((float) $value))
+                ) {
+                    $errors[$field][] = "{$field} يجب أن يكون رقماً منتهياً وصالحاً";
                 }
 
                 // integer

@@ -7,6 +7,7 @@ interface ConfirmState {
   confirm: (message: string) => Promise<boolean>;
   handleConfirm: () => void;
   handleCancel: () => void;
+  reset: () => void;
 }
 
 export const useConfirmStore = create<ConfirmState>((set, get) => ({
@@ -30,5 +31,11 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
     const { resolvePromise } = get()
     if (resolvePromise) resolvePromise(false)
     set({ isOpen: false, resolvePromise: null })
-  }
+  },
+
+  reset: () => {
+    const { resolvePromise } = get()
+    if (resolvePromise) resolvePromise(false)
+    set({ isOpen: false, message: '', resolvePromise: null })
+  },
 }))

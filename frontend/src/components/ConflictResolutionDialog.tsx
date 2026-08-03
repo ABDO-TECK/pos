@@ -62,6 +62,18 @@ export const ConflictResolutionDialog = () => {
     }
   }, [loadConflicts])
 
+  // Do not carry an open dialog or stale records across logout/login or a
+  // switch to a different user/branch. The dialog is a full-screen layer.
+  const ownerKey = owner ? `${owner.ownerUserId}:${owner.branchId}` : 'anonymous'
+  useEffect(() => {
+    setIsOpen(false)
+    setConflicts([])
+  }, [isAuthenticated, ownerKey])
+
+  useEffect(() => {
+    if (visibleConflicts.length === 0) setIsOpen(false)
+  }, [visibleConflicts.length])
+
   if (!owner || visibleConflicts.length === 0) return null
 
   const handleRetryAllOwned = async () => {

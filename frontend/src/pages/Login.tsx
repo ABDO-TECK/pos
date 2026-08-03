@@ -112,7 +112,7 @@ export default function Login() {
   }
 
   return (
-    <div className={`${styles.page} drag-region`}>
+    <div className={styles.page}>
       <button
         type="button"
         className={`${styles.themeToggle} no-drag`}

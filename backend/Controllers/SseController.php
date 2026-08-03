@@ -42,8 +42,8 @@ class SseController
                 echo "data: " . json_encode([
                     'product_id' => (int)$event['product_id'],
                     'action'     => $event['action'],
-                    'quantity'   => (int)$event['quantity'],
-                    'delta'      => (int)$event['delta'],
+                    'quantity'   => (float) $event['quantity'],
+                    'delta'      => (float) $event['delta'],
                     'timestamp'  => $event['created_at'],
                 ], JSON_UNESCAPED_UNICODE) . "\n\n";
             }

@@ -76,15 +76,17 @@ class Router {
         foreach ($this->routes as $route) {
             $params = $this->match($route['method'], $route['path'], $method, $uri);
             if ($params !== null) {
-                if ($this->expectsJsonBody($method)) {
-                    RequestBody::readJson();
-                }
-
                 [$controllerClass, $action, $middlewares] = $this->parseHandler($route['handler']);
                 
                 $middlewares = $this->prepareMiddlewares($middlewares);
 
-                $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params) {
+                $response = $this->runMiddlewares($middlewares, function () use ($controllerClass, $action, $params, $method) {
+                    // Authenticate, authorize, rate-limit, and validate CSRF
+                    // before consuming/parsing an attacker-controlled body.
+                    if ($this->expectsJsonBody($method)) {
+                        RequestBody::readJson();
+                    }
+
                     $controller = $this->container->get($controllerClass);
                     return $controller->$action(...array_values($params));
                 });

@@ -63,7 +63,10 @@ test('preload exposes only IPC methods used by the frontend', async () => {
     Object.keys(exposed.electronAPI.updater).sort(),
     ['download', 'getStatus', 'install', 'onStatus']
   );
-  assert.deepEqual(Object.keys(exposed.posRuntime).sort(), ['enableLanAccess', 'getApiBaseUrl']);
+  assert.deepEqual(
+    Object.keys(exposed.posRuntime).sort(),
+    ['disableLanAccess', 'enableLanAccess', 'getApiBaseUrl']
+  );
 
   await exposed.electronAPI.getVersion();
   await exposed.electronAPI.getQZCert();
@@ -78,6 +81,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   await exposed.electronAPI.updater.install();
   await exposed.posRuntime.getApiBaseUrl();
   await exposed.posRuntime.enableLanAccess();
+  await exposed.posRuntime.disableLanAccess();
 
   assert.deepEqual(
     invocations.map(({ channel }) => channel),
@@ -95,6 +99,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
       'updater:install',
       'get-api-base-url',
       'network:enable-lan',
+      'network:disable-lan',
     ]
   );
 
@@ -160,6 +165,7 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:install': readRepositoryFile('frontend/src/pages/settings/UpdateSection.tsx'),
     'get-api-base-url': readRepositoryFile('frontend/src/main.tsx'),
     'network:enable-lan': readRepositoryFile('frontend/src/pages/settings/NetworkAccessSection.tsx'),
+    'network:disable-lan': readRepositoryFile('frontend/src/pages/settings/NetworkAccessSection.tsx'),
     'backup:restore': readRepositoryFile('frontend/src/api/endpoints.ts'),
     'auth:recover-password': readRepositoryFile('frontend/src/api/endpoints.ts'),
     'setup:get-initial-admin': readRepositoryFile('frontend/src/pages/Login.tsx'),
@@ -175,6 +181,7 @@ test('every exposed invoke channel has a trusted handler and active consumer', (
     'updater:install': 'install',
     'get-api-base-url': 'getApiBaseUrl',
     'network:enable-lan': 'enableLanAccess',
+    'network:disable-lan': 'disableLanAccess',
     'backup:restore': 'restore',
     'auth:recover-password': 'recoverPassword',
     'setup:get-initial-admin': 'getInitialAdmin',

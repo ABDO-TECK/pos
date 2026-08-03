@@ -16,6 +16,7 @@ vi.mock('react-hot-toast', () => ({
 
 vi.mock('../../api/endpoints', () => ({
   applyUpdate: vi.fn(),
+  getUpdateJob: vi.fn(),
 }))
 
 vi.mock('../../store/confirmStore', () => ({

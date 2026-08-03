@@ -4,7 +4,6 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Helpers\Response;
-use App\Helpers\AuditLog;
 use App\Helpers\ErrorCodes;
 use App\Repositories\SupplierRepository;
 use App\Services\InventoryService;
@@ -77,7 +76,10 @@ class PurchaseController extends Controller
     /** Delete a purchase invoice and restore stock */
     public function purchaseInvoiceDelete(string $id) {
         $id = $this->resolveId($id);
-        $result = $this->inventoryService->deletePurchaseInvoice($id);
+        $result = $this->inventoryService->deletePurchaseInvoice(
+            $id,
+            $this->authService->id()
+        );
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -85,8 +87,6 @@ class PurchaseController extends Controller
                 ? Response::notFound($result['error'])
                 : Response::serverError($result['error']);
         }
-
-        AuditLog::log($this->authService->id(), 'delete_purchase_invoice', 'purchase_invoice', $id);
 
         return Response::success(null, 'Purchase invoice deleted and stock restored');
     }

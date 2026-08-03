@@ -32,28 +32,72 @@ class AuditLog
         mixed  $newValue = null
     ): void {
         try {
-            $db   = Database::getInstance();
-            $oldValue = self::withoutSensitiveFields($oldValue);
-            $newValue = self::withoutSensitiveFields($newValue);
-
-            $stmt = $db->prepare(
-                'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
-                 VALUES (:user_id, :action, :entity_type, :entity_id, :old_value, :new_value, :ip_address)'
+            self::write(
+                $userId,
+                $action,
+                $entityType,
+                $entityId,
+                $oldValue,
+                $newValue
             );
-
-            $stmt->execute([
-                'user_id'     => $userId,
-                'action'      => $action,
-                'entity_type' => $entityType,
-                'entity_id'   => $entityId,
-                'old_value'   => $oldValue !== null ? json_encode($oldValue, JSON_UNESCAPED_UNICODE) : null,
-                'new_value'   => $newValue !== null ? json_encode($newValue, JSON_UNESCAPED_UNICODE) : null,
-                'ip_address'  => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]);
         } catch (\Throwable $e) {
-            // لا نوقف التطبيق إذا فشل التسجيل — نسجل في Logger فقط
             Logger::error('Audit log failed', Logger::exceptionContext($e));
         }
+    }
+
+    /**
+     * Write an audit event and fail the surrounding transaction if the
+     * durable audit record cannot be created.
+     */
+    public static function logOrFail(
+        ?int $userId,
+        string $action,
+        string $entityType,
+        ?int $entityId = null,
+        mixed $oldValue = null,
+        mixed $newValue = null
+    ): void {
+        try {
+            self::write(
+                $userId,
+                $action,
+                $entityType,
+                $entityId,
+                $oldValue,
+                $newValue
+            );
+        } catch (\Throwable $e) {
+            Logger::critical('Audit log failure blocked a mutation', Logger::exceptionContext($e));
+            throw new \RuntimeException('Audit trail unavailable', 0, $e);
+        }
+    }
+
+    private static function write(
+        ?int $userId,
+        string $action,
+        string $entityType,
+        ?int $entityId,
+        mixed $oldValue,
+        mixed $newValue
+    ): void {
+        $db = Database::getInstance();
+        $oldValue = self::withoutSensitiveFields($oldValue);
+        $newValue = self::withoutSensitiveFields($newValue);
+
+        $stmt = $db->prepare(
+            'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (:user_id, :action, :entity_type, :entity_id, :old_value, :new_value, :ip_address)'
+        );
+
+        $stmt->execute([
+            'user_id'     => $userId,
+            'action'      => $action,
+            'entity_type' => $entityType,
+            'entity_id'   => $entityId,
+            'old_value'   => $oldValue !== null ? json_encode($oldValue, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) : null,
+            'new_value'   => $newValue !== null ? json_encode($newValue, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) : null,
+            'ip_address'  => $_SERVER['REMOTE_ADDR'] ?? null,
+        ]);
     }
 
     private static function withoutSensitiveFields(mixed $value): mixed

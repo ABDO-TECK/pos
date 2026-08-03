@@ -60,15 +60,20 @@ class Invoice {
                 $params['search_id'] = (int)$searchTerm;
             } else {
                 // ابحث باسم المنتج داخل بنود الفاتورة
-                $where[] = 'i.id IN (SELECT ii.invoice_id FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE p.name LIKE :search_name)';
-                $params['search_name'] = '%' . $searchTerm . '%';
+                if (mb_strlen($searchTerm, 'UTF-8') >= 3) {
+                    $where[] = 'i.id IN (SELECT ii.invoice_id FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE MATCH(p.name) AGAINST(:search_ft IN BOOLEAN MODE))';
+                    $params['search_ft'] = $searchTerm . '*';
+                } else {
+                    $where[] = 'i.id IN (SELECT ii.invoice_id FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE p.name LIKE :search_name)';
+                    $params['search_name'] = '%' . $searchTerm . '%';
+                }
             }
         }
 
         $whereClause = implode(' AND ', $where);
 
         // ── Pagination (اختياري) ──
-        $page  = isset($filters['page'])  ? max(1, (int) $filters['page'])  : null;
+        $page  = isset($filters['page'])  ? max(1, min(1000, (int) $filters['page']))  : null;
         $limit = isset($filters['limit']) ? max(1, min(100, (int) $filters['limit'])) : null;
 
         if ($page !== null && $limit !== null) {
@@ -370,10 +375,18 @@ class Invoice {
     }
 
     public function updateStatus(int $id, string $status): void {
-        $stmt = $this->db->prepare('UPDATE invoices SET status = ? WHERE id = ? AND branch_id = ?');
-        $stmt->execute([$status, $id, AuthService::getGlobalBranchId()]);
+        if ($status !== 'completed') {
+            throw new \DomainException('Invoice status changes must use the inventory workflow.');
+        }
 
-        if ($stmt->rowCount() > 0 && $status === 'completed') {
+        $stmt = $this->db->prepare(
+            'UPDATE invoices
+             SET status = ?
+             WHERE id = ? AND branch_id = ? AND status = ?'
+        );
+        $stmt->execute([$status, $id, AuthService::getGlobalBranchId(), 'reserved']);
+
+        if ($stmt->rowCount() > 0) {
             $this->db->prepare(
                 "UPDATE customer_ledger
                  SET description = REPLACE(description, ' 🕒 (محجوزة - لم تُسلم)', '')

@@ -1,6 +1,6 @@
 # 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
 
-![Version](https://img.shields.io/badge/version-1.1.44-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.45-blue.svg)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
 ![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-43.2-47848F?logo=electron&logoColor=white)

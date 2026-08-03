@@ -19,6 +19,9 @@ use App\Contracts\InventoryServiceInterface;
  */
 class InventoryService implements InventoryServiceInterface
 {
+    private const MAX_QUANTITY = 9999999.999;
+    private const MAX_MONEY = 99999999.99;
+
     private Product  $productModel;
     private SupplierRepository $supplierRepo;
     private PDO $db;
@@ -63,9 +66,11 @@ class InventoryService implements InventoryServiceInterface
                 || !is_numeric($item['quantity'])
                 || !is_finite((float) $item['quantity'])
                 || (float) $item['quantity'] <= 0
+                || (float) $item['quantity'] > self::MAX_QUANTITY
                 || !is_numeric($item['cost'])
                 || !is_finite((float) $item['cost'])
                 || (float) $item['cost'] < 0
+                || (float) $item['cost'] > self::MAX_MONEY
             ) {
                 return ['ok' => false, 'error' => 'Invalid purchase item', 'code' => 422];
             }
@@ -75,7 +80,7 @@ class InventoryService implements InventoryServiceInterface
             }
             $seenProductIds[$productId] = true;
             $lineTotal = (float) $item['cost'] * (float) $item['quantity'];
-            if (!is_finite($lineTotal)) {
+            if (!is_finite($lineTotal) || $lineTotal > self::MAX_MONEY) {
                 return ['ok' => false, 'error' => 'Invalid purchase item total', 'code' => 422];
             }
             $subtotal += $lineTotal;
@@ -109,6 +114,9 @@ class InventoryService implements InventoryServiceInterface
         }
         $shippingCost = round((float) $shippingCost, 2);
         $grandTotal = round(max(0.0, $subtotal - $discount + $shippingCost), 2);
+        if (!is_finite($grandTotal) || $grandTotal > self::MAX_MONEY) {
+            return ['ok' => false, 'error' => 'Purchase total is too large', 'code' => 422];
+        }
 
         $paymentType = $data['payment_type'] ?? 'cash';
         if (!in_array($paymentType, ['cash', 'credit'], true)) {
@@ -286,7 +294,7 @@ class InventoryService implements InventoryServiceInterface
     /**
      * حذف فاتورة شراء مع إرجاع الكميات من المخزون.
      */
-    public function deletePurchaseInvoice(int $id): array
+    public function deletePurchaseInvoice(int $id, ?int $actorId = null): array
     {
         if ($this->db->inTransaction()) {
             return ['ok' => false, 'error' => 'Inventory transaction already active', 'code' => 409];
@@ -311,6 +319,14 @@ class InventoryService implements InventoryServiceInterface
 
             if ($this->supplierRepo->deletePurchaseInvoice($id) !== 1) {
                 throw new \RuntimeException('Purchase invoice changed concurrently');
+            }
+            if ($actorId !== null) {
+                \App\Helpers\AuditLog::logOrFail(
+                    $actorId,
+                    'delete_purchase_invoice',
+                    'purchase_invoice',
+                    $id
+                );
             }
             $this->db->commit();
         } catch (\RuntimeException $e) {

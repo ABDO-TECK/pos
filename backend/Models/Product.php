@@ -332,7 +332,7 @@ class Product {
      * Lightweight alternative to findByIds() when only quantity is needed.
      *
      * @param  int[]  $ids
-     * @return array<int, int>  product_id => quantity
+     * @return array<int, float>  product_id => quantity
      */
     public function getQuantitiesByIds(array $ids): array {
         if (empty($ids)) return [];
@@ -347,7 +347,7 @@ class Product {
 
         $result = [];
         foreach ($rows as $row) {
-            $result[(int) $row['id']] = (int) $row['quantity'];
+            $result[(int) $row['id']] = (float) $row['quantity'];
         }
         return $result;
     }

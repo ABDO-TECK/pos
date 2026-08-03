@@ -84,4 +84,17 @@ class SaleRequestTest extends TestCase
             'payment_method' => 'cash',
         ]);
     }
+
+    public function testRejectsNegativeDiscountAndAmountPaid(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        new SaleRequest([
+            'idempotency_key' => 'bc31c67b-aa66-4894-b5f0-02883ea3e338',
+            'items' => [['product_id' => 1, 'quantity' => 1]],
+            'payment_method' => 'cash',
+            'discount' => -1,
+            'amount_paid' => -1,
+        ]);
+    }
 }

@@ -22,6 +22,7 @@ export interface PendingSaleRecord extends Record<string, unknown> {
   lastError?: string | null
   retryCount?: number
   lastAttempt?: string
+  payloadBytes?: number
 }
 
 export const isPendingSaleOwnedBy = (
@@ -311,6 +312,9 @@ const createIdempotencyKey = (): string => {
   return `offline-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+const MAX_PENDING_SALES = 1000
+const MAX_PENDING_SALE_BYTES = 512 * 1024
+
 export const savePendingSale = async (
   saleData: Record<string, unknown>,
   owner: OfflineSaleOwner,
@@ -324,8 +328,24 @@ export const savePendingSale = async (
     throw new Error('An authenticated user and branch are required to queue an offline sale')
   }
 
+  const serialized = JSON.stringify(saleData)
+  if (new Blob([serialized]).size > MAX_PENDING_SALE_BYTES) {
+    throw new Error('Offline sale payload is too large')
+  }
+
   const db = await getDB()
-  return db.add('pending_sales', {
+  const tx = db.transaction('pending_sales', 'readwrite')
+  const count = await tx.store
+    .index('owner_branch')
+    .count([owner.ownerUserId, owner.branchId])
+
+  if (count >= MAX_PENDING_SALES) {
+    tx.abort()
+    await tx.done.catch(() => undefined)
+    throw new Error('Offline sales queue is full')
+  }
+
+  const key = await tx.store.add({
     ...saleData,
     ownerUserId: owner.ownerUserId,
     branchId: owner.branchId,
@@ -335,7 +355,10 @@ export const savePendingSale = async (
     syncStatus: 'pending',
     retryCount: 0,
     savedAt: new Date().toISOString(),
+    payloadBytes: new Blob([serialized]).size,
   })
+  await tx.done
+  return key
 }
 
 export const getPendingSales = async (owner: OfflineSaleOwner): Promise<PendingSaleRecord[]> => {

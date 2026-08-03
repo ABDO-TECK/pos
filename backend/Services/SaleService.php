@@ -21,6 +21,8 @@ use App\Contracts\SaleServiceInterface;
  */
 class SaleService implements SaleServiceInterface
 {
+    private const MAX_MONEY = 99999999.99;
+
     private InvoiceRepository $invoiceRepo;
     private ProductRepository $productRepo;
     private CustomerRepository $customerRepo;
@@ -157,8 +159,14 @@ class SaleService implements SaleServiceInterface
         $settings   = $this->getSettings();
         $taxEnabled = (bool) (int) ($settings['tax_enabled'] ?? 0);
         $taxRate    = (float) ($settings['tax_rate'] ?? 15) / 100;
+        if (!is_finite($taxRate) || $taxRate < 0 || $taxRate > 1) {
+            throw new \RuntimeException('Tax configuration is invalid');
+        }
 
         $subtotal   = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $enrichedItems));
+        if (!is_finite($subtotal) || $subtotal > self::MAX_MONEY) {
+            throw new \InvalidArgumentException('Sale subtotal is too large');
+        }
         if (!is_finite($discount) || $discount < 0 || $discount > $subtotal) {
             throw new \InvalidArgumentException('Discount must be between zero and the subtotal');
         }
@@ -169,6 +177,9 @@ class SaleService implements SaleServiceInterface
             throw new \InvalidArgumentException('Shipping cost must be a valid non-negative amount');
         }
         $total      = round($taxable + $tax + $shippingCost, 2);
+        if (!is_finite($total) || $total > self::MAX_MONEY) {
+            throw new \InvalidArgumentException('Sale total is too large');
+        }
         
         $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $total;
         if (!is_finite($amountPaid) || $amountPaid < 0) {
@@ -342,6 +353,44 @@ class SaleService implements SaleServiceInterface
             || str_contains(strtolower($exception->getMessage()), 'duplicate');
     }
 
+    public function changeStatus(int $invoiceId, string $targetStatus): void
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $invoice = $this->invoiceRepo->findHeaderForUpdate($invoiceId);
+            if (!$invoice) {
+                throw new \DomainException('Invoice not found', 404);
+            }
+
+            $currentStatus = (string) $invoice['status'];
+            if ($currentStatus === $targetStatus) {
+                $this->db->commit();
+                return;
+            }
+
+            // The only safe transition currently implemented here is the
+            // completion of a reserved invoice. Cancellation must go through
+            // an inventory and ledger reversal workflow first.
+            if (
+                $currentStatus !== 'reserved'
+                || $targetStatus !== 'completed'
+            ) {
+                throw new \DomainException(
+                    'This invoice status transition requires the inventory reversal workflow'
+                );
+            }
+
+            $this->invoiceRepo->updateStatus($invoiceId, $targetStatus);
+            $this->db->commit();
+        } catch (\Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
     public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array
     {
         $idempotencyKey = (string) ($data['idempotency_key'] ?? '');
@@ -369,7 +418,10 @@ class SaleService implements SaleServiceInterface
             if ($replaceInvoiceId > 0) {
                 $existingInvoice = $this->invoiceRepo->findByIdForUpdate($replaceInvoiceId);
                 if (!$existingInvoice) {
-                    throw new \DomainException('Invoice not found');
+                    throw new \DomainException('Invoice not found', 404);
+                }
+                if (($existingInvoice['status'] ?? null) !== 'reserved') {
+                    throw new \DomainException('Only reserved invoices can be updated', 409);
                 }
             }
 
@@ -392,9 +444,22 @@ class SaleService implements SaleServiceInterface
 
             if ($replaceInvoiceId > 0) {
                 // Restore quantities for old invoice items
+                $incrementsByProduct = [];
                 foreach ($existingInvoice['items'] as $old) {
-                    $this->productRepo->incrementQuantity((int) $old['product_id'], (float) $old['quantity']);
+                    $productId = (int) $old['product_id'];
+                    $incrementsByProduct[$productId] =
+                        ($incrementsByProduct[$productId] ?? 0.0)
+                        + (float) $old['quantity'];
                 }
+                $this->productRepo->batchIncrementQuantity(array_map(
+                    static fn (int $productId, float $quantity): array => [
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                    ],
+                    array_keys($incrementsByProduct),
+                    array_values($incrementsByProduct)
+                ));
+
                 // Batch-fetch updated quantities (eliminates N+1)
                 $oldProductIds = array_map(fn($old) => (int) $old['product_id'], $existingInvoice['items']);
                 $oldQuantities = $this->productRepo->getQuantitiesByIds($oldProductIds);
@@ -535,8 +600,11 @@ class SaleService implements SaleServiceInterface
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            if ($e->getMessage() === 'Invoice not found') {
+            if ($e->getCode() === 404) {
                 return ['ok' => false, 'error' => 'Invoice not found', 'code' => 404];
+            }
+            if ($e->getCode() === 409) {
+                return ['ok' => false, 'error' => $e->getMessage(), 'code' => 409];
             }
             Logger::error('Sale transaction failed', Logger::exceptionContext($e));
             return ['ok' => false, 'error' => 'Failed to process sale', 'code' => 500];
@@ -619,7 +687,7 @@ class SaleService implements SaleServiceInterface
      *
      * @return array ['ok' => true] أو ['ok' => false, 'error' => string, 'code' => int]
      */
-    public function deleteInvoice(int $invoiceId): array
+    public function deleteInvoice(int $invoiceId, ?int $actorId = null): array
     {
         if ($this->db->inTransaction()) {
             return ['ok' => false, 'error' => 'Sale transaction already active', 'code' => 409];
@@ -632,12 +700,24 @@ class SaleService implements SaleServiceInterface
                 throw new \RuntimeException('Invoice not found');
             }
 
-            // 1. Increment all product quantities (N UPDATE queries — unavoidable)
+            // 1. Aggregate increments and restore all products in one statement.
+            $incrementsByProduct = [];
             foreach ($invoice['items'] as $item) {
-                $this->productRepo->incrementQuantity((int) $item['product_id'], (float) $item['quantity']);
+                $productId = (int) $item['product_id'];
+                $incrementsByProduct[$productId] =
+                    ($incrementsByProduct[$productId] ?? 0.0)
+                    + (float) $item['quantity'];
             }
+            $this->productRepo->batchIncrementQuantity(array_map(
+                static fn (int $productId, float $quantity): array => [
+                    'product_id' => $productId,
+                    'quantity' => $quantity,
+                ],
+                array_keys($incrementsByProduct),
+                array_values($incrementsByProduct)
+            ));
 
-            // 2. Batch-fetch updated quantities in a single SELECT (eliminates N findById calls)
+            // 2. Batch-fetch updated quantities in a single SELECT.
             $productIds = array_map(fn($item) => (int) $item['product_id'], $invoice['items']);
             $quantities = $this->productRepo->getQuantitiesByIds($productIds);
 
@@ -660,6 +740,14 @@ class SaleService implements SaleServiceInterface
             // حذف الفاتورة (والعناصر المرتبطة بها تحذف تلقائياً بفضل ON DELETE CASCADE)
             if ($this->invoiceRepo->deleteLocked($invoiceId) !== 1) {
                 throw new \RuntimeException('Invoice changed concurrently');
+            }
+            if ($actorId !== null) {
+                \App\Helpers\AuditLog::logOrFail(
+                    $actorId,
+                    'delete_invoice',
+                    'invoice',
+                    $invoiceId
+                );
             }
             $this->db->commit();
         } catch (\RuntimeException $e) {

@@ -27,9 +27,9 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
 
   // Prepend dynamic API base URL if available in Electron runtime
-  const dynamicBase = (window as any).API_BASE_URL
+  const dynamicBase = window.API_BASE_URL
   if (dynamicBase) {
-    config.baseURL = `${dynamicBase}/api/v1`
+    config.baseURL = dynamicBase.replace(/\/+$/, '') + '/api/v1'
   }
 
   return config

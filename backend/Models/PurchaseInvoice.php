@@ -97,13 +97,28 @@ class PurchaseInvoice {
         $values = [];
         $params = [];
         foreach ($items as $index => $item) {
+            $quantity = (float) ($item['quantity'] ?? 0);
+            $cost = (float) ($item['cost'] ?? 0);
+            if (
+                !is_numeric($item['quantity'] ?? null)
+                || !is_finite($quantity)
+                || $quantity <= 0
+                || !is_numeric($item['cost'] ?? null)
+                || !is_finite($cost)
+                || $cost < 0
+            ) {
+                throw new \InvalidArgumentException(
+                    'Purchase quantity and cost must be finite and valid'
+                );
+            }
+
             $values[] = "(:invoice_{$index}, :supplier_{$index}, :product_{$index}, :quantity_{$index}, :cost_{$index}, :total_{$index}, :notes_{$index})";
             $params["invoice_{$index}"] = $invoiceId;
             $params["supplier_{$index}"] = $supplierId;
             $params["product_{$index}"] = (int) $item['product_id'];
-            $params["quantity_{$index}"] = (float) $item['quantity'];
-            $params["cost_{$index}"] = (float) $item['cost'];
-            $params["total_{$index}"] = (float) $item['quantity'] * (float) $item['cost'];
+            $params["quantity_{$index}"] = $quantity;
+            $params["cost_{$index}"] = $cost;
+            $params["total_{$index}"] = $quantity * $cost;
             $params["notes_{$index}"] = $item['notes'] ?? null;
         }
 
@@ -146,14 +161,19 @@ class PurchaseInvoice {
                 $where[] = 'pi.id = :search_id';
                 $params['search_id'] = (int)$searchTerm;
             } else {
-                $where[] = 'pi.id IN (SELECT p.purchase_invoice_id FROM purchases p JOIN products pr ON pr.id = p.product_id WHERE pr.name LIKE :search_name)';
-                $params['search_name'] = '%' . $searchTerm . '%';
+                if (mb_strlen($searchTerm, 'UTF-8') >= 3) {
+                    $where[] = 'pi.id IN (SELECT p.purchase_invoice_id FROM purchases p JOIN products pr ON pr.id = p.product_id WHERE MATCH(pr.name) AGAINST(:search_ft IN BOOLEAN MODE))';
+                    $params['search_ft'] = $searchTerm . '*';
+                } else {
+                    $where[] = 'pi.id IN (SELECT p.purchase_invoice_id FROM purchases p JOIN products pr ON pr.id = p.product_id WHERE pr.name LIKE :search_name)';
+                    $params['search_name'] = '%' . $searchTerm . '%';
+                }
             }
         }
 
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
-            $page  = max(1, (int)$filters['page']);
+            $page  = max(1, min(1000, (int)$filters['page']));
             $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
@@ -172,7 +192,7 @@ class PurchaseInvoice {
              FROM purchase_invoices pi
              JOIN suppliers s ON s.id = pi.supplier_id AND s.branch_id = pi.branch_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY pi.created_at DESC
+             ORDER BY pi.created_at DESC, pi.id DESC
              ' . $limitStr
         );
         foreach ($params as $key => $val) {
@@ -334,7 +354,7 @@ class PurchaseInvoice {
 
         $hasPagination = false;
         if (isset($filters['page']) && isset($filters['limit'])) {
-            $page  = max(1, (int)$filters['page']);
+            $page  = max(1, min(1000, (int)$filters['page']));
             $limit = max(1, min(100, (int)$filters['limit']));
             $offset = ($page - 1) * $limit;
             $hasPagination = true;
@@ -360,7 +380,7 @@ class PurchaseInvoice {
              JOIN products p ON p.id = pu.product_id
              JOIN purchase_invoices pi ON pi.id = pu.purchase_invoice_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY pu.created_at DESC
+             ORDER BY pu.created_at DESC, pu.id DESC
              ' . $limitStr
         );
         foreach ($params as $key => $val) {

@@ -22,12 +22,13 @@ $router->put('/api/users/{id}',    [UserController::class, 'update',  [AuthMiddl
 $router->delete('/api/users/{id}', [UserController::class, 'destroy', [AuthMiddleware::class, PermissionMiddleware::require('users.manage')]]);
 
 // Settings
-$router->get('/api/settings',  [SettingsController::class, 'index',  [AuthMiddleware::class]]);
+$router->get('/api/settings',  [SettingsController::class, 'index',  [AuthMiddleware::class, PermissionMiddleware::require('settings.view')]]);
 $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddleware::class, PermissionMiddleware::require('settings.update')]]);
 
 // Updates
 $router->get('/api/update/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
 $router->post('/api/update/apply',    [UpdateController::class, 'apply',     [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_apply', 1, 300)]]);
+$router->get('/api/update/jobs/{id}', [UpdateController::class, 'status',    [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_status', 60, 60)]]);
 $router->get('/api/update/changelog', [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('settings.update'), \App\Middleware\EndpointRateLimiter::limit('update_changelog', 10, 60)]]);
 
 // Backup
@@ -36,11 +37,11 @@ $router->post('/api/backup/restore', [BackupController::class, 'restore', [AuthM
 $router->post('/api/admin/backup/schedule', [BackupController::class, 'schedule', [AuthMiddleware::class, PermissionMiddleware::require('backup.manage')]]);
 
 // Expenses
-$router->get('/api/expense-categories',         [ExpenseController::class, 'getCategories', [AuthMiddleware::class]]);
+$router->get('/api/expense-categories',         [ExpenseController::class, 'getCategories', [AuthMiddleware::class, PermissionMiddleware::require('expenses.view')]]);
 $router->post('/api/expense-categories',        [ExpenseController::class, 'createCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.manage')]]);
 $router->put('/api/expense-categories/{id}',    [ExpenseController::class, 'updateCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.manage')]]);
 $router->delete('/api/expense-categories/{id}', [ExpenseController::class, 'deleteCategory', [AuthMiddleware::class, PermissionMiddleware::require('expenses.delete')]]);
-$router->get('/api/expenses',         [ExpenseController::class, 'getExpenses', [AuthMiddleware::class]]);
+$router->get('/api/expenses',         [ExpenseController::class, 'getExpenses', [AuthMiddleware::class, PermissionMiddleware::require('expenses.view')]]);
 $router->post('/api/expenses',        [ExpenseController::class, 'createExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.create')]]);
 $router->put('/api/expenses/{id}',    [ExpenseController::class, 'updateExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.update')]]);
 $router->delete('/api/expenses/{id}', [ExpenseController::class, 'deleteExpense', [AuthMiddleware::class, PermissionMiddleware::require('expenses.delete')]]);

@@ -11,4 +11,4 @@ $router->post('/api/client-log', [ClientLogController::class, 'store', [
     AuthMiddleware::class,
     \App\Middleware\EndpointRateLimiter::limit('client_log', 30, 60),
 ]]);
-$router->get('/api/system/network-info', [HealthController::class, 'networkInfo', [AuthMiddleware::class]]);
+$router->get('/api/system/network-info', [HealthController::class, 'networkInfo', [AuthMiddleware::class, PermissionMiddleware::require('settings.view')]]);

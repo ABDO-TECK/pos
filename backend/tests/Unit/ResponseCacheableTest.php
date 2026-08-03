@@ -11,6 +11,8 @@ class ResponseCacheableTest extends TestCase
         $this->assertEquals(200, $response['status_code']);
         $this->assertArrayHasKey('headers', $response);
         $this->assertArrayHasKey('ETag', $response['headers']);
+        $this->assertSame('private, no-store', $response['headers']['Cache-Control']);
+        $this->assertSame('Authorization, Cookie', $response['headers']['Vary']);
     }
 
     public function testCacheableReturns304WhenETagMatches()

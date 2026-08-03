@@ -6,12 +6,12 @@ use App\Core\Controller;
 use App\Helpers\Response;
 use App\Helpers\ErrorCodes;
 use App\Helpers\Logger;
-use App\Helpers\AuditLog;
 use App\Models\Invoice;
 use App\Services\AuthService;
 use App\Services\SaleService;
 use App\Requests\SaleRequest;
 use App\Requests\SaleStatusRequest;
+use App\Middleware\PermissionMiddleware;
 
 
 class SaleController extends Controller {
@@ -53,6 +53,17 @@ class SaleController extends Controller {
     public function store() {
         $request = new SaleRequest($this->getBody());
         $data = $request->validated();
+
+        if (
+            (int) ($data['invoice_id'] ?? 0) > 0
+            && !PermissionMiddleware::allows(
+                $this->authService,
+                'invoices.update_reserved'
+            )
+        ) {
+            return Response::forbidden('Reserved invoice update permission required');
+        }
+
         $idempotencyKey = $data['idempotency_key'];
         $requestHash = $this->saleService->hashSaleRequest($data);
         $idempotency = $this->saleService->resolveIdempotency($idempotencyKey, $requestHash);
@@ -145,12 +156,13 @@ class SaleController extends Controller {
         $request = new SaleStatusRequest($this->getBody());
         $data = $request->validated();
 
-        $invoice = $this->saleService->getInvoiceRepository()->findById($id);
-        if (!$invoice) {
-            return Response::notFound('Invoice not found');
+        try {
+            $this->saleService->changeStatus($id, $data['status']);
+        } catch (\DomainException $exception) {
+            $status = $exception->getCode() === 404 ? 404 : 409;
+            return Response::error($exception->getMessage(), $status);
         }
 
-        $this->saleService->getInvoiceRepository()->updateStatus($id, $data['status']);
         return Response::success(null, 'Invoice status updated successfully');
     }
 
@@ -159,7 +171,7 @@ class SaleController extends Controller {
      */
     public function destroy(string $id) {
         $id = $this->resolveId($id);
-        $result = $this->saleService->deleteInvoice($id);
+        $result = $this->saleService->deleteInvoice($id, $this->authService->id());
 
         if (!$result['ok']) {
             $code = $result['code'] ?? 500;
@@ -167,8 +179,6 @@ class SaleController extends Controller {
                 ? Response::notFound($result['error'])
                 : Response::serverError($result['error']);
         }
-
-        AuditLog::log($this->authService->id(), 'delete_invoice', 'invoice', $id);
 
         return Response::success(null, 'Invoice deleted');
     }

@@ -108,7 +108,8 @@ export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiRespon
 // Updates
 type UpdateRequestConfig = AxiosRequestConfig & { hideGlobalError?: boolean }
 export const checkUpdate = (config?: UpdateRequestConfig) => api.get<ApiResponse<UpdateCheckResult>>('/update/check', config)
-export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', force ? { force: true } : null, { timeout: 300_000 })
+export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/update/apply', force ? { force: true } : null, { timeout: 30_000 })
+export const getUpdateJob = (id: number) => api.get<ApiResponse<UpdateJobResult>>(`/update/jobs/${id}`, { timeout: 15_000 })
 
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { RefreshCw, List } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { applyUpdate } from '../../api/endpoints'
+import { applyUpdate, getUpdateJob } from '../../api/endpoints'
 import useUpdateStore from '../../store/updateStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
@@ -98,17 +98,53 @@ export default function UpdateSection() {
     setUpdateLogs([])
     try {
       const res = await applyUpdate(force)
-      const logs = (res.data?.data as { logs?: string[] })?.logs || []
-      setUpdateLogs(logs)
-      toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
-      setTimeout(() => window.location.reload(), 3000)
+      const jobId = res.data?.data?.job_id
+      if (!jobId) {
+        throw new Error('The update job was not created')
+      }
+
+      toast.success('تم وضع التحديث في قائمة التنفيذ. ستتم متابعة حالته تلقائياً.')
+      const deadline = Date.now() + 15 * 60 * 1000
+
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000))
+        const jobResponse = await getUpdateJob(jobId)
+        const job = jobResponse.data?.data
+
+        if (!job) {
+          throw new Error('Unable to read update job status')
+        }
+
+        if (job.status === 'completed') {
+          setApplyingUpdate(false)
+          toast.success('تم تطبيق التحديث بنجاح! جاري إعادة التحميل...')
+          window.setTimeout(() => window.location.reload(), 1000)
+          return
+        }
+
+        if (job.status === 'failed') {
+          const jobError = new Error(job.last_error || 'The update job failed') as Error & { status?: number }
+          jobError.status = job.failure_code ?? undefined
+          throw jobError
+        }
+
+        setUpdateLogs(['Update job ' + job.status + '...'])
+      }
+
+      throw new Error('The update job exceeded the monitoring timeout')
     } catch (error: unknown) {
-      const status = isAxiosError(error) ? error.response?.status : undefined
+      const status = isAxiosError(error)
+        ? error.response?.status
+        : (error as { status?: number })?.status
       const errData = isAxiosError(error)
         ? error.response?.data as { message?: string, errors?: { logs?: string[] }, data?: { logs?: string[] } } | undefined
         : undefined
-      const msg = errData?.message || 'فشل تطبيق التحديث.'
-      const logs = errData?.errors?.logs || errData?.data?.logs || []
+      const msg = errData?.message
+        || (error instanceof Error ? error.message : null)
+        || 'فشل تطبيق التحديث.'
+      const logs = errData?.errors?.logs || errData?.data?.logs || [
+        error instanceof Error ? error.message : 'Update job failed',
+      ]
       setUpdateLogs(logs)
 
       if (status === 409 && !force) {
