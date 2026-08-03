@@ -1,7 +1,8 @@
 {
-    "version":  "1.1.42",
+    "version":  "1.1.43",
     "released_at":  "2026-08-03",
     "changelog":  [
+                      "إصلاح حرج: استخدام أرشيف PHP الرسمي الثابت مع SHA-256 موثّق بعد انتهاء صلاحية الرابط المباشر، لضمان نجاح بناء نسخة سطح المكتب.",
                       "إصلاح حرج: جعل إعداد بيئة PHP وMariaDB متوافقاً مع Windows PowerShell 5.1 حتى يكتمل بناء نسخة سطح المكتب ورفع ملفات التثبيت بنجاح.",
                       "إصلاح: عند تشغيل اختصار التطبيق مرة ثانية، يتم إيقاظ نافذة النظام المخفية في منطقة الإشعارات وإظهارها وتركيزها بدلاً من فتح نسخة ثانية.",
                       "v1.1.40: Fix Windows desktop startup by packaging and verifying pinned portable PHP and MariaDB runtimes, resolving executable paths and ports deterministically, handling spawn failures, and improving recovery diagnostics and retries.",

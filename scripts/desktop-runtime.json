@@ -3,8 +3,8 @@
   "php": {
     "distribution": "PHP for Windows",
     "version": "8.2.30",
-    "url": "https://windows.php.net/downloads/releases/php-8.2.30-nts-Win32-vs16-x64.zip",
-    "sha256": "40cc8fd11cd96e7292528d2a086aeef8db738d1da7d8b1cd8e846d18c13fbcb0",
+    "url": "https://windows.php.net/downloads/releases/archives/php-8.2.30-nts-Win32-vs16-x64.zip",
+    "sha256": "8a6e409adb5f7fb196c07315c69195c4eb87eec8acae2e74a0e04ec50745a055",
     "archiveName": "php-8.2.30-nts-Win32-vs16-x64.zip",
     "requiredFiles": [
       "php/php.exe",
