@@ -51,6 +51,56 @@ final class LedgerPdfServiceTest extends TestCase
         self::assertStringContainsString('A &amp; B', $html);
     }
 
+    public function testMpdfUsesPhysicalArabicFontFiles(): void
+    {
+        $service = new LedgerPdfService();
+        $mpdf = $service->createMpdf();
+
+        $fontDirProperty = new \ReflectionProperty($mpdf, 'fontDir');
+        $fontDirProperty->setAccessible(true);
+        $fontDirs = $fontDirProperty->getValue($mpdf);
+        $arabicFontDir = array_values(array_filter(
+            $fontDirs,
+            static fn (string $directory): bool => is_file($directory . DIRECTORY_SEPARATOR . 'XB Riyaz.ttf'),
+        ))[0] ?? null;
+
+        self::assertNotNull($arabicFontDir);
+        self::assertStringNotContainsString('phar://', $arabicFontDir);
+        self::assertFileExists($arabicFontDir . DIRECTORY_SEPARATOR . 'XB RiyazBd.ttf');
+        self::assertFileExists($arabicFontDir . DIRECTORY_SEPARATOR . 'XB RiyazIt.ttf');
+        self::assertFileExists($arabicFontDir . DIRECTORY_SEPARATOR . 'XB RiyazBdIt.ttf');
+    }
+
+    public function testCurrencyMarkupSeparatesLtrAmountFromRtlArabicCode(): void
+    {
+        $service = new LedgerPdfService();
+        $currency = $service->fmtCurrency(1250.5);
+
+        self::assertStringContainsString('class="currency-amount" dir="ltr">1,250.50</span>', $currency);
+        self::assertStringContainsString('class="currency-code" dir="rtl">ج.م.</span>', $currency);
+        self::assertStringContainsString('font-family: xbriyaz, Tahoma, Arial, sans-serif', $service->getCss());
+    }
+
+    public function testEmptyBalanceDescriptorDoesNotRenderEmptyParentheses(): void
+    {
+        $service = new LedgerPdfService();
+        $html = $service->buildLedgerHtml([
+            'title' => 'كشف حساب',
+            'entityLabel' => 'الاسم',
+            'entity' => ['name' => 'عميل'],
+            'entries' => [],
+            'balance' => 0.0,
+            'totalDebit' => 0.0,
+            'totalCredit' => 0.0,
+            'storeName' => 'المتجر',
+            'balDebitWord' => '',
+            'balCreditWord' => '',
+        ]);
+
+        self::assertStringNotContainsString('class="balance-word"', $html);
+        self::assertStringNotContainsString('()</span>', $html);
+    }
+
     private function stripBidiControls(string $value): string
     {
         return preg_replace('/[\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', '', $value) ?? $value;

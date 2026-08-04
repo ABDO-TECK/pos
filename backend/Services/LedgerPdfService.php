@@ -15,7 +15,10 @@ class LedgerPdfService
 
     public function fmtCurrency(float $n): string
     {
-        return number_format($n, 2) . ' ج.م.';
+        $amount = htmlspecialchars(number_format($n, 2), ENT_QUOTES, 'UTF-8');
+
+        return '<span class="currency-amount" dir="ltr">' . $amount . '</span>'
+            . ' <span class="currency-code" dir="rtl">ج.م.</span>';
     }
 
     public function fmtDate(?string $d): string
@@ -40,6 +43,59 @@ class LedgerPdfService
             . ' - ' . date('h:i', $ts) . ' ' . $rtlEmbed . $meridiem . $directionalPop;
     }
 
+    /**
+     * mPDF reads TTF files with random-access operations that are not reliable
+     * through a phar:// stream. Materialize the bundled Arabic font files in
+     * writable storage before mPDF tries to parse them.
+     */
+    private function prepareArabicFontDir(string $storageDir): string
+    {
+        $fontDir = rtrim($storageDir, '/\\') . '/mpdf_fonts_v1';
+        if (!is_dir($fontDir) && !@mkdir($fontDir, 0755, true) && !is_dir($fontDir)) {
+            throw new \RuntimeException('Unable to prepare the PDF Arabic font directory.');
+        }
+
+        $bundledFontDir = dirname(__DIR__) . '/vendor/mpdf/mpdf/ttfonts';
+        $fontFiles = [
+            'XB Riyaz.ttf',
+            'XB RiyazBd.ttf',
+            'XB RiyazIt.ttf',
+            'XB RiyazBdIt.ttf',
+        ];
+
+        foreach ($fontFiles as $fontFile) {
+            $sourcePath = $bundledFontDir . '/' . $fontFile;
+            $targetPath = $fontDir . '/' . $fontFile;
+            $sourceSize = @filesize($sourcePath);
+
+            if (is_file($targetPath) && $sourceSize !== false && @filesize($targetPath) === $sourceSize) {
+                continue;
+            }
+
+            $contents = @file_get_contents($sourcePath);
+            if ($contents === false || $contents === '') {
+                throw new \RuntimeException('Unable to load the bundled PDF Arabic font.');
+            }
+
+            $temporaryPath = $targetPath . '.' . bin2hex(random_bytes(8)) . '.tmp';
+            $written = @file_put_contents($temporaryPath, $contents, LOCK_EX);
+            if ($written !== strlen($contents)) {
+                @unlink($temporaryPath);
+                throw new \RuntimeException('Unable to cache the PDF Arabic font.');
+            }
+
+            if (!@rename($temporaryPath, $targetPath)) {
+                $targetSize = @filesize($targetPath);
+                @unlink($temporaryPath);
+                if ($targetSize !== strlen($contents)) {
+                    throw new \RuntimeException('Unable to finalize the PDF Arabic font cache.');
+                }
+            }
+        }
+
+        return $fontDir;
+    }
+
     /* ── mPDF factory ─────────────────────────────────────────── */
 
     public function createMpdf(): \Mpdf\Mpdf
@@ -47,11 +103,18 @@ class LedgerPdfService
         $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? (__DIR__ . '/../storage');
         $tmpDir = $storageDir . '/mpdf_tmp';
         if (!is_dir($tmpDir)) @mkdir($tmpDir, 0755, true);
+        $arabicFontDir = $this->prepareArabicFontDir($storageDir);
+        $defaultConfig = (new \Mpdf\Config\ConfigVariables())->getDefaults();
+        $fontDirs = array_values(array_unique(array_merge(
+            [$arabicFontDir],
+            $defaultConfig['fontDir'] ?? [],
+        )));
 
         return new \Mpdf\Mpdf([
             'mode'          => 'utf-8',
             'format'        => 'A4',
             'default_font'  => 'xbriyaz',
+            'fontDir'       => $fontDirs,
             'directionality'=> 'rtl',
             'tempDir'       => $tmpDir,
             'margin_top'    => 15,
@@ -88,6 +151,9 @@ class LedgerPdfService
         .summary-table td { width: 25%; padding: 9px 7px; border: 1px solid #cbd5e1; text-align: center; background-color: #f8fafc; }
         .summary-label { font-size: 10px; color: #64748b; }
         .summary-val { margin-top: 4px; font: 700 14px/1.3 Arial, Tahoma, sans-serif; color: #0f172a; direction: ltr; unicode-bidi: isolate; }
+        .currency-amount { display: inline-block; direction: ltr; unicode-bidi: isolate; white-space: nowrap; font-family: Arial, Tahoma, sans-serif; }
+        .currency-code { display: inline-block; direction: rtl; unicode-bidi: isolate; white-space: nowrap; font-family: xbriyaz, Tahoma, Arial, sans-serif; }
+        .balance-word { display: inline-block; direction: rtl; unicode-bidi: isolate; white-space: nowrap; font: 400 11px/1.3 xbriyaz, Tahoma, Arial, sans-serif; color: #555; }
         .ledger-table { margin-bottom: 14px; page-break-inside: auto; }
         .ledger-table thead { display: table-header-group; }
         .ledger-table thead th { background-color: #e8f0f7; color: #1e3a5f; font-weight: bold; padding: 8px 7px; border: 1px solid #b8c8d8; text-align: right; font-size: 11px; }
@@ -120,7 +186,12 @@ class LedgerPdfService
         $storeName   = $p['storeName'];
         $now         = '<span class="date-value" dir="ltr">' . $this->fmtDate(date('Y-m-d H:i:s')) . '</span>';
         $balAbs      = $this->fmtCurrency(abs($balance));
-        $balWord     = $balance > 0 ? $p['balDebitWord'] : $p['balCreditWord'];
+        $balWord     = trim((string)($balance > 0 ? ($p['balDebitWord'] ?? '') : ($p['balCreditWord'] ?? '')));
+        $balWordHtml = $balWord === ''
+            ? ''
+            : ' <br><span class="balance-word" dir="rtl">('
+                . htmlspecialchars($balWord, ENT_QUOTES, 'UTF-8')
+                . ')</span>';
         $title       = htmlspecialchars((string)($p['title'] ?? ''), ENT_QUOTES, 'UTF-8');
 
         $metaRows = '<strong>' . $p['entityLabel'] . ':</strong> ' . htmlspecialchars($entity['name'] ?? '') . '<br>';
@@ -148,7 +219,7 @@ class LedgerPdfService
             <td><div class="summary-label">عدد الحركات</div><div class="summary-val">' . count($entries) . '</div></td>
             <td><div class="summary-label">إجمالي المدين</div><div class="summary-val">' . $this->fmtCurrency($totalDebit) . '</div></td>
             <td><div class="summary-label">إجمالي الدائن</div><div class="summary-val">' . $this->fmtCurrency($totalCredit) . '</div></td>
-            <td><div class="summary-label">الرصيد الحالي</div><div class="summary-val" style="color: #000;">' . $balAbs . ' <br><span style="font-size: 11px; font-weight: normal; color: #555;">(' . $balWord . ')</span></div></td>
+            <td><div class="summary-label">الرصيد الحالي</div><div class="summary-val" style="color: #000;">' . $balAbs . $balWordHtml . '</div></td>
           </tr>
         </table>';
 
