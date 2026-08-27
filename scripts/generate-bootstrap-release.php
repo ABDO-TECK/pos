@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Bootstrap Release Generator (v1.1.47-bootstrap)
- * Creates the full migration release package for upgrading legacy POS clients.
+ * Creates the full migration release package for upgrading legacy POS clients (v1.1.46 -> v1.1.47).
  */
 
 require_once __DIR__ . '/../backend/vendor/autoload.php';
@@ -22,36 +22,51 @@ if (!is_dir($outputDir)) {
     @mkdir($outputDir, 0755, true);
 }
 
-// 1. Determine files to include in the full bootstrap package
+// 1. Files and directories to exclude (strict security, cleanliness, zero dev artifacts)
 $excludedPrefixes = [
     '.git/',
     '.github/',
     '.env',
+    '.env.',
     'release/',
     'storage/',
     'backend/storage/',
     'backend/logs/',
-    'node_modules/',
-    'dist-electron/',
-    'backend/vendor/',
-    'frontend/node_modules/',
     'backend/tests/',
-    'frontend/src/',
+    'backend/vendor/bin/',
+    'backend/vendor/phpunit/',
+    'backend/vendor/sebastian/',
+    'backend/vendor/theseer/',
+    'backend/vendor/myclabs/',
+    'backend/vendor/phar-io/',
+    'backend/vendor/nikic/',
+    'backend/vendor/zircote/',
+    'backend/vendor/doctrine/',
     'backend/.phpunit.result.cache',
+    'frontend/node_modules/',
+    'frontend/src/',
+    'frontend/dist-electron/',
+    'dist-electron/',
+    'node_modules/',
+    'backend/certs/private_key.pem',
+    'backend/certs/update_private_key.pem',
+    'release/private_key.pem',
 ];
 
-$includedFolders = [
+$includedItems = [
+    'backend/Config',
     'backend/Controllers',
     'backend/Helpers',
     'backend/Middleware',
     'backend/Models',
     'backend/Services',
-    'backend/certs',
-    'backend/config',
+    'backend/certs/update_public_key.pem',
     'backend/database',
     'backend/routes',
+    'backend/vendor',
     'backend/bootstrap.php',
     'backend/server.php',
+    'backend/index.php',
     'frontend/dist',
     'scripts',
     'docs',
@@ -62,19 +77,11 @@ $includedFolders = [
 $filesToPack = [];
 $manifestFiles = [];
 
-foreach ($includedFolders as $item) {
+foreach ($includedItems as $item) {
     $fullPath = $rootDir . '/' . $item;
     if (is_file($fullPath)) {
-        $rel = $item;
+        $rel = str_replace('\\', '/', $item);
         $filesToPack[] = $rel;
-        $sha = hash_file('sha256', $fullPath);
-        $size = filesize($fullPath);
-        $manifestFiles[] = [
-            'path' => $rel,
-            'action' => 'replace',
-            'sha256' => $sha,
-            'size' => $size,
-        ];
     } elseif (is_dir($fullPath)) {
         $dirIterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($fullPath, RecursiveDirectoryIterator::SKIP_DOTS)
@@ -84,10 +91,10 @@ foreach ($includedFolders as $item) {
             $filePath = $fileInfo->getRealPath();
             $rel = str_replace('\\', '/', substr($filePath, strlen($rootDir) + 1));
 
-            // Check exclusion
+            // Check exclusions
             $skip = false;
             foreach ($excludedPrefixes as $exc) {
-                if (str_starts_with($rel, $exc)) {
+                if (str_starts_with($rel, $exc) || str_contains($rel, '/.git') || str_contains($rel, '/.env') || str_contains($rel, 'private_key.pem')) {
                     $skip = true;
                     break;
                 }
@@ -95,21 +102,29 @@ foreach ($includedFolders as $item) {
             if ($skip) continue;
 
             $filesToPack[] = $rel;
-            $sha = hash_file('sha256', $filePath);
-            $size = filesize($filePath);
-            $manifestFiles[] = [
-                'path' => $rel,
-                'action' => 'replace',
-                'sha256' => $sha,
-                'size' => $size,
-            ];
         }
     }
 }
 
+$filesToPack = array_values(array_unique($filesToPack));
+sort($filesToPack);
+
 echo "Found " . count($filesToPack) . " production files for bootstrap package.\n";
 
-// 2. Create full-package.zip
+// 2. Build manifest entries
+foreach ($filesToPack as $rel) {
+    $realPath = $rootDir . '/' . $rel;
+    $sha = hash_file('sha256', $realPath);
+    $size = filesize($realPath);
+    $manifestFiles[] = [
+        'path' => $rel,
+        'action' => 'replace',
+        'sha256' => $sha,
+        'size' => $size,
+    ];
+}
+
+// 3. Create full-package.zip
 $zipPath = $outputDir . '/full-package.zip';
 if (file_exists($zipPath)) {
     @unlink($zipPath);
@@ -127,16 +142,16 @@ foreach ($filesToPack as $relPath) {
 $zip->close();
 
 $zipSizeMb = round(filesize($zipPath) / (1024 * 1024), 2);
-echo "✅ Created full-package.zip ({$zipSizeMb} MB)\n";
+$packageSha256 = hash_file('sha256', $zipPath);
+echo "✅ Created full-package.zip ({$zipSizeMb} MB, SHA-256: {$packageSha256})\n";
 
-// 3. Create manifest.json
+// 4. Create manifest.json
 $changelog = [
-    'إطلاق نظام التحديثات الجزئية الجديد (Delta Updates) مع التحقق من التوقيع الرقمي RSA-2048.',
-    'تكامل مباشر وسلس مع منصة GitHub Releases لتوزيع التحديثات بدون خوادم وسيطة.',
+    'إطلاق الجيل الجديد من نظام التحديثات الذاتية والترقية الشاملة (v1.1.47 Bootstrap Release).',
+    'تفعيل محرك التحديثات الجزئية (Delta Update Engine) وتوزيع التحديثات عبر منصة GitHub Releases.',
     'إضافة مركز إدارة التحديثات (Admin Update Center) في لوحة التحكم لمتابعة التحديثات وسجل العمليات.',
     'نظام النسخ الاحتياطي التلقائي للقطات الملفات وقاعدة البيانات مع إمكانية التراجع الفوري (Atomic Rollback).',
-    'حماية مشددة ضد ثغرات مسارات الملفات (ZipSlip) وفحص تجزئات SHA-256 لجميع الملفات.',
-    'إصلاحات شاملة لطباعة التقارير، توافق شاشات الإعدادات، واستقرار بيئة التشغيل.'
+    'حماية مشددة ضد ثغرات مسارات الملفات (ZipSlip) وفحص تجزئات SHA-256 والتوقيع الرقمي RSA-2048.'
 ];
 
 $manifestData = [
@@ -145,8 +160,10 @@ $manifestData = [
     'type' => 'full',
     'migration_release' => true,
     'minimum_version' => '1.0.0',
+    'minimum_supported_version' => '1.0.0',
     'update_engine_version' => '1.0.0',
     'channel' => 'stable',
+    'package_sha256' => $packageSha256,
     'released_at' => date('Y-m-d'),
     'changelog' => $changelog,
     'files' => $manifestFiles,
@@ -158,9 +175,12 @@ $manifestPath = $outputDir . '/manifest.json';
 file_put_contents($manifestPath, $manifestJson);
 echo "✅ Created manifest.json\n";
 
-// 4. Generate RSA-2048 Digital Signature
+// 5. Generate RSA-2048 Digital Signature
 $sigService = new ManifestSignatureService();
 $privateKeyPath = $rootDir . '/release/private_key.pem';
+if (!file_exists($privateKeyPath)) {
+    throw new RuntimeException("Signing private key not found at {$privateKeyPath}");
+}
 $signature = $sigService->signData($manifestJson, $privateKeyPath);
 if (!$signature) {
     throw new RuntimeException("Failed to generate RSA signature for bootstrap manifest.");
@@ -169,7 +189,7 @@ $sigPath = $outputDir . '/manifest.sig';
 file_put_contents($sigPath, $signature);
 echo "✅ Created manifest.sig (RSA-2048 Signature)\n";
 
-// 5. Generate release-notes.md
+// 6. Generate release-notes.md
 $releaseNotes = <<<MD
 # POS Desktop v1.1.47 (Bootstrap Migration Release)
 
@@ -196,7 +216,7 @@ This is the **Bootstrap Migration Release** for POS Desktop. It upgrades existin
 
 ### 🔒 Verification Checksums:
 - **Manifest**: `manifest.json` (Signed via `manifest.sig`)
-- **Package Archive**: `full-package.zip` (SHA-256: `{$zipSizeMb} MB`)
+- **Package Archive**: `full-package.zip` (SHA-256: `{$packageSha256}`, Size: `{$zipSizeMb} MB`)
 MD;
 
 $releaseNotesPath = $outputDir . '/release-notes.md';

@@ -1,17 +1,20 @@
 <?php
 declare(strict_types=1);
 
-$zipPath = __DIR__ . '/../release/1.2.0-bootstrap/full-package.zip';
+$targetVersion = $argv[1] ?? '1.1.47';
+$zipPath = __DIR__ . "/../release/{$targetVersion}-bootstrap/full-package.zip";
 if (!file_exists($zipPath)) {
     echo "ZIP not found: {$zipPath}\n";
     exit(1);
 }
+
 
 $zip = new ZipArchive();
 if ($zip->open($zipPath) !== true) {
     echo "Could not open ZIP: {$zipPath}\n";
     exit(1);
 }
+
 
 $forbiddenPatterns = [
     'env_files'          => '#(^|/)\.env#i',
