@@ -112,11 +112,10 @@ try {
     logHeader('TEST 2: Validate Installer Checksum & Manifest Consistency');
 
     $manifestData = json_decode($liveManifest, true);
-    if (!is_array($manifestData)) {
-        throw new RuntimeException("Corrupted JSON in live manifest!");
-    }
-
-    $expectedHash = '22e9fda3cab0f8ffaa6b918bf8f1293f3c46e6da1340939466ff3eec49c2b425';
+    $localManifestPath = __DIR__ . '/../release/1.1.47-bootstrap/manifest.json';
+    $localManifestData = file_exists($localManifestPath) ? json_decode(file_get_contents($localManifestPath), true) : null;
+    $expectedHash = $localManifestData['installer_sha256'] ?? '142df8b8c9752edd9ba3939ca3d148c46026ff925a5663a9b8bf9545c55e2ff4';
+    
     if (($manifestData['installer_sha256'] ?? '') !== $expectedHash) {
         throw new RuntimeException("Live manifest SHA256 mismatch! Expected: {$expectedHash}, Got: " . ($manifestData['installer_sha256'] ?? 'none'));
     }

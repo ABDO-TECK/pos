@@ -39,6 +39,7 @@ $iterator = new RecursiveIteratorIterator(
 // Define directories and files to exclude from the final build
 $excludePatterns = [
     '/^backend\.phar$/',
+    '/^database\//',
     '/^tests/',
     '/^docs/',
     '/^swagger/',

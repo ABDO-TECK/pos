@@ -83,15 +83,14 @@ export function CategoryCombobox({ categories, value, onChange }: any) {
 
   useEffect(() => {
     const close = (e: any) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false)
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false)
+        setQ('')
+      }
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [])
-
-  useEffect(() => {
-    if (!open) setQ('')
-  }, [open])
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase()
@@ -106,10 +105,12 @@ export function CategoryCombobox({ categories, value, onChange }: any) {
   const pickNone = () => {
     onChange('')
     setOpen(false)
+    setQ('')
   }
   const pick = (id: any) => {
     onChange(String(id))
     setOpen(false)
+    setQ('')
   }
 
   return (
@@ -117,7 +118,12 @@ export function CategoryCombobox({ categories, value, onChange }: any) {
       <button
         type="button"
         className="input"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((prev) => {
+            if (prev) setQ('')
+            return !prev
+          })
+        }}
         style={{
           width: '100%',
           display: 'flex',

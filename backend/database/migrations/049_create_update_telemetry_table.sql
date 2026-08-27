@@ -20,11 +20,10 @@ CREATE TABLE IF NOT EXISTS update_telemetry (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Permissions for telemetry
-INSERT IGNORE INTO permissions (name, description, module) VALUES
-('updates.telemetry.view', 'View fleet updates telemetry and analytics', 'updates'),
-('updates.telemetry.manage', 'Manage and purge update telemetry data', 'updates');
+INSERT IGNORE INTO `permissions` (`name`, `description`) VALUES
+('updates.telemetry.view', 'View fleet updates telemetry and analytics'),
+('updates.telemetry.manage', 'Manage and purge update telemetry data');
 
 -- Grant permissions to admin role
-INSERT IGNORE INTO role_permissions (role, permission_id)
-SELECT 'admin', id FROM permissions WHERE name IN ('updates.telemetry.view', 'updates.telemetry.manage')
-AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'role_permissions');
+INSERT IGNORE INTO `role_permissions` (`role`, `permission_id`)
+SELECT 'admin', id FROM `permissions` WHERE `name` IN ('updates.telemetry.view', 'updates.telemetry.manage');

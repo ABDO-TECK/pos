@@ -5,14 +5,25 @@ import { DEFAULT_PAGE_SIZE } from '../../api/constants'
 
 export default function ProductsTab() {
   const [topProducts, setTopProducts] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoading(true)
-    getTopProducts({ limit: DEFAULT_PAGE_SIZE }).then((r) => {
-      setTopProducts((r.data.data as any[]) ?? [])
-      setLoading(false)
-    })
+    let ignore = false
+    getTopProducts({ limit: DEFAULT_PAGE_SIZE })
+      .then((r) => {
+        if (!ignore) {
+          setTopProducts((r.data.data as any[]) ?? [])
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLoading(false)
+        }
+      })
+    return () => {
+      ignore = true
+    }
   }, [])
 
   return (

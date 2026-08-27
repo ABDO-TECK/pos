@@ -68,8 +68,7 @@ try {
         CREATE TABLE permissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            description TEXT DEFAULT '',
-            module TEXT DEFAULT 'general'
+            description TEXT DEFAULT ''
         );
         CREATE TABLE role_permissions (
             role TEXT NOT NULL,
@@ -105,16 +104,16 @@ try {
             metadata TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-        INSERT INTO permissions (name, module) VALUES
-        ('updates.view', 'updates'),
-        ('updates.check', 'updates'),
-        ('updates.apply', 'updates'),
-        ('updates.rollback', 'updates'),
-        ('updates.manage_channel', 'updates'),
-        ('updates.telemetry.view', 'updates'),
-        ('updates.telemetry.manage', 'updates'),
-        ('updates.recovery.view', 'updates'),
-        ('updates.recovery.manage', 'updates');
+        INSERT INTO permissions (name, description) VALUES
+        ('updates.view', 'View update status'),
+        ('updates.check', 'Check for new system updates'),
+        ('updates.apply', 'Install and apply system updates'),
+        ('updates.rollback', 'Rollback system updates from snapshots'),
+        ('updates.manage_channel', 'Change release update channel'),
+        ('updates.telemetry.view', 'View fleet updates telemetry'),
+        ('updates.telemetry.manage', 'Manage update telemetry'),
+        ('updates.recovery.view', 'View update recovery status'),
+        ('updates.recovery.manage', 'Execute manual update recovery');
 
         INSERT INTO role_permissions (role, permission_id)
         SELECT 'admin', id FROM permissions;

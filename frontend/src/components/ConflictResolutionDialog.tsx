@@ -22,6 +22,14 @@ export const ConflictResolutionDialog = () => {
       : null,
     [user],
   )
+  const ownerKey = owner ? `${owner.ownerUserId}:${owner.branchId}` : 'anonymous'
+  const [prevOwnerKey, setPrevOwnerKey] = useState(ownerKey)
+  if (prevOwnerKey !== ownerKey) {
+    setPrevOwnerKey(ownerKey)
+    setIsOpen(false)
+    setConflicts([])
+  }
+
   const isOwnerActive = useCallback(() => {
     if (!owner) return false
     const current = useAuthStore.getState()
@@ -48,31 +56,39 @@ export const ConflictResolutionDialog = () => {
   )
 
   useEffect(() => {
-    void loadConflicts()
+    let ignore = false
+    const fetchCurrentConflicts = async () => {
+      if (!isAuthenticated || !owner) {
+        if (!ignore) setConflicts([])
+        return
+      }
+      const sales = await getSalesNeedingReview(owner)
+      if (!ignore && isOwnerActive()) {
+        setConflicts(sales.filter((sale) => isPendingSaleOwnedBy(sale, owner)))
+      }
+    }
+
+    void fetchCurrentConflicts()
     let refreshTimer: number | null = null
     const handleOnline = () => {
-      refreshTimer = window.setTimeout(() => void loadConflicts(), 5000)
+      refreshTimer = window.setTimeout(() => {
+        void fetchCurrentConflicts()
+      }, 5000)
+    }
+    const handleUpdated = () => {
+      void fetchCurrentConflicts()
     }
     window.addEventListener('online', handleOnline)
-    window.addEventListener(OFFLINE_SALES_UPDATED_EVENT, loadConflicts)
+    window.addEventListener(OFFLINE_SALES_UPDATED_EVENT, handleUpdated)
     return () => {
+      ignore = true
       window.removeEventListener('online', handleOnline)
-      window.removeEventListener(OFFLINE_SALES_UPDATED_EVENT, loadConflicts)
+      window.removeEventListener(OFFLINE_SALES_UPDATED_EVENT, handleUpdated)
       if (refreshTimer !== null) window.clearTimeout(refreshTimer)
     }
-  }, [loadConflicts])
+  }, [isAuthenticated, isOwnerActive, owner])
 
-  // Do not carry an open dialog or stale records across logout/login or a
-  // switch to a different user/branch. The dialog is a full-screen layer.
-  const ownerKey = owner ? `${owner.ownerUserId}:${owner.branchId}` : 'anonymous'
-  useEffect(() => {
-    setIsOpen(false)
-    setConflicts([])
-  }, [isAuthenticated, ownerKey])
-
-  useEffect(() => {
-    if (visibleConflicts.length === 0) setIsOpen(false)
-  }, [visibleConflicts.length])
+  const isModalOpen = isOpen && visibleConflicts.length > 0
 
   if (!owner || visibleConflicts.length === 0) return null
 
@@ -114,7 +130,7 @@ export const ConflictResolutionDialog = () => {
         <span className="font-bold">{visibleConflicts.length} للمراجعة</span>
       </button>
 
-      {isOpen && (
+      {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
             <div className="p-4 border-b flex justify-between items-center bg-red-50 text-red-800 rounded-t-lg">

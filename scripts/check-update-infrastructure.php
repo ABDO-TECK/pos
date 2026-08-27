@@ -102,19 +102,19 @@ if ($db !== null) {
             
             // Seed standard permissions
             $db->exec("
-                INSERT OR IGNORE INTO permissions (name, description, module) VALUES
-                ('updates.view', 'View system update status and history', 'updates'),
-                ('updates.check', 'Check for new system updates', 'updates'),
-                ('updates.apply', 'Install and apply system updates', 'updates'),
-                ('updates.rollback', 'Rollback system updates from snapshots', 'updates'),
-                ('updates.manage_channel', 'Change release update channel (stable/beta/rc)', 'updates'),
-                ('updates.telemetry.view', 'View fleet updates telemetry and analytics', 'updates'),
-                ('updates.telemetry.manage', 'Manage and purge update telemetry data', 'updates'),
-                ('updates.recovery.view', 'View update recovery status, diagnostics, and audit logs', 'updates'),
-                ('updates.recovery.manage', 'Execute manual update recovery, rollbacks, and self-healing actions', 'updates');
+                INSERT OR IGNORE INTO permissions (name, description) VALUES
+                ('updates.view', 'View system update status and history'),
+                ('updates.check', 'Check for new system updates'),
+                ('updates.apply', 'Install and apply system updates'),
+                ('updates.rollback', 'Rollback system updates from snapshots'),
+                ('updates.manage_channel', 'Change release update channel (stable/beta/rc)'),
+                ('updates.telemetry.view', 'View fleet updates telemetry and analytics'),
+                ('updates.telemetry.manage', 'Manage and purge update telemetry data'),
+                ('updates.recovery.view', 'View update recovery status, diagnostics, and audit logs'),
+                ('updates.recovery.manage', 'Execute manual update recovery, rollbacks, and self-healing actions');
 
                 INSERT OR IGNORE INTO role_permissions (role, permission_id)
-                SELECT 'admin', id FROM permissions WHERE module = 'updates';
+                SELECT 'admin', id FROM permissions WHERE name LIKE 'updates.%';
             ");
         } else {
             // MySQL: execute migration service
