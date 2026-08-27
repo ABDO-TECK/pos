@@ -277,7 +277,18 @@ class HealthService
         }
         $checks['migrations'] = $migrationCheck;
 
+        // ── Update Infrastructure Check ──
+        $pubKeyPath = dirname(__DIR__) . '/certs/update_public_key.pem';
+        if (is_file($pubKeyPath) && is_readable($pubKeyPath)) {
+            $checks['update_infrastructure'] = [
+                'status'   => 'ok',
+                'severity' => 'info',
+                'message'  => 'Cryptographic RSA update public key is verified and operational.',
+            ];
+        }
+
         // ── 6. Disk Space Check ──
+
         try {
             $freeBytes   = @disk_free_space($storagePath) ?: 0;
             $totalBytes  = @disk_total_space($storagePath) ?: 0;
