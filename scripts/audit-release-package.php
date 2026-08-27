@@ -57,9 +57,9 @@ if (empty($violations)) {
 }
 
 // Generate markdown report
-$md = "# POS Desktop v1.2.0 — Pre-Release Package Security Audit Report\n\n";
+$md = "# POS Desktop v{$targetVersion} — Pre-Release Package Security Audit Report\n\n";
 $md .= "## 1. Package Metadata\n\n";
-$md .= "- **Package Path**: `release/1.2.0-bootstrap/full-package.zip`\n";
+$md .= "- **Package Path**: `release/{$targetVersion}-bootstrap/full-package.zip`\n";
 $md .= "- **Package Size**: " . round(filesize($zipPath) / (1024 * 1024), 2) . " MB\n";
 $md .= "- **SHA-256 Hash**: `" . hash_file('sha256', $zipPath) . "`\n";
 $md .= "- **Total Files Inspected**: `{$totalFiles}`\n";
@@ -92,11 +92,12 @@ $md .= "```\n";
 $md .= "┌────────────────────────────────────────────────────────────────────────┐\n";
 $md .= "│               PACKAGE SECURITY CLEARANCE: PASSED (100%)                │\n";
 $md .= "│                                                                        │\n";
-$md .= "│  The v1.2.0-bootstrap package contains only production runtime files.  │\n";
+$md .= "│  The v{$targetVersion}-bootstrap package contains only production runtime files.  │\n";
 $md .= "│  No environment secrets, private keys, database dumps, tests, or       │\n";
 $md .= "│  temporary files are exposed. Package is certified safe to publish.   │\n";
 $md .= "└────────────────────────────────────────────────────────────────────────┘\n";
 $md .= "```\n";
 
-file_put_contents(__DIR__ . '/../docs/v1.2.0-package-security-check.md', $md);
-echo "Wrote report to docs/v1.2.0-package-security-check.md\n";
+file_put_contents(__DIR__ . "/../docs/v{$targetVersion}-package-security-check.md", $md);
+echo "Wrote report to docs/v{$targetVersion}-package-security-check.md\n";
+
