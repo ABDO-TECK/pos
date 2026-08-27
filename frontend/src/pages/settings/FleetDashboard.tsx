@@ -30,8 +30,8 @@ export default function FleetDashboard() {
   
   // Device detail modal
   const [selectedDevice, setSelectedDevice] = useState<DeviceDetailsData | null>(null)
-  const [loadingDevice, setLoadingDevice] = useState(false)
   const [purging, setPurging] = useState(false)
+
 
   const loadData = useCallback(async () => {
     try {
@@ -64,7 +64,6 @@ export default function FleetDashboard() {
   }
 
   const handleViewDevice = async (deviceId: string) => {
-    setLoadingDevice(true)
     try {
       const res = await getDeviceDetails(deviceId)
       if (res.data?.data) {
@@ -72,10 +71,9 @@ export default function FleetDashboard() {
       }
     } catch {
       toast.error('تعذر جلب سجلات الجهاز.')
-    } finally {
-      setLoadingDevice(false)
     }
   }
+
 
   const handlePurge = async () => {
     const ok = await confirm('هل ترغب في أرشفة وحذف سجلات التتبع الأقدم من 90 يومًا لتوفير المساحة؟')

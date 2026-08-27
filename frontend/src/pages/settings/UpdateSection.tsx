@@ -13,8 +13,6 @@ import {
   FileCode2, 
   Clock, 
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
   Activity,
   Wrench,
   HeartPulse
@@ -22,7 +20,6 @@ import {
 import toast from 'react-hot-toast'
 import { 
   getUpdateStatus, 
-  checkUpdate, 
   applyUpdate, 
   getUpdateHistory, 
   rollbackUpdate, 
@@ -33,6 +30,7 @@ import {
   getRecoveryAuditLogs,
   runPostUpdateHealthCheck
 } from '../../api/endpoints'
+
 import useUpdateStore from '../../store/updateStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
@@ -40,6 +38,10 @@ import SectionTitle from '../../components/common/SectionTitle'
 
 export default function UpdateSection() {
   const { confirm } = useConfirmStore()
+  const updaterApi = typeof window !== 'undefined' ? window.electronAPI?.updater : undefined
+  // Electron updater methods support: updaterApi?.getStatus, updaterApi?.download, updaterApi?.install
+  void updaterApi
+
   const { 
     hasUpdate, 
     currentVersion, 
@@ -58,6 +60,7 @@ export default function UpdateSection() {
   const [showHistory, setShowHistory] = useState(false)
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
+
   
   // Status and Real-time progress data
   const [updateStatus, setUpdateStatus] = useState<UpdateStatusData | null>(null)

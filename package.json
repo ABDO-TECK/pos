@@ -1,6 +1,6 @@
 {
     "name":  "pos-desktop",
-    "version":  "1.1.46",
+    "version":  "1.1.47",
     "description":  "POS Desktop Application",
     "author":  "POS Developer",
     "main":  "electron/main.js",
@@ -10,16 +10,17 @@
                     "build:phar":  "node scripts/build-phar.mjs",
                     "prepare:desktop-runtime":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-desktop-runtime.ps1",
                     "verify:desktop-runtime":  "node scripts/verify-desktop-runtime.mjs --strict",
-                    "electron:build":  "npm run build:phar \u0026\u0026 npm run prepare:desktop-runtime \u0026\u0026 npm run verify:desktop-runtime \u0026\u0026 electron-builder --win --publish never",
-                    "electron:publish":  "npm run build:phar \u0026\u0026 npm run prepare:desktop-runtime \u0026\u0026 npm run verify:desktop-runtime \u0026\u0026 electron-builder --win --publish always",
-                    "frontend:build":  "cd frontend \u0026\u0026 npm run build",
+                    "electron:build":  "npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish never",
+                    "electron:publish":  "npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish always",
+                    "frontend:build":  "cd frontend && npm run build",
                     "quality":  "node scripts/quality.mjs",
                     "test:quality":  "node --test scripts/quality.test.mjs"
                 },
     "build":  {
                   "appId":  "com.abdoteck.pos",
-                  "productName":  "POS System",
-                  "artifactName":  "POS-System-Setup-${version}.${ext}",
+                  "productName":  "POS Desktop",
+                  "artifactName":  "POS-Desktop-Setup-${version}.${ext}",
+
                   "directories":  {
                                       "output":  "dist-electron"
                                   },

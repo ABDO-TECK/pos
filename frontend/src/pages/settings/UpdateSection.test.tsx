@@ -88,7 +88,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           },
         },
       },
-    } as any)
+    } as never)
 
     vi.mocked(getUpdateHistory).mockResolvedValue({
       data: {
@@ -111,7 +111,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           },
         ],
       },
-    } as any)
+    } as never)
 
     vi.mocked(getUpdateSnapshots).mockResolvedValue({
       data: {
@@ -130,7 +130,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           },
         ],
       },
-    } as any)
+    } as never)
 
     vi.mocked(diagnoseUpdateRecovery).mockResolvedValue({
       data: {
@@ -147,7 +147,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           auto_recovery_enabled: true,
         },
       },
-    } as any)
+    } as never)
 
     vi.mocked(getRecoveryAuditLogs).mockResolvedValue({
       data: {
@@ -158,7 +158,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           total: 0,
         },
       },
-    } as any)
+    } as never)
   })
 
 
@@ -191,7 +191,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           logs: ['Delta update applied successfully'],
         },
       },
-    } as any)
+    } as never)
 
     await act(async () => {
       root.render(<UpdateSection />)
@@ -241,7 +241,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
           logs: ['Restored files'],
         },
       },
-    } as any)
+    } as never)
 
     await act(async () => {
       root.render(<UpdateSection />)
