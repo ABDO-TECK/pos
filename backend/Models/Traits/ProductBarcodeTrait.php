@@ -31,25 +31,41 @@ trait ProductBarcodeTrait {
     }
 
     public function findOwnerProductIdByBarcode(string $barcode): ?int {
+        $branchId = \App\Services\AuthService::getGlobalBranchId();
+
+        // 1. فحص المنتجات النشطة في الفرع الحالي
         $stmt = $this->db->prepare(
             'SELECT id FROM products
              WHERE branch_id = ? AND (barcode = ? OR box_barcode = ?) AND deleted_at IS NULL
              LIMIT 1'
         );
-        $stmt->execute([\App\Services\AuthService::getGlobalBranchId(), $barcode, $barcode]);
+        $stmt->execute([$branchId, $barcode, $barcode]);
         $id = $stmt->fetchColumn();
         if ($id !== false && $id !== null) {
             return (int) $id;
         }
-        // فحص الباركودات الإضافية — مع استثناء المنتجات المحذوفة
+
+        // 2. فحص جدول الباركودات الإضافية
         $stmt = $this->db->prepare(
             'SELECT pb.product_id FROM product_barcodes pb
              INNER JOIN products p ON p.id = pb.product_id AND p.deleted_at IS NULL
              WHERE p.branch_id = ? AND pb.barcode = ? LIMIT 1'
         );
-        $stmt->execute([\App\Services\AuthService::getGlobalBranchId(), $barcode]);
+        $stmt->execute([$branchId, $barcode]);
         $pid = $stmt->fetchColumn();
-        return ($pid !== false && $pid !== null) ? (int) $pid : null;
+        if ($pid !== false && $pid !== null) {
+            return (int) $pid;
+        }
+
+        // 3. فحص عام على مستوى الجدول لتفادي كسر الـ UNIQUE KEY العام
+        // (في حال وجود منتج محذوف ناعماً أو في فرع آخر يحمل نفس الباركود)
+        $globalStmt = $this->db->prepare(
+            'SELECT id FROM products WHERE (barcode = ? OR box_barcode = ?) LIMIT 1'
+        );
+        $globalStmt->execute([$barcode, $barcode]);
+        $globalId = $globalStmt->fetchColumn();
+
+        return ($globalId !== false && $globalId !== null) ? (int) $globalId : null;
     }
 
     /**
@@ -65,12 +81,13 @@ trait ProductBarcodeTrait {
             }
             $owner = $this->findOwnerProductIdByBarcode($code);
             if ($owner !== null && ($excludeProductId === null || (int) $owner !== (int) $excludeProductId)) {
-                $nameStmt = $this->db->prepare('SELECT name FROM products WHERE id = ? AND branch_id = ? LIMIT 1');
-                $nameStmt->execute([$owner, \App\Services\AuthService::getGlobalBranchId()]);
-                $ownerName = $nameStmt->fetchColumn();
-                $ownerName = $ownerName !== false && $ownerName !== null && $ownerName !== ''
-                    ? (string)$ownerName
-                    : ('#' . $owner);
+                $nameStmt = $this->db->prepare('SELECT name, deleted_at FROM products WHERE id = ? LIMIT 1');
+                $nameStmt->execute([$owner]);
+                $ownerRow = $nameStmt->fetch(PDO::FETCH_ASSOC);
+                $ownerName = $ownerRow['name'] ?? ('#' . $owner);
+                if (!empty($ownerRow['deleted_at'])) {
+                    $ownerName .= ' (محذوف)';
+                }
                 throw new Exception(
                     'الباركود «' . $code . '» مسجّل مسبقاً للمنتج: «' . $ownerName . '». استخدم باركوداً مختلفاً أو عدّل المنتج الحالي.'
                 );

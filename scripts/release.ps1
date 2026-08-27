@@ -721,20 +721,37 @@ function Invoke-ComposerProductionInstall {
     }
 }
 
+function Get-PhpExecutable {
+    if (-not [string]::IsNullOrWhiteSpace($env:PHP_BINARY) -and (Test-Path $env:PHP_BINARY -PathType Leaf)) {
+        return $env:PHP_BINARY
+    }
+    $cmd = Get-Command php -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return 'php'
+    }
+    if (Test-Path 'C:\xampp\php\php.exe' -PathType Leaf) {
+        return 'C:\xampp\php\php.exe'
+    }
+    return 'php'
+}
+
 function Assert-PharBuildExtensions {
+    $php = Get-PhpExecutable
     $required = @('phar', 'openssl', 'mbstring', 'dom', 'zlib')
-    $missing = @($required | Where-Object { & php -r "exit(extension_loaded('$($_)') ? 0 : 1);" 2>$null; $LASTEXITCODE -ne 0 })
+    $missing = @($required | Where-Object { & $php -r "exit(extension_loaded('$($_)') ? 0 : 1);" 2>$null; $LASTEXITCODE -ne 0 })
     if ($missing.Count -gt 0) { Stop-Release "PHP is missing required PHAR build extensions: $($missing -join ', ')" }
 }
 
 function Invoke-PharBuild {
+    $php = Get-PhpExecutable
     Assert-PharBuildExtensions
-    Invoke-Checked 'Building backend/backend.phar' { php -d phar.readonly=0 build-phar.php }
+    Invoke-Checked 'Building backend/backend.phar' { & $php -d phar.readonly=0 build-phar.php }
     if (-not $DryRun) {
         Assert-FileExists $PharPath 'backend/backend.phar'
         Test-PharContents
     }
 }
+
 
 function Test-PharContents {
     Write-Step 'Verifying PHAR contents'

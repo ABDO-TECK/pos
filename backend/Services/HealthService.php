@@ -363,6 +363,33 @@ class HealthService
             ];
         }
 
+        // ── 9. Schema & Product Integrity Check ──
+        try {
+            $integrity = $this->checkProductIntegrity();
+            if ($integrity['healthy']) {
+                $checks['schema_integrity'] = [
+                    'status'   => 'ok',
+                    'severity' => 'info',
+                    'message'  => 'Database tables, columns, and triggers verified.',
+                ];
+            } else {
+                $checks['schema_integrity'] = [
+                    'status'   => 'failed',
+                    'severity' => 'warning',
+                    'message'  => 'Schema issues detected: ' . implode('; ', $integrity['issues']),
+                    'details'  => $integrity['details'],
+                ];
+                $hasWarnings = true;
+            }
+        } catch (\Throwable $e) {
+            $checks['schema_integrity'] = [
+                'status'   => 'failed',
+                'severity' => 'warning',
+                'message'  => 'Integrity check could not complete: ' . $e->getMessage(),
+            ];
+            $hasWarnings = true;
+        }
+
         // Overall status
         if ($criticalFailed) {
             $status = 'failed';
@@ -378,6 +405,76 @@ class HealthService
             'status'          => $status,
             'checks'          => $checks,
             'version'         => $version
+        ];
+    }
+
+    /**
+     * Non-intrusive diagnostic verification of product database structures.
+     *
+     * @return array{healthy: bool, issues: list<string>, details: array}
+     */
+    public function checkProductIntegrity(): array
+    {
+        $issues = [];
+        $details = [];
+        $db = Database::getInstance();
+
+        // 1. Check required tables
+        $requiredTables = ['products', 'product_barcodes', 'product_catalog_changes', 'categories', 'branches', 'schema_versions'];
+        foreach ($requiredTables as $table) {
+            $stmt = $db->prepare('SHOW TABLES LIKE ?');
+            $stmt->execute([$table]);
+            $exists = (bool) $stmt->fetchColumn();
+            $details['tables'][$table] = $exists ? 'ok' : 'missing';
+            if (!$exists) {
+                $issues[] = "Missing table: {$table}";
+            }
+        }
+
+        // 2. Check required columns on products table
+        if (($details['tables']['products'] ?? '') === 'ok') {
+            $requiredColumns = [
+                'id', 'name', 'barcode', 'box_barcode', 'price', 'cost',
+                'quantity', 'sell_by_weight', 'unit_type', 'low_stock_threshold',
+                'units_per_box', 'category_id', 'parent_product_id', 'size_name',
+                'branch_id', 'deleted_at',
+            ];
+            $stmt = $db->query('SHOW COLUMNS FROM products');
+            $columns = $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+            foreach ($requiredColumns as $col) {
+                $hasCol = in_array($col, $columns, true);
+                $details['columns'][$col] = $hasCol ? 'ok' : 'missing';
+                if (!$hasCol) {
+                    $issues[] = "Missing column in products: {$col}";
+                }
+            }
+        }
+
+        // 3. Check triggers and definers on products table
+        try {
+            $stmt = $db->prepare(
+                'SELECT TRIGGER_NAME, DEFINER 
+                 FROM information_schema.TRIGGERS 
+                 WHERE EVENT_OBJECT_TABLE = "products" AND TRIGGER_SCHEMA = DATABASE()'
+            );
+            $stmt->execute();
+            $triggers = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            $details['triggers'] = $triggers;
+
+            $triggerNames = array_column($triggers, 'TRIGGER_NAME');
+            foreach (['trg_products_catalog_insert', 'trg_products_catalog_update', 'trg_products_catalog_delete'] as $trg) {
+                if (!in_array($trg, $triggerNames, true)) {
+                    $issues[] = "Missing trigger: {$trg}";
+                }
+            }
+        } catch (\Throwable $e) {
+            $issues[] = 'Trigger query error: ' . $e->getMessage();
+        }
+
+        return [
+            'healthy' => empty($issues),
+            'issues'  => $issues,
+            'details' => $details,
         ];
     }
 

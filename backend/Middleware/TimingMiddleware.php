@@ -18,6 +18,9 @@ class TimingMiddleware
 
     public function handle(callable $next): mixed
     {
+        $requestId = $_SERVER['HTTP_X_REQUEST_ID'] ?? bin2hex(random_bytes(8));
+        Logger::setRequestId($requestId);
+
         $start = hrtime(true);
 
         $response = $next();
@@ -27,7 +30,8 @@ class TimingMiddleware
         if (is_array($response)) {
             $response['headers'] = $response['headers'] ?? [];
             $response['headers']['X-Response-Time'] = round($elapsed, 2) . 'ms';
-            $response['headers']['Server-Timing'] = 'total;dur=' . round($elapsed, 2);
+            $response['headers']['Server-Timing']   = 'total;dur=' . round($elapsed, 2);
+            $response['headers']['X-Request-Id']    = $requestId;
         }
 
         $method     = $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN';
@@ -38,6 +42,7 @@ class TimingMiddleware
         $ip         = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
         $logContext = [
+            'request_id'  => $requestId,
             'method'      => $method,
             'uri'         => $uri,
             'status'      => $statusCode,

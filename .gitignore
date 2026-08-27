@@ -2,16 +2,22 @@
 private-key.pem
 *.pem
 !backend/certs/cacert.pem
+!backend/certs/update_public_key.pem
+release/*.pem
+release/*-key.pem
+release/private_key.pem
 *.key
 *digital-certificate.txt
 # مجلد الشهادات المحلية — اترك README فقط إن رغبت
 certs/*.pem
 !backend/certs/cacert.pem
+!backend/certs/update_public_key.pem
 certs/*-key.pem
 .env
 .env.*
 !.env.example
 !.env.docker.example
+release/
 
 # ── Frontend ────────────────────────────────────────────
 frontend/node_modules/
@@ -23,7 +29,6 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/coverage/
 frontend/tsc_output.txt
-
 
 # ── Backend / PHP ───────────────────────────────────────
 backend/storage/
@@ -43,6 +48,7 @@ tmp/
 scratch/
 *.tmp
 *.cache
+
 # ── Database ────────────────────────────────────────────
 database/*.sql.bak
 database/backups/
@@ -74,7 +80,6 @@ portable/java/
 portable/qz-tray/
 tray/out/
 
-
 # -- QZ Tray bundled runtime & source --------------------
 build-tools/
 tray/
@@ -82,4 +87,3 @@ tray/
 # ── AI Agent Rules ──────────────────────────────────────
 AGENTS.md
 .agents/
-

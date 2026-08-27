@@ -106,19 +106,61 @@ class Logger
         }
     }
 
-    /**
-     * Return safe diagnostic fields for an exception without exposing its
-     * message, SQL, filesystem paths, or connection details.
-     *
-     * @return array{reference: string, exception: string, code: int}
-     */
-    public static function exceptionContext(Throwable $exception): array
+    /** @var string|null Active request correlation identifier */
+    private static ?string $currentRequestId = null;
+
+    public static function setRequestId(string $requestId): void
     {
-        return [
-            'reference' => bin2hex(random_bytes(8)),
-            'exception' => get_class($exception),
-            'code' => (int) $exception->getCode(),
+        self::$currentRequestId = $requestId;
+    }
+
+    public static function getRequestId(): string
+    {
+        if (self::$currentRequestId === null) {
+            self::$currentRequestId = $_SERVER['HTTP_X_REQUEST_ID'] ?? bin2hex(random_bytes(8));
+        }
+        return self::$currentRequestId;
+    }
+
+    /**
+     * Return safe, structured diagnostic fields for an exception with full SQL/driver details.
+     *
+     * @param Throwable $exception
+     * @param array $extraContext Additional sanitized payload or metadata
+     * @return array
+     */
+    public static function exceptionContext(Throwable $exception, array $extraContext = []): array
+    {
+        $message = $exception->getMessage();
+        // Redact any credential or secret patterns from exception messages
+        $cleanMessage = preg_replace(
+            '/((?:password|token|secret|api[_-]?key)\s*[=:]\s*)[^\s,;]+/i',
+            '$1[REDACTED]',
+            $message
+        ) ?? $message;
+
+        $context = [
+            'request_id' => self::getRequestId(),
+            'reference'  => bin2hex(random_bytes(8)),
+            'exception'  => get_class($exception),
+            'code'       => $exception->getCode(),
+            'message'    => function_exists('mb_substr') ? mb_substr($cleanMessage, 0, 1000) : substr($cleanMessage, 0, 1000),
+            'file'       => basename($exception->getFile()),
+            'line'       => $exception->getLine(),
         ];
+
+        if ($exception instanceof \PDOException) {
+            $errorInfo = $exception->errorInfo ?? [];
+            $context['sql_state']   = (string)($errorInfo[0] ?? $exception->getCode());
+            $context['driver_code'] = (int)($errorInfo[1] ?? 0);
+            $context['driver_msg']  = (string)($errorInfo[2] ?? $cleanMessage);
+        }
+
+        if (!empty($extraContext)) {
+            $context['payload'] = self::redactContext($extraContext);
+        }
+
+        return $context;
     }
 
     /**

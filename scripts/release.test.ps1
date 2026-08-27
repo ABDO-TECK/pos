@@ -283,7 +283,7 @@ if ($existingTag) {
     Assert-Matches $duplicateTag.Output 'already exists' 'duplicate tag output should explain existing tag'
 }
 
-$commitDryRun = Invoke-Release @('-Mode', 'commit', '-CommitMessage', 'Release test', '-AllChanged', '-DryRun', '-NonInteractive')
+$commitDryRun = Invoke-Release @('-Mode', 'commit', '-CommitMessage', 'Release test', '-Files', 'backend/.phpunit.result.cache,scripts/release.ps1', '-DryRun', '-NonInteractive')
 Assert-True ($commitDryRun.ExitCode -eq 0) 'commit dry-run should succeed'
 Assert-Matches $commitDryRun.Output 'Blocked from commit.*backend/.phpunit.result.cache' 'commit should block phpunit cache by default'
 

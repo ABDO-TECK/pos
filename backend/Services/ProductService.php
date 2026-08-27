@@ -48,7 +48,7 @@ class ProductService implements ProductServiceInterface
         $main = trim($data['barcode'] ?? '');
         $isAutoBarcode = ($main === '');
         if ($isAutoBarcode) {
-            $main = 'TEMP-' . uniqid('', true);
+            $main = 'TEMP-' . bin2hex(random_bytes(8));
         }
 
         $extras = Product::normalizeAdditionalBarcodes($main, $data['additional_barcodes'] ?? []);
@@ -64,7 +64,12 @@ class ProductService implements ProductServiceInterface
             $id = $this->productRepo->create($data);
 
             if ($isAutoBarcode) {
-                $this->productRepo->updateMainBarcode($id, (string) $id);
+                // Safeguard against collision with existing manual numeric barcodes
+                $candidateBarcode = (string) $id;
+                if ($this->productRepo->findByBarcode($candidateBarcode) !== null) {
+                    $candidateBarcode = 'PRD-' . $id . '-' . time();
+                }
+                $this->productRepo->updateMainBarcode($id, $candidateBarcode);
             }
 
             $this->productRepo->syncAdditionalBarcodes($id, $extras);
@@ -75,7 +80,7 @@ class ProductService implements ProductServiceInterface
                     $sizeBarcode = trim($size['barcode'] ?? '');
                     $isSizeAutoBarcode = ($sizeBarcode === '');
                     if ($isSizeAutoBarcode) {
-                        $sizeBarcode = 'TEMP-SZ-' . uniqid('', true);
+                        $sizeBarcode = 'TEMP-SZ-' . bin2hex(random_bytes(8));
                     }
 
                     $this->productRepo->assertBarcodesAvailable(null, $sizeBarcode, []);
@@ -87,7 +92,7 @@ class ProductService implements ProductServiceInterface
                         'price'               => $size['price'],
                         'cost'                => $size['cost'] ?? 0,
                         'quantity'            => $size['quantity'] ?? 0,
-                        'low_stock_threshold' => $size['low_stock_threshold'] ?? ($data['low_stock_threshold'] ?? LOW_STOCK_THRESHOLD),
+                        'low_stock_threshold' => $size['low_stock_threshold'] ?? ($data['low_stock_threshold'] ?? (defined('LOW_STOCK_THRESHOLD') ? LOW_STOCK_THRESHOLD : 5)),
                         'category_id'         => $data['category_id'] ?? null,
                         'parent_product_id'   => $id,
                         'size_name'           => $size['size_name'],
@@ -97,22 +102,70 @@ class ProductService implements ProductServiceInterface
                     ]);
 
                     if ($isSizeAutoBarcode) {
-                        $this->productRepo->updateMainBarcode($sizeId, (string) $sizeId);
+                        $sizeCandidate = (string) $sizeId;
+                        if ($this->productRepo->findByBarcode($sizeCandidate) !== null) {
+                            $sizeCandidate = 'SZ-' . $sizeId . '-' . time();
+                        }
+                        $this->productRepo->updateMainBarcode($sizeId, $sizeCandidate);
                     }
                 }
             }
 
             $db->commit();
         } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل إضافة المنتج', \App\Helpers\Logger::exceptionContext($e));
-            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+
+            // 1. Log with full exception details and sanitized payload
+            $sanitizedPayload = [
+                'name'          => $data['name'] ?? null,
+                'barcode'       => $data['barcode'] ?? null,
+                'category_id'   => $data['category_id'] ?? null,
+                'unit_type'     => $data['unit_type'] ?? null,
+                'units_per_box' => $data['units_per_box'] ?? null,
+            ];
+            Logger::error('فشل إضافة المنتج', Logger::exceptionContext($e, $sanitizedPayload));
+
+            // 2. Intelligent error categorization
+            $driverCode = ($e instanceof PDOException && isset($e->errorInfo[1])) ? (int)$e->errorInfo[1] : 0;
+            $sqlState   = ($e instanceof PDOException && isset($e->errorInfo[0])) ? (string)$e->errorInfo[0] : (string)$e->getCode();
+            $msg        = $e->getMessage();
+
+            // Duplicate barcode (MySQL 1062 / SQLSTATE 23000)
+            if ($driverCode === 1062 || ($sqlState === '23000' && (str_contains($msg, 'Duplicate') || str_contains($msg, '1062')))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
             }
+
+            // Foreign key failure (MySQL 1452: category_id or parent_product_id not found)
+            if ($driverCode === 1452 || str_contains($msg, 'foreign key constraint fails') || str_contains($msg, '1452')) {
+                if (str_contains($msg, 'fk_product_category')) {
+                    return ['ok' => false, 'error' => 'الفئة المحددة غير موجودة أو تم حذفها من قاعدة البيانات.', 'code' => 422];
+                }
+                return ['ok' => false, 'error' => 'السجل المرتبط (الفئة أو المنتج الأب) غير موجود في قاعدة البيانات.', 'code' => 422];
+            }
+
+            // Missing column due to incomplete migration (MySQL 1054 / SQLSTATE 42S22)
+            if ($driverCode === 1054 || $sqlState === '42S22') {
+                return ['ok' => false, 'error' => 'قاعدة البيانات بحاجة إلى تحديث (أعمدة غير مكتملة). يرجى تشغيل التحديثات.', 'code' => 503];
+            }
+
+            // Missing table (MySQL 1146 / SQLSTATE 42S02)
+            if ($driverCode === 1146 || $sqlState === '42S02') {
+                return ['ok' => false, 'error' => 'جدول مفقود في قاعدة البيانات. يرجى تشغيل التحديثات.', 'code' => 503];
+            }
+
+            // Trigger DEFINER error (MySQL 1449 / 1142)
+            if ($driverCode === 1449 || $driverCode === 1142 || str_contains($msg, 'definer')) {
+                return ['ok' => false, 'error' => 'خطأ في صلاحيات مشغلات قاعدة البيانات (Trigger Definer). يرجى تحديث النظام لإعادة بناء المشغلات.', 'code' => 500];
+            }
+
+            // Domain exception from barcode assertions
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
             }
-            return ['ok' => false, 'error' => 'تعذر إنشاء المنتج. حاول مرة أخرى.', 'code' => 500];
+
+            return ['ok' => false, 'error' => 'تعذر إنشاء المنتج في قاعدة البيانات. يرجى مراجعة سجلات الخادم.', 'code' => 500];
         }
 
         return ['ok' => true, 'product' => $this->productRepo->findById($id)];
@@ -246,10 +299,36 @@ class ProductService implements ProductServiceInterface
             }
             $db->commit();
         } catch (Throwable $e) {
-            $db->rollBack();
-            Logger::error('فشل تحديث المنتج', \App\Helpers\Logger::exceptionContext($e));
-            if ($e instanceof PDOException && ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate'))) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            $sanitizedPayload = [
+                'id'            => $id,
+                'name'          => $data['name'] ?? null,
+                'barcode'       => $data['barcode'] ?? null,
+                'category_id'   => $data['category_id'] ?? null,
+                'unit_type'     => $data['unit_type'] ?? null,
+            ];
+            Logger::error('فشل تحديث المنتج', Logger::exceptionContext($e, $sanitizedPayload));
+
+            $driverCode = ($e instanceof PDOException && isset($e->errorInfo[1])) ? (int)$e->errorInfo[1] : 0;
+            $sqlState   = ($e instanceof PDOException && isset($e->errorInfo[0])) ? (string)$e->errorInfo[0] : (string)$e->getCode();
+            $msg        = $e->getMessage();
+
+            if ($driverCode === 1062 || ($sqlState === '23000' && (str_contains($msg, 'Duplicate') || str_contains($msg, '1062')))) {
                 return ['ok' => false, 'error' => 'هذا الباركود مستخدم لمنتج آخر في قاعدة البيانات. اختر باركوداً غير مكرر.', 'code' => 422];
+            }
+            if ($driverCode === 1452 || str_contains($msg, 'foreign key constraint fails') || str_contains($msg, '1452')) {
+                return ['ok' => false, 'error' => 'السجل المرتبط (الفئة أو المنتج الأب) غير موجود في قاعدة البيانات.', 'code' => 422];
+            }
+            if ($driverCode === 1054 || $sqlState === '42S22') {
+                return ['ok' => false, 'error' => 'قاعدة البيانات بحاجة إلى تحديث (أعمدة غير مكتملة). يرجى تشغيل التحديثات.', 'code' => 503];
+            }
+            if ($driverCode === 1146 || $sqlState === '42S02') {
+                return ['ok' => false, 'error' => 'جدول مفقود في قاعدة البيانات. يرجى تشغيل التحديثات.', 'code' => 503];
+            }
+            if ($driverCode === 1449 || $driverCode === 1142 || str_contains($msg, 'definer')) {
+                return ['ok' => false, 'error' => 'خطأ في صلاحيات مشغلات قاعدة البيانات (Trigger Definer). يرجى تحديث النظام لإعادة بناء المشغلات.', 'code' => 500];
             }
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
