@@ -26,6 +26,7 @@ class UpdateService
     private ?MigrationService $migrationService;
     private GitHubReleaseProvider $githubProvider;
     private ManifestSignatureService $signatureService;
+    private ?UpdateTelemetryService $telemetryService;
 
     public function __construct(
         GitService $gitService,
@@ -35,7 +36,8 @@ class UpdateService
         ?UpdateManifestService $manifestService = null,
         ?MigrationService $migrationService = null,
         ?GitHubReleaseProvider $githubProvider = null,
-        ?ManifestSignatureService $signatureService = null
+        ?ManifestSignatureService $signatureService = null,
+        ?UpdateTelemetryService $telemetryService = null
     ) {
         $this->rootDir          = \Phar::running() ?: (realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
         $normalizedPath         = str_replace('\\', '/', $this->rootDir);
@@ -48,7 +50,9 @@ class UpdateService
         $this->migrationService = $migrationService;
         $this->githubProvider   = $githubProvider ?? new GitHubReleaseProvider();
         $this->signatureService = $signatureService ?? new ManifestSignatureService();
+        $this->telemetryService = $telemetryService;
         $this->repoUrl          = EnvLoader::get('UPDATE_SERVER_URL', 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest');
+
 
         $defaultHosts = 'api.github.com,github.com,raw.githubusercontent.com,objects.githubusercontent.com,github-releases.githubusercontent.com';
         $configuredHosts = EnvLoader::get('UPDATE_ALLOWED_HOSTS', $defaultHosts);
@@ -83,32 +87,106 @@ class UpdateService
         return $this->signatureService;
     }
 
+    public function getTelemetryService(): UpdateTelemetryService
+    {
+        if ($this->telemetryService === null) {
+            $storage = $this->rootDir . '/backend/storage';
+            if (!is_dir($storage)) {
+                $storage = $this->rootDir . '/storage';
+            }
+            $this->telemetryService = new UpdateTelemetryService($storage);
+        }
+        return $this->telemetryService;
+    }
+
+
+    /**
+     * Get client update channel ('stable', 'beta', 'rc').
+     */
+    public function getClientChannel(): string
+    {
+        $local = $this->getLocalVersion();
+        $channel = strtolower(trim($local['update_channel'] ?? EnvLoader::get('APP_UPDATE_CHANNEL', 'stable')));
+        return in_array($channel, ['stable', 'beta', 'rc'], true) ? $channel : 'stable';
+    }
+
+    /**
+     * Set client update channel preference.
+     */
+    public function setClientChannel(string $channel): array
+    {
+        $channel = strtolower(trim($channel));
+        if (!in_array($channel, ['stable', 'beta', 'rc'], true)) {
+            return ['ok' => false, 'error' => 'قناة التحديث المحددة غير صحيحة. القنوات المسموحة: stable, beta, rc.'];
+        }
+
+        $local = $this->getLocalVersion();
+        $local['update_channel'] = $channel;
+
+        $json = json_encode($local, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (@file_put_contents($this->localVersionFile, $json) === false) {
+            return ['ok' => false, 'error' => 'تعذر حفظ إعدادات قناة التحديث.'];
+        }
+
+        return ['ok' => true, 'channel' => $channel];
+    }
+
+    /**
+     * Get or generate a persistent, privacy-preserving device identifier.
+     */
+    public function getDeviceId(): string
+    {
+        $storageDir = $this->rootDir . '/backend/storage';
+        if (!is_dir($storageDir)) {
+            $storageDir = $this->rootDir . '/storage';
+        }
+        $deviceFile = $storageDir . '/.device_id';
+
+        if (file_exists($deviceFile)) {
+            $id = trim((string) @file_get_contents($deviceFile));
+            if ($id !== '') {
+                return $id;
+            }
+        }
+
+        // Generate RFC 4122 v4 UUID
+        $data = random_bytes(16);
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+        $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+
+        @mkdir(dirname($deviceFile), 0755, true);
+        @file_put_contents($deviceFile, $uuid);
+
+        return $uuid;
+    }
+
     /**
      * قراءة النسخة المحلية من version.json
      */
     public function getLocalVersion(): array
     {
         if (!file_exists($this->localVersionFile)) {
-            return ['version' => '0.0.0', 'released_at' => null, 'changelog' => []];
+            return ['version' => '0.0.0', 'released_at' => null, 'changelog' => [], 'update_channel' => 'stable'];
         }
         $content = @file_get_contents($this->localVersionFile);
         $data    = $content ? json_decode($content, true) : null;
-        return is_array($data) ? $data : ['version' => '0.0.0', 'released_at' => null, 'changelog' => []];
+        return is_array($data) ? $data : ['version' => '0.0.0', 'released_at' => null, 'changelog' => [], 'update_channel' => 'stable'];
     }
 
     /**
      * جلب النسخة البعيدة من GitHub Releases أو خادم التحديثات
      */
-    public function fetchRemoteVersion(): ?array
+    public function fetchRemoteVersion(?string $channel = null): ?array
     {
-        $result = $this->fetchRemoteVersionDiagnostics();
+        $result = $this->fetchRemoteVersionDiagnostics($channel);
         return $result['ok'] ? $result['data'] : null;
     }
 
     /**
      * جلب النسخة البعيدة مع تشخيص آمن لفحص التحديثات.
      */
-    protected function fetchRemoteVersionDiagnostics(): array
+    protected function fetchRemoteVersionDiagnostics(?string $channel = null): array
     {
         if (!$this->isAllowedUpdateUrl($this->repoUrl)) {
             Logger::warning('fetchRemoteVersion rejected a non-allowlisted update URL', [
@@ -118,9 +196,11 @@ class UpdateService
             return $this->remoteFailure('invalid_update_url', 'Configured update URL is not allowed.');
         }
 
+        $targetChannel = $channel ?? $this->getClientChannel();
+
         // If repoUrl points specifically to GitHub releases endpoint, use GitHubReleaseProvider
         if (str_contains($this->repoUrl, '/releases')) {
-            $ghRelease = $this->githubProvider->getLatestRelease();
+            $ghRelease = $this->githubProvider->getLatestRelease($targetChannel);
             if ($ghRelease['ok'] && !empty($ghRelease['latest_version'])) {
                 return [
                     'ok' => true,
@@ -128,20 +208,28 @@ class UpdateService
                         'version' => $ghRelease['latest_version'],
                         'tag_name' => $ghRelease['tag_name'],
                         'released_at' => $ghRelease['published_at'],
-                        'release_url' => $ghRelease['release_url'],
                         'changelog' => $ghRelease['changelog'],
+                        'requires_npm_install' => false,
+                        'release_url' => $ghRelease['release_url'],
                         'manifest_url' => $ghRelease['manifest_url'],
                         'signature_url' => $ghRelease['signature_url'],
                         'delta_url' => $ghRelease['delta_url'],
                         'full_package_url' => $ghRelease['full_package_url'],
                         'assets' => $ghRelease['assets'],
+                        'channel' => $ghRelease['channel'] ?? 'stable',
                     ],
                     'checkedUrl' => $this->repoUrl,
                     'errorCode' => null,
                     'details' => null,
                 ];
             }
+
+            return $this->remoteFailure(
+                $ghRelease['error_code'] ?? 'github_fetch_failed',
+                $ghRelease['error'] ?? 'Failed to fetch latest release from GitHub.'
+            );
         }
+
 
         // Direct HTTP request to UPDATE_SERVER_URL
         $curlOptions = [
@@ -387,9 +475,26 @@ class UpdateService
             ];
         }
 
+        $local = $this->getLocalVersion();
+        $currentVersion = $local['version'] ?? '0.0.0';
+        $clientEngineVersion = $local['update_engine_version'] ?? null;
+        $clientChannel = $this->getClientChannel();
+        $deviceId = $this->getDeviceId();
         $hasUpdate = version_compare($latestVersion, $currentVersion, '>');
 
+        // Emit update_check_started telemetry
+        $this->getTelemetryService()->recordEvent([
+            'device_id'             => $deviceId,
+            'application_version'   => $currentVersion,
+            'update_engine_version' => $clientEngineVersion ?? '1.0.0',
+            'channel'               => $clientChannel,
+            'target_version'        => $latestVersion,
+            'event_type'            => 'update_check_started',
+            'success'               => true,
+        ]);
+
         // Check if delta update is available and verified in the GitHub Release assets
+
         $updateType = 'full';
         $isDelta = false;
         $deltaManifest = null;
@@ -440,7 +545,7 @@ class UpdateService
                     }
                 } elseif ($requireSignature) {
                     $signatureValid = false;
-                    $deltaReason = 'Release manifest is missing required cryptographic signature.';
+                    $deltaReason = 'Release is missing required cryptographic signature.';
                 }
 
                 if ($signatureValid) {
@@ -451,18 +556,35 @@ class UpdateService
 
                         if (!$engineCheck['compatible']) {
                             $deltaReason = $engineCheck['reason'];
+                            $hasUpdate = false;
                         } elseif (!empty($manifestData['migration_release']) || ($manifestData['type'] ?? '') === 'full') {
                             $updateType = 'full';
                             $isDelta = false;
                             $deltaReason = 'Release is a full bootstrap migration package.';
                         } else {
-                            $compat = $this->manifestService->checkVersionCompatibility($currentVersion, $manifestData);
-                            if ($compat['compatible']) {
-                                $updateType = 'delta';
-                                $isDelta = true;
-                                $deltaManifest = $manifestData;
+                            // Check channel compatibility
+                            $relChannel = $manifestData['channel'] ?? ($remote['channel'] ?? 'stable');
+                            $chanCheck = $this->manifestService->checkChannelCompatibility($clientChannel, $relChannel);
+                            if (!$chanCheck['compatible']) {
+                                $deltaReason = $chanCheck['reason'];
+                                $hasUpdate = false;
                             } else {
-                                $deltaReason = $compat['reason'];
+                                // Check gradual rollout percentage
+                                $rollout = (int) ($manifestData['rollout_percentage'] ?? 100);
+                                $rolloutCheck = $this->manifestService->checkRolloutEligibility($deviceId, $latestVersion, $rollout);
+                                if (!$rolloutCheck['eligible']) {
+                                    $hasUpdate = false;
+                                    $deltaReason = $rolloutCheck['reason'];
+                                } else {
+                                    $compat = $this->manifestService->checkVersionCompatibility($currentVersion, $manifestData);
+                                    if ($compat['compatible']) {
+                                        $updateType = 'delta';
+                                        $isDelta = true;
+                                        $deltaManifest = $manifestData;
+                                    } else {
+                                        $deltaReason = $compat['reason'];
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -472,16 +594,37 @@ class UpdateService
             }
         }
 
+        if ($hasUpdate) {
+            $this->getTelemetryService()->recordEvent([
+                'device_id'             => $deviceId,
+                'application_version'   => $currentVersion,
+                'update_engine_version' => $clientEngineVersion ?? '1.0.0',
+                'channel'               => $clientChannel,
+                'target_version'        => $latestVersion,
+                'event_type'            => 'update_available',
+                'success'               => true,
+                'metadata'              => [
+                    'is_delta'    => $isDelta,
+                    'files_count' => $deltaManifest ? count($deltaManifest['files'] ?? []) : null,
+                    'update_type' => $updateType,
+                ],
+            ]);
+        }
+
         return [
             'success'               => true,
+
             'status'                => $hasUpdate ? 'update_available' : 'no_update_available',
             'ok'                    => true,
             'updates_disabled'      => false,
             'updates_unreachable'   => false,
-            'message'               => $hasUpdate ? 'يتوفر تحديث جديد.' : 'النظام محدّث لأحدث إصدار.',
+            'message'               => $hasUpdate ? 'يتوفر تحديث جديد.' : ($deltaReason ?? 'النظام محدّث لأحدث إصدار.'),
             'current_version'       => $currentVersion,
             'latest_version'        => $latestVersion,
             'update_engine_version' => $clientEngineVersion,
+            'client_channel'        => $clientChannel,
+            'release_channel'       => $deltaManifest['channel'] ?? ($remote['channel'] ?? 'stable'),
+            'rollout_percentage'    => $deltaManifest['rollout_percentage'] ?? 100,
             'has_update'            => $hasUpdate,
             'currentVersion'        => $currentVersion,
             'latestVersion'         => $latestVersion,
@@ -503,8 +646,8 @@ class UpdateService
             'files_count'           => $deltaManifest ? count($deltaManifest['files'] ?? []) : null,
             'fallback_reason'       => $deltaReason,
         ];
-    }
 
+    }
 
     /**
      * تطبيق التحديث بالاعتماد على GitHub Releases أو التحديث الكامل.
@@ -512,6 +655,7 @@ class UpdateService
      * @return array ['ok' => bool, 'data' => array|null, 'error' => string|null, 'code' => int]
      */
     public function applyUpdate(bool $force): array
+
     {
         $output = [];
         $currentVersion = $this->getLocalVersion()['version'] ?? '0.0.0';
@@ -948,6 +1092,22 @@ class UpdateService
 
     public function rollbackUpdate(?string $snapshotPath = null): array
     {
-        return $this->deltaUpdateService->rollbackUpdate($snapshotPath);
+        $res = $this->deltaUpdateService->rollbackUpdate($snapshotPath);
+        if (!empty($res['ok'])) {
+            $this->getTelemetryService()->recordEvent([
+                'device_id'             => $this->getDeviceId(),
+                'application_version'   => $this->getLocalVersion()['version'] ?? '0.0.0',
+                'update_engine_version' => '1.0.0',
+                'channel'               => $this->getClientChannel(),
+                'target_version'        => null,
+                'event_type'            => 'rollback_completed',
+                'success'               => true,
+                'metadata'              => [
+                    'snapshot_name' => basename($res['snapshot'] ?? ($snapshotPath ?? 'latest')),
+                ],
+            ]);
+        }
+        return $res;
     }
 }
+

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { 
   RefreshCw, 
+
   List, 
   Download, 
   History, 
@@ -13,7 +14,10 @@ import {
   Clock, 
   ExternalLink,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Activity,
+  Wrench,
+  HeartPulse
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { 
@@ -22,11 +26,17 @@ import {
   applyUpdate, 
   getUpdateHistory, 
   rollbackUpdate, 
-  getUpdateSnapshots 
+  getUpdateSnapshots,
+  setUpdateChannel,
+  diagnoseUpdateRecovery,
+  executeRecoveryAction,
+  getRecoveryAuditLogs,
+  runPostUpdateHealthCheck
 } from '../../api/endpoints'
 import useUpdateStore from '../../store/updateStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
+
 
 export default function UpdateSection() {
   const { confirm } = useConfirmStore()
@@ -54,23 +64,36 @@ export default function UpdateSection() {
   const [historyList, setHistoryList] = useState<UpdateHistoryRecord[]>([])
   const [snapshotsList, setSnapshotsList] = useState<UpdateSnapshot[]>([])
   const [rollingBack, setRollingBack] = useState(false)
+  const [currentChannel, setCurrentChannel] = useState<'stable' | 'beta' | 'rc'>('stable')
+  const [savingChannel, setSavingChannel] = useState(false)
+
+  // Recovery & Self-Healing states
+  const [recoveryDiag, setRecoveryDiag] = useState<RecoveryDiagnosisData | null>(null)
+  const [recoveryLogs, setRecoveryLogs] = useState<RecoveryAuditEntry[]>([])
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false)
+  const [runningHealthCheck, setRunningHealthCheck] = useState(false)
+  const [executingRecovery, setExecutingRecovery] = useState(false)
 
   const activeChangelog: unknown[] = Array.isArray(changelog) && changelog.length > 0
     ? changelog
     : (Array.isArray(updateStatus?.release_info?.changelog) ? updateStatus.release_info.changelog : [])
 
-
   // Fetch initial status and history
   const loadStatusAndHistory = useCallback(async () => {
     try {
-      const [statusRes, histRes, snapRes] = await Promise.allSettled([
+      const [statusRes, histRes, snapRes, diagRes, auditRes] = await Promise.allSettled([
         getUpdateStatus(),
         getUpdateHistory(),
         getUpdateSnapshots(),
+        diagnoseUpdateRecovery(),
+        getRecoveryAuditLogs(20),
       ])
 
       if (statusRes.status === 'fulfilled' && statusRes.value.data?.data) {
         setUpdateStatus(statusRes.value.data.data)
+        if (statusRes.value.data.data.channel) {
+          setCurrentChannel(statusRes.value.data.data.channel)
+        }
       }
       if (histRes.status === 'fulfilled' && Array.isArray(histRes.value.data?.data)) {
         setHistoryList(histRes.value.data.data)
@@ -78,10 +101,69 @@ export default function UpdateSection() {
       if (snapRes.status === 'fulfilled' && Array.isArray(snapRes.value.data?.data)) {
         setSnapshotsList(snapRes.value.data.data)
       }
+      if (diagRes.status === 'fulfilled' && diagRes.value.data?.data) {
+        setRecoveryDiag(diagRes.value.data.data)
+      }
+      if (auditRes.status === 'fulfilled' && Array.isArray(auditRes.value.data?.data?.logs)) {
+        setRecoveryLogs(auditRes.value.data.data.logs)
+      }
     } catch {
       // Background poll failure is non-blocking
     }
   }, [])
+
+  const handleHealthCheck = async () => {
+    setRunningHealthCheck(true)
+    try {
+      const res = await runPostUpdateHealthCheck()
+      if (res.data?.data?.healthy) {
+        toast.success('✅ فحص سلامة النظام: جميع الملفات والجداول وقاعدة البيانات سليمة 100%')
+      } else {
+        toast.error('⚠️ تم رصد مشاكل في سلامة النظام: ' + (res.data?.data?.errors?.join(', ') || 'خطأ غير محدد'))
+      }
+      await loadStatusAndHistory()
+    } catch {
+      toast.error('فشل تنفيذ فحص سلامة النظام.')
+    } finally {
+      setRunningHealthCheck(false)
+    }
+  }
+
+  const handleManualRecovery = async (action: string) => {
+    const ok = await confirm(`هل أنت متأكد من رغبتك في تنفيذ إجراء الاستعادة: (${action})؟`)
+    if (!ok) return
+
+    setExecutingRecovery(true)
+    try {
+      const res = await executeRecoveryAction(action)
+      if (res.data?.data?.ok) {
+        toast.success(res.data.data.message || 'تم تنفيذ إجراء الاستعادة بنجاح.')
+      } else {
+        toast.error(res.data?.data?.error || 'فشل إجراء الاستعادة.')
+      }
+      await loadStatusAndHistory()
+    } catch {
+      toast.error('تعذر إكمال طلب الاستعادة.')
+    } finally {
+      setExecutingRecovery(false)
+    }
+  }
+
+  const handleChannelChange = async (newChan: 'stable' | 'beta' | 'rc') => {
+    setSavingChannel(true)
+    try {
+      await setUpdateChannel(newChan)
+      setCurrentChannel(newChan)
+      toast.success(`تم تغيير قناة التحديث إلى: ${newChan.toUpperCase()}`)
+      await handleCheckUpdate()
+    } catch {
+      toast.error('فشل تغيير قناة التحديث')
+    } finally {
+      setSavingChannel(false)
+    }
+  }
+
+
 
   useEffect(() => {
     loadStatusAndHistory()
@@ -224,7 +306,30 @@ export default function UpdateSection() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Channel Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--card-bg, #2a2a3e)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.2rem 0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>القناة:</span>
+            <select
+              value={currentChannel}
+              onChange={(e) => handleChannelChange(e.target.value as 'stable' | 'beta' | 'rc')}
+              disabled={savingChannel || isChecking || applyingUpdate}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: currentChannel === 'beta' ? '#f59e0b' : currentChannel === 'rc' ? '#38bdf8' : '#4ade80',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="stable" style={{ background: '#1e1e2e', color: '#fff' }}>Stable (مستقر)</option>
+              <option value="beta" style={{ background: '#1e1e2e', color: '#fff' }}>Beta (تجريبي)</option>
+              <option value="rc" style={{ background: '#1e1e2e', color: '#fff' }}>RC (مرشح للإطلاق)</option>
+            </select>
+          </div>
+
           <span style={{ 
             fontSize: '0.8rem', 
             padding: '0.25rem 0.6rem', 
@@ -240,6 +345,7 @@ export default function UpdateSection() {
           </span>
         </div>
       </div>
+
 
       {/* Interrupted Update Recovery Banner */}
       {updateStatus?.interrupted_update?.interrupted && (
@@ -436,8 +542,85 @@ export default function UpdateSection() {
         </div>
       )}
 
+      {/* Self-Healing & System Recovery Card */}
+      <div style={{
+        padding: '1rem 1.25rem',
+        borderRadius: '8px',
+        background: recoveryDiag?.problem_detected ? 'rgba(239, 68, 68, 0.08)' : 'rgba(34, 197, 94, 0.05)',
+        border: `1px solid ${recoveryDiag?.problem_detected ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.2)'}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <HeartPulse size={18} style={{ color: recoveryDiag?.problem_detected ? '#f87171' : '#4ade80' }} />
+            <h4 style={{ margin: 0, fontSize: '0.95rem', color: recoveryDiag?.problem_detected ? '#f87171' : '#4ade80' }}>
+              نظام المعالجة الذاتية (Self-Healing & Fault Recovery)
+            </h4>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={handleHealthCheck}
+              disabled={runningHealthCheck}
+              className="btn btn-secondary btn-sm"
+            >
+              <Activity size={14} className={runningHealthCheck ? 'spin' : ''} /> فحص السلامة (Health Check)
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRecoveryModal(true)}
+              className="btn btn-secondary btn-sm"
+            >
+              <History size={14} /> سجل الاستعادة ({recoveryLogs.length})
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          {recoveryDiag?.message || 'النظام يعمل بشكل سليم ومستقر بدون أي عمليات تحديث معلقة.'}
+        </div>
+
+        {recoveryDiag?.problem_detected && (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+            {recoveryDiag.recommended_action === 'rollback' && (
+              <button
+                type="button"
+                onClick={() => handleManualRecovery('rollback')}
+                disabled={executingRecovery}
+                className="btn btn-danger btn-sm"
+              >
+                <RotateCcw size={14} /> تنفيذ تراجع فوري (Rollback)
+              </button>
+            )}
+            {recoveryDiag.recommended_action === 'retry_download' && (
+              <button
+                type="button"
+                onClick={() => handleManualRecovery('retry_download')}
+                disabled={executingRecovery}
+                className="btn btn-primary btn-sm"
+              >
+                <Download size={14} /> إعادة المحاولة وتنزيل الحزمة
+              </button>
+            )}
+            {recoveryDiag.recommended_action === 'clear' && (
+              <button
+                type="button"
+                onClick={() => handleManualRecovery('clear')}
+                disabled={executingRecovery}
+                className="btn btn-secondary btn-sm"
+              >
+                <Wrench size={14} /> إعادة تعيين حالة التحديث
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Action Buttons */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center' }}>
+
         <button
           type="button"
           onClick={handleCheckUpdate}
@@ -604,9 +787,101 @@ export default function UpdateSection() {
           )}
         </div>
       )}
+
+      {/* Recovery Audit Trail Modal */}
+
+      {showRecoveryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '1rem',
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            padding: '1.5rem',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <HeartPulse size={18} style={{ color: '#4ade80' }} /> سجل عمليات المعالجة الذاتية (Self-Healing Audit)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowRecoveryModal(false)}
+                className="btn btn-secondary btn-sm"
+              >
+                إغلاق
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {recoveryLogs.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>
+                  لا توجد عمليات استعادة مسجلة؛ النظام مستقر وتعمل التحديثات بانسيابية.
+                </div>
+              ) : (
+                recoveryLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '6px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{
+                        padding: '0.15rem 0.45rem',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        background: log.success ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: log.success ? '#4ade80' : '#f87171'
+                      }}>
+                        الإجراء: {log.selected_action.toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {new Date(log.timestamp).toLocaleString('ar-EG')}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                      <strong>المشكلة المرصودة:</strong> {log.detected_problem} (الحالة السابقة: {log.previous_state})
+                    </div>
+
+                    {log.details && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '0.4rem', borderRadius: '4px' }}>
+                        {JSON.stringify(log.details)}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
+
 
 function renderChangelogEntry(entry: unknown, index: number) {
   if (typeof entry === 'string') {

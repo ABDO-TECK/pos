@@ -2,7 +2,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UpdateSection from './UpdateSection'
-import { applyUpdate, getUpdateHistory, getUpdateSnapshots, getUpdateStatus, rollbackUpdate } from '../../api/endpoints'
+import { applyUpdate, getUpdateHistory, getUpdateSnapshots, getUpdateStatus, rollbackUpdate, diagnoseUpdateRecovery, getRecoveryAuditLogs } from '../../api/endpoints'
+
 
 const forceCheck = vi.fn()
 const confirm = vi.fn()
@@ -22,7 +23,13 @@ vi.mock('../../api/endpoints', () => ({
   rollbackUpdate: vi.fn(),
   getUpdateSnapshots: vi.fn(),
   getUpdateJob: vi.fn(),
+  setUpdateChannel: vi.fn(),
+  diagnoseUpdateRecovery: vi.fn(),
+  executeRecoveryAction: vi.fn(),
+  getRecoveryAuditLogs: vi.fn(),
+  runPostUpdateHealthCheck: vi.fn(),
 }))
+
 
 vi.mock('../../store/confirmStore', () => ({
   useConfirmStore: () => ({ confirm }),
@@ -124,7 +131,36 @@ describe('UpdateSection Admin Update Center Flow', () => {
         ],
       },
     } as any)
+
+    vi.mocked(diagnoseUpdateRecovery).mockResolvedValue({
+      data: {
+        status: 'success',
+        message: 'success',
+        data: {
+          status: 'healthy',
+          state: 'idle',
+          problem_detected: false,
+          recommended_action: 'none',
+          message: 'No active or interrupted updates found.',
+          details: {},
+          is_locked: false,
+          auto_recovery_enabled: true,
+        },
+      },
+    } as any)
+
+    vi.mocked(getRecoveryAuditLogs).mockResolvedValue({
+      data: {
+        status: 'success',
+        message: 'success',
+        data: {
+          logs: [],
+          total: 0,
+        },
+      },
+    } as any)
   })
+
 
   afterEach(() => {
     act(() => {

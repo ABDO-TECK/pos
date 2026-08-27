@@ -11,20 +11,25 @@ class UpdateManifestService
         'frontend/',
         'database/',
         'scripts/',
+        'docs/',
         'version.json',
         'package.json',
     ];
 
     private const BLOCKED_PATH_PATTERNS = [
-        '#^\.env#i',
-        '#^\.git#i',
-        '#^backend/certs/#i',
+        '#(^|/)\.env#i',
+        '#(^|/)\.git(/|$)#i',
+        '#^\.github(/|$)#i',
         '#^backend/storage/#i',
         '#^backend/logs/#i',
         '#^storage/#i',
         '#^node_modules/#i',
-        '#^backend/vendor/#i',
+        '#(^|/)[^/]*private[^/]*\.pem$#i',
+        '#\.(key|crt|cert|lock|log|sqlite|db)$#i',
+        '#^backend/Config/database\.sqlite#i',
     ];
+
+
 
     /**
      * Validate manifest structure and return errors or decoded data.
@@ -47,6 +52,7 @@ class UpdateManifestService
         }
 
         $errors = [];
+        $seenPaths = [];
 
         // Required version string
         if (empty($manifest['version']) || !is_string($manifest['version'])) {
@@ -69,6 +75,20 @@ class UpdateManifestService
             }
         }
 
+        // Validate channel string if present
+        if (isset($manifest['channel'])) {
+            if (!is_string($manifest['channel']) || !in_array($manifest['channel'], ['stable', 'beta', 'rc'], true)) {
+                $errors[] = 'Manifest "channel" must be one of: stable, beta, rc.';
+            }
+        }
+
+        // Validate rollout_percentage integer if present
+        if (isset($manifest['rollout_percentage'])) {
+            if (!is_int($manifest['rollout_percentage']) || $manifest['rollout_percentage'] < 1 || $manifest['rollout_percentage'] > 100) {
+                $errors[] = 'Manifest "rollout_percentage" must be an integer between 1 and 100.';
+            }
+        }
+
         // Validate files array (mandatory for delta updates, optional for full packages)
         $isFullPackage = ($manifest['type'] ?? '') === 'full';
         if (!isset($manifest['files']) || !is_array($manifest['files'])) {
@@ -85,6 +105,12 @@ class UpdateManifestService
                 $filePath = $fileEntry['path'] ?? null;
                 if (!is_string($filePath) || trim($filePath) === '') {
                     $errors[] = "File entry at index {$index} is missing a valid 'path'.";
+                } else {
+                    $normPath = str_replace('\\', '/', trim($filePath));
+                    if (isset($seenPaths[$normPath])) {
+                        $errors[] = "Duplicate file path detected in manifest: {$normPath}";
+                    }
+                    $seenPaths[$normPath] = 'file';
                 }
 
                 $sha256 = $fileEntry['sha256'] ?? null;
@@ -111,10 +137,17 @@ class UpdateManifestService
                 foreach ($manifest['deleted_files'] as $index => $deletedPath) {
                     if (!is_string($deletedPath) || trim($deletedPath) === '') {
                         $errors[] = "Deleted file at index {$index} is invalid.";
+                    } else {
+                        $normPath = str_replace('\\', '/', trim($deletedPath));
+                        if (isset($seenPaths[$normPath])) {
+                            $errors[] = "File path '{$normPath}' cannot be present in both 'files' and 'deleted_files'.";
+                        }
+                        $seenPaths[$normPath] = 'deleted';
                     }
                 }
             }
         }
+
 
         return [
             'valid' => empty($errors),
@@ -168,6 +201,14 @@ class UpdateManifestService
             ];
         }
 
+        if ($isMigrationRelease) {
+            return [
+                'compatible' => true,
+                'reason' => 'Full bootstrap/migration release is compatible across all engine versions.',
+                'requires_bootstrap' => false,
+            ];
+        }
+
         if (version_compare($clientEngineVersion, $requiredEngineVersion, '<')) {
             return [
                 'compatible' => false,
@@ -181,7 +222,94 @@ class UpdateManifestService
             'reason' => null,
             'requires_bootstrap' => false,
         ];
+
     }
+
+    /**
+     * Check if release channel matches client channel preference.
+     *
+     * Rules:
+     * - 'stable' client receives ONLY 'stable' releases.
+     * - 'rc' client receives 'rc' and 'stable' releases.
+     * - 'beta' client receives 'beta', 'rc', and 'stable' releases.
+     *
+     * @param string $clientChannel Client update channel ('stable', 'beta', 'rc')
+     * @param string|null $releaseChannel Channel specified in release manifest (defaults to 'stable')
+     * @return array{compatible: bool, reason: string|null}
+     */
+    public function checkChannelCompatibility(string $clientChannel, ?string $releaseChannel = 'stable'): array
+    {
+        $relChannel = strtolower(trim($releaseChannel ?: 'stable'));
+        $cliChannel = strtolower(trim($clientChannel ?: 'stable'));
+
+        if (!in_array($cliChannel, ['stable', 'beta', 'rc'], true)) {
+            $cliChannel = 'stable';
+        }
+        if (!in_array($relChannel, ['stable', 'beta', 'rc'], true)) {
+            $relChannel = 'stable';
+        }
+
+        // Stable clients only accept stable releases
+        if ($cliChannel === 'stable') {
+            if ($relChannel !== 'stable') {
+                return [
+                    'compatible' => false,
+                    'reason' => "Release is on '{$relChannel}' channel, but client is configured for 'stable' updates only.",
+                ];
+            }
+            return ['compatible' => true, 'reason' => null];
+        }
+
+        // RC clients accept stable and rc
+        if ($cliChannel === 'rc') {
+            if ($relChannel === 'beta') {
+                return [
+                    'compatible' => false,
+                    'reason' => "Release is on 'beta' channel, but client is configured for 'rc' updates.",
+                ];
+            }
+            return ['compatible' => true, 'reason' => null];
+        }
+
+        // Beta clients accept all channels (beta, rc, stable)
+        return ['compatible' => true, 'reason' => null];
+    }
+
+    /**
+     * Calculate deterministic gradual rollout bucket for a device and version.
+     *
+     * @param string $deviceId Unique stable device identifier
+     * @param string $targetVersion Target release version
+     * @param int $rolloutPercentage Percentage of devices to receive update (1-100)
+     * @return array{eligible: bool, bucket: int, rollout_percentage: int, reason: string|null}
+     */
+    public function checkRolloutEligibility(string $deviceId, string $targetVersion, int $rolloutPercentage = 100): array
+    {
+        $rollout = max(1, min(100, $rolloutPercentage));
+        
+        if ($rollout >= 100) {
+            return [
+                'eligible' => true,
+                'bucket' => 1,
+                'rollout_percentage' => 100,
+                'reason' => null,
+            ];
+        }
+
+        // Deterministic hash bucket: 1 to 100
+        $hashHex = substr(hash('sha256', "pos:rollout:{$deviceId}:{$targetVersion}"), 0, 8);
+        $bucket = (int) ((hexdec($hashHex) % 100) + 1);
+
+        $eligible = ($bucket <= $rollout);
+
+        return [
+            'eligible' => $eligible,
+            'bucket' => $bucket,
+            'rollout_percentage' => $rollout,
+            'reason' => $eligible ? null : "Device bucket #{$bucket} is outside the current {$rollout}% gradual rollout group.",
+        ];
+    }
+
 
 
 

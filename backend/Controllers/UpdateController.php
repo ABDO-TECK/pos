@@ -68,17 +68,57 @@ class UpdateController extends Controller
         ];
 
         $interruptedUpdate = $this->updateService->getDeltaUpdateService()->detectInterruptedUpdate();
+        $clientChannel = $this->updateService->getClientChannel();
 
         return Response::success([
             'current_version'    => $currentVersion,
             'latest_version'     => $latestVersion,
             'update_available'   => $hasUpdate,
             'type'               => $type,
+            'channel'            => $clientChannel,
+            'available_channels' => ['stable', 'beta', 'rc'],
+            'device_id'          => substr($this->updateService->getDeviceId(), 0, 8) . '...',
             'release_info'       => $releaseInfo,
             'update_state'       => $state,
             'interrupted_update' => $interruptedUpdate,
         ]);
     }
+
+    public function getChannel()
+    {
+        return Response::success([
+            'channel' => $this->updateService->getClientChannel(),
+            'available_channels' => ['stable', 'beta', 'rc'],
+            'device_id' => $this->updateService->getDeviceId(),
+        ]);
+    }
+
+    public function setChannel()
+    {
+        $user = $this->authService->getCurrentUser();
+        $userId = $user['id'] ?? null;
+        $role = $user['role'] ?? 'user';
+
+        if ($role !== 'admin' && !$this->authService->hasPermission($userId, 'updates.manage_channel')) {
+            return Response::forbidden('You do not have permission to change release update channels.');
+        }
+
+        $input = json_decode((string) file_get_contents('php://input'), true) ?: $_POST;
+        $channel = trim($input['channel'] ?? '');
+
+        if (!in_array($channel, ['stable', 'beta', 'rc'], true)) {
+            return Response::error('Invalid channel. Allowed: stable, beta, rc.', 400);
+        }
+
+        $result = $this->updateService->setClientChannel($channel);
+        if (!$result['ok']) {
+            return Response::error($result['error'] ?? 'Failed to update channel.', 500);
+        }
+
+        Logger::info('Update channel changed', ['user_id' => $userId, 'channel' => $channel]);
+        return Response::success($result);
+    }
+
 
     // ══════════════════════════════════════════════════════════════
     //  2. POST /api/updates/check & GET /api/update/check

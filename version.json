@@ -1,11 +1,16 @@
 {
-    "version": "1.1.49",
-    "application_version": "1.1.49",
-    "update_engine_version": "1.0.0",
+    "version": "1.2.0",
+    "application_version": "1.2.0",
+    "update_engine_version": "1.2.0",
+    "channel": "stable",
+    "minimum_supported_version": "1.1.47",
     "released_at": "2026-08-27",
     "changelog": [
-        "أمان: إضافة حجب وتشفير تلقائي لمفاتيح التوقيع الرقمي والشهادات في سجلات النظام (Logger Redaction).",
-        "تحسين: تعزيز استقرار خط الأنابيب المؤتمت للتحديثات الجزئية (Automated CI/CD Delta Releases)."
+        "🚀 إطلاق الجيل الجديد من نظام التحديثات الذاتية المستقرة (Production Release v1.2.0).",
+        "🛡️ تفعيل نظام المعالجة والتعافي الذاتي (Self-Healing & Auto-Rollback Engine).",
+        "📡 دمج لوحة تحكم أسطول نقاط البيع والمراقبة عن بُعد (Fleet Management & Telemetry Dashboard).",
+        "🔒 تعزيز الأمان والتوقيع الرقمي RSA-2048 مع دعم تدوير المفاتيح والحماية من هجمات ZipSlip.",
+        "🎯 دعم قنوات الإصدار (Stable, Beta, RC) والإطلاق التدريجي (Gradual Rollout)."
     ],
     "requires_npm_install": false
 }

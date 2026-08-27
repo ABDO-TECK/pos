@@ -34,6 +34,9 @@ declare global {
     latest_version: string | null;
     update_available: boolean;
     type: 'delta' | 'full';
+    channel?: 'stable' | 'beta' | 'rc';
+    available_channels?: string[];
+    device_id?: string;
     release_info: ReleaseInfo;
     update_state: UpdateStateData | null;
     interrupted_update?: {
@@ -69,7 +72,13 @@ declare global {
     signature_url?: string | null;
     delta_url?: string | null;
     fallback_reason?: string | null;
+    client_channel?: 'stable' | 'beta' | 'rc';
+    release_channel?: 'stable' | 'beta' | 'rc';
+    rollout_percentage?: number;
+    device_bucket?: number;
+    in_rollout_group?: boolean;
   }
+
 
   interface UpdateApplyResult {
     message?: string;
@@ -125,6 +134,110 @@ declare global {
     created_at: string;
     completed_at: string | null;
   }
+
+  interface FleetAlert {
+    severity: 'critical' | 'warning' | 'info';
+    code: string;
+    title: string;
+    message: string;
+  }
+
+  interface FleetHealthStats {
+    total_events: number;
+    successful: number;
+    failed: number;
+    rollbacks: number;
+    success_rate: number;
+    failure_rate: number;
+  }
+
+  interface FleetStatsData {
+    ok: boolean;
+    total_devices: number;
+    version_distribution: Record<string, number>;
+    channel_distribution: { stable: number; beta: number; rc: number };
+    update_health: FleetHealthStats;
+    alerts: FleetAlert[];
+    last_synced_at: string;
+  }
+
+  interface FleetDeviceRecord {
+    device_id: string;
+    current_version: string;
+    channel: string;
+    last_event: string;
+    last_event_success: number | boolean;
+    last_seen_at: string;
+    total_events: number;
+  }
+
+  interface TelemetryEventRecord {
+    id: number;
+    device_id: string;
+    current_version: string;
+    target_version: string | null;
+    channel: string;
+    event_type: string;
+    success: number | boolean;
+    error_code: string | null;
+    duration_ms: number | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+  }
+
+  interface DeviceDetailsData {
+    device_id: string;
+    current_version: string;
+    channel: string;
+    last_seen_at: string;
+    events: TelemetryEventRecord[];
+  }
+
+  interface RecoveryDiagnosisData {
+    status: string;
+    state: string;
+    problem_detected: boolean;
+    recommended_action: 'none' | 'retry_download' | 'retry_verification' | 'resume' | 'rollback' | 'clear' | 'escalate';
+    message: string;
+    details: Record<string, unknown>;
+    is_locked: boolean;
+    auto_recovery_enabled: boolean;
+  }
+
+  interface RecoveryActionResult {
+    ok: boolean;
+    action: string;
+    message?: string;
+    error?: string;
+    snapshot?: string;
+    attempts?: number;
+    logs?: string[];
+  }
+
+  interface RecoveryAuditEntry {
+    id: string;
+    timestamp: string;
+    previous_state: string;
+    detected_problem: string;
+    selected_action: string;
+    success: boolean;
+    details: Record<string, unknown>;
+  }
+
+  interface RecoveryHealthCheckResult {
+    healthy: boolean;
+    auto_rollback: boolean;
+    checks: {
+      db_connection: boolean;
+      core_tables: boolean;
+      version_file: boolean;
+      backend_entry: boolean;
+    };
+    errors: string[];
+    message: string;
+  }
 }
 
 export {};
+
+

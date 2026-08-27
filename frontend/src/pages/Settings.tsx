@@ -4,13 +4,14 @@ import StoreSettingsForm from './settings/StoreSettingsForm'
 import NetworkAccessSection from './settings/NetworkAccessSection'
 import BackupSection from './settings/BackupSection'
 import UpdateSection from './settings/UpdateSection'
+import FleetDashboard from './settings/FleetDashboard'
 import SystemHealth from '../components/settings/SystemHealth'
 import LogViewer from './settings/LogViewer'
 import FactoryResetSection from './settings/FactoryResetSection'
-import { Store, Wifi, Settings as SettingsIcon } from 'lucide-react'
+import { Store, Wifi, Settings as SettingsIcon, Server } from 'lucide-react'
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'store' | 'network' | 'system'>('store')
+  const [activeTab, setActiveTab] = useState<'store' | 'network' | 'system' | 'fleet'>('store')
 
   return (
     <div className={styles.settingsContainer}>
@@ -35,6 +36,15 @@ export default function Settings() {
           <Wifi size={16} />
           <span>الاتصال بالهاتف</span>
         </button>
+
+        <button 
+          type="button"
+          onClick={() => setActiveTab('fleet')} 
+          className={`${styles.tabButton} ${activeTab === 'fleet' ? styles.tabActive : ''}`}
+        >
+          <Server size={16} />
+          <span>أسطول التحديثات (Fleet)</span>
+        </button>
         
         <button 
           type="button"
@@ -51,6 +61,9 @@ export default function Settings() {
         {activeTab === 'store' && <StoreSettingsForm />}
         
         {activeTab === 'network' && <NetworkAccessSection />}
+
+        {activeTab === 'fleet' && <FleetDashboard />}
+
         
         {activeTab === 'system' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

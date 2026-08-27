@@ -9,10 +9,18 @@ use Throwable;
 class ManifestSignatureService
 {
     private ?string $publicKeyPath;
+    /** @var list<string> */
+    private array $trustedPublicKeys = [];
 
-    public function __construct(?string $publicKeyPath = null)
+    public function __construct(?string $publicKeyPath = null, array $additionalTrustedKeys = [])
     {
         $this->publicKeyPath = $publicKeyPath ? str_replace('\\', '/', $publicKeyPath) : $this->resolveDefaultPublicKeyPath();
+        $this->trustedPublicKeys = array_values(array_unique(array_filter(
+            array_merge(
+                $this->resolveAllTrustedKeyPaths(),
+                $additionalTrustedKeys
+            )
+        )));
     }
 
     public function getPublicKeyPath(): ?string
@@ -21,23 +29,25 @@ class ManifestSignatureService
     }
 
     /**
-     * Verify data against an RSA signature using SHA-256.
+     * @return list<string>
+     */
+    public function getTrustedKeyPaths(): array
+    {
+        return $this->trustedPublicKeys;
+    }
+
+    /**
+     * Verify data against an RSA signature using SHA-256 with Key Rotation support.
      *
      * @param string $data The original string data (e.g. manifest.json content)
      * @param string $signature The signature (raw binary or base64 encoded)
      * @param string|null $customPublicKey Optional public key content or path
-     * @return bool True if valid, false otherwise
+     * @return bool True if valid against any trusted key, false otherwise
      */
     public function verifySignature(string $data, string $signature, ?string $customPublicKey = null): bool
     {
         if (trim($data) === '' || trim($signature) === '') {
             Logger::warning('Manifest signature verification failed: empty data or signature provided.');
-            return false;
-        }
-
-        $publicKey = $this->loadPublicKey($customPublicKey);
-        if (!$publicKey) {
-            Logger::error('Manifest signature verification failed: Public key could not be loaded.');
             return false;
         }
 
@@ -48,20 +58,60 @@ class ManifestSignatureService
             $rawSignature = $decoded;
         }
 
-        try {
-            $result = openssl_verify($data, $rawSignature, $publicKey, OPENSSL_ALGO_SHA256);
-            if ($result === 1) {
+        // If a specific custom key was provided, verify only against it
+        if ($customPublicKey !== null) {
+            return $this->verifyWithSingleKey($data, $rawSignature, $customPublicKey);
+        }
+
+        // 1. First, attempt verification with primary public key
+        if ($this->publicKeyPath && is_file($this->publicKeyPath)) {
+            if ($this->verifyWithSingleKey($data, $rawSignature, $this->publicKeyPath)) {
                 return true;
             }
+        }
 
-            if ($result === 0) {
-                Logger::warning('Manifest signature verification rejected: Invalid cryptographic signature.');
-                return false;
+        // 2. Key Rotation Fallback: Attempt verification against any secondary/rotation trusted keys
+        foreach ($this->trustedPublicKeys as $trustedKeyPathOrContent) {
+            if ($trustedKeyPathOrContent === $this->publicKeyPath) {
+                continue; // already tested
             }
 
-            $sslError = openssl_error_string() ?: 'Unknown OpenSSL error';
-            Logger::error('OpenSSL error during signature verification', ['error' => $sslError]);
+            if ($this->verifyWithSingleKey($data, $rawSignature, $trustedKeyPathOrContent)) {
+                Logger::info('Manifest signature verified using trusted secondary/rotation public key.', [
+                    'key' => is_file($trustedKeyPathOrContent) ? basename($trustedKeyPathOrContent) : 'in_memory_key',
+                ]);
+                return true;
+            }
+        }
+
+        Logger::warning('Manifest signature verification rejected: No trusted public key could verify the signature.');
+        return false;
+    }
+
+    /**
+     * Verify signature using a single specified key (file path or PEM string).
+     */
+    private function verifyWithSingleKey(string $data, string $rawSignature, string $keySource): bool
+    {
+        $publicKey = $this->loadPublicKey($keySource);
+        if (!$publicKey) {
             return false;
+        }
+
+        // Validate key strength: must be RSA with at least 2048 bits
+        $details = openssl_pkey_get_details($publicKey);
+        if (!$details || ($details['type'] ?? -1) !== OPENSSL_KEYTYPE_RSA || ($details['bits'] ?? 0) < 2048) {
+            Logger::error('Public key rejected: must be RSA-2048 or higher.', [
+                'type' => $details['type'] ?? 'unknown',
+                'bits' => $details['bits'] ?? 0,
+            ]);
+            return false;
+        }
+
+        try {
+            // Strictly enforce OPENSSL_ALGO_SHA256 signature algorithm
+            $result = openssl_verify($data, $rawSignature, $publicKey, OPENSSL_ALGO_SHA256);
+            return $result === 1;
         } catch (Throwable $e) {
             Logger::error('Exception during manifest signature verification', [
                 'exception' => get_class($e),
@@ -142,7 +192,7 @@ class ManifestSignatureService
     {
         $config = [
             'digest_alg' => 'sha256',
-            'private_key_bits' => $bits,
+            'private_key_bits' => max(2048, $bits),
             'private_key_type' => OPENSSL_KEYTYPE_RSA,
         ];
 
@@ -196,7 +246,6 @@ class ManifestSignatureService
         return null;
     }
 
-
     /**
      * Load public key resource or string.
      */
@@ -214,7 +263,7 @@ class ManifestSignatureService
             $keyContent = @file_get_contents($this->publicKeyPath);
         }
 
-        if (!$keyContent) {
+        if (!$keyContent || !is_string($keyContent)) {
             return false;
         }
 
@@ -227,7 +276,7 @@ class ManifestSignatureService
     private function loadPrivateKey(string $keyContentOrPath, ?string $passphrase = null): mixed
     {
         $keyContent = is_file($keyContentOrPath) ? @file_get_contents($keyContentOrPath) : $keyContentOrPath;
-        if (!$keyContent) {
+        if (!$keyContent || !is_string($keyContent)) {
             return false;
         }
 
@@ -239,20 +288,38 @@ class ManifestSignatureService
      */
     private function resolveDefaultPublicKeyPath(): ?string
     {
+        $candidates = $this->resolveAllTrustedKeyPaths();
+        return $candidates[0] ?? null;
+    }
+
+    /**
+     * Discover all pinned trusted keys across certs directories for key rotation.
+     *
+     * @return list<string>
+     */
+    private function resolveAllTrustedKeyPaths(): array
+    {
         $baseDir = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
-        $candidates = [
-            $baseDir . '/backend/certs/update_public_key.pem',
-            $baseDir . '/certs/update_public_key.pem',
-            $baseDir . '/release/public_key.pem',
-            dirname(__DIR__) . '/certs/update_public_key.pem',
+        $dirs = [
+            $baseDir . '/backend/certs',
+            $baseDir . '/certs',
+            $baseDir . '/release',
+            dirname(__DIR__) . '/certs',
         ];
 
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
+        $found = [];
+        foreach ($dirs as $dir) {
+            if (is_dir($dir)) {
+                $files = glob($dir . '/*.pem') ?: [];
+                foreach ($files as $file) {
+                    $norm = str_replace('\\', '/', $file);
+                    if (str_contains(basename($norm), 'public') || str_contains(basename($norm), 'key')) {
+                        $found[] = $norm;
+                    }
+                }
             }
         }
 
-        return $candidates[0] ?? null;
+        return array_values(array_unique($found));
     }
 }

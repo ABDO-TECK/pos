@@ -115,6 +115,25 @@ export const rollbackUpdate = (snapshotPath?: string) => api.post<ApiResponse<Up
 export const getUpdateSnapshots = () => api.get<ApiResponse<UpdateSnapshot[]>>('/updates/snapshots')
 export const getUpdateJob = (id: number) => api.get<ApiResponse<UpdateJobResult>>(`/update/jobs/${id}`, { timeout: 15_000 })
 
+export const getUpdateChannel = () => api.get<ApiResponse<{ channel: string; available_channels: string[]; device_id: string }>>('/updates/channel')
+export const setUpdateChannel = (channel: string) => api.post<ApiResponse<{ ok: boolean; channel: string }>>('/updates/channel', { channel })
+
+// Fleet & Telemetry
+export const getFleetStats = () => api.get<ApiResponse<FleetStatsData>>('/admin/fleet/stats')
+export const getFleetDevices = (params?: { limit?: number; offset?: number; search?: string }) => api.get<ApiResponse<{ devices: FleetDeviceRecord[]; total: number; limit: number; offset: number }>>('/admin/fleet/devices', { params })
+export const getDeviceDetails = (id: string) => api.get<ApiResponse<DeviceDetailsData>>(`/admin/fleet/devices/${encodeURIComponent(id)}`)
+export const purgeTelemetry = (days = 90) => api.post<ApiResponse<{ deleted_count: number; retention_days: number }>>('/admin/fleet/purge', { days })
+export const sendTelemetryEvent = (data: Record<string, unknown>) => api.post<ApiResponse<{ recorded: boolean }>>('/telemetry/updates', data)
+
+// Self-Healing & Recovery
+export const diagnoseUpdateRecovery = () => api.get<ApiResponse<RecoveryDiagnosisData>>('/admin/updates/recovery/diagnose')
+export const executeRecoveryAction = (action: string, snapshotPath?: string) => api.post<ApiResponse<RecoveryActionResult>>('/admin/updates/recovery/execute', { action, snapshot_path: snapshotPath })
+export const getRecoveryAuditLogs = (limit = 50) => api.get<ApiResponse<{ logs: RecoveryAuditEntry[]; total: number }>>('/admin/updates/recovery/audit', { params: { limit } })
+export const runPostUpdateHealthCheck = (snapshotPath?: string) => api.post<ApiResponse<RecoveryHealthCheckResult>>('/admin/updates/recovery/health-check', { snapshot_path: snapshotPath })
+
+
+
+
 // Backup
 export const downloadBackup = () => api.get('/backup', { responseType: 'blob' })
 /**
@@ -198,3 +217,5 @@ export interface HealthDiagnostics {
 export const getHealthDiagnostics = () => api.get<HealthDiagnostics>('/health/diagnostics')
 export const getHealthMetrics = () => api.get('/health/metrics')
 export const getNetworkInfo = () => api.get<ApiResponse<{ ips: string[]; port: string; protocol: string }>>('/system/network-info')
+
+

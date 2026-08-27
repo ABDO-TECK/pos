@@ -202,10 +202,44 @@ class DeltaUpdateService
         ];
     }
 
+    /**
+     * Check if a relative path is a protected production file that cannot be modified by updates.
+     */
+    public function isProtectedFile(string $relativePath): bool
+    {
+        $normalized = str_replace('\\', '/', trim($relativePath));
+        
+        // Public keys must be deployable for key rotation
+        if (str_contains(basename($normalized), 'public') && str_ends_with($normalized, '.pem')) {
+            return false;
+        }
+
+        $protectedPatterns = [
+            '#(^|/)\.env#i',
+            '#(^|/)\.git(/|$)#i',
+            '#^\.github(/|$)#i',
+            '#^backend/storage/#i',
+            '#^storage/#i',
+            '#(^|/)[^/]*private[^/]*\.pem$#i',
+            '#\.(key|crt|cert|sqlite|db|lock|log)$#i',
+            '#^backend/Config/database\.sqlite#i',
+        ];
+
+
+        foreach ($protectedPatterns as $pattern) {
+            if (preg_match($pattern, $normalized)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 
     // ══════════════════════════════════════════════════════════════
     //  2. Backup Snapshot System
     // ══════════════════════════════════════════════════════════════
+
 
     /**
      * Create an atomic backup snapshot before applying updates.
@@ -873,9 +907,16 @@ class DeltaUpdateService
                 continue;
             }
 
+            if ($this->isProtectedFile($relativePath)) {
+                $errors[] = "Security violation: Attempt to modify protected file {$relativePath}";
+                $logs[] = "❌ تم حظر محاولة استبدال ملف نظام محمي: {$relativePath}";
+                break;
+            }
+
             $stagedFilePath = $stagingDir . '/' . $relativePath;
             $targetFilePath = $this->rootDir . '/' . $relativePath;
             $targetDir = dirname($targetFilePath);
+
 
             if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true)) {
                 $errors[] = "Failed to create target directory: {$targetDir}";

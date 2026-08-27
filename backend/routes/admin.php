@@ -5,7 +5,11 @@ use App\Controllers\SettingsController;
 use App\Controllers\UpdateController;
 use App\Controllers\BackupController;
 use App\Controllers\ExpenseController;
+use App\Controllers\TelemetryController;
+use App\Controllers\UpdateRecoveryController;
 use App\Middleware\AuthMiddleware;
+
+
 use App\Middleware\PermissionMiddleware;
 
 // Reports
@@ -39,7 +43,26 @@ $router->post('/api/update/rollback',  [UpdateController::class, 'rollback',  [A
 $router->get('/api/updates/snapshots', [UpdateController::class, 'snapshots', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_snapshots', 30, 60)]]);
 $router->get('/api/update/snapshots',  [UpdateController::class, 'snapshots', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_snapshots', 30, 60)]]);
 $router->get('/api/update/jobs/{id}',  [UpdateController::class, 'status',    [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_status', 60, 60)]]);
-$router->get('/api/update/changelog',  [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_changelog', 10, 60)]]);
+$router->get('/api/updates/channel',   [UpdateController::class, 'getChannel', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_channel_get', 30, 60)]]);
+
+$router->post('/api/updates/channel',  [UpdateController::class, 'setChannel', [AuthMiddleware::class, PermissionMiddleware::require('updates.manage_channel'), \App\Middleware\EndpointRateLimiter::limit('update_channel_post', 10, 60)]]);
+
+// Telemetry & Fleet Management
+$router->post('/api/telemetry/updates',        [TelemetryController::class, 'record',        [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('telemetry_ingest', 120, 60)]]);
+$router->post('/api/telemetry/updates/batch',  [TelemetryController::class, 'recordBatch',   [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('telemetry_batch', 30, 60)]]);
+$router->get('/api/admin/fleet/stats',         [TelemetryController::class, 'stats',         [AuthMiddleware::class, PermissionMiddleware::require('updates.telemetry.view'), \App\Middleware\EndpointRateLimiter::limit('fleet_stats', 60, 60)]]);
+$router->get('/api/admin/fleet/devices',       [TelemetryController::class, 'devices',       [AuthMiddleware::class, PermissionMiddleware::require('updates.telemetry.view'), \App\Middleware\EndpointRateLimiter::limit('fleet_devices', 60, 60)]]);
+$router->get('/api/admin/fleet/devices/{id}',  [TelemetryController::class, 'deviceDetails', [AuthMiddleware::class, PermissionMiddleware::require('updates.telemetry.view'), \App\Middleware\EndpointRateLimiter::limit('fleet_device_details', 60, 60)]]);
+$router->post('/api/admin/fleet/purge',        [TelemetryController::class, 'purge',         [AuthMiddleware::class, PermissionMiddleware::require('updates.telemetry.manage'), \App\Middleware\EndpointRateLimiter::limit('fleet_purge', 10, 60)]]);
+
+// Update Self-Healing & Recovery
+$router->get('/api/admin/updates/recovery/diagnose',     [UpdateRecoveryController::class, 'diagnose',    [AuthMiddleware::class, PermissionMiddleware::require('updates.recovery.view'), \App\Middleware\EndpointRateLimiter::limit('recovery_diag', 60, 60)]]);
+$router->post('/api/admin/updates/recovery/execute',     [UpdateRecoveryController::class, 'execute',     [AuthMiddleware::class, PermissionMiddleware::require('updates.recovery.manage'), \App\Middleware\EndpointRateLimiter::limit('recovery_exec', 10, 60)]]);
+$router->get('/api/admin/updates/recovery/audit',        [UpdateRecoveryController::class, 'audit',       [AuthMiddleware::class, PermissionMiddleware::require('updates.recovery.view'), \App\Middleware\EndpointRateLimiter::limit('recovery_audit', 60, 60)]]);
+$router->post('/api/admin/updates/recovery/health-check',[UpdateRecoveryController::class, 'healthCheck', [AuthMiddleware::class, PermissionMiddleware::require('updates.recovery.view'), \App\Middleware\EndpointRateLimiter::limit('recovery_health', 30, 60)]]);
+
+
+
 
 
 // Backup

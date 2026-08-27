@@ -66,12 +66,51 @@ class GitHubReleaseProvider
      *   error_code: ?string
      * }
      */
-    public function getLatestRelease(): array
+    /**
+     * Fetch the latest release from GitHub Releases API for a specified channel.
+     *
+     * @param string $channel Target channel ('stable', 'beta', 'rc')
+     * @return array{
+     *   ok: bool,
+     *   latest_version: ?string,
+     *   tag_name: ?string,
+     *   release_url: ?string,
+     *   published_at: ?string,
+     *   changelog: list<string>,
+     *   manifest_url: ?string,
+     *   signature_url: ?string,
+     *   delta_url: ?string,
+     *   full_package_url: ?string,
+     *   assets: array<string, string>,
+     *   channel: string,
+     *   error: ?string,
+     *   error_code: ?string
+     * }
+     */
+    public function getLatestRelease(string $channel = 'stable'): array
     {
-        $apiUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases/latest";
+        $channel = strtolower(trim($channel ?: 'stable'));
+        if (!in_array($channel, ['stable', 'beta', 'rc'], true)) {
+            $channel = 'stable';
+        }
 
-        if (!$this->isAllowedUrl($apiUrl)) {
-            $err = "Configured GitHub repository URL '{$apiUrl}' is not in the allowed update hosts.";
+        // If stable channel, attempt GitHub /releases/latest endpoint first (official latest non-prerelease)
+        if ($channel === 'stable') {
+            $apiUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases/latest";
+            $res = $this->fetchSingleReleaseUrl($apiUrl);
+            if ($res['ok']) {
+                $tagLower = strtolower($res['tag_name'] ?? '');
+                if (!str_contains($tagLower, 'beta') && !str_contains($tagLower, 'rc')) {
+                    $res['channel'] = 'stable';
+                    return $res;
+                }
+            }
+        }
+
+        // Fetch recent releases list to find the latest matching channel
+        $listUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases?per_page=10";
+        if (!$this->isAllowedUrl($listUrl)) {
+            $err = "Configured GitHub repository URL '{$listUrl}' is not in the allowed update hosts.";
             Logger::error($err);
             return $this->failureResult('invalid_update_url', $err);
         }
@@ -81,20 +120,18 @@ class GitHubReleaseProvider
             'Accept: application/vnd.github.v3+json, application/json',
             'Cache-Control: no-cache',
         ];
-
         if ($this->token && trim($this->token) !== '') {
             $headers[] = 'Authorization: Bearer ' . trim($this->token);
         }
 
-        $response = $this->executeCurlGet($apiUrl, $headers);
-
+        $response = $this->executeCurlGet($listUrl, $headers);
         if (!$response['ok']) {
             $errorCode = $this->classifyError($response['http_code'], $response['curl_error'], $response['curl_errno']);
             $msg = $response['http_code'] > 0
                 ? "GitHub API returned HTTP {$response['http_code']}: {$response['curl_error']}"
                 : "Failed to connect to GitHub Releases API: {$response['curl_error']}";
 
-            Logger::warning('GitHubReleaseProvider fetch latest release failed', [
+            Logger::warning('GitHubReleaseProvider fetch releases list failed', [
                 'repo' => "{$this->owner}/{$this->repo}",
                 'http_code' => $response['http_code'],
                 'error_code' => $errorCode,
@@ -103,13 +140,87 @@ class GitHubReleaseProvider
             return $this->failureResult($errorCode, $msg);
         }
 
-        $data = json_decode((string) $response['body'], true);
-        if (!is_array($data) || empty($data['tag_name'])) {
-            Logger::warning('GitHubReleaseProvider received invalid release payload from API');
-            return $this->failureResult('invalid_release_json', 'GitHub release payload is missing or invalid.');
+        $releases = json_decode((string) $response['body'], true);
+        if (!is_array($releases) || empty($releases)) {
+            return $this->failureResult('no_releases_found', 'No releases found in the configured GitHub repository.');
         }
 
-        $tagName = (string) $data['tag_name'];
+        // Find highest compatible release matching requested channel
+        foreach ($releases as $rel) {
+            if (!is_array($rel) || empty($rel['tag_name'])) {
+                continue;
+            }
+
+            $tag = (string) $rel['tag_name'];
+            $tagLower = strtolower($tag);
+            $isPrerelease = !empty($rel['prerelease']);
+            $isBeta = $isPrerelease || str_contains($tagLower, 'beta');
+            $isRc = str_contains($tagLower, 'rc');
+
+            $relChannel = 'stable';
+            if ($isBeta) {
+                $relChannel = 'beta';
+            } elseif ($isRc) {
+                $relChannel = 'rc';
+            }
+
+            // Channel Filter Check:
+            // - stable: only accepts stable
+            // - rc: accepts stable, rc
+            // - beta: accepts stable, rc, beta
+            if ($channel === 'stable' && $relChannel !== 'stable') {
+                continue;
+            }
+            if ($channel === 'rc' && $relChannel === 'beta') {
+                continue;
+            }
+
+            $mapped = $this->mapReleaseData($rel);
+            $mapped['channel'] = $relChannel;
+            return $mapped;
+        }
+
+        return $this->failureResult('no_matching_release', "No release found matching channel '{$channel}'.");
+    }
+
+    /**
+     * Fetch and parse a single release endpoint.
+     */
+    private function fetchSingleReleaseUrl(string $apiUrl): array
+    {
+        if (!$this->isAllowedUrl($apiUrl)) {
+            return $this->failureResult('invalid_update_url', 'Invalid update URL.');
+        }
+
+        $headers = [
+            'User-Agent: ABDO-TECK-POS-Updater/1.0',
+            'Accept: application/vnd.github.v3+json, application/json',
+            'Cache-Control: no-cache',
+        ];
+        if ($this->token && trim($this->token) !== '') {
+            $headers[] = 'Authorization: Bearer ' . trim($this->token);
+        }
+
+        $response = $this->executeCurlGet($apiUrl, $headers);
+        if (!$response['ok']) {
+            $errorCode = $this->classifyError($response['http_code'], $response['curl_error'], $response['curl_errno']);
+            return $this->failureResult($errorCode, $response['curl_error']);
+        }
+
+        $data = json_decode((string) $response['body'], true);
+        if (!is_array($data) || empty($data['tag_name'])) {
+            return $this->failureResult('invalid_release_json', 'Invalid release payload.');
+        }
+
+        return $this->mapReleaseData($data);
+    }
+
+    /**
+     * Map raw GitHub API release JSON to structured provider array.
+     */
+    public function mapReleaseData(array $data): array
+    {
+        $tagName = (string) ($data['tag_name'] ?? '');
         $cleanVersion = preg_replace('/^v/i', '', trim($tagName));
         $releaseUrl = (string) ($data['html_url'] ?? '');
         $publishedAt = (string) ($data['published_at'] ?? '');
@@ -153,7 +264,7 @@ class GitHubReleaseProvider
                 || str_starts_with($lowerName, 'patch-') && str_ends_with($lowerName, '.zip')
             ) {
                 $deltaUrl = $downloadUrl;
-            } elseif (str_ends_with($lowerName, '.exe') || str_ends_with($lowerName, '.phar') || $lowerName === 'backend.phar') {
+            } elseif (str_ends_with($lowerName, '.zip') || str_ends_with($lowerName, '.exe') || str_ends_with($lowerName, '.phar') || $lowerName === 'backend.phar') {
                 $fullPackageUrl = $downloadUrl;
             }
         }
@@ -170,10 +281,12 @@ class GitHubReleaseProvider
             'delta_url' => $deltaUrl,
             'full_package_url' => $fullPackageUrl,
             'assets' => $assetsMap,
+            'channel' => 'stable',
             'error' => null,
             'error_code' => null,
         ];
     }
+
 
     /**
      * Download text asset into string (e.g. manifest.json, manifest.sig).
