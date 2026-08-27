@@ -32,8 +32,12 @@ $router->post('/api/settings', [SettingsController::class, 'update', [AuthMiddle
 // Updates
 $router->get('/api/updates/status',    [UpdateController::class, 'status',    [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_status', 60, 60)]]);
 $router->get('/api/update/status',     [UpdateController::class, 'status',    [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_status', 60, 60)]]);
+$router->get('/api/updates/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('updates.check'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
 $router->post('/api/updates/check',    [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('updates.check'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
 $router->get('/api/update/check',      [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('updates.check'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
+$router->post('/api/update/check',     [UpdateController::class, 'check',     [AuthMiddleware::class, PermissionMiddleware::require('updates.check'), \App\Middleware\EndpointRateLimiter::limit('update_check', 10, 60)]]);
+$router->get('/api/update/changelog',  [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_changelog', 10, 60)]]);
+$router->get('/api/updates/changelog', [UpdateController::class, 'changelog', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_changelog', 10, 60)]]);
 $router->post('/api/updates/apply',    [UpdateController::class, 'apply',     [AuthMiddleware::class, PermissionMiddleware::require('updates.apply'), \App\Middleware\EndpointRateLimiter::limit('update_apply', 2, 300)]]);
 $router->post('/api/update/apply',     [UpdateController::class, 'apply',     [AuthMiddleware::class, PermissionMiddleware::require('updates.apply'), \App\Middleware\EndpointRateLimiter::limit('update_apply', 2, 300)]]);
 $router->get('/api/updates/history',   [UpdateController::class, 'history',   [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_history', 30, 60)]]);
@@ -44,8 +48,10 @@ $router->get('/api/updates/snapshots', [UpdateController::class, 'snapshots', [A
 $router->get('/api/update/snapshots',  [UpdateController::class, 'snapshots', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_snapshots', 30, 60)]]);
 $router->get('/api/update/jobs/{id}',  [UpdateController::class, 'status',    [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_status', 60, 60)]]);
 $router->get('/api/updates/channel',   [UpdateController::class, 'getChannel', [AuthMiddleware::class, PermissionMiddleware::require('updates.view'), \App\Middleware\EndpointRateLimiter::limit('update_channel_get', 30, 60)]]);
-
 $router->post('/api/updates/channel',  [UpdateController::class, 'setChannel', [AuthMiddleware::class, PermissionMiddleware::require('updates.manage_channel'), \App\Middleware\EndpointRateLimiter::limit('update_channel_post', 10, 60)]]);
+$router->get('/api/bootstrap/update',  [UpdateController::class, 'bootstrapUpdate', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('bootstrap_update', 30, 60)]]);
+$router->get('/api/update/bootstrap',  [UpdateController::class, 'bootstrapUpdate', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('bootstrap_update', 30, 60)]]);
+
 
 // Telemetry & Fleet Management
 $router->post('/api/telemetry/updates',        [TelemetryController::class, 'record',        [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('telemetry_ingest', 120, 60)]]);

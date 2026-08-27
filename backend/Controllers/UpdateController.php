@@ -43,7 +43,7 @@ class UpdateController extends Controller
         $state = $this->updateService->getDeltaUpdateService()->getUpdateState();
 
         // Check if there is cached or active release info
-        $remote = $this->updateService->fetchRemoteVersion();
+        $remote = $this->updateService->fetchRemoteVersion() ?? [];
         $latestVersion = $remote['version'] ?? null;
         $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
 
@@ -130,11 +130,43 @@ class UpdateController extends Controller
         return Response::success($result);
     }
 
+    /**
+     * GET /api/bootstrap/update & /api/update/bootstrap
+     * Minimal bootstrap migration bridge for legacy clients (e.g. v1.1.46).
+     */
+    public function bootstrapUpdate()
+    {
+        $remote = $this->updateService->fetchRemoteVersion();
+        if (!$remote || empty($remote['version'])) {
+            return Response::error('Bootstrap release metadata unavailable.', 503);
+        }
+
+        $manifest = $remote['manifest'] ?? [];
+        $targetVersion = $remote['version'];
+        $packageUrl = $remote['full_package_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/full-package.zip";
+        $manifestUrl = $remote['manifest_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/manifest.json";
+        $signatureUrl = $remote['signature_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/manifest.sig";
+
+        $sha256 = $manifest['package_sha256'] ?? ($remote['package_sha256'] ?? null);
+
+        return Response::success([
+            'target_version'     => $targetVersion,
+            'bootstrap_release'  => true,
+            'package_url'        => $packageUrl,
+            'manifest_url'       => $manifestUrl,
+            'signature_url'      => $signatureUrl,
+            'package_sha256'     => $sha256,
+            'changelog'          => $remote['changelog'] ?? [],
+            'requires_full_pack' => true,
+        ]);
+    }
+
     public function changelog()
     {
         $remote = $this->updateService->fetchRemoteVersion();
         return Response::success($remote['changelog'] ?? []);
     }
+
 
     // ══════════════════════════════════════════════════════════════
     //  3. POST /api/updates/apply & POST /api/update/apply
