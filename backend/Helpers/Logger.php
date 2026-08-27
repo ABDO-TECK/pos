@@ -29,7 +29,11 @@ class Logger
         'refresh_token',
         'secret',
         'api_key',
+        'private_key',
+        'update_private_key',
+        'signing_key',
     ];
+
     /** مستويات التسجيل */
     public const DEBUG    = 'DEBUG';
     public const INFO     = 'INFO';
