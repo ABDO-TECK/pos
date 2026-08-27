@@ -1,0 +1,127 @@
+name: POS Update Engine Automated Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (e.g. v1.1.48 or v1.1.47-bootstrap)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build, Sign, and Publish Release
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: pos
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Resolve Release Tag
+        id: resolve-tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "Building release for tag: ${TAG}"
+
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP 8.2 with OpenSSL & extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
+          coverage: none
+
+      - name: Install root and frontend dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Install backend dependencies
+        run: composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
+
+      - name: Run backend unit test suite
+        run: |
+          php backend/vendor/bin/phpunit --configuration backend/phpunit.xml \
+            backend/tests/Unit/UpdateControllerTest.php \
+            backend/tests/Unit/GitHubReleaseProviderTest.php \
+            backend/tests/Unit/ManifestSignatureServiceTest.php \
+            backend/tests/Unit/DeltaUpdateServiceTest.php \
+            backend/tests/Unit/UpdateManifestServiceTest.php \
+            backend/tests/Unit/UpdateServiceTest.php
+
+      - name: Run frontend unit test suite
+        run: npm --prefix frontend test -- --run
+
+      - name: Build frontend production bundle
+        run: npm --prefix frontend run build
+
+      - name: Validate version.json matches release tag
+        id: clean-version
+        run: |
+          CLEAN_TAG="${RELEASE_TAG#v}"
+          BASE_VERSION="${CLEAN_TAG%%-*}"
+          JSON_VERSION=$(node -e "const v = require('./version.json'); console.log(v.version || v.application_version);")
+          if [ "$BASE_VERSION" != "$JSON_VERSION" ]; then
+            echo "::error::Version Mismatch! Git tag specifies '${BASE_VERSION}' but version.json contains '${JSON_VERSION}'."
+            exit 1
+          fi
+          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+          echo "✔ Tag version '${BASE_VERSION}' matches version.json '${JSON_VERSION}'"
+
+
+      - name: Build and sign release package
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATE_PRIVATE_KEY" ]; then
+            echo "::error::UPDATE_PRIVATE_KEY secret is not configured in repository secrets!"
+            exit 1
+          fi
+          php scripts/build-release-package.php --tag="${RELEASE_TAG}"
+
+      - name: Publish GitHub Release and Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ contains(env.RELEASE_TAG, 'bootstrap') && format('POS {0} Bootstrap Update Engine Migration', env.RELEASE_TAG) || format('POS {0}', env.RELEASE_TAG) }}
+          body_path: release/${{ steps.clean-version.outputs.clean_tag }}/release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release/${{ steps.clean-version.outputs.clean_tag }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
