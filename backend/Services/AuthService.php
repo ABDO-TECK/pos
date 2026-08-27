@@ -25,6 +25,32 @@ class AuthService {
     }
 
     /**
+     * الحصول على بيانات المستخدم الحالي (alias for user()).
+     *
+     * @return array|null بيانات المستخدم أو null إذا لم يكن مسجلاً الدخول
+     */
+    public function getCurrentUser(): ?array {
+        return $this->user();
+    }
+
+    /**
+     * التحقق مما إذا كان المستخدم يمتلك صلاحية محددة.
+     *
+     * @param int|null $userId معرّف المستخدم (اختياري / للتوافق)
+     * @param string $permission اسم الصلاحية
+     * @return bool
+     */
+    public function hasPermission(?int $userId, string $permission): bool {
+        if ($this->user === null) {
+            return false;
+        }
+        if (($this->user['role'] ?? '') === 'admin') {
+            return true;
+        }
+        return \App\Middleware\PermissionMiddleware::allows($this, $permission);
+    }
+
+    /**
      * الحصول على معرّف المستخدم الحالي.
      *
      * @return int|null معرّف المستخدم أو null

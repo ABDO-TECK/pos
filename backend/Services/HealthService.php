@@ -374,7 +374,34 @@ class HealthService
             ];
         }
 
-        // ── 9. Schema & Product Integrity Check ──
+        // ── 9. Core Database Tables Check ──
+        try {
+            $coreTables = $this->checkCoreTables();
+            if ($coreTables['healthy']) {
+                $checks['core_tables'] = [
+                    'status'   => 'ok',
+                    'severity' => 'critical',
+                    'message'  => 'All core database tables (users, products, settings, invoices) verified.',
+                ];
+            } else {
+                $checks['core_tables'] = [
+                    'status'   => 'failed',
+                    'severity' => 'critical',
+                    'message'  => 'Missing or corrupted core database tables: ' . implode(', ', $coreTables['missing']),
+                    'details'  => $coreTables['tables'],
+                ];
+                $criticalFailed = true;
+            }
+        } catch (\Throwable $e) {
+            $checks['core_tables'] = [
+                'status'   => 'failed',
+                'severity' => 'critical',
+                'message'  => 'Core tables check could not complete: ' . $e->getMessage(),
+            ];
+            $criticalFailed = true;
+        }
+
+        // ── 10. Schema & Product Integrity Check ──
         try {
             $integrity = $this->checkProductIntegrity();
             if ($integrity['healthy']) {
@@ -416,6 +443,39 @@ class HealthService
             'status'          => $status,
             'checks'          => $checks,
             'version'         => $version
+        ];
+    }
+
+    /**
+     * التحقق من وجود جداول النظام الأساسية (users, products, settings, invoices).
+     *
+     * @return array{healthy: bool, missing: list<string>, tables: array<string, string>}
+     */
+    public function checkCoreTables(): array
+    {
+        $db = Database::getInstance();
+        $requiredTables = ['users', 'products', 'settings', 'invoices'];
+        $missing = [];
+        $details = [];
+
+        foreach ($requiredTables as $table) {
+            try {
+                $stmt = $db->query("SELECT 1 FROM `{$table}` LIMIT 1");
+                $exists = (bool) $stmt;
+            } catch (Throwable) {
+                $exists = false;
+            }
+
+            $details[$table] = $exists ? 'ok' : 'missing';
+            if (!$exists) {
+                $missing[] = $table;
+            }
+        }
+
+        return [
+            'healthy' => empty($missing),
+            'missing' => $missing,
+            'tables'  => $details,
         ];
     }
 

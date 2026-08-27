@@ -639,11 +639,11 @@ class UpdateRecoveryService
 
         // 2. Check Core Tables
         if ($checks['db_connection'] && $pdo !== null) {
-            $requiredTables = ['users', 'products', 'settings', 'sales', 'update_history'];
+            $requiredTables = ['users', 'products', 'settings', 'invoices'];
             $missingTables = [];
             foreach ($requiredTables as $table) {
                 try {
-                    $stmt = $pdo->query("SELECT 1 FROM {$table} LIMIT 1");
+                    $stmt = $pdo->query("SELECT 1 FROM `{$table}` LIMIT 1");
                     if (!$stmt) {
                         $missingTables[] = $table;
                     }

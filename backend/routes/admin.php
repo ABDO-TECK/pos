@@ -51,6 +51,8 @@ $router->get('/api/updates/channel',   [UpdateController::class, 'getChannel', [
 $router->post('/api/updates/channel',  [UpdateController::class, 'setChannel', [AuthMiddleware::class, PermissionMiddleware::require('updates.manage_channel'), \App\Middleware\EndpointRateLimiter::limit('update_channel_post', 10, 60)]]);
 $router->get('/api/bootstrap/update',  [UpdateController::class, 'bootstrapUpdate', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('bootstrap_update', 30, 60)]]);
 $router->get('/api/update/bootstrap',  [UpdateController::class, 'bootstrapUpdate', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('bootstrap_update', 30, 60)]]);
+$router->get('/api/updates/customer-status', [UpdateController::class, 'customerStatus', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('customer_status', 60, 60)]]);
+$router->post('/api/updates/customer-result', [UpdateController::class, 'customerResult', [AuthMiddleware::class, \App\Middleware\EndpointRateLimiter::limit('customer_result', 60, 60)]]);
 
 
 // Telemetry & Fleet Management

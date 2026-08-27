@@ -17,8 +17,12 @@ class UpdateTelemetryService
     public const ALLOWED_EVENTS = [
         'update_check_started',
         'update_available',
+        'update_ui_opened',
         'update_download_started',
         'update_download_completed',
+        'installer_started',
+        'installer_completed',
+        'installer_failed',
         'update_applied',
         'update_failed',
         'rollback_completed',

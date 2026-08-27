@@ -33,10 +33,13 @@ const result = spawnSync(
   ['-d', 'phar.readonly=0', 'build-phar.php'],
   {
     cwd: repoRoot,
-    stdio: 'inherit',
+    encoding: 'utf8',
     windowsHide: true,
   },
 )
+
+if (result.stdout) process.stdout.write(result.stdout)
+if (result.stderr) process.stderr.write(result.stderr)
 
 if (result.error) {
   console.error(`Unable to start the PHAR build: ${result.error.message}`)

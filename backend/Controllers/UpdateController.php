@@ -95,7 +95,7 @@ class UpdateController extends Controller
 
     public function setChannel()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -335,5 +335,78 @@ class UpdateController extends Controller
         return Response::success($snapshots);
     }
 
+    /**
+     * GET /api/updates/customer-status
+     * Simple customer-facing update status representation without technical jargon.
+     */
+    public function customerStatus()
+    {
+        $local = $this->updateService->getLocalVersion();
+        $currentVersion = $local['version'] ?? ($local['application_version'] ?? '1.1.46');
+        $remote = $this->updateService->fetchRemoteVersion() ?? [];
+        $latestVersion = $remote['version'] ?? null;
+        $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
 
+        $updateType = 'delta_update';
+        $size = 0;
+        $manifest = $remote['manifest'] ?? [];
+        if (!empty($manifest['type']) && $manifest['type'] === 'bootstrap_installer') {
+            $updateType = 'bootstrap_installer';
+            $size = (int) ($manifest['installer_size'] ?? 296929980);
+        } elseif (!empty($manifest['package_size'])) {
+            $size = (int) $manifest['package_size'];
+        }
+
+        $releaseNotes = is_array($remote['changelog'] ?? null) 
+            ? implode("\n", $remote['changelog']) 
+            : ($remote['changelog'] ?? 'تحديثات وتحسينات في الأداء والاستقرار.');
+
+        return Response::success([
+            'current_version'   => $currentVersion,
+            'available_version' => $latestVersion,
+            'update_available'  => $hasUpdate,
+            'update_type'       => $updateType,
+            'size'              => $size,
+            'release_notes'     => $releaseNotes,
+            'mandatory'         => (bool) ($manifest['mandatory'] ?? false),
+            'installer_name'    => $manifest['installer_name'] ?? ($updateType === 'bootstrap_installer' ? "POS-Desktop-Setup-{$latestVersion}.exe" : null),
+        ]);
+    }
+
+    /**
+     * POST /api/updates/customer-result
+     * Ingest customer update lifecycle events into UpdateTelemetryService.
+     */
+    public function customerResult()
+    {
+        $body = $this->getJsonBody();
+        $telemetryService = new \App\Services\UpdateTelemetryService();
+
+        $eventType = $body['event_type'] ?? 'update_ui_opened';
+        $currentVersion = $body['current_version'] ?? ($this->updateService->getLocalVersion()['version'] ?? 'unknown');
+        $targetVersion = $body['target_version'] ?? null;
+        $success = $body['success'] ?? true;
+        $errorCode = $body['error_code'] ?? null;
+        $durationMs = isset($body['duration_ms']) ? (int) $body['duration_ms'] : null;
+        $metadata = $body['metadata'] ?? [];
+
+        $deviceId = $body['device_id'] ?? $this->updateService->getDeviceId();
+
+        $recorded = $telemetryService->recordEvent([
+            'device_id'       => $deviceId,
+            'current_version' => $currentVersion,
+            'target_version'  => $targetVersion,
+            'channel'         => $this->updateService->getClientChannel(),
+            'event_type'      => $eventType,
+            'success'         => (bool) $success,
+            'error_code'      => $errorCode,
+            'duration_ms'     => $durationMs,
+            'metadata'        => $metadata,
+        ]);
+
+        return Response::success([
+            'recorded' => $recorded,
+            'event'    => $eventType,
+        ]);
+    }
 }

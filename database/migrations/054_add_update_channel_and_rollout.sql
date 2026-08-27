@@ -1,4 +1,4 @@
--- Migration: Add update channel management permission and history tracking
+-- Migration 054: Add update channel management permission and history tracking
 INSERT IGNORE INTO `permissions` (`name`, `description`) VALUES
 ('updates.manage_channel', 'Change release update channel (stable/beta/rc)');
 

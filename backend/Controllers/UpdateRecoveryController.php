@@ -26,7 +26,7 @@ class UpdateRecoveryController extends Controller
      */
     public function diagnose()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -47,7 +47,7 @@ class UpdateRecoveryController extends Controller
      */
     public function execute()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -82,7 +82,7 @@ class UpdateRecoveryController extends Controller
      */
     public function audit()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -102,7 +102,7 @@ class UpdateRecoveryController extends Controller
      */
     public function healthCheck()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 

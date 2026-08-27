@@ -1,4 +1,4 @@
--- Migration: Extend update_history table with source, release_tag, and download_url
+-- Migration 052: Extend update_history table with source, release_tag, and download_url
 ALTER TABLE update_history
     ADD COLUMN source VARCHAR(50) DEFAULT 'github_release' AFTER type;
 

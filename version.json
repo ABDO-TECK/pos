@@ -11,5 +11,6 @@
         "🛡️ إضافة مركز إدارة التحديثات والنسخ الاحتياطي التلقائي مع التراجع الفوري (Rollback Engine).",
         "🔒 التحقق المشدد من التوقيع الرقمي والتجزئات مع الحماية من ثغرات ZipSlip."
     ],
-    "requires_npm_install": false
+    "requires_npm_install": false,
+    "update_channel": "stable"
 }

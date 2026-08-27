@@ -62,7 +62,7 @@ class TelemetryController extends Controller
      */
     public function stats()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -80,7 +80,7 @@ class TelemetryController extends Controller
      */
     public function devices()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -102,7 +102,7 @@ class TelemetryController extends Controller
      */
     public function deviceDetails(string $id)
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 
@@ -124,7 +124,7 @@ class TelemetryController extends Controller
      */
     public function purge()
     {
-        $user = $this->authService->getCurrentUser();
+        $user = $this->authService->user();
         $userId = $user['id'] ?? null;
         $role = $user['role'] ?? 'user';
 

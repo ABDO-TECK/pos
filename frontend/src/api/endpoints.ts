@@ -118,6 +118,20 @@ export const getUpdateJob = (id: number) => api.get<ApiResponse<UpdateJobResult>
 export const getUpdateChannel = () => api.get<ApiResponse<{ channel: string; available_channels: string[]; device_id: string }>>('/updates/channel')
 export const setUpdateChannel = (channel: string) => api.post<ApiResponse<{ ok: boolean; channel: string }>>('/updates/channel', { channel })
 
+export interface CustomerUpdateStatusData {
+  current_version: string
+  available_version: string | null
+  update_available: boolean
+  update_type: 'bootstrap_installer' | 'delta_update'
+  size: number
+  release_notes: string
+  mandatory: boolean
+  installer_name?: string | null
+}
+
+export const getCustomerUpdateStatus = () => api.get<ApiResponse<CustomerUpdateStatusData>>('/updates/customer-status')
+export const sendCustomerUpdateResult = (data: Record<string, unknown>) => api.post<ApiResponse<{ recorded: boolean; event: string }>>('/updates/customer-result', data)
+
 // Fleet & Telemetry
 export const getFleetStats = () => api.get<ApiResponse<FleetStatsData>>('/admin/fleet/stats')
 export const getFleetDevices = (params?: { limit?: number; offset?: number; search?: string }) => api.get<ApiResponse<{ devices: FleetDeviceRecord[]; total: number; limit: number; offset: number }>>('/admin/fleet/devices', { params })
