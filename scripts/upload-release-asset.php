@@ -8,8 +8,17 @@ if (!$token) {
 }
 
 $repo = 'ABDO-TECK/pos';
-$tag = 'v1.2.0';
-$filePath = __DIR__ . '/../release/1.2.0-bootstrap/full-package.zip';
+$tag = $argv[1] ?? 'v1.1.47';
+$filePathInput = $argv[2] ?? "release/1.1.47-bootstrap/full-package.zip";
+$filePath = str_starts_with($filePathInput, '/') || preg_match('#^[A-Z]:#i', $filePathInput)
+    ? $filePathInput
+    : __DIR__ . '/../' . $filePathInput;
+
+if (!file_exists($filePath)) {
+    echo "File not found: {$filePath}\n";
+    exit(1);
+}
+
 
 // Get release ID
 $ch = curl_init("https://api.github.com/repos/{$repo}/releases/tags/{$tag}");
