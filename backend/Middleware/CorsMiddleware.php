@@ -72,7 +72,7 @@ class CorsMiddleware
         }
 
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-XSRF-TOKEN');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-XSRF-TOKEN, X-POS-Delta-Handoff');
         header('Access-Control-Allow-Credentials: true');
 
         // Preflight

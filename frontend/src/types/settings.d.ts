@@ -33,7 +33,8 @@ declare global {
     current_version: string;
     latest_version: string | null;
     update_available: boolean;
-    type: 'delta' | 'full';
+    type: 'bootstrap' | 'delta' | 'full';
+    bootstrap_required?: boolean;
     channel?: 'stable' | 'beta' | 'rc';
     available_channels?: string[];
     device_id?: string;
@@ -57,6 +58,8 @@ declare global {
     changelog: { version: string; date: string; changes: string[] }[];
     requires_npm_install?: boolean;
     status?: string;
+    requires_desktop_handoff?: boolean;
+    handoff_version?: string;
     message?: string;
     checkedUrl?: string;
     errorCode?: string | null;
@@ -72,6 +75,7 @@ declare global {
     signature_url?: string | null;
     delta_url?: string | null;
     fallback_reason?: string | null;
+    bootstrap_required?: boolean;
     client_channel?: 'stable' | 'beta' | 'rc';
     release_channel?: 'stable' | 'beta' | 'rc';
     rollout_percentage?: number;
@@ -88,6 +92,8 @@ declare global {
     logs?: string[];
     job_id?: number;
     status?: string;
+    requires_desktop_handoff?: boolean;
+    handoff_version?: string;
   }
 
   interface UpdateHistoryRecord {
@@ -239,5 +245,3 @@ declare global {
 }
 
 export {};
-
-

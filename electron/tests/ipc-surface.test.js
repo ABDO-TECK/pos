@@ -65,7 +65,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   );
   assert.deepEqual(
     Object.keys(exposed.posRuntime).sort(),
-    ['disableLanAccess', 'enableLanAccess', 'getApiBaseUrl']
+    ['applyStagedDelta', 'disableLanAccess', 'enableLanAccess', 'getApiBaseUrl', 'getDeltaCapability']
   );
 
   await exposed.electronAPI.getVersion();
@@ -80,8 +80,10 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   await exposed.electronAPI.updater.download();
   await exposed.electronAPI.updater.install();
   await exposed.posRuntime.getApiBaseUrl();
+  await exposed.posRuntime.getDeltaCapability();
   await exposed.posRuntime.enableLanAccess();
   await exposed.posRuntime.disableLanAccess();
+  await exposed.posRuntime.applyStagedDelta('1.2.0');
 
   assert.deepEqual(
     invocations.map(({ channel }) => channel),
@@ -98,8 +100,10 @@ test('preload exposes only IPC methods used by the frontend', async () => {
       'updater:download',
       'updater:install',
       'get-api-base-url',
+      'delta:get-capability',
       'network:enable-lan',
       'network:disable-lan',
+      'delta:apply-staged',
     ]
   );
 

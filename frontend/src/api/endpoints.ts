@@ -107,9 +107,20 @@ export const updateSettings = (data: Partial<AppSettings>) => api.post<ApiRespon
 
 // Updates
 type UpdateRequestConfig = AxiosRequestConfig & { hideGlobalError?: boolean }
-export const getUpdateStatus = () => api.get<ApiResponse<UpdateStatusData>>('/updates/status')
-export const checkUpdate = (config?: UpdateRequestConfig) => api.get<ApiResponse<UpdateCheckResult>>('/updates/check', config)
-export const applyUpdate = (force = false) => api.post<ApiResponse<UpdateApplyResult>>('/updates/apply', force ? { force: true } : null, { timeout: 30_000 })
+export const getUpdateStatus = (deltaCapable = false) => api.get<ApiResponse<UpdateStatusData>>('/updates/status', {
+  headers: { 'X-POS-Delta-Handoff': deltaCapable ? '1' : '0' },
+})
+export const checkUpdate = (deltaCapable = false, config?: UpdateRequestConfig) => api.get<ApiResponse<UpdateCheckResult>>('/updates/check', {
+  ...config,
+  headers: { ...config?.headers, 'X-POS-Delta-Handoff': deltaCapable ? '1' : '0' },
+})
+export const applyUpdate = (force = false, deltaCapable = false) => api.post<ApiResponse<UpdateApplyResult>>('/updates/apply', {
+  ...(force ? { force: true } : {}),
+  delta_capable: deltaCapable,
+}, {
+  timeout: 30_000,
+  headers: { 'X-POS-Delta-Handoff': deltaCapable ? '1' : '0' },
+})
 export const getUpdateHistory = () => api.get<ApiResponse<UpdateHistoryRecord[]>>('/updates/history')
 export const rollbackUpdate = (snapshotPath?: string) => api.post<ApiResponse<UpdateRollbackResult>>('/updates/rollback', snapshotPath ? { snapshot_path: snapshotPath } : null)
 export const getUpdateSnapshots = () => api.get<ApiResponse<UpdateSnapshot[]>>('/updates/snapshots')
@@ -231,5 +242,3 @@ export interface HealthDiagnostics {
 export const getHealthDiagnostics = () => api.get<HealthDiagnostics>('/health/diagnostics')
 export const getHealthMetrics = () => api.get('/health/metrics')
 export const getNetworkInfo = () => api.get<ApiResponse<{ ips: string[]; port: string; protocol: string }>>('/system/network-info')
-
-

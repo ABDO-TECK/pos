@@ -7,6 +7,7 @@ use App\Services\UpdateService;
 use App\Services\GitService;
 use App\Services\FrontendBuildService;
 use App\Services\BackupService;
+use App\Services\MigrationSafetyBackupService;
 
 class UpdateServiceTest extends TestCase
 {
@@ -50,7 +51,7 @@ class UpdateServiceTest extends TestCase
         $_ENV['ENABLE_UPDATE_CHECKS'] = 'false';
 
         $service = new UpdateService($this->gitMock, $this->buildMock, $this->backupMock);
-        $res = $service->checkForUpdate();
+        $res = $service->checkForUpdate(true);
 
         $this->assertTrue($res['ok']);
         $this->assertTrue($res['updates_disabled']);
@@ -342,13 +343,19 @@ class UpdateServiceTest extends TestCase
             'details' => null,
         ]);
 
-        $res = $service->checkForUpdate();
+        $res = $service->checkForUpdate(true);
 
         $this->assertTrue($res['ok']);
         $this->assertTrue($res['has_update']);
         $this->assertSame('delta', $res['update_type']);
         $this->assertTrue($res['is_delta']);
         $this->assertSame(1, $res['files_count']);
+
+        $legacy = $service->checkForUpdate(false);
+        $this->assertTrue($legacy['has_update']);
+        $this->assertSame('bootstrap', $legacy['update_type']);
+        $this->assertTrue($legacy['bootstrap_required']);
+        $this->assertFalse($legacy['is_delta']);
     }
 
     public function testCheckForUpdateFallsBackToFullWhenVersionBelowMinimum(): void
@@ -441,13 +448,10 @@ class UpdateServiceTest extends TestCase
             'rolled_back' => false,
         ]);
 
-        $this->backupMock->method('createBackupFile')->willReturn($tempRoot . '/backend/storage/pre_update.sql');
-
-        $migrationMock = $this->createMock(\App\Services\MigrationService::class);
-        $migrationMock->method('runAllMigrations')->willReturn(['executed' => 1, 'errors' => []]);
+        $this->backupMock->expects($this->never())->method('createBackupFile');
 
         $service = $this->getMockBuilder(UpdateService::class)
-            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock, $manifestService, $migrationMock])
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock, $manifestService])
             ->onlyMethods(['fetchRemoteVersion', 'getLocalVersion'])
             ->getMock();
 
@@ -529,16 +533,27 @@ class UpdateServiceTest extends TestCase
                 'logs' => ['Rollback complete.'],
             ]);
 
-        $this->backupMock->method('createBackupFile')->willReturn($tempRoot . '/backend/storage/pre_update.sql');
-
         $migrationMock = $this->createMock(\App\Services\MigrationService::class);
-        $migrationMock->method('runAllMigrations')->willReturn([
+        $migrationMock->method('runMigrations')->willReturn([
             'executed' => 0,
             'errors' => ['Syntax error in migration 045_add_column.sql'],
         ]);
 
+        $recoveryMock = $this->createMock(MigrationSafetyBackupService::class);
+        $recoveryMock->expects($this->once())
+            ->method('createMigrationSafetyBackup')
+            ->willReturn([
+                'ok' => true,
+                'backup_path' => $tempRoot . '/backend/storage/update-backups/migration-safety/fixture.sql',
+                'recovery_id' => 'fixture',
+            ]);
+        $recoveryMock->expects($this->once())
+            ->method('restoreMigrationSafetyBackup')
+            ->with($tempRoot . '/backend/storage/update-backups/migration-safety/fixture.sql', 'fixture')
+            ->willReturn(['ok' => true]);
+
         $service = $this->getMockBuilder(UpdateService::class)
-            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock, $manifestService, $migrationMock])
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock, $manifestService, $migrationMock, null, null, null, $recoveryMock])
             ->onlyMethods(['fetchRemoteVersion', 'getLocalVersion'])
             ->getMock();
 
@@ -548,6 +563,7 @@ class UpdateServiceTest extends TestCase
             'manifest' => [
                 'version' => '1.1.41',
                 'minimum_version' => '1.0.0',
+                'migrations' => ['045_add_column.sql'],
                 'files' => [
                     [
                         'path' => 'backend/Helpers/Logger.php',
@@ -656,7 +672,7 @@ class UpdateServiceTest extends TestCase
 
         $service->method('getLocalVersion')->willReturn(['version' => '1.1.48']);
 
-        $res = $service->checkForUpdate();
+        $res = $service->checkForUpdate(true);
 
         $this->assertTrue($res['ok']);
         $this->assertTrue($res['has_update']);
@@ -785,6 +801,3 @@ class UpdateServiceTest extends TestCase
         $this->assertSame('no_update_available', $res['status']);
     }
 }
-
-
-

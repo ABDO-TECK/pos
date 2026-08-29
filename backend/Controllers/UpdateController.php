@@ -48,12 +48,18 @@ class UpdateController extends Controller
         $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
 
         $type = 'full';
+        $bootstrapRequired = false;
         $filesCount = null;
         if (!empty($remote['manifest']['files']) && is_array($remote['manifest']['files'])) {
             $type = 'delta';
             $filesCount = count($remote['manifest']['files']);
         } elseif (!empty($remote['delta_url'])) {
             $type = 'delta';
+        }
+
+        if ($type === 'delta' && !$this->hasDesktopHandoffCapability()) {
+            $type = 'bootstrap';
+            $bootstrapRequired = true;
         }
 
         $releaseInfo = [
@@ -75,6 +81,7 @@ class UpdateController extends Controller
             'latest_version'     => $latestVersion,
             'update_available'   => $hasUpdate,
             'type'               => $type,
+            'bootstrap_required' => $bootstrapRequired,
             'channel'            => $clientChannel,
             'available_channels' => ['stable', 'beta', 'rc'],
             'device_id'          => substr($this->updateService->getDeviceId(), 0, 8) . '...',
@@ -126,7 +133,7 @@ class UpdateController extends Controller
 
     public function check()
     {
-        $result = $this->updateService->checkForUpdate();
+        $result = $this->updateService->checkForUpdate($this->hasDesktopHandoffCapability());
         return Response::success($result);
     }
 
@@ -192,7 +199,7 @@ class UpdateController extends Controller
         ]);
 
         // Execute update
-        $result = $this->updateService->applyUpdate($force);
+        $result = $this->updateService->applyUpdate($force, $this->hasDesktopHandoffCapability($body));
         $durationMs = round((microtime(true) - $startTime) * 1000, 2);
 
         if (!$result['ok']) {
@@ -220,6 +227,20 @@ class UpdateController extends Controller
             $result['data'] ?? [],
             'تم تطبيق التحديث بنجاح'
         );
+    }
+
+    private function hasDesktopHandoffCapability(?array $body = null): bool
+    {
+        $header = $_SERVER['HTTP_X_POS_DELTA_HANDOFF'] ?? '';
+        if ($header !== '1') {
+            return false;
+        }
+
+        if ($body === null) {
+            return true;
+        }
+
+        return filter_var($body['delta_capable'] ?? false, FILTER_VALIDATE_BOOLEAN);
     }
 
     // ══════════════════════════════════════════════════════════════

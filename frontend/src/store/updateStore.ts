@@ -1,6 +1,19 @@
 import { create } from 'zustand'
 import { checkUpdate } from '../api/endpoints'
 
+async function hasDeltaHandoffCapability(): Promise<boolean> {
+  try {
+    return Boolean((await window.posRuntime?.getDeltaCapability?.())?.capable)
+  } catch {
+    return false
+  }
+}
+
+async function getInstalledElectronVersion(): Promise<string | null> {
+  if (!window.electronAPI?.getVersion) return null
+  return window.electronAPI.getVersion()
+}
+
 interface UpdateState {
   hasUpdate: boolean;
   latestVersion: string | null;
@@ -36,15 +49,13 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       return
     }
 
-    set({ isChecking: true })
+    set({ isChecking: true, updatesUnreachable: false, updateErrorMessage: '' })
     try {
-      const res = await checkUpdate({ hideGlobalError: true })
+      const res = await checkUpdate(await hasDeltaHandoffCapability(), { hideGlobalError: true })
       const data = res.data.data
       
       let localVersion = data?.current_version || null;
-      if (window.electronAPI && window.electronAPI.getVersion) {
-        localVersion = await window.electronAPI.getVersion();
-      }
+      localVersion = await getInstalledElectronVersion() || localVersion
 
       set({
         hasUpdate: data?.has_update || false,
@@ -58,8 +69,10 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
         updateErrorMessage: data?.updates_unreachable ? formatUpdateError(data) : '',
       })
     } catch {
+      const localVersion = await getInstalledElectronVersion()
       // Catch all errors quietly, never toast/throw/rethrow
       set({
+        currentVersion: localVersion,
         updatesUnreachable: true,
         updateErrorMessage: 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'
       })
@@ -69,15 +82,13 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 
   forceCheck: async () => {
-    set({ isChecking: true })
+    set({ isChecking: true, updatesUnreachable: false, updateErrorMessage: '' })
     try {
-      const res = await checkUpdate({ hideGlobalError: true })
+      const res = await checkUpdate(await hasDeltaHandoffCapability(), { hideGlobalError: true })
       const data = res.data.data
       
       let localVersion = data?.current_version || null;
-      if (window.electronAPI && window.electronAPI.getVersion) {
-        localVersion = await window.electronAPI.getVersion();
-      }
+      localVersion = await getInstalledElectronVersion() || localVersion
 
       const stateUpdate = {
         hasUpdate: data?.has_update || false,
@@ -93,7 +104,9 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       set(stateUpdate)
       return { ...data, current_version: localVersion }
     } catch (err) {
+      const localVersion = await getInstalledElectronVersion()
       set({
+        currentVersion: localVersion,
         updatesUnreachable: true,
         updateErrorMessage: 'تعذر الاتصال بخادم التحديثات. تحقق من الاتصال أو إعدادات الخادم.'
       })

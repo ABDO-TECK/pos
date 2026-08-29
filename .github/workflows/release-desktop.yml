@@ -51,11 +51,29 @@ jobs:
       - name: Verify portable runtime before packaging
         run: npm run verify:desktop-runtime
 
+      - name: Require production Windows signing configuration
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          WINDOWS_SIGNING_PUBLISHER: ${{ vars.WINDOWS_SIGNING_PUBLISHER }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: node scripts/require-production-signing.mjs
+
       - name: Build Windows installer
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --publish never
 
       - name: Verify packaged runtime contents
         run: node scripts/verify-desktop-runtime.mjs --root dist-electron/win-unpacked/resources/portable --strict
+
+      - name: Verify final signed installer and updater metadata
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PUBLISHER: ${{ vars.WINDOWS_SIGNING_PUBLISHER }}
+        run: ./scripts/verify-desktop-release.ps1 -ReleaseDirectory dist-electron -Tag '${{ inputs.tag }}' -RequireAuthenticode -ExpectedPublisher $env:WINDOWS_SIGNING_PUBLISHER
 
       - name: Upload verified release assets
         shell: pwsh
@@ -65,7 +83,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           $version = $env:RELEASE_TAG.TrimStart('v')
-          $installer = "dist-electron/POS-System-Setup-$version.exe"
+          $installer = "dist-electron/POS-Desktop-Setup-$version.exe"
           $blockmap = "$installer.blockmap"
           if (-not (Test-Path -LiteralPath $installer)) {
             throw "Installer was not created: $installer"

@@ -434,6 +434,14 @@ if (php_sapi_name() === 'cli') {
         exit(0);
     }
 
+    if (\$argc > 1 && \$argv[1] === 'restore-migration-safety') {
+        unset(\$argv[1]);
+        \$argv = array_values(\$argv);
+        \$argc = count(\$argv);
+        require 'phar://backend.phar/cli/restore-migration-safety.php';
+        exit(0);
+    }
+
     if (\$argc > 1 && \$argv[1] === 'reset-password') {
         unset(\$argv[1]);
         \$argv = array_values(\$argv);

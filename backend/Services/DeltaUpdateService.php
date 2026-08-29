@@ -25,7 +25,7 @@ class DeltaUpdateService
         ?PDO $db = null
     ) {
         $this->manifestService = $manifestService ?? new UpdateManifestService();
-        $this->rootDir = $rootDir ?? (\Phar::running() ?: (realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2)));
+        $this->rootDir = $rootDir ?? UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
         $this->rootDir = str_replace('\\', '/', $this->rootDir);
 
         $configuredStorage = EnvLoader::get('APP_STORAGE_DIR');
@@ -64,6 +64,62 @@ class DeltaUpdateService
     public function getStateFilePath(): string
     {
         return $this->storageDir . '/update-state.json';
+    }
+
+    /**
+     * backend.phar is held open by the packaged PHP runtime on Windows. The
+     * Electron owner must stop that runtime and perform the final move.
+     */
+    public function requiresDesktopHandoff(array $manifest): bool
+    {
+        if (\Phar::running(false) === '') {
+            return false;
+        }
+
+        foreach ($manifest['files'] ?? [] as $file) {
+            if (($file['path'] ?? null) === 'backend/backend.phar') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Persist a verified, local-only plan for Electron's trusted main process.
+     * No network path or renderer-supplied file path is used for hand-off.
+     */
+    public function prepareDesktopHandoff(array $manifest, string $snapshotPath, ?array $dbRecovery = null): array
+    {
+        $version = (string) ($manifest['version'] ?? 'unknown');
+        $stagingDir = $this->getStagingDir($version);
+        $verification = $this->manifestService->verifyStagedFiles($stagingDir, $manifest['files'] ?? []);
+        if (!$verification['ok']) {
+            return ['ok' => false, 'error' => 'Verified staged files are unavailable for desktop hand-off.'];
+        }
+
+        $plan = [
+            'version' => $version,
+            'root_dir' => $this->rootDir,
+            'storage_dir' => $this->storageDir,
+            'staging_dir' => $stagingDir,
+            'snapshot_path' => $snapshotPath,
+            'db_recovery' => $dbRecovery,
+            'manifest' => $manifest,
+        ];
+        $planPath = $stagingDir . '/desktop-handoff.json';
+        if (@file_put_contents($planPath, json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX) === false) {
+            return ['ok' => false, 'error' => 'Unable to persist desktop update hand-off plan.'];
+        }
+
+        $this->setUpdateState('desktop_handoff_pending', [
+            'to_version' => $version,
+            'backup_snapshot' => $snapshotPath,
+            'db_recovery' => $dbRecovery,
+            'handoff_plan' => $planPath,
+        ]);
+
+        return ['ok' => true, 'version' => $version, 'plan_path' => $planPath];
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -248,8 +304,14 @@ class DeltaUpdateService
         string $fromVersion,
         string $toVersion,
         array $manifest,
-        ?string $dbBackupPath = null
+        ?array $dbRecovery = null
     ): array {
+        $pathCheck = $this->manifestService->validateManifestPaths($manifest, $this->rootDir);
+        if (!$pathCheck['ok']) {
+            $err = 'Manifest contains unsafe paths: ' . implode(', ', $pathCheck['unsafe_paths']);
+            return ['ok' => false, 'snapshot_path' => '', 'backed_up_files' => [], 'new_files' => [], 'error' => $err];
+        }
+
         $this->setUpdateState('backing_up', [
             'from_version' => $fromVersion,
             'to_version' => $toVersion,
@@ -361,7 +423,8 @@ class DeltaUpdateService
             'from_version' => $fromVersion,
             'to_version' => $toVersion,
             'timestamp' => date('Y-m-d\TH:i:sP'),
-            'db_backup_path' => $dbBackupPath ? str_replace('\\', '/', $dbBackupPath) : null,
+            'db_backup_path' => $dbRecovery['backup_path'] ?? null,
+            'db_recovery' => $dbRecovery,
             'files' => $existingFilesMetadata,
             'new_files' => $newFiles,
             'deleted_files' => $deletedFilesMetadata,
@@ -377,7 +440,7 @@ class DeltaUpdateService
 
         $this->setUpdateState('backing_up', [
             'backup_snapshot' => $snapshotDir,
-            'db_backup_file' => $dbBackupPath,
+            'db_recovery' => $dbRecovery,
         ]);
 
         Logger::info('Delta update backup snapshot created', [
@@ -781,6 +844,17 @@ class DeltaUpdateService
         $stagedCount = 0;
         $sourceFilesDirNormalized = rtrim(str_replace('\\', '/', $sourceFilesDir), '/');
 
+        $pathCheck = $this->manifestService->validateManifestPaths($manifest, $this->rootDir);
+        if (!$pathCheck['ok']) {
+            return [
+                'ok' => false,
+                'staging_dir' => $stagingDir,
+                'staged_count' => 0,
+                'errors' => ['Manifest contains unsafe paths: ' . implode(', ', $pathCheck['unsafe_paths'])],
+                'logs' => [],
+            ];
+        }
+
         $this->cleanStaging($version);
         if (!is_dir($stagingDir) && !@mkdir($stagingDir, 0755, true)) {
             return [
@@ -876,6 +950,19 @@ class DeltaUpdateService
         $appliedFiles = [];
         $deletedFiles = [];
 
+        $pathCheck = $this->manifestService->validateManifestPaths($manifest, $this->rootDir);
+        if (!$pathCheck['ok']) {
+            $err = 'Manifest contains unsafe paths: ' . implode(', ', $pathCheck['unsafe_paths']);
+            return [
+                'ok' => false,
+                'applied_files' => [],
+                'deleted_files' => [],
+                'errors' => [$err],
+                'logs' => ["❌ {$err}"],
+                'rolled_back' => false,
+            ];
+        }
+
         $this->setUpdateState('applying', [
             'to_version' => $version,
             'backup_snapshot' => $snapshotPath,
@@ -963,6 +1050,11 @@ class DeltaUpdateService
         if (empty($errors)) {
             foreach ($manifest['deleted_files'] ?? [] as $deletedRelativePath) {
                 $normalized = str_replace('\\', '/', $deletedRelativePath);
+                if ($this->isProtectedFile($normalized)) {
+                    $errors[] = "Security violation: Attempt to delete protected file {$normalized}";
+                    $logs[] = "❌ تم حظر محاولة حذف ملف نظام محمي: {$normalized}";
+                    break;
+                }
                 $targetFile = $this->rootDir . '/' . $normalized;
 
                 if (is_file($targetFile)) {

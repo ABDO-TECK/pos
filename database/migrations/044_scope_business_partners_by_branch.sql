@@ -2,10 +2,10 @@
 -- remains in branch 1; records already referenced by branch data inherit the
 -- lowest historical branch so the migration is deterministic.
 
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id INT NULL DEFAULT 1 AFTER id;
-ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS branch_id INT NULL DEFAULT 1 AFTER id;
-ALTER TABLE customer_ledger ADD COLUMN IF NOT EXISTS branch_id INT NULL DEFAULT 1 AFTER id;
-ALTER TABLE supplier_ledger ADD COLUMN IF NOT EXISTS branch_id INT NULL DEFAULT 1 AFTER id;
+ALTER TABLE customers ADD COLUMN branch_id INT NULL DEFAULT 1 AFTER id;
+ALTER TABLE suppliers ADD COLUMN branch_id INT NULL DEFAULT 1 AFTER id;
+ALTER TABLE customer_ledger ADD COLUMN branch_id INT NULL DEFAULT 1 AFTER id;
+ALTER TABLE supplier_ledger ADD COLUMN branch_id INT NULL DEFAULT 1 AFTER id;
 
 -- A shared historical account cannot be assigned to one branch without
 -- changing financial ownership. Abort instead of silently moving or cloning

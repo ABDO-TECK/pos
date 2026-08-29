@@ -35,6 +35,13 @@ import useUpdateStore from '../../store/updateStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
 
+async function hasDeltaHandoffCapability(): Promise<boolean> {
+  try {
+    return Boolean((await window.posRuntime?.getDeltaCapability?.())?.capable)
+  } catch {
+    return false
+  }
+}
 
 export default function UpdateSection() {
   const { confirm } = useConfirmStore()
@@ -60,6 +67,7 @@ export default function UpdateSection() {
   const [showHistory, setShowHistory] = useState(false)
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [updateLogs, setUpdateLogs] = useState<string[]>([])
+  const [bootstrapRequired, setBootstrapRequired] = useState(false)
 
   
   // Status and Real-time progress data
@@ -85,7 +93,7 @@ export default function UpdateSection() {
   const loadStatusAndHistory = useCallback(async () => {
     try {
       const [statusRes, histRes, snapRes, diagRes, auditRes] = await Promise.allSettled([
-        getUpdateStatus(),
+        getUpdateStatus(await hasDeltaHandoffCapability()),
         getUpdateHistory(),
         getUpdateSnapshots(),
         diagnoseUpdateRecovery(),
@@ -178,7 +186,7 @@ export default function UpdateSection() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await getUpdateStatus()
+        const res = await getUpdateStatus(await hasDeltaHandoffCapability())
         if (res.data?.data) {
           setUpdateStatus(res.data.data)
           const state = res.data.data.update_state?.state
@@ -213,7 +221,8 @@ export default function UpdateSection() {
         return
       }
       if (data?.has_update) {
-        toast.success('🎉 تم العثور على تحديث جديد متوافق!')
+        setBootstrapRequired(Boolean(data.bootstrap_required))
+        toast.success(data.bootstrap_required ? 'تحديث التطبيق مطلوب لمرة واحدة.' : '🎉 تم العثور على تحديث جديد متوافق!')
         setShowChangelog(true)
       } else {
         toast.success('✅ النظام محدّث لأحدث إصدار.')
@@ -225,8 +234,24 @@ export default function UpdateSection() {
   }
 
   const handleApplyUpdate = async (force = false) => {
+      const deltaCapable = await hasDeltaHandoffCapability()
+    if (!deltaCapable && updaterApi) {
+      setApplyingUpdate(true)
+      setUpdateLogs(['🚀 جاري تحميل تحديث التطبيق المطلوب...'])
+      try {
+        const downloadStatus = await updaterApi.download()
+        if (downloadStatus?.state === 'error') throw new Error(downloadStatus.error || 'فشل تحميل تحديث التطبيق.')
+        if (downloadStatus?.canInstall) await updaterApi.install()
+        return
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'فشل تحديث التطبيق.')
+        setApplyingUpdate(false)
+        return
+      }
+    }
+
     const isDelta = updateStatus?.type === 'delta' || hasUpdate
-    const updateTypeLabel = isDelta ? 'تحديث جزئي سريع (Delta Patch)' : 'تحديث كامل (Full Package)'
+    const updateTypeLabel = bootstrapRequired ? 'تحديث التطبيق المطلوب' : (isDelta ? 'تحديث جزئي سريع (Delta Patch)' : 'تحديث كامل (Full Package)')
 
     if (!force) {
       const confirmed = await confirm(
@@ -239,10 +264,15 @@ export default function UpdateSection() {
     setUpdateLogs(['🚀 بدء عملية التحديث...', '⏳ جاري الاتصال بخادم التحديثات وتجهيز الملفات...'])
 
     try {
-      const res = await applyUpdate(force)
+      const res = await applyUpdate(force, deltaCapable)
       const data = res.data?.data
       if (data?.logs && Array.isArray(data.logs)) {
         setUpdateLogs(data.logs)
+      }
+
+      if (data?.requires_desktop_handoff && data.handoff_version) {
+        const handoff = await window.posRuntime?.applyStagedDelta(data.handoff_version)
+        if (!handoff?.ok) throw new Error(handoff?.error || 'فشل الاستبدال الآمن لملفات التحديث.')
       }
 
       toast.success('🎉 تم تطبيق التحديث بنجاح! جاري تنشيط النظام...')

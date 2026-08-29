@@ -6,6 +6,20 @@ use App\Helpers\Logger;
 
 class UpdateManifestService
 {
+    /**
+     * Development trees contain source files, but packaged desktops execute
+     * only the artifacts below. Keep the production allow-list deliberately
+     * small so a signed manifest cannot claim arbitrary app.asar contents.
+     */
+    private const PACKAGED_ALLOWED_PATH_PREFIXES = [
+        'backend/backend.phar',
+        'backend/certs/',
+        'database/pos_schema.sql',
+        'frontend/dist/',
+        'frontend/public/',
+        'version.json',
+    ];
+
     private const ALLOWED_PATH_PREFIXES = [
         'backend/',
         'frontend/',
@@ -146,6 +160,10 @@ class UpdateManifestService
                     }
                 }
             }
+        }
+
+        if (isset($manifest['migrations']) && (!is_array($manifest['migrations']) || array_filter($manifest['migrations'], static fn ($migration): bool => !is_string($migration) || !preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]*\\.sql$/', $migration)))) {
+            $errors[] = 'Manifest "migrations" must contain canonical SQL migration filenames only.';
         }
 
 
@@ -390,9 +408,16 @@ class UpdateManifestService
             }
         }
 
+        // Packaged customers only have deployable artifacts under
+        // app.asar.unpacked. Source paths are accepted solely for development
+        // installations, where the PHAR artifact is absent.
+        $allowedPrefixes = $this->isPackagedDeploymentRoot($rootDir)
+            ? self::PACKAGED_ALLOWED_PATH_PREFIXES
+            : self::ALLOWED_PATH_PREFIXES;
+
         // Must match an allowed path prefix
         $isAllowedPrefix = false;
-        foreach (self::ALLOWED_PATH_PREFIXES as $prefix) {
+        foreach ($allowedPrefixes as $prefix) {
             if ($normalized === $prefix || str_starts_with($normalized, $prefix)) {
                 $isAllowedPrefix = true;
                 break;
@@ -420,6 +445,11 @@ class UpdateManifestService
         $resolved = (str_starts_with($targetCandidate, '/') ? '/' : '') . implode('/', $parts);
 
         return str_starts_with($resolved, $realRootNormalized . '/');
+    }
+
+    private function isPackagedDeploymentRoot(string $rootDir): bool
+    {
+        return is_file(rtrim(str_replace('\\', '/', $rootDir), '/') . '/backend/backend.phar');
     }
 
     /**

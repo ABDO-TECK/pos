@@ -88,6 +88,9 @@ jobs:
       - name: Build frontend production bundle
         run: npm --prefix frontend run build
 
+      - name: Build packaged backend artifact
+        run: npm run build:phar
+
       - name: Validate version.json matches release tag
         id: clean-version
         run: |
@@ -124,4 +127,3 @@ jobs:
             release/${{ steps.clean-version.outputs.clean_tag }}/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

@@ -6,12 +6,12 @@
     "main":  "electron/main.js",
     "scripts":  {
                     "electron:dev":  "electron .",
-                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js electron/tests/runtime-process.test.js electron/tests/arabic-ui-text.test.js electron/tests/window-lifecycle.test.js scripts/desktop-runtime.test.mjs",
+                    "test:electron":  "node --test electron/tests/ipc-surface.test.js electron/tests/https-proxy.test.js electron/tests/qz-certs-security.test.js electron/tests/php-runtime.test.js electron/tests/runtime-process.test.js electron/tests/arabic-ui-text.test.js electron/tests/window-lifecycle.test.js electron/tests/delta-update-handoff.test.js scripts/desktop-runtime.test.mjs",
                     "build:phar":  "node scripts/build-phar.mjs",
                     "prepare:desktop-runtime":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-desktop-runtime.ps1",
                     "verify:desktop-runtime":  "node scripts/verify-desktop-runtime.mjs --strict",
                     "electron:build":  "npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish never",
-                    "electron:publish":  "npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish always",
+                    "electron:publish":  "node scripts/require-production-signing.mjs && npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish always",
                     "frontend:build":  "cd frontend && npm run build",
                     "quality":  "node scripts/quality.mjs",
                     "test:quality":  "node --test scripts/quality.test.mjs"
@@ -37,6 +37,7 @@
                            },
                   "files":  [
                                 "electron/**/*",
+                                "!electron/tests/**/*",
                                 "backend/backend.phar",
                                 "backend/certs/**/*",
                                 "database/pos_schema.sql",
@@ -59,7 +60,8 @@
                                      "backend/certs/**/*",
                                      "database/pos_schema.sql",
                                      "frontend/dist/**/*",
-                                     "frontend/public/**/*"
+                                     "frontend/public/**/*",
+                                     "version.json"
                                  ],
                   "publish":  {
                                   "provider":  "github",

@@ -74,7 +74,8 @@ class UpdateControllerTest extends TestCase
         $this->assertSame('1.1.48', $body['data']['current_version']);
         $this->assertSame('1.1.49', $body['data']['latest_version']);
         $this->assertTrue($body['data']['update_available']);
-        $this->assertSame('delta', $body['data']['type']);
+        $this->assertSame('bootstrap', $body['data']['type']);
+        $this->assertTrue($body['data']['bootstrap_required']);
         $this->assertSame('v1.1.49', $body['data']['release_info']['tag_name']);
         $this->assertSame(1, $body['data']['release_info']['files_count']);
         $this->assertSame('completed', $body['data']['update_state']['state']);

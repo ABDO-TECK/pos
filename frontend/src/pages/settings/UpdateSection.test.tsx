@@ -207,7 +207,7 @@ describe('UpdateSection Admin Update Center Flow', () => {
     })
 
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(applyUpdate).toHaveBeenCalledWith(false)
+    expect(applyUpdate).toHaveBeenCalledWith(false, false)
   })
 
   it('displays update history table when history button is clicked', async () => {
@@ -289,4 +289,3 @@ describe('UpdateSection Admin Update Center Flow', () => {
     expect(container.textContent).toContain('Improved delta update engine')
   })
 })
-

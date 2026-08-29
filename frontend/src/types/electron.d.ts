@@ -43,6 +43,7 @@ interface Window {
   electronAPI?: ElectronAPI;
   posRuntime?: {
     getApiBaseUrl: () => Promise<string | null>;
+    getDeltaCapability: () => Promise<{ capable: boolean; protocol: number }>;
     enableLanAccess: () => Promise<{
       enabled: boolean;
       port: number;
@@ -59,6 +60,7 @@ interface Window {
       firewallRequired?: boolean;
       error?: string;
     }>;
+    applyStagedDelta: (version: string) => Promise<{ ok: boolean; error?: string }>;
   };
   API_BASE_URL?: string;
 }

@@ -36,11 +36,12 @@ class UpdateRecoveryService
         ?UpdateTelemetryService $telemetryService = null,
         ?PDO $pdo = null
     ) {
-        $this->storageDir = $storageDir ?? (realpath(__DIR__ . '/../storage') ?: __DIR__ . '/../storage');
+        $configuredStorage = $_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR') ?: null;
+        $this->storageDir = $storageDir ?? $configuredStorage ?? (realpath(__DIR__ . '/../storage') ?: __DIR__ . '/../storage');
         $this->stateFile = $this->storageDir . '/update-state.json';
         $this->lockFile = $this->storageDir . '/recovery.lock';
         $this->auditFile = $this->storageDir . '/recovery_audit.json';
-        $this->appRoot = $appRoot ?? (realpath(__DIR__ . '/../..') ?: dirname(__DIR__, 2));
+        $this->appRoot = $appRoot ?? UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../..') ?: dirname(__DIR__, 2));
 
         $this->updateService = $updateService;
         $this->telemetryService = $telemetryService ?? new UpdateTelemetryService($this->storageDir, $pdo);
@@ -219,7 +220,12 @@ class UpdateRecoveryService
         $stateContent = @file_get_contents($this->stateFile);
         $state = json_decode((string)$stateContent, true);
 
-        if (!is_array($state) || empty($state['status'])) {
+        // DeltaUpdateService persists its durable transaction journal using
+        // `state` and `to_version`; older recovery flows use `status` and
+        // `target_version`. Accept both schemas so a fresh process can recover
+        // an interrupted desktop Delta rather than treating it as corrupt.
+        $stateStatus = is_array($state) ? ($state['status'] ?? $state['state'] ?? null) : null;
+        if (!is_array($state) || !is_string($stateStatus) || $stateStatus === '') {
             return [
                 'status'           => 'corrupted_state',
                 'state'            => 'unknown',
@@ -230,9 +236,9 @@ class UpdateRecoveryService
             ];
         }
 
-        $status = (string) $state['status'];
+        $status = $stateStatus;
         $attempts = (int) ($state['recovery_attempts'] ?? 0);
-        $targetVersion = $state['target_version'] ?? null;
+        $targetVersion = $state['target_version'] ?? $state['to_version'] ?? null;
         $snapshot = $state['backup_snapshot'] ?? null;
         $downloadFile = $state['download_file'] ?? null;
         $updatedAt = isset($state['updated_at']) ? strtotime($state['updated_at']) : @filemtime($this->stateFile);
@@ -313,7 +319,7 @@ class UpdateRecoveryService
         }
 
         // Case D: Interrupted or Failed Migration
-        if ($status === 'migrating' || $status === 'migration_failed') {
+        if (in_array($status, ['migrating', 'migration_failed', 'desktop_handoff_pending', 'database_recovery_failed'], true)) {
             return [
                 'status'             => 'failed_migration',
                 'state'              => $status,
@@ -503,10 +509,24 @@ class UpdateRecoveryService
         $rbResult = $updateService->rollbackUpdate($snapshot);
 
         if (!$rbResult['ok']) {
+            $error = (string) ($rbResult['error'] ?? 'Unknown error');
+            // A migration safety restore failure intentionally leaves the
+            // application files in place: rolling them back against an
+            // unverified database could create an incompatible deployment.
+            // Persist that distinct durable state so startup never presents an
+            // ambiguous in-progress update or a successful rollback.
+            if (str_contains($error, 'Database recovery failed')) {
+                $state['status'] = 'database_recovery_failed';
+                $state['recovery_action'] = 'rollback';
+                $state['recovery_error'] = $error;
+                $state['updated_at'] = date('Y-m-d H:i:s');
+                $this->writeStateFile($state);
+            }
+
             return [
                 'ok'      => false,
                 'action'  => 'rollback',
-                'error'   => 'Rollback execution failed: ' . ($rbResult['error'] ?? 'Unknown error'),
+                'error'   => 'Rollback execution failed: ' . $error,
                 'details' => $rbResult,
             ];
         }
@@ -672,12 +692,16 @@ class UpdateRecoveryService
             $errors[] = "version.json does not exist";
         }
 
-        // 4. Check backend/index.php entry point
-        $entryFile = $this->appRoot . '/backend/index.php';
+        // 4. Check the executable backend entrypoint for this layout. Packaged
+        // desktop deployments execute backend.phar and intentionally do not
+        // ship an external backend/index.php.
+        $entryFile = UpdateRuntimePaths::backendHealthEntrypoint($this->appRoot);
         if (file_exists($entryFile) && filesize($entryFile) > 50) {
             $checks['backend_entry'] = true;
         } else {
-            $errors[] = "backend/index.php is missing or empty";
+            $errors[] = UpdateRuntimePaths::isPackagedPharDeployment($this->appRoot)
+                ? 'backend/backend.phar is missing or empty'
+                : 'backend/index.php is missing or empty';
         }
 
         $allHealthy = !in_array(false, $checks, true);
@@ -762,7 +786,7 @@ class UpdateRecoveryService
     {
         if ($this->updateService === null) {
             $manifestService = new UpdateManifestService();
-            $deltaService = new DeltaUpdateService($manifestService, $this->rootDir, $this->storageDir);
+            $deltaService = new DeltaUpdateService($manifestService, $this->appRoot, $this->storageDir);
             $this->updateService = new UpdateService(
                 new GitService(),
                 new FrontendBuildService(),
@@ -813,6 +837,6 @@ class UpdateRecoveryService
                 return (string) $data['version'];
             }
         }
-        return '1.1.48';
+        return '0.0.0';
     }
 }

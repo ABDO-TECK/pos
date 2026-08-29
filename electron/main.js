@@ -1036,6 +1036,70 @@ app.whenReady().then(async () => {
       return null;
     }
   });
+  ipcMain.handle('delta:get-capability', (event) => {
+    assertTrustedAppRenderer(event);
+    return { capable: true, protocol: 1 };
+  });
+  ipcMain.handle('delta:apply-staged', async (event, version) => {
+    assertTrustedAppRenderer(event);
+    if (typeof version !== 'string' || !/^[A-Za-z0-9._-]+$/.test(version)) {
+      throw new Error('Invalid staged delta version');
+    }
+
+    const { getAppUnpackedPath, getDataDir } = require('./utils/paths');
+    const { applyPendingDelta, rollback, setHandoffState } = require('./services/delta-update-handoff');
+    await stopJobWorker();
+    stopPHP();
+    let applied;
+    try {
+      applied = applyPendingDelta(getDataDir(), version, getAppUnpackedPath());
+      if (!applied.ok) throw new Error(applied.error);
+      if (Array.isArray(applied.plan.manifest?.migrations) && applied.plan.manifest.migrations.length > 0) {
+        setHandoffState(applied.plan, 'migrating', { migration_started: true });
+        await runDatabaseMigrations({
+          mysqlPort,
+          dbCredentials,
+          apiPort: phpPort,
+          migrations: applied.plan.manifest.migrations,
+        });
+      }
+      await restartPhpAndWorker();
+      setHandoffState(applied.plan, 'completed', { migration_completed: true });
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        await mainWindow.loadURL('app://pos-app/index.html');
+      }
+      return { ok: true };
+    } catch (error) {
+      let recoveryError = null;
+      if (applied?.plan?.db_recovery?.backup_path && applied.plan.db_recovery.recovery_id) {
+        try {
+          await runBackendCli([
+            'restore-migration-safety',
+            applied.plan.db_recovery.backup_path,
+            applied.plan.db_recovery.recovery_id,
+          ]);
+        } catch (restoreError) {
+          recoveryError = restoreError;
+          setHandoffState(applied.plan, 'database_recovery_failed', {
+            error: 'Migration safety database restore failed.',
+          });
+        }
+      }
+      if (applied?.plan && !recoveryError) {
+        rollback(applied.plan);
+        setHandoffState(applied.plan, 'rolled_back', { migration_recovery_completed: true });
+      }
+      try { await restartPhpAndWorker(); } catch (restartError) {
+        console.error('[Delta] Failed to restart runtime after hand-off failure:', restartError.message);
+      }
+      return {
+        ok: false,
+        error: recoveryError
+          ? 'Desktop delta failed and database recovery requires manual intervention.'
+          : (error.message || 'Desktop delta hand-off failed.'),
+      };
+    }
+  });
   ipcMain.handle('network:enable-lan', async (event) => {
     assertTrustedAppRenderer(event);
     try {

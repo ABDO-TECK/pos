@@ -36,12 +36,37 @@ class UpdateTelemetryService
     protected string $storageDir;
     protected string $queueFile;
     protected ?PDO $pdo;
+    protected ?string $appRoot;
 
-    public function __construct(?string $storageDir = null, ?PDO $pdo = null)
+    public function __construct(?string $storageDir = null, ?PDO $pdo = null, ?string $appRoot = null)
     {
         $this->storageDir = $storageDir ?? (realpath(__DIR__ . '/../storage') ?: __DIR__ . '/../storage');
         $this->queueFile = $this->storageDir . '/telemetry_queue.json';
         $this->pdo = $pdo;
+        $this->appRoot = $appRoot !== null
+            ? UpdateRuntimePaths::deployedRoot($appRoot)
+            : UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
+    }
+
+    /**
+     * Resolves the canonical current release / target version for fleet comparison.
+     */
+    public function getTargetVersion(): ?string
+    {
+        $root = $this->appRoot ?? UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
+        $vFile = $root . '/version.json';
+        if (file_exists($vFile)) {
+            $data = json_decode((string) @file_get_contents($vFile), true);
+            if (is_array($data)) {
+                if (!empty($data['version']) && is_string($data['version'])) {
+                    return (string) $data['version'];
+                }
+                if (!empty($data['application_version']) && is_string($data['application_version'])) {
+                    return (string) $data['application_version'];
+                }
+            }
+        }
+        return null;
     }
 
     protected function getPdo(): ?PDO
@@ -393,18 +418,28 @@ class UpdateTelemetryService
             }
 
             // Detect devices on legacy version
+            $targetVersion = $this->getTargetVersion();
             $outdatedCount = 0;
-            foreach ($versionDist as $ver => $count) {
-                if (version_compare($ver, '1.1.48', '<')) {
-                    $outdatedCount += $count;
+            if ($targetVersion !== null && $targetVersion !== '' && $targetVersion !== '0.0.0') {
+                foreach ($versionDist as $ver => $count) {
+                    if (version_compare($ver, $targetVersion, '<')) {
+                        $outdatedCount += $count;
+                    }
                 }
-            }
-            if ($outdatedCount > 0) {
+                if ($outdatedCount > 0) {
+                    $alerts[] = [
+                        'severity' => 'info',
+                        'code' => 'outdated_devices',
+                        'title' => 'أجهزة تعمل بإصدارات قديمة',
+                        'message' => "يوجد {$outdatedCount} جهاز يعمل بإصدار أقدم من v{$targetVersion} ويتطلب التحديث.",
+                    ];
+                }
+            } elseif ($totalDevices > 0) {
                 $alerts[] = [
-                    'severity' => 'info',
-                    'code' => 'outdated_devices',
-                    'title' => 'أجهزة تعمل بإصدارات قديمة',
-                    'message' => "يوجد {$outdatedCount} جهاز يعمل بإصدار أقدم من v1.1.48 ويتطلب التحديث.",
+                    'severity' => 'warning',
+                    'code' => 'target_version_unavailable',
+                    'title' => 'الإصدار المستهدف غير متاح',
+                    'message' => 'تعذر تحديد الإصدار الرسمي للتطبيق من version.json؛ لا يمكن تصنيف الأجهزة القديمة حالياً.',
                 ];
             }
 

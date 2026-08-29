@@ -154,6 +154,17 @@ class UpdateManifestServiceTest extends TestCase
         $this->assertFalse($this->service->isPathSafe('backend/storage/secrets.json', $root));
     }
 
+    public function testPackagedRootOnlyAcceptsDeployedArtifacts(): void
+    {
+        @mkdir($this->tempDir . '/backend', 0755, true);
+        file_put_contents($this->tempDir . '/backend/backend.phar', 'fixture');
+
+        $this->assertTrue($this->service->isPathSafe('backend/backend.phar', $this->tempDir));
+        $this->assertTrue($this->service->isPathSafe('frontend/dist/assets/app.js', $this->tempDir));
+        $this->assertFalse($this->service->isPathSafe('backend/Services/UpdateService.php', $this->tempDir));
+        $this->assertFalse($this->service->isPathSafe('electron/main.js', $this->tempDir));
+    }
+
     public function testVerifyFileHash(): void
     {
         $testFile = $this->tempDir . '/test.txt';

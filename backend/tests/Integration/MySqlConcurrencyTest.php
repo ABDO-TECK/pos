@@ -223,16 +223,16 @@ final class MySqlConcurrencyTest extends TestCase
         ];
     }
 
-    private function seedSaleInvoice(float $quantity): int
+    private function seedSaleInvoice(float $quantity, string $status = 'reserved'): int
     {
         self::$pdo->exec('UPDATE products SET quantity = quantity - 10 WHERE id = 1');
         $statement = self::$pdo->prepare(
             "INSERT INTO invoices
                 (branch_id, user_id, subtotal, total, payment_method, amount_paid, status)
-             VALUES (1, 1, ?, ?, 'cash', ?, 'completed')"
+             VALUES (1, 1, ?, ?, 'cash', ?, ?)"
         );
         $total = $quantity * 10;
-        $statement->execute([$total, $total, $total]);
+        $statement->execute([$total, $total, $total, $status]);
         $invoiceId = (int) self::$pdo->lastInsertId();
         self::$pdo->prepare(
             'INSERT INTO invoice_items (invoice_id, product_id, quantity, price, unit_cost, subtotal)

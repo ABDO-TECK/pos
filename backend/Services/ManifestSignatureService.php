@@ -299,7 +299,7 @@ class ManifestSignatureService
      */
     private function resolveAllTrustedKeyPaths(): array
     {
-        $baseDir = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
+        $baseDir = UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
         $dirs = [
             $baseDir . '/backend/certs',
             $baseDir . '/certs',

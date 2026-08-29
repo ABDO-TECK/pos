@@ -17,7 +17,7 @@ use App\Services\UpdateManifestService;
 $rootDir = realpath(__DIR__ . '/..');
 
 // Parse CLI options
-$options = getopt('', ['tag:', 'from-tag:', 'private-key:', 'output-dir:', 'help']);
+$options = getopt('', ['tag:', 'from-tag:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
 
 if (isset($options['help'])) {
     echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-tag=<from_tag>] [--private-key=<path>] [--output-dir=<dir>]\n";
@@ -233,13 +233,14 @@ if ($isBootstrap) {
     $diffOutput = (string) shell_exec($diffCmd);
     $lines = array_filter(explode("\n", trim($diffOutput)));
 
-    $modifiedFiles = [];
-    $deletedFiles = [];
+    $sourceChanges = [];
+    $sourceDeletes = [];
+    $migrationFiles = [];
 
     $ignoredPrefixes = [
         '.git/', '.github/', '.env', 'release/', 'storage/', 'backend/storage/',
         'backend/logs/', 'node_modules/', 'dist-electron/', 'backend/vendor/',
-        'frontend/node_modules/', 'backend/tests/', 'frontend/src/',
+        'frontend/node_modules/', 'backend/tests/',
         'backend/.phpunit.result.cache', 'scratch/',
     ];
 
@@ -259,17 +260,97 @@ if ($isBootstrap) {
         if ($skip) continue;
 
         if ($status === 'D') {
-            $deletedFiles[] = $file;
+            $sourceDeletes[] = $file;
         } else {
             if (file_exists($rootDir . '/' . $file)) {
-                $modifiedFiles[] = $file;
+                $sourceChanges[] = $file;
             }
         }
     }
 
-    // Ensure version.json is included in delta
-    if (!in_array('version.json', $modifiedFiles, true) && file_exists($rootDir . '/version.json')) {
-        $modifiedFiles[] = 'version.json';
+    // Map source changes to the files that actually exist in an installed
+    // app.asar.unpacked tree. PHP source and canonical migrations are shipped
+    // together inside backend/backend.phar; frontend source produces Vite
+    // artifacts under frontend/dist. Never place source-only paths in a delta.
+    $modifiedFiles = [];
+    $deletedFiles = [];
+    $addArtifact = static function (string $path) use (&$modifiedFiles, $rootDir): void {
+        if (is_file($rootDir . '/' . $path) && !in_array($path, $modifiedFiles, true)) {
+            $modifiedFiles[] = $path;
+        }
+    };
+    $addFrontendDist = static function () use (&$modifiedFiles, $rootDir): void {
+        $distDir = $rootDir . '/frontend/dist';
+        if (!is_dir($distDir)) {
+            throw new RuntimeException('frontend/dist is missing. Build the frontend before generating a delta release.');
+        }
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($distDir, RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($iterator as $fileInfo) {
+            if ($fileInfo->isFile()) {
+                $path = 'frontend/dist/' . str_replace('\\', '/', substr($fileInfo->getPathname(), strlen($distDir) + 1));
+                if (!in_array($path, $modifiedFiles, true)) $modifiedFiles[] = $path;
+            }
+        }
+    };
+
+    foreach ($sourceChanges as $sourcePath) {
+        if (str_starts_with($sourcePath, 'database/migrations/') && str_ends_with($sourcePath, '.sql')) {
+            $migrationFiles[] = basename($sourcePath);
+        }
+        if (str_starts_with($sourcePath, 'backend/') || str_starts_with($sourcePath, 'database/migrations/') || $sourcePath === 'build-phar.php' || $sourcePath === 'scripts/build-phar.mjs') {
+            if (str_starts_with($sourcePath, 'backend/certs/')) {
+                $addArtifact($sourcePath);
+            } else {
+                $addArtifact('backend/backend.phar');
+            }
+        } elseif (str_starts_with($sourcePath, 'frontend/dist/') || str_starts_with($sourcePath, 'frontend/public/')) {
+            $addArtifact($sourcePath);
+        } elseif (str_starts_with($sourcePath, 'frontend/')) {
+            $addFrontendDist();
+        } elseif ($sourcePath === 'version.json') {
+            $addArtifact('version.json');
+        } elseif (str_starts_with($sourcePath, 'electron/') || $sourcePath === 'package.json') {
+            throw new RuntimeException("{$sourcePath} is stored in app.asar and cannot be emitted as a PHP delta artifact. Publish a bootstrap desktop release for this change.");
+        }
+    }
+
+    foreach ($sourceDeletes as $sourcePath) {
+        if (str_starts_with($sourcePath, 'frontend/dist/') || str_starts_with($sourcePath, 'frontend/public/')) {
+            $deletedFiles[] = $sourcePath;
+        } elseif (str_starts_with($sourcePath, 'backend/') || str_starts_with($sourcePath, 'database/migrations/')) {
+            $addArtifact('backend/backend.phar');
+        }
+    }
+
+    // Vite build output is intentionally ignored by Git, so a source diff
+    // cannot reveal obsolete hashed files. Release automation may provide the
+    // previous deployed frontend tree to emit deletion metadata accurately.
+    $previousDist = $options['previous-dist'] ?? null;
+    if ($previousDist !== null && $previousDist !== '') {
+        $previousDist = rtrim(str_replace('\\', '/', $previousDist), '/');
+        if (!is_dir($previousDist)) {
+            throw new RuntimeException("Previous frontend deployment directory does not exist: {$previousDist}");
+        }
+        $currentDist = $rootDir . '/frontend/dist';
+        $previousIterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($previousDist, RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($previousIterator as $fileInfo) {
+            if (!$fileInfo->isFile()) continue;
+            $relative = str_replace('\\', '/', substr($fileInfo->getPathname(), strlen($previousDist) + 1));
+            if (!is_file($currentDist . '/' . $relative)) {
+                $deployedPath = 'frontend/dist/' . $relative;
+                if (!in_array($deployedPath, $deletedFiles, true)) $deletedFiles[] = $deployedPath;
+            }
+        }
+    }
+
+    // version.json is a deployed artifact and the durable local update marker,
+    // but do not turn a source-no-op into a meaningless one-file delta.
+    if (!empty($modifiedFiles) || !empty($deletedFiles)) {
+        $addArtifact('version.json');
+    }
+
+    if (empty($modifiedFiles) && empty($deletedFiles)) {
+        throw new RuntimeException('No deployable artifacts changed; refusing to generate an empty delta release.');
     }
 
     echo "Detected " . count($modifiedFiles) . " modified file(s) and " . count($deletedFiles) . " deleted file(s).\n";
@@ -323,6 +404,7 @@ if ($isBootstrap) {
         'changelog' => $changelog,
         'files' => $manifestFiles,
         'deleted_files' => $deletedFiles,
+        'migrations' => array_values(array_unique($migrationFiles)),
     ];
 }
 

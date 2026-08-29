@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration\Support;
 
 use PDO;
+use PDOException;
 use RuntimeException;
 
 final class MySqlTestEnvironment
@@ -290,8 +291,45 @@ final class MySqlTestEnvironment
         }
 
         foreach (self::splitMigrationStatements($sql) as $statement) {
-            $pdo->exec($statement);
+            try {
+                $pdo->exec($statement);
+            } catch (PDOException $e) {
+                if (!self::isIgnorableMigrationError($e, $statement)) {
+                    throw $e;
+                }
+            }
         }
+    }
+
+    public static function isIgnorableMigrationError(PDOException $exception, string $sql): bool
+    {
+        $errorInfo = $exception->errorInfo ?? [];
+        $driverCode = (int) ($errorInfo[1] ?? $exception->getCode());
+        $details = strtolower(trim(
+            $exception->getMessage() . ' ' . (string) ($errorInfo[2] ?? '')
+        ));
+
+        $duplicateObjectCodes = [1060, 1061, 1050, 1068, 1826];
+        if (in_array($driverCode, $duplicateObjectCodes, true)) {
+            return true;
+        }
+
+        if (
+            $driverCode === 1005
+            && str_contains($details, 'duplicate key')
+            && preg_match('/\\bADD\\s+CONSTRAINT\\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        if (
+            $driverCode === 1091
+            && preg_match('/\\bDROP\\s+FOREIGN\\s+KEY\\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     /** @return list<string> */

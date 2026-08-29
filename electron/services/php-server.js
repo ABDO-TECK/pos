@@ -75,6 +75,7 @@ function stopPHP() {
 function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
   const {
     getBackupsDir,
+    getAppUnpackedPath,
     getDataDir,
     getEnvPath,
     getLogsDir,
@@ -97,6 +98,7 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
     APP_TIMEZONE: resolveSystemTimeZone(),
     ENV_PATH: getEnvPath(),
     APP_STORAGE_DIR: getDataDir(),
+    APP_DEPLOY_ROOT: getAppUnpackedPath(),
     QZ_PRIVATE_KEY_PATH: getQZPrivateKeyPath(),
     DB_BACKUP_DIR: getBackupsDir(),
     LOGS_PATH: getLogsDir(),
@@ -128,7 +130,7 @@ function createPhpProcessError(code, message, details, cause) {
   return error;
 }
 
-function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort }) {
+function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations = null }) {
   const {
     getBackendDir,
     getLogsDir,
@@ -142,6 +144,12 @@ function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort }) {
     ...getPhpRuntimeArgs(phpBin, getTempDir()),
     ...getEntryArgs(backendDir, isPackaged(), ['migrate']),
   ];
+  if (Array.isArray(migrations)) {
+    if (!migrations.every((migration) => typeof migration === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]*\.sql$/.test(migration))) {
+      return Promise.reject(new Error('Invalid declared migration list.'));
+    }
+    migrationArgs.push(`--migrations=${migrations.join(',')}`);
+  }
   const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort });
   const cwd = backendDir;
 

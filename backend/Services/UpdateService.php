@@ -27,6 +27,7 @@ class UpdateService
     private GitHubReleaseProvider $githubProvider;
     private ManifestSignatureService $signatureService;
     private ?UpdateTelemetryService $telemetryService;
+    private MigrationSafetyBackupService $migrationSafetyBackupService;
 
     public function __construct(
         GitService $gitService,
@@ -37,9 +38,10 @@ class UpdateService
         ?MigrationService $migrationService = null,
         ?GitHubReleaseProvider $githubProvider = null,
         ?ManifestSignatureService $signatureService = null,
-        ?UpdateTelemetryService $telemetryService = null
+        ?UpdateTelemetryService $telemetryService = null,
+        ?MigrationSafetyBackupService $migrationSafetyBackupService = null
     ) {
-        $this->rootDir          = \Phar::running() ?: (realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
+        $this->rootDir          = UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
         $normalizedPath         = str_replace('\\', '/', $this->rootDir);
         $this->localVersionFile = $normalizedPath . '/version.json';
         $this->gitService       = $gitService;
@@ -51,6 +53,8 @@ class UpdateService
         $this->githubProvider   = $githubProvider ?? new GitHubReleaseProvider();
         $this->signatureService = $signatureService ?? new ManifestSignatureService();
         $this->telemetryService = $telemetryService;
+        $this->migrationSafetyBackupService = $migrationSafetyBackupService
+            ?? new MigrationSafetyBackupService($backupService, $this->deltaUpdateService->getStorageDir());
         $this->repoUrl          = EnvLoader::get('UPDATE_SERVER_URL', 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest');
 
 
@@ -401,7 +405,7 @@ class UpdateService
     /**
      * مقارنة النسخة المحلية والبعيدة من GitHub Releases والتحقق من التوقيع الرقمي RSA.
      */
-    public function checkForUpdate(): array
+    public function checkForUpdate(bool $deltaCapable = false): array
     {
         $local   = $this->getLocalVersion();
         $enabled = EnvLoader::getBool('ENABLE_UPDATE_CHECKS', true);
@@ -497,6 +501,7 @@ class UpdateService
 
         $updateType = 'full';
         $isDelta = false;
+        $bootstrapRequired = false;
         $deltaManifest = null;
         $deltaReason = null;
         $manifestUrl = $remote['manifest_url'] ?? null;
@@ -524,7 +529,7 @@ class UpdateService
 
             if ($deltaManifest !== null) {
                 // Verify digital signature if signature URL exists or manifest string exists
-                $requireSignature = EnvLoader::getBool('REQUIRE_UPDATE_SIGNATURE', false);
+                $requireSignature = $this->requiresUpdateSignature();
                 $signatureValid = true;
 
                 if ($signatureUrl) {
@@ -578,9 +583,15 @@ class UpdateService
                                 } else {
                                     $compat = $this->manifestService->checkVersionCompatibility($currentVersion, $manifestData);
                                     if ($compat['compatible']) {
-                                        $updateType = 'delta';
-                                        $isDelta = true;
-                                        $deltaManifest = $manifestData;
+                                        if (!$deltaCapable) {
+                                            $updateType = 'bootstrap';
+                                            $bootstrapRequired = true;
+                                            $deltaReason = 'Application update required before compatible incremental updates can be installed.';
+                                        } else {
+                                            $updateType = 'delta';
+                                            $isDelta = true;
+                                            $deltaManifest = $manifestData;
+                                        }
                                     } else {
                                         $deltaReason = $compat['reason'];
                                     }
@@ -640,6 +651,7 @@ class UpdateService
             'requires_npm_install'  => $remote['requires_npm_install'] ?? false,
             'update_type'           => $updateType,
             'is_delta'              => $isDelta,
+            'bootstrap_required'    => $bootstrapRequired,
             'manifest_url'          => $manifestUrl,
             'signature_url'         => $signatureUrl,
             'delta_url'             => $deltaUrl,
@@ -654,7 +666,7 @@ class UpdateService
      *
      * @return array ['ok' => bool, 'data' => array|null, 'error' => string|null, 'code' => int]
      */
-    public function applyUpdate(bool $force): array
+    public function applyUpdate(bool $force, bool $deltaCapable = true): array
 
     {
         $output = [];
@@ -693,32 +705,11 @@ class UpdateService
             ];
         }
 
-        // الخطوة 1: نسخة احتياطية من قاعدة البيانات
+        // Database recovery backups are intentionally deferred until a
+        // verified Delta manifest proves that migrations are present.
+        $migrationSafetyBackup = null;
 
-        $output[] = '💾 إنشاء نسخة احتياطية من قاعدة البيانات...';
-        $t0 = microtime(true);
-        $backupFile = null;
-        try {
-            $backupDir = $this->getRootDir() . '/backend/storage/update-backups';
-            $backupFile = $this->backupService->createBackupFile($backupDir);
-            $elapsed    = round(microtime(true) - $t0, 1);
-            $output[]   = "✅ تم إنشاء النسخة الاحتياطية لقاعدة البيانات: " . basename($backupFile) . " ({$elapsed}s)";
-        } catch (Throwable $e) {
-            $reference = bin2hex(random_bytes(8));
-            Logger::error('Update: database backup failed', [
-                'reference' => $reference,
-                'exception' => get_class($e),
-            ]);
-            $this->deltaUpdateService->setUpdateState('failed', ['error' => "DB backup failed: {$reference}"]);
-            return [
-                'ok' => false,
-                'error' => "Backup failed. Reference: {$reference}",
-                'code' => 500,
-                'data' => ['logs' => $output],
-            ];
-        }
-
-        // الخطوة 2: جلب معلومات الإصدار البعيد
+        // الخطوة 1: جلب معلومات الإصدار البعيد
         $output[] = '🌐 الاتصال بخادم التحديثات...';
         $remote = $this->fetchRemoteVersion();
         if (!$remote) {
@@ -749,7 +740,18 @@ class UpdateService
             }
         }
 
-        // Verify digital signature if present
+        $signatureRequired = $this->requiresUpdateSignature();
+        if ($signatureRequired && (!$manifestContent || !$signatureContent)) {
+            return [
+                'ok' => false,
+                'error' => 'Release manifest and cryptographic signature are required for this deployment.',
+                'code' => 403,
+                'data' => ['logs' => $output],
+            ];
+        }
+
+        // Verify the signature whenever a manifest was fetched. Packaged
+        // desktop deployments require both the manifest and the signature.
         if ($manifestContent && $signatureContent) {
             if (!$this->signatureService->verifySignature($manifestContent, $signatureContent)) {
                 $err = 'فشل التحقق من التوقيع الرقمي لملف التحديث (Digital Signature Mismatch). تم رفض التحديث لأسباب أمنية.';
@@ -781,6 +783,14 @@ class UpdateService
 
                 if ($compat['compatible']) {
                     $manifest = $val['manifest'];
+                    if (!$deltaCapable) {
+                        return [
+                            'ok' => false,
+                            'error' => 'Application update required before this incremental update can be installed.',
+                            'code' => 426,
+                            'data' => ['bootstrap_required' => true, 'logs' => $output],
+                        ];
+                    }
                     $output[] = '📦 تجهيز التحديث عبر نظام التحديث الجزئي الآمن (Delta Update)...';
 
                     // 1. تحميل الملفات أو حزمة ZIP إلى مجلد التجهيز
@@ -799,13 +809,29 @@ class UpdateService
                     $output = array_merge($output, $downloadResult['logs']);
 
                     if ($downloadResult['ok']) {
+                        if (!empty($manifest['migrations'])) {
+                            $recoveryId = 'delta-' . $currentVersion . '-to-' . $targetVersion . '-' . bin2hex(random_bytes(6));
+                            $output[] = '💾 إنشاء والتحقق من نسخة استرداد قاعدة البيانات...';
+                            $migrationSafetyBackup = $this->migrationSafetyBackupService->createMigrationSafetyBackup(
+                                $currentVersion,
+                                $targetVersion,
+                                $recoveryId
+                            );
+                            if (!$migrationSafetyBackup['ok']) {
+                                $err = 'Migration safety backup could not be created and verified; update was not applied.';
+                                $this->deltaUpdateService->setUpdateState('backup_failed', ['error' => $err, 'to_version' => $targetVersion]);
+                                return ['ok' => false, 'error' => $err, 'code' => 500, 'data' => ['logs' => $output]];
+                            }
+                            $output[] = '✅ تم إنشاء والتحقق من نسخة استرداد قاعدة البيانات.';
+                        }
+
                         // 2. أخذ لقطة احتياطية كاملة للملفات السابقة
                         $output[] = '📸 أخذ لقطة احتياطية كاملة للملفات السابقة...';
                         $snapshot = $this->deltaUpdateService->createBackupSnapshot(
                             $currentVersion,
                             $targetVersion,
                             $manifest,
-                            $backupFile
+                            $migrationSafetyBackup
                         );
 
                         if (!$snapshot['ok']) {
@@ -829,6 +855,22 @@ class UpdateService
                             ];
                         }
                         $output[] = '✅ تم إنشاء لقطة النسخ الاحتياطي الذرية بنجاح.';
+
+                        if ($this->deltaUpdateService->requiresDesktopHandoff($manifest)) {
+                            $handoff = $this->deltaUpdateService->prepareDesktopHandoff($manifest, $snapshot['snapshot_path'], $migrationSafetyBackup);
+                            if (!$handoff['ok']) {
+                                return ['ok' => false, 'error' => $handoff['error'], 'code' => 500, 'data' => ['logs' => $output]];
+                            }
+                            $output[] = '🔁 تم تجهيز التحديث لإعادة تشغيل آمنة واستبدال backend.phar.';
+                            return ['ok' => true, 'data' => [
+                                'message' => 'التحديث جاهز لإعادة التشغيل الآمنة',
+                                'latest_version' => $targetVersion,
+                                'update_type' => 'delta',
+                                'requires_desktop_handoff' => true,
+                                'handoff_version' => $handoff['version'],
+                                'logs' => $output,
+                            ]];
+                        }
 
                         // 3. الاستبدال الذري للملفات مع التراجع التلقائي في حال الخطأ
                         $applyResult = $this->deltaUpdateService->applyStagedFiles($manifest, $snapshot['snapshot_path']);
@@ -855,18 +897,39 @@ class UpdateService
                             ];
                         }
 
-                        // 4. تطبيق تحديثات قاعدة البيانات
-                        $this->deltaUpdateService->setUpdateState('migrating');
-                        $output[] = '🗄️ تطبيق تحديثات قاعدة البيانات (إن وجدت)...';
-                        require_once __DIR__ . '/MigrationService.php';
-                        $migrationService = $this->migrationService ?? new MigrationService();
-                        $migrationResult = $migrationService->runAllMigrations(true);
+                        // 4. A delta declares the canonical migrations it
+                        // carries inside backend.phar. Do not touch the schema
+                        // for a frontend-only or code-only patch.
+                        $migrationResult = ['executed' => 0, 'errors' => []];
+                        if (!empty($manifest['migrations'])) {
+                            $this->deltaUpdateService->setUpdateState('migrating');
+                            $output[] = '🗄️ تطبيق تحديثات قاعدة البيانات المطلوبة...';
+                            require_once __DIR__ . '/MigrationService.php';
+                            $migrationService = $this->migrationService ?? new MigrationService();
+                            $migrationResult = $migrationService->runMigrations($manifest['migrations'], false);
+                        } else {
+                            $output[] = 'ℹ️ لا توجد ترحيلات قاعدة بيانات في هذا التحديث الجزئي.';
+                        }
 
                         if (!empty($migrationResult['errors'])) {
                             $migrationErr = 'فشل ترحيل قاعدة البيانات: ' . implode('; ', $migrationResult['errors']);
                             $output[] = "❌ {$migrationErr}";
                             $output[] = '🔄 جاري التراجع التلقائي عن ملفات التحديث لحماية سلامة النظام...';
 
+                            $dbRecovery = $this->migrationSafetyBackupService->restoreMigrationSafetyBackup(
+                                (string) ($migrationSafetyBackup['backup_path'] ?? ''),
+                                (string) ($migrationSafetyBackup['recovery_id'] ?? '')
+                            );
+                            if (!$dbRecovery['ok']) {
+                                $recoveryError = 'Database recovery failed after migration failure: ' . ($dbRecovery['error'] ?? 'unknown error');
+                                $this->deltaUpdateService->setUpdateState('database_recovery_failed', [
+                                    'error' => $recoveryError,
+                                    'backup_snapshot' => $snapshot['snapshot_path'],
+                                    'db_recovery' => $migrationSafetyBackup,
+                                ]);
+                                $this->deltaUpdateService->recordHistory($currentVersion, $targetVersion, 'delta', 'database_recovery_failed', count($applyResult['applied_files']), $snapshot['snapshot_path'], $recoveryError, 'github_release', $releaseTag);
+                                return ['ok' => false, 'error' => $recoveryError, 'code' => 500, 'data' => ['logs' => $output]];
+                            }
                             $this->deltaUpdateService->rollbackFiles($snapshot['snapshot_path']);
                             $this->deltaUpdateService->recordHistory(
                                 $currentVersion,
@@ -890,7 +953,7 @@ class UpdateService
 
                         if ($migrationResult['executed'] > 0) {
                             $output[] = "✅ تم تطبيق {$migrationResult['executed']} تحديث(ات) لقاعدة البيانات";
-                        } else {
+                        } elseif (!empty($manifest['migrations'])) {
                             $output[] = "✅ قاعدة البيانات محدثة سلفاً";
                         }
 
@@ -1092,7 +1155,27 @@ class UpdateService
 
     public function rollbackUpdate(?string $snapshotPath = null): array
     {
-        $res = $this->deltaUpdateService->rollbackUpdate($snapshotPath);
+        $snapshot = $snapshotPath ?? $this->deltaUpdateService->findLatestSnapshot();
+        if ($snapshot && is_file(rtrim($snapshot, '/\\') . '/metadata.json')) {
+            $metadata = json_decode((string) @file_get_contents(rtrim($snapshot, '/\\') . '/metadata.json'), true);
+            $dbRecovery = is_array($metadata) ? ($metadata['db_recovery'] ?? null) : null;
+            if (is_array($dbRecovery) && !empty($dbRecovery['backup_path']) && !empty($dbRecovery['recovery_id'])) {
+                $database = $this->migrationSafetyBackupService->restoreMigrationSafetyBackup(
+                    (string) $dbRecovery['backup_path'],
+                    (string) $dbRecovery['recovery_id']
+                );
+                if (!$database['ok']) {
+                    return [
+                        'ok' => false,
+                        'snapshot' => $snapshot,
+                        'logs' => [],
+                        'error' => 'Database recovery failed; application files were not rolled back: ' . ($database['error'] ?? 'unknown error'),
+                    ];
+                }
+            }
+        }
+
+        $res = $this->deltaUpdateService->rollbackUpdate($snapshot);
         if (!empty($res['ok'])) {
             $this->getTelemetryService()->recordEvent([
                 'device_id'             => $this->getDeviceId(),
@@ -1109,5 +1192,9 @@ class UpdateService
         }
         return $res;
     }
-}
 
+    private function requiresUpdateSignature(): bool
+    {
+        return EnvLoader::getBool('REQUIRE_UPDATE_SIGNATURE', \Phar::running(false) !== '');
+    }
+}

@@ -8,7 +8,7 @@ INSERT IGNORE INTO settings (`key`, `value`) VALUES
 ('loyalty_rial_per_point', '0.01');
 
 -- إضافة عمود النقاط للعملاء
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points INT DEFAULT 0;
+ALTER TABLE customers ADD COLUMN loyalty_points INT DEFAULT 0;
 
 -- سجل حركات النقاط
 CREATE TABLE IF NOT EXISTS loyalty_transactions (

@@ -185,7 +185,7 @@ class BackupService implements BackupServiceInterface {
      * @param string $sqlContent  محتوى SQL المُنظّف
      * @return array ['ok' => true, 'message' => string] أو ['ok' => false, 'error' => string, 'code' => int]
      */
-    public function restoreFromSql(string $sqlContent): array
+    public function restoreFromSql(string $sqlContent, bool $runMigrations = true): array
     {
         if (PHP_SAPI !== 'cli') {
             throw new RuntimeException('SQL restore is CLI-only');
@@ -238,6 +238,12 @@ class BackupService implements BackupServiceInterface {
 
         $mysqli->close();
         Database::resetInstance();
+
+        // Interactive restores may upgrade an old backup. Migration-safety
+        // restores must leave the exact pre-update schema/version in place.
+        if (!$runMigrations) {
+            return ['ok' => true, 'message' => 'Database restored from verified migration safety backup.'];
+        }
 
         // ── الاستعادة الذكية: ترقية النسخة القديمة ──
         $freshDb = Database::getInstance();

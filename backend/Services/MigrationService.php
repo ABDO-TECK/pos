@@ -17,8 +17,8 @@ class MigrationService {
     private string $migrationsPath;
     private string $flagFile;
 
-    public function __construct() {
-        $this->db = Database::getInstance();
+    public function __construct(?PDO $db = null) {
+        $this->db = $db ?? Database::getInstance();
         $pharRunning = \Phar::running(false);
         $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? ($pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage');
         $this->flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
@@ -35,6 +35,17 @@ class MigrationService {
      * @return array يحتوي على عدد المهاجرات المنفذة وأي أخطاء حدثت.
      */
     public function runAllMigrations(bool $force = false): array {
+        return $this->runMigrations(null, $force);
+    }
+
+    /**
+     * Execute only the canonical migration filenames declared by a verified
+     * Delta manifest. A Delta must never opportunistically run unrelated
+     * pending migrations.
+     *
+     * @param list<string>|null $declaredMigrations null retains normal startup behaviour
+     */
+    public function runMigrations(?array $declaredMigrations, bool $force = false): array {
         if (!is_dir($this->migrationsPath)) {
             return [
                 'executed' => 0,
@@ -52,13 +63,13 @@ class MigrationService {
         }
 
         try {
-            return $this->runPendingMigrations($force);
+            return $this->runPendingMigrations($force, $declaredMigrations);
         } finally {
             $this->releaseMigrationLock();
         }
     }
 
-    private function runPendingMigrations(bool $force): array {
+    private function runPendingMigrations(bool $force, ?array $declaredMigrations = null): array {
 
         // ── Smart skip: لا حاجة للتنفيذ إذا لم تتغير الملفات ──
         if (!$force && $this->isUpToDate()) {
@@ -75,6 +86,17 @@ class MigrationService {
             }
         }
         sort($migrations); // ترتيب تصاعدي لضمان التنفيذ التسلسلي
+
+        if ($declaredMigrations !== null) {
+            $declared = array_values(array_unique($declaredMigrations));
+            foreach ($declared as $migration) {
+                if (!is_string($migration) || !preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]*\\.sql$/', $migration) || !in_array($migration, $migrations, true)) {
+                    return ['executed' => 0, 'errors' => ['Declared migration is not a canonical migration file.'], 'skipped' => false];
+                }
+            }
+            $migrations = $declared;
+            sort($migrations);
+        }
 
         $executed = 0;
         $errors = [];
@@ -237,11 +259,10 @@ class MigrationService {
     }
 
     /**
-     * Return true only for schema-object conflicts that are safe to skip or
-     * optional-feature privilege failures. A generic 1005 must not be ignored
-     * because it can also indicate a malformed foreign key.
+     * Return true only for schema-object conflicts that are safe to skip during idempotent reruns.
+     * Permission/access errors (1142, 1044, 1227) must never be ignored and must fail loudly.
      */
-    private function isIgnorableMigrationError(PDOException $exception, string $sql): bool
+    public function isIgnorableMigrationError(PDOException $exception, string $sql): bool
     {
         $errorInfo = $exception->errorInfo ?? [];
         $driverCode = (int) ($errorInfo[1] ?? $exception->getCode());
@@ -249,7 +270,7 @@ class MigrationService {
             $exception->getMessage() . ' ' . (string) ($errorInfo[2] ?? '')
         ));
 
-        $duplicateObjectCodes = [1060, 1061, 1050, 1068, 1826, 1227, 1044];
+        $duplicateObjectCodes = [1060, 1061, 1050, 1068, 1826];
         if (in_array($driverCode, $duplicateObjectCodes, true)) {
             return true;
         }
@@ -274,10 +295,7 @@ class MigrationService {
             return true;
         }
 
-        // The inventory cleanup event is optional; deployments may not grant
-        // EVENT privileges to the application account.
-        return $driverCode === 1142
-            && preg_match('/^\\s*CREATE\\s+EVENT\\b/i', $sql) === 1;
+        return false;
     }
 
     private function migrationErrorMessage(PDOException $exception): string

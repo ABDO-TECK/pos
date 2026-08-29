@@ -563,7 +563,8 @@ class HealthService
     /** Resolve a bounded, display-safe application version identifier. */
     private function getVersionIdentifier(): string
     {
-        foreach ([__DIR__ . '/../version.json', __DIR__ . '/../../version.json'] as $versionFile) {
+        $deploymentRoot = UpdateRuntimePaths::deployedRoot(realpath(__DIR__ . '/../..') ?: dirname(__DIR__, 2));
+        foreach ([$deploymentRoot . '/version.json', __DIR__ . '/../version.json', __DIR__ . '/../../version.json'] as $versionFile) {
             if (!is_file($versionFile)) {
                 continue;
             }

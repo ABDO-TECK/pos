@@ -19,8 +19,8 @@ final class BusinessPartnerBranchMigrationTest extends TestCase
         );
 
         self::assertIsString($migration);
-        self::assertStringContainsString('ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id', $migration);
-        self::assertStringContainsString('ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS branch_id', $migration);
+        self::assertStringContainsString('ALTER TABLE customers ADD COLUMN branch_id', $migration);
+        self::assertStringContainsString('ALTER TABLE suppliers ADD COLUMN branch_id', $migration);
         self::assertStringContainsString('fk_ledger_customer FOREIGN KEY (branch_id, customer_id)', $migration);
         self::assertStringContainsString('fk_sledger_supplier FOREIGN KEY (branch_id, supplier_id)', $migration);
         self::assertStringContainsString('HAVING COUNT(DISTINCT branch_id) > 1', $migration);
