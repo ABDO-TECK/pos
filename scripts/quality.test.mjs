@@ -33,7 +33,12 @@ test('quality gate uses clean installs and validates both dependency trees', () 
   assert.match(output, /backend\/vendor\/bin\/phpunit/)
   assert.match(output, /--exclude-group mysql/)
   assert.match(output, /mysql_probe\.php/)
-  assert.match(output, /--group mysql/)
+  assert.match(output, /MySqlMigrationTest\.php/)
+  assert.match(output, /BusinessPartnerBranchIsolationTest\.php/)
+  assert.match(output, /testSimultaneousIdenticalSalesAreAppliedOnceAndChangedPayloadConflicts/)
+  assert.match(output, /testSaleReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader/)
+  assert.match(output, /testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader/)
+  assert.doesNotMatch(output, /--group mysql/)
 })
 
 test('MySQL probe outcomes distinguish unavailable service from gate failures', () => {

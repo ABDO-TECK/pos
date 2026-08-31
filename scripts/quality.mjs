@@ -182,13 +182,16 @@ export function runStep({ label, command, args, displayCommand = command, displa
   const duration = ((Date.now() - startTime) / 1000).toFixed(2)
   if (result.error) {
     if (result.error.name === 'Error' && (result.error.code === 'ETIMEDOUT' || result.signal === 'SIGKILL')) {
+      console.error(`::error title=Quality step timed out::${label} exceeded ${timeout / 1000} seconds`)
       console.error(`[quality] FAIL ${label} (${duration}s) (timed out after ${timeout / 1000} seconds)`)
       throw new Error(`${label} timed out after ${timeout / 1000} seconds.`)
     }
+    console.error(`::error title=Quality step failed to start::${label} (${result.error.message})`)
     console.error(`[quality] FAIL ${label} (${duration}s) (could not start: ${result.error.message})`)
     throw new Error(`${label} could not start: ${result.error.message}`)
   }
   if (result.status !== 0) {
+    console.error(`::error title=Quality step failed::${label} exited with code ${result.status}`)
     console.error(`[quality] FAIL ${label} (${duration}s) (exit code ${result.status})`)
     throw new Error(`${label} failed with exit code ${result.status}.`)
   }
@@ -254,11 +257,6 @@ async function main() {
       command: phpCommand,
       args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
     })
-    runStep({
-      label: 'Run complete real-MySQL test suite verification',
-      command: phpCommand,
-      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', '--group', 'mysql'],
-    })
   } else {
     const probeOutcome = probeMySql(phpCommand, mySqlEnvironment)
     if (probeOutcome === 'unavailable') {
@@ -299,12 +297,6 @@ async function main() {
         label: 'Run real-MySQL concurrency test: purchase replacement serialization',
         command: phpCommand,
         args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
-        environment: mysqlEnv,
-      })
-      runStep({
-        label: 'Run complete real-MySQL test suite verification',
-        command: phpCommand,
-        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', '--group', 'mysql'],
         environment: mysqlEnv,
       })
     }
