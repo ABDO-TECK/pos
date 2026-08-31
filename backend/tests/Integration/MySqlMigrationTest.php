@@ -163,7 +163,7 @@ final class MySqlMigrationTest extends TestCase
                  ORDER BY constraint_name'
             );
             $foreignKeys->execute([$database]);
-            $names = array_column($foreignKeys->fetchAll(PDO::FETCH_ASSOC), 'constraint_name');
+            $names = array_map('strval', $foreignKeys->fetchAll(PDO::FETCH_COLUMN));
 
             self::assertContains('fk_ledger_customer', $names);
             self::assertContains('fk_sledger_supplier', $names);
