@@ -165,7 +165,8 @@ function probeMySql(phpCommand, environment) {
 
 export function runStep({ label, command, args, displayCommand = command, displayArgs = args, environment = {}, timeout = 300_000 }) {
   const printable = [displayCommand, ...displayArgs].join(' ')
-  console.log(`\n[quality] ${label}\n> ${printable}`)
+  const startTime = Date.now()
+  console.log(`\n[quality] START ${label} ${new Date().toISOString()}\n> ${printable}`)
   if (dryRun) {
     return
   }
@@ -178,15 +179,20 @@ export function runStep({ label, command, args, displayCommand = command, displa
     killSignal: 'SIGKILL',
     env: { ...process.env, ...environment },
   })
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2)
   if (result.error) {
     if (result.error.name === 'Error' && (result.error.code === 'ETIMEDOUT' || result.signal === 'SIGKILL')) {
+      console.error(`[quality] FAIL ${label} (${duration}s) (timed out after ${timeout / 1000} seconds)`)
       throw new Error(`${label} timed out after ${timeout / 1000} seconds.`)
     }
+    console.error(`[quality] FAIL ${label} (${duration}s) (could not start: ${result.error.message})`)
     throw new Error(`${label} could not start: ${result.error.message}`)
   }
   if (result.status !== 0) {
+    console.error(`[quality] FAIL ${label} (${duration}s) (exit code ${result.status})`)
     throw new Error(`${label} failed with exit code ${result.status}.`)
   }
+  console.log(`[quality] PASS ${label} (${duration}s)`)
 }
 
 async function main() {
@@ -224,7 +230,32 @@ async function main() {
   if (dryRun) {
     console.log(`> ${phpCommand} backend/tests/Fixtures/mysql_probe.php`)
     runStep({
-      label: 'Run real-MySQL migrations and concurrency tests when available',
+      label: 'Run real-MySQL migration tests',
+      command: phpCommand,
+      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlMigrationTest.php'],
+    })
+    runStep({
+      label: 'Run real-MySQL partner isolation tests',
+      command: phpCommand,
+      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/BusinessPartnerBranchIsolationTest.php'],
+    })
+    runStep({
+      label: 'Run real-MySQL concurrency test: simultaneous sales',
+      command: phpCommand,
+      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testSimultaneousIdenticalSalesAreAppliedOnceAndChangedPayloadConflicts'],
+    })
+    runStep({
+      label: 'Run real-MySQL concurrency test: sale replacement serialization',
+      command: phpCommand,
+      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testSaleReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
+    })
+    runStep({
+      label: 'Run real-MySQL concurrency test: purchase replacement serialization',
+      command: phpCommand,
+      args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
+    })
+    runStep({
+      label: 'Run complete real-MySQL test suite verification',
       command: phpCommand,
       args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', '--group', 'mysql'],
     })
@@ -239,11 +270,42 @@ async function main() {
     } else if (probeOutcome === 'failed') {
       throw new Error('MySQL prerequisite probe failed because its configuration or runtime is invalid.')
     } else {
+      const mysqlEnv = { ...mySqlEnvironment, MYSQL_TEST_ENABLED: '1' }
       runStep({
-        label: 'Run real-MySQL migrations and concurrency tests',
+        label: 'Run real-MySQL migration tests',
+        command: phpCommand,
+        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlMigrationTest.php'],
+        environment: mysqlEnv,
+      })
+      runStep({
+        label: 'Run real-MySQL partner isolation tests',
+        command: phpCommand,
+        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/BusinessPartnerBranchIsolationTest.php'],
+        environment: mysqlEnv,
+      })
+      runStep({
+        label: 'Run real-MySQL concurrency test: simultaneous sales',
+        command: phpCommand,
+        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testSimultaneousIdenticalSalesAreAppliedOnceAndChangedPayloadConflicts'],
+        environment: mysqlEnv,
+      })
+      runStep({
+        label: 'Run real-MySQL concurrency test: sale replacement serialization',
+        command: phpCommand,
+        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testSaleReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
+        environment: mysqlEnv,
+      })
+      runStep({
+        label: 'Run real-MySQL concurrency test: purchase replacement serialization',
+        command: phpCommand,
+        args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', 'backend/tests/Integration/MySqlConcurrencyTest.php', '--filter', 'testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader'],
+        environment: mysqlEnv,
+      })
+      runStep({
+        label: 'Run complete real-MySQL test suite verification',
         command: phpCommand,
         args: ['backend/vendor/bin/phpunit', '--configuration', 'backend/phpunit.xml', '--group', 'mysql'],
-        environment: { ...mySqlEnvironment, MYSQL_TEST_ENABLED: '1' },
+        environment: mysqlEnv,
       })
     }
   }

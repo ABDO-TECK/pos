@@ -51,11 +51,11 @@ try {
             PDO::ATTR_TIMEOUT => 3,
         ]
     );
-    $pdo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+    $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5');
     $connectionId = (int) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
 
     sendEvent($control, ['event' => 'ready', 'connection_id' => $connectionId]);
-    expectCommand($control, 'go');
+    expectCommand($control, 'go', 10.0);
 
     $payload = json_decode(
         base64_decode(requiredEnvironment('MYSQL_TEST_PAYLOAD'), true) ?: '',
@@ -187,14 +187,23 @@ function sendEvent($control, array $event): void
 }
 
 /** @param resource $control */
-function expectCommand($control, string $expected): void
+function expectCommand($control, string $expected, float $timeoutSeconds = 15.0): void
 {
+    $read = [$control];
+    $write = null;
+    $except = null;
+    $seconds = (int) floor($timeoutSeconds);
+    $microseconds = (int) (($timeoutSeconds - $seconds) * 1_000_000);
+    $selected = stream_select($read, $write, $except, $seconds, $microseconds);
+    if ($selected === false || $selected === 0) {
+        throw new RuntimeException("Timed out waiting for '{$expected}' barrier command after {$timeoutSeconds}s.");
+    }
     $line = fgets($control);
     if ($line === false) {
-        throw new RuntimeException("Timed out waiting for '{$expected}' barrier command.");
+        throw new RuntimeException("Stream closed while waiting for '{$expected}' barrier command.");
     }
     $command = json_decode(trim($line), true, 512, JSON_THROW_ON_ERROR);
     if (($command['command'] ?? null) !== $expected) {
-        throw new RuntimeException("Expected '{$expected}' barrier command.");
+        throw new RuntimeException("Expected '{$expected}' barrier command, got: " . json_encode($command));
     }
 }

@@ -49,7 +49,7 @@ final class MySqlTestEnvironment
                 PDO::ATTR_TIMEOUT => 3,
             ]
         );
-        $pdo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+        $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5');
 
         return $pdo;
     }
@@ -445,6 +445,64 @@ final class MySqlTestEnvironment
         ];
     }
 
+    public static function captureLockDiagnostics(PDO $pdo): string
+    {
+        $diagnostics = [];
+        try {
+            $stmt = $pdo->query(
+                'SELECT
+                    waiting_thread.PROCESSLIST_ID AS waiting_pid,
+                    blocking_thread.PROCESSLIST_ID AS blocking_pid,
+                    lock_wait.REQUESTING_ENGINE_LOCK_ID AS requested_lock,
+                    lock_wait.BLOCKING_ENGINE_LOCK_ID AS blocking_lock,
+                    locks.OBJECT_SCHEMA AS db,
+                    locks.OBJECT_NAME AS table_name,
+                    locks.LOCK_TYPE AS lock_type,
+                    locks.LOCK_MODE AS lock_mode,
+                    locks.LOCK_STATUS AS lock_status
+                 FROM performance_schema.data_lock_waits lock_wait
+                 LEFT JOIN performance_schema.threads waiting_thread
+                     ON waiting_thread.THREAD_ID = lock_wait.REQUESTING_THREAD_ID
+                 LEFT JOIN performance_schema.threads blocking_thread
+                     ON blocking_thread.THREAD_ID = lock_wait.BLOCKING_THREAD_ID
+                 LEFT JOIN performance_schema.data_locks locks
+                     ON locks.ENGINE_LOCK_ID = lock_wait.REQUESTING_ENGINE_LOCK_ID'
+            );
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($rows)) {
+                $diagnostics[] = 'data_lock_waits: ' . json_encode($rows, JSON_UNESCAPED_SLASHES);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $stmt = $pdo->query(
+                'SELECT trx_id, trx_state, trx_started, trx_mysql_thread_id, trx_query, trx_wait_started
+                 FROM information_schema.innodb_trx'
+            );
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($rows)) {
+                $diagnostics[] = 'innodb_trx: ' . json_encode($rows, JSON_UNESCAPED_SLASHES);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $stmt = $pdo->query(
+                "SELECT id, user, host, db, command, time, state, info
+                 FROM information_schema.processlist
+                 WHERE command != 'Sleep' OR info IS NOT NULL"
+            );
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($rows)) {
+                $diagnostics[] = 'processlist: ' . json_encode($rows, JSON_UNESCAPED_SLASHES);
+            }
+        } catch (\Throwable) {
+        }
+
+        return empty($diagnostics) ? '' : ' [DB Lock State: ' . implode(' | ', $diagnostics) . ']';
+    }
+
     /** @param list<string> $statements */
     private static function executeStatements(PDO $pdo, array $statements): void
     {
@@ -473,10 +531,12 @@ final class MySqlWorkerProcess
     private array $queuedEvents = [];
     private string $controlBuffer = '';
     private bool $closed = false;
+    private string $mode;
 
     /** @param array<string,string> $environment */
     public function __construct(string $mode, array $environment)
     {
+        $this->mode = $mode;
         $server = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
         if ($server === false) {
             throw new RuntimeException("Unable to create worker barrier: {$errorMessage} ({$errorCode}).");
@@ -520,7 +580,7 @@ final class MySqlWorkerProcess
     }
 
     /** @return array<string,mixed> */
-    public function waitForEvent(string $eventName, float $timeoutSeconds = 10.0): array
+    public function waitForEvent(string $eventName, float $timeoutSeconds = 10.0, ?PDO $pdo = null): array
     {
         $queued = $this->takeQueuedEvent($eventName);
         if ($queued !== null) {
@@ -543,6 +603,9 @@ final class MySqlWorkerProcess
             }
 
             $remaining = max(0.0, $deadline - microtime(true));
+            if ($remaining <= 0.0) {
+                break;
+            }
             $seconds = (int) floor($remaining);
             $microseconds = (int) (($remaining - $seconds) * 1_000_000);
             $read = [$this->control];
@@ -563,8 +626,16 @@ final class MySqlWorkerProcess
             $this->controlBuffer .= $chunk;
         } while (microtime(true) < $deadline);
 
+        $lockState = $pdo !== null ? MySqlTestEnvironment::captureLockDiagnostics($pdo) : '';
         throw new RuntimeException(
-            sprintf("Timed out waiting for MySQL worker event '%s'.%s", $eventName, $this->diagnostics())
+            sprintf(
+                "Timed out waiting for MySQL worker event '%s' (mode: %s) after %.1fs.%s%s",
+                $eventName,
+                $this->mode,
+                $timeoutSeconds,
+                $this->diagnostics(),
+                $lockState
+            )
         );
     }
 
@@ -595,8 +666,13 @@ final class MySqlWorkerProcess
             $status = proc_get_status($this->process);
             if ($status['running']) {
                 proc_terminate($this->process, 15);
-                usleep(50_000);
-                $status = proc_get_status($this->process);
+                for ($i = 0; $i < 10; $i++) {
+                    usleep(20_000);
+                    $status = proc_get_status($this->process);
+                    if (!$status['running']) {
+                        break;
+                    }
+                }
                 if ($status['running']) {
                     proc_terminate($this->process, 9);
                 }

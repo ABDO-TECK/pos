@@ -91,15 +91,18 @@ final class MySqlConcurrencyTest extends TestCase
 
     public function testSimultaneousIdenticalSalesAreAppliedOnceAndChangedPayloadConflicts(): void
     {
+        fwrite(STDOUT, "\n[mysql-concurrency] START testSimultaneousIdenticalSalesAreAppliedOnceAndChangedPayloadConflicts\n");
         $key = 'a6d27ba4-74bb-47ce-b6ea-4c576573e6cf';
         $payload = $this->salePayload($key, 2.0);
         $first = $this->worker('sale_create', $payload);
         $second = $this->worker('sale_create', $payload);
+        fwrite(STDOUT, "[mysql-concurrency] workers ready, sending go\n");
 
         $first->send('go');
         $second->send('go');
-        $firstResult = $first->waitForEvent('result')['result'];
-        $secondResult = $second->waitForEvent('result')['result'];
+        $firstResult = $first->waitForEvent('result', 10.0, self::$pdo)['result'];
+        $secondResult = $second->waitForEvent('result', 10.0, self::$pdo)['result'];
+        fwrite(STDOUT, "[mysql-concurrency] simultaneous sale workers completed\n");
 
         self::assertTrue($firstResult['ok']);
         self::assertTrue($secondResult['ok']);
@@ -110,9 +113,11 @@ final class MySqlConcurrencyTest extends TestCase
         ]));
         $this->assertSingleSaleEffect(98.0);
 
+        fwrite(STDOUT, "[mysql-concurrency] sending conflicting payload worker\n");
         $changed = $this->worker('sale_create', $this->salePayload($key, 3.0));
         $changed->send('go');
-        $conflict = $changed->waitForEvent('result')['result'];
+        $conflict = $changed->waitForEvent('result', 10.0, self::$pdo)['result'];
+        fwrite(STDOUT, "[mysql-concurrency] conflicting worker completed\n");
 
         self::assertFalse($conflict['ok']);
         self::assertSame(409, $conflict['code']);
@@ -122,23 +127,28 @@ final class MySqlConcurrencyTest extends TestCase
 
     public function testSaleReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader(): void
     {
+        fwrite(STDOUT, "\n[mysql-concurrency] START testSaleReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader\n");
         $invoiceId = $this->seedSaleInvoice(10.0);
         $replacement = $this->worker(
             'sale_replace',
             $this->salePayload('a6fc3fb4-efac-4e42-b204-f91072d90f5b', 4.0, $invoiceId)
         );
         $replacement->send('go');
-        $replacement->waitForEvent('locked');
+        $replacement->waitForEvent('locked', 10.0, self::$pdo);
+        fwrite(STDOUT, "[mysql-concurrency] replacement worker locked invoice row\n");
 
         $deletion = $this->worker('sale_delete', ['invoice_id' => $invoiceId]);
         $deletion->send('go');
-        $attempting = $deletion->waitForEvent('attempting');
+        $attempting = $deletion->waitForEvent('attempting', 10.0, self::$pdo);
+        fwrite(STDOUT, "[mysql-concurrency] deletion worker attempting lock, waiting for lock wait\n");
         MySqlTestEnvironment::waitForLockWait(self::$pdo, (int) $attempting['connection_id']);
+        fwrite(STDOUT, "[mysql-concurrency] deletion worker confirmed in lock wait, releasing replacement\n");
 
         $replacement->send('release');
-        $replacementResult = $replacement->waitForEvent('result')['result'];
-        $deletion->waitForEvent('locked');
-        $deletionResult = $deletion->waitForEvent('result')['result'];
+        $replacementResult = $replacement->waitForEvent('result', 10.0, self::$pdo)['result'];
+        $deletion->waitForEvent('locked', 10.0, self::$pdo);
+        $deletionResult = $deletion->waitForEvent('result', 10.0, self::$pdo)['result'];
+        fwrite(STDOUT, "[mysql-concurrency] replacement and deletion workers completed\n");
 
         self::assertTrue($replacementResult['ok']);
         self::assertTrue($replacementResult['is_update']);
@@ -151,6 +161,7 @@ final class MySqlConcurrencyTest extends TestCase
 
     public function testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader(): void
     {
+        fwrite(STDOUT, "\n[mysql-concurrency] START testPurchaseReplacementSerializesBeforeDeletionAndDeletionUsesOneAffectedHeader\n");
         $invoiceId = $this->seedPurchaseInvoice(10.0);
         $replacement = $this->worker('purchase_replace', [
             'data' => [
@@ -162,17 +173,21 @@ final class MySqlConcurrencyTest extends TestCase
             'auth' => ['id' => 1],
         ]);
         $replacement->send('go');
-        $replacement->waitForEvent('locked');
+        $replacement->waitForEvent('locked', 10.0, self::$pdo);
+        fwrite(STDOUT, "[mysql-concurrency] purchase replacement worker locked row\n");
 
         $deletion = $this->worker('purchase_delete', ['invoice_id' => $invoiceId]);
         $deletion->send('go');
-        $attempting = $deletion->waitForEvent('attempting');
+        $attempting = $deletion->waitForEvent('attempting', 10.0, self::$pdo);
+        fwrite(STDOUT, "[mysql-concurrency] purchase deletion worker attempting lock, waiting for lock wait\n");
         MySqlTestEnvironment::waitForLockWait(self::$pdo, (int) $attempting['connection_id']);
+        fwrite(STDOUT, "[mysql-concurrency] purchase deletion confirmed in lock wait, releasing replacement\n");
 
         $replacement->send('release');
-        $replacementResult = $replacement->waitForEvent('result')['result'];
-        $deletion->waitForEvent('locked');
-        $deletionResult = $deletion->waitForEvent('result')['result'];
+        $replacementResult = $replacement->waitForEvent('result', 10.0, self::$pdo)['result'];
+        $deletion->waitForEvent('locked', 10.0, self::$pdo);
+        $deletionResult = $deletion->waitForEvent('result', 10.0, self::$pdo)['result'];
+        fwrite(STDOUT, "[mysql-concurrency] purchase replacement and deletion workers completed\n");
 
         self::assertTrue($replacementResult['ok']);
         self::assertTrue($replacementResult['is_update']);
