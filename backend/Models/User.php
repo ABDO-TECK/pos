@@ -321,18 +321,20 @@ class User {
 
     /**
      * Delete expired access and refresh tokens.
-     * Called as fallback when MySQL EVENT scheduler is not available.
      *
+     * @param int $gracePeriodSeconds Grace period after expiry before purge (default: 3600 = 1 hour)
      * @return array{access: int, refresh: int} Number of deleted tokens
      */
-    public function purgeExpiredTokens(): array
+    public function purgeExpiredTokens(int $gracePeriodSeconds = 3600): array
     {
-        $stmt = $this->db->prepare('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)');
-        $stmt->execute();
+        $cutoff = gmdate('Y-m-d H:i:s', time() - max(0, $gracePeriodSeconds));
+
+        $stmt = $this->db->prepare('DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < ?');
+        $stmt->execute([$cutoff]);
         $accessDeleted = $stmt->rowCount();
 
-        $stmt = $this->db->prepare('DELETE FROM refresh_tokens WHERE expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)');
-        $stmt->execute();
+        $stmt = $this->db->prepare('DELETE FROM refresh_tokens WHERE expires_at < ?');
+        $stmt->execute([$cutoff]);
         $refreshDeleted = $stmt->rowCount();
 
         return ['access' => $accessDeleted, 'refresh' => $refreshDeleted];

@@ -1450,6 +1450,7 @@ class DeltaUpdateService
             CURLOPT_FILE           => $fp,
             CURLOPT_TIMEOUT        => 30,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-DeltaUpdater/1.0',
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 5,
@@ -1458,7 +1459,7 @@ class DeltaUpdateService
         ]);
 
         $certPath = $this->resolveCurlCaBundlePath();
-        if (file_exists($certPath)) {
+        if ($certPath !== null && $certPath !== '' && !str_starts_with($certPath, 'phar://') && is_file($certPath)) {
             curl_setopt($ch, CURLOPT_CAINFO, $certPath);
         }
 
@@ -1506,21 +1507,9 @@ class DeltaUpdateService
         return false;
     }
 
-    private function resolveCurlCaBundlePath(): string
+    private function resolveCurlCaBundlePath(): ?string
     {
-        $candidates = [
-            $this->rootDir . '/backend/certs/cacert.pem',
-            $this->rootDir . '/certs/cacert.pem',
-            dirname(__DIR__) . '/certs/cacert.pem',
-        ];
-
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return $candidates[0] ?? '';
+        return UpdateRuntimePaths::getCaBundlePath($this->rootDir);
     }
 
     private function deleteDirectoryRecursive(string $dir): void

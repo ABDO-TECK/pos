@@ -230,4 +230,172 @@ final class MySqlMigrationTest extends TestCase
             $pdo->exec($statement);
         }
     }
+    public function testMigration032LeastPrivilegeAndIdempotency(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_mig032_test');
+        try {
+            $rootPdo = MySqlTestEnvironment::connect($database);
+
+            // Create baseline tables required by Migration 032
+            $rootPdo->exec("
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) NOT NULL UNIQUE
+                ) ENGINE=InnoDB;
+                CREATE TABLE IF NOT EXISTS tokens (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    token VARCHAR(64) NOT NULL,
+                    expires_at TIMESTAMP NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB;
+                CREATE TABLE IF NOT EXISTS refresh_tokens (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    token VARCHAR(64) NOT NULL,
+                    family_id VARCHAR(64) NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    used_at TIMESTAMP NULL,
+                    revoked_at TIMESTAMP NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB;
+            ");
+
+            // Create a restricted user with ONLY db-level privileges (NO SUPER)
+            $restrictedUser = 'pos_test_' . bin2hex(random_bytes(4));
+            $restrictedPass = 'pass_' . bin2hex(random_bytes(8));
+            $rootPdo->exec("CREATE USER '{$restrictedUser}'@'127.0.0.1' IDENTIFIED BY '{$restrictedPass}';");
+            $rootPdo->exec("GRANT ALL PRIVILEGES ON `{$database}`.* TO '{$restrictedUser}'@'127.0.0.1';");
+            $rootPdo->exec("FLUSH PRIVILEGES;");
+
+            try {
+                $restrictedConfig = MySqlTestEnvironment::configuration($database);
+                $restrictedPdo = new PDO(
+                    sprintf(
+                        'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                        $restrictedConfig['host'],
+                        $restrictedConfig['port'],
+                        $database
+                    ),
+                    $restrictedUser,
+                    $restrictedPass,
+                    [
+                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    ]
+                );
+
+                // Scenario A: Fresh execution with expired & active tokens
+                $restrictedPdo->exec("
+                    INSERT INTO tokens (user_id, token, expires_at) VALUES
+                    (1, 'expired_access', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR)),
+                    (1, 'active_access', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 HOUR));
+                    INSERT INTO refresh_tokens (user_id, token, family_id, expires_at) VALUES
+                    (1, 'expired_refresh', 'fam1', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR)),
+                    (1, 'active_refresh', 'fam1', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 HOUR));
+                ");
+
+                MySqlTestEnvironment::applyMigration($restrictedPdo, 'database/migrations/032_cleanup_expired_tokens.sql');
+
+                // Verify expired tokens were purged and active tokens remain
+                $activeTokens = $restrictedPdo->query("SELECT token FROM tokens ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+                self::assertSame(['active_access'], $activeTokens);
+
+                $activeRefresh = $restrictedPdo->query("SELECT token FROM refresh_tokens ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+                self::assertSame(['active_refresh'], $activeRefresh);
+
+                // Scenario B: Idempotent rerun after partial application
+                MySqlTestEnvironment::applyMigration($restrictedPdo, 'database/migrations/032_cleanup_expired_tokens.sql');
+                self::assertCount(1, $restrictedPdo->query("SELECT token FROM tokens")->fetchAll());
+
+                // Scenario C: Legacy event already exists (dropped cleanly by restricted user)
+                // Temporarily create event via root to simulate legacy dev environment
+                $rootPdo->exec("
+                    CREATE EVENT IF NOT EXISTS cleanup_expired_tokens
+                    ON SCHEDULE EVERY 1 DAY
+                    DO DELETE FROM tokens WHERE expires_at < UTC_TIMESTAMP();
+                ");
+                MySqlTestEnvironment::applyMigration($restrictedPdo, 'database/migrations/032_cleanup_expired_tokens.sql');
+
+                $events = $restrictedPdo->query("SHOW EVENTS FROM `{$database}` LIKE 'cleanup_expired_tokens'")->fetchAll();
+                self::assertEmpty($events, 'The cleanup event must be dropped.');
+            } finally {
+                $rootPdo->exec("DROP USER IF EXISTS '{$restrictedUser}'@'127.0.0.1';");
+            }
+        } finally {
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+
+    public function testFullMigrationServiceWithRestrictedUser(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_full_mig_test');
+        try {
+            $rootPdo = MySqlTestEnvironment::connect($database);
+
+            // Load baseline schema into the disposable database
+            $schemaPath = dirname(__DIR__, 3) . '/database/pos_schema.sql';
+            $schemaSql = file_get_contents($schemaPath);
+            self::assertNotFalse($schemaSql, "pos_schema.sql must exist at {$schemaPath}");
+            foreach (MySqlTestEnvironment::splitMigrationStatements($schemaSql) as $statement) {
+                if (preg_match('/^\s*(CREATE DATABASE|USE)\b/i', $statement)) {
+                    continue;
+                }
+                $rootPdo->exec($statement);
+            }
+
+            // Create restricted user with ONLY db-level privileges (NO SUPER)
+            $restrictedUser = 'pos_app_' . bin2hex(random_bytes(4));
+            $restrictedPass = 'pass_' . bin2hex(random_bytes(8));
+            $rootPdo->exec("CREATE USER '{$restrictedUser}'@'127.0.0.1' IDENTIFIED BY '{$restrictedPass}';");
+            $rootPdo->exec("GRANT ALL PRIVILEGES ON `{$database}`.* TO '{$restrictedUser}'@'127.0.0.1';");
+            $rootPdo->exec("FLUSH PRIVILEGES;");
+
+            try {
+                $restrictedConfig = MySqlTestEnvironment::configuration($database);
+                $restrictedPdo = new PDO(
+                    sprintf(
+                        'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                        $restrictedConfig['host'],
+                        $restrictedConfig['port'],
+                        $database
+                    ),
+                    $restrictedUser,
+                    $restrictedPass,
+                    [
+                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    ]
+                );
+
+                // Run MigrationService as restricted user
+                $migrationService = new \App\Services\MigrationService($restrictedPdo);
+                $result = $migrationService->runAllMigrations(true);
+
+                self::assertSame([], $result['errors'], 'All migrations must pass without errors under least privilege');
+                self::assertGreaterThan(0, $result['executed']);
+
+                // Verify 032 and latest 057 are recorded
+                $recorded = $restrictedPdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
+                self::assertContains('032_cleanup_expired_tokens.sql', $recorded);
+                self::assertContains('057_add_product_search_indexes.sql', $recorded);
+
+                // Simulate partial failure scenario: delete 032+ from schema_versions to simulate replay
+                $restrictedPdo->exec("DELETE FROM schema_versions WHERE version >= '032_cleanup_expired_tokens.sql'");
+                $replayResult = $migrationService->runAllMigrations(true);
+
+                self::assertSame([], $replayResult['errors'], 'Replay of 032+ must be completely idempotent and error-free');
+                self::assertGreaterThanOrEqual(25, $replayResult['executed']);
+
+                $replayedVersions = $restrictedPdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
+                self::assertContains('032_cleanup_expired_tokens.sql', $replayedVersions);
+                self::assertContains('057_add_product_search_indexes.sql', $replayedVersions);
+            } finally {
+                $rootPdo->exec("DROP USER IF EXISTS '{$restrictedUser}'@'127.0.0.1';");
+            }
+        } finally {
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
 }

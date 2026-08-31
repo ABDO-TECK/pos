@@ -818,25 +818,56 @@ class UpdateRecoveryService
 
     protected function getDeviceId(): string
     {
-        $idFile = $this->storageDir . '/.device_id';
-        if (file_exists($idFile)) {
-            $id = trim((string) @file_get_contents($idFile));
-            if ($id !== '') {
-                return $id;
+        $idCandidates = [
+            $this->storageDir . '/.device_id',
+            $this->appRoot . '/backend/storage/.device_id',
+            $this->appRoot . '/storage/.device_id',
+        ];
+
+        foreach ($idCandidates as $idFile) {
+            if (file_exists($idFile)) {
+                $id = trim((string) @file_get_contents($idFile));
+                if ($id !== '') {
+                    return $id;
+                }
             }
         }
-        return 'local-terminal';
+
+        // If updateService is available, delegate to its UUID generator
+        if ($this->updateService !== null) {
+            return $this->updateService->getDeviceId();
+        }
+
+        // Generate and persist RFC 4122 v4 UUID
+        try {
+            $data = random_bytes(16);
+            $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+            $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+            $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+            @mkdir($this->storageDir, 0755, true);
+            @file_put_contents($this->storageDir . '/.device_id', $uuid);
+            return $uuid;
+        } catch (Throwable) {
+            return 'local-terminal';
+        }
     }
 
     protected function getCurrentVersion(): string
     {
-        $vFile = $this->appRoot . '/version.json';
-        if (file_exists($vFile)) {
-            $data = json_decode((string) @file_get_contents($vFile), true);
-            if (!empty($data['version'])) {
-                return (string) $data['version'];
+        $vCandidates = [
+            $this->appRoot . '/version.json',
+            UpdateRuntimePaths::deployedRoot() . '/version.json',
+        ];
+
+        foreach ($vCandidates as $vFile) {
+            if (file_exists($vFile)) {
+                $data = json_decode((string) @file_get_contents($vFile), true);
+                if (is_array($data) && !empty($data['version'])) {
+                    return (string) $data['version'];
+                }
             }
         }
+
         return '0.0.0';
     }
 }

@@ -39,6 +39,43 @@ final class UpdateRuntimePaths
             : $normalizedRoot . '/backend/index.php';
     }
 
+    /**
+     * Resolves the physical filesystem path to a certificate inside backend/certs.
+     *
+     * Returns null if no physical file exists or if the path is within a phar:// stream wrapper.
+     */
+    public static function getBackendCertPath(string $certName = 'cacert.pem', ?string $root = null): ?string
+    {
+        $normalizedRoot = self::deployedRoot($root);
+        $candidates = [
+            $normalizedRoot . '/backend/certs/' . $certName,
+            $normalizedRoot . '/certs/' . $certName,
+        ];
+
+        // If running from source (non-PHAR) and no custom root was specified, allow backend-relative lookups
+        if ($root === null && \Phar::running(false) === '') {
+            $sourceBackendDir = realpath(__DIR__ . '/..') ?: dirname(__DIR__);
+            $candidates[] = self::normalize($sourceBackendDir) . '/certs/' . $certName;
+        }
+
+        foreach ($candidates as $candidate) {
+            $candidate = self::normalize($candidate);
+            if (!str_starts_with($candidate, 'phar://') && is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolves the physical CA bundle path for cURL TLS operations.
+     */
+    public static function getCaBundlePath(?string $root = null): ?string
+    {
+        return self::getBackendCertPath('cacert.pem', $root);
+    }
+
     private static function normalize(string $path): string
     {
         return rtrim(str_replace('\\', '/', $path), '/');

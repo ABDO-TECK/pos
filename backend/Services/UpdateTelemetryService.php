@@ -32,6 +32,49 @@ class UpdateTelemetryService
         'update_auto_rollback',
     ];
 
+    public const TEST_DEVICE_PREFIXES = [
+        'local-terminal',
+        'local-test-',
+        'local-test_',
+        'test-',
+        'test_',
+        'dev-',
+        'dev_',
+        'fixture-',
+        'fixture_',
+        'sandbox-',
+        'sandbox_',
+        'dummy-',
+        'dummy_',
+    ];
+
+    public static function isTestDeviceId(string $deviceId): bool
+    {
+        $trimmed = trim(strtolower($deviceId));
+        if ($trimmed === '' || $trimmed === 'local-terminal') {
+            return true;
+        }
+        foreach (self::TEST_DEVICE_PREFIXES as $prefix) {
+            if (str_starts_with($trimmed, strtolower($prefix))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function getTestDeviceExclusionSql(string $column = 'device_id'): string
+    {
+        return "({$column} NOT IN ('local-terminal') "
+            . "AND {$column} NOT LIKE 'local-test-%' "
+            . "AND {$column} NOT LIKE 'local-test_%' "
+            . "AND {$column} NOT LIKE 'test-%' "
+            . "AND {$column} NOT LIKE 'test_%' "
+            . "AND {$column} NOT LIKE 'dev-%' "
+            . "AND {$column} NOT LIKE 'dev_%' "
+            . "AND {$column} NOT LIKE 'fixture-%' "
+            . "AND {$column} NOT LIKE 'sandbox-%' "
+            . "AND {$column} NOT LIKE 'dummy-%')";
+    }
 
     protected string $storageDir;
     protected string $queueFile;
@@ -73,6 +116,11 @@ class UpdateTelemetryService
     {
         if ($this->pdo !== null) {
             return $this->pdo;
+        }
+
+        // Prevent tests from accidentally connecting to the real database
+        if (defined('PHPUNIT_TEST_SUITE') || getenv('APP_ENV') === 'testing') {
+            return null;
         }
 
         try {
@@ -318,23 +366,32 @@ class UpdateTelemetryService
                 throw new \RuntimeException('Database is unavailable');
             }
 
-            // Total devices seen in last 30 days
+            $deviceFilter = self::getTestDeviceExclusionSql('device_id');
+            $tDeviceFilter = self::getTestDeviceExclusionSql('t.device_id');
+            $intervalSql = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
+                ? "datetime('now', '-30 days')"
+                : "DATE_SUB(NOW(), INTERVAL 30 DAY)";
+
+            // Total devices seen in last 30 days (excluding test/diagnostic identities)
             $stmt = $pdo->query("
                 SELECT COUNT(DISTINCT device_id) as total_devices 
                 FROM update_telemetry 
-                WHERE created_at >= " . ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' ? "datetime('now', '-30 days')" : "DATE_SUB(NOW(), INTERVAL 30 DAY)") . "
+                WHERE created_at >= {$intervalSql}
+                  AND {$deviceFilter}
             ");
             $totalDevices = (int) ($stmt->fetch(PDO::FETCH_ASSOC)['total_devices'] ?? 0);
 
-            // Latest version per device
+            // Latest version per device (excluding test/diagnostic identities)
             $stmt = $pdo->query("
                 SELECT t.current_version, COUNT(*) as count
                 FROM update_telemetry t
                 INNER JOIN (
                     SELECT device_id, MAX(id) as max_id
                     FROM update_telemetry
+                    WHERE {$deviceFilter}
                     GROUP BY device_id
                 ) latest ON t.id = latest.max_id
+                WHERE {$tDeviceFilter}
                 GROUP BY t.current_version
                 ORDER BY count DESC
             ");
@@ -343,15 +400,17 @@ class UpdateTelemetryService
                 $versionDist[$row['current_version']] = (int) $row['count'];
             }
 
-            // Latest channel per device
+            // Latest channel per device (excluding test/diagnostic identities)
             $stmt = $pdo->query("
                 SELECT t.channel, COUNT(*) as count
                 FROM update_telemetry t
                 INNER JOIN (
                     SELECT device_id, MAX(id) as max_id
                     FROM update_telemetry
+                    WHERE {$deviceFilter}
                     GROUP BY device_id
                 ) latest ON t.id = latest.max_id
+                WHERE {$tDeviceFilter}
                 GROUP BY t.channel
                 ORDER BY count DESC
             ");
@@ -361,7 +420,7 @@ class UpdateTelemetryService
                 $channelDist[$ch] = (int) $row['count'];
             }
 
-            // Update success vs failure & recovery in last 30 days
+            // Update success vs failure & recovery in last 30 days (excluding test/diagnostic identities)
             $stmt = $pdo->query("
                 SELECT 
                     COUNT(*) as total_actions,
@@ -373,7 +432,8 @@ class UpdateTelemetryService
                     SUM(CASE WHEN event_type = 'update_auto_rollback' THEN 1 ELSE 0 END) as auto_rollback_count
                 FROM update_telemetry
                 WHERE event_type IN ('update_applied', 'update_failed', 'rollback_completed', 'update_recovery_completed', 'update_recovery_failed', 'update_auto_rollback')
-                  AND created_at >= " . ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' ? "datetime('now', '-30 days')" : "DATE_SUB(NOW(), INTERVAL 30 DAY)") . "
+                  AND created_at >= {$intervalSql}
+                  AND {$deviceFilter}
             ");
             $healthData = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
             $totalActions = (int) ($healthData['total_actions'] ?? 0);
@@ -495,11 +555,14 @@ class UpdateTelemetryService
                 return ['ok' => false, 'devices' => [], 'total' => 0, 'error' => 'Database unavailable'];
             }
 
+            $deviceFilter = self::getTestDeviceExclusionSql('device_id');
+            $tDeviceFilter = self::getTestDeviceExclusionSql('t.device_id');
+
             $params = [];
-            $where = '';
+            $where = "WHERE {$tDeviceFilter}";
 
             if ($search !== null && trim($search) !== '') {
-                $where = 'WHERE t.device_id LIKE :search OR t.current_version LIKE :search';
+                $where .= ' AND (t.device_id LIKE :search OR t.current_version LIKE :search)';
                 $params[':search'] = '%' . trim($search) . '%';
             }
 
@@ -516,6 +579,7 @@ class UpdateTelemetryService
                 INNER JOIN (
                     SELECT device_id, MAX(id) as max_id
                     FROM update_telemetry
+                    WHERE {$deviceFilter}
                     GROUP BY device_id
                 ) latest ON t.id = latest.max_id
                 {$where}
@@ -527,8 +591,8 @@ class UpdateTelemetryService
             $stmt->execute($params);
             $devices = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-            // Count total
-            $countSql = "SELECT COUNT(DISTINCT device_id) as total FROM update_telemetry";
+            // Count total (excluding test identities)
+            $countSql = "SELECT COUNT(DISTINCT device_id) as total FROM update_telemetry WHERE {$deviceFilter}";
             $total = (int) ($pdo->query($countSql)->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 
             return [
@@ -541,6 +605,39 @@ class UpdateTelemetryService
         } catch (Throwable $e) {
             Logger::error('UpdateTelemetryService getFleetDevices failed', ['error' => $e->getMessage()]);
             return ['ok' => false, 'devices' => [], 'total' => 0, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * One-time or maintenance purge for test/diagnostic telemetry rows.
+     */
+    public function purgeTestTelemetry(): int
+    {
+        try {
+            $pdo = $this->getPdo();
+            if ($pdo === null) {
+                return 0;
+            }
+
+            $testFilter = "(" . implode(' OR ', [
+                "device_id IN ('local-terminal')",
+                "device_id LIKE 'local-test-%'",
+                "device_id LIKE 'local-test_%'",
+                "device_id LIKE 'test-%'",
+                "device_id LIKE 'test_%'",
+                "device_id LIKE 'dev-%'",
+                "device_id LIKE 'dev_%'",
+                "device_id LIKE 'fixture-%'",
+                "device_id LIKE 'sandbox-%'",
+                "device_id LIKE 'dummy-%'",
+            ]) . ")";
+
+            $stmt = $pdo->prepare("DELETE FROM update_telemetry WHERE {$testFilter}");
+            $stmt->execute();
+            return (int) $stmt->rowCount();
+        } catch (Throwable $e) {
+            Logger::error('UpdateTelemetryService purgeTestTelemetry failed', ['error' => $e->getMessage()]);
+            return 0;
         }
     }
 

@@ -344,21 +344,25 @@ class GitHubReleaseProvider
             return ['ok' => false, 'error' => "Cannot open destination file for writing: {$destPath}"];
         }
 
+        if ($this->caCertPath === null || !is_file($this->caCertPath) || str_starts_with($this->caCertPath, 'phar://')) {
+            fclose($fp);
+            @unlink($destPath);
+            return ['ok' => false, 'error' => 'Asset download failed: CA certificate bundle not found for TLS verification'];
+        }
+
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_FILE           => $fp,
             CURLOPT_TIMEOUT        => 60,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_CAINFO         => $this->caCertPath,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 5,
             CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS=> CURLPROTO_HTTPS,
         ]);
-
-        if ($this->caCertPath && file_exists($this->caCertPath)) {
-            curl_setopt($ch, CURLOPT_CAINFO, $this->caCertPath);
-        }
 
         if ($this->token && trim($this->token) !== '') {
             curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . trim($this->token)]);
@@ -384,11 +388,23 @@ class GitHubReleaseProvider
      */
     protected function executeCurlGet(string $url, array $headers = [], bool $followRedirects = false): array
     {
+        if ($this->caCertPath === null || !is_file($this->caCertPath) || str_starts_with($this->caCertPath, 'phar://')) {
+            return [
+                'ok' => false,
+                'body' => false,
+                'http_code' => 0,
+                'curl_error' => 'CA certificate bundle not found for TLS verification',
+                'curl_errno' => defined('CURLE_SSL_CACERT') ? (int) constant('CURLE_SSL_CACERT') : 60,
+            ];
+        }
+
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $this->timeout,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_CAINFO         => $this->caCertPath,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_FOLLOWLOCATION => $followRedirects,
             CURLOPT_MAXREDIRS      => $followRedirects ? 5 : 0,
@@ -396,10 +412,6 @@ class GitHubReleaseProvider
             CURLOPT_REDIR_PROTOCOLS=> CURLPROTO_HTTPS,
             CURLOPT_HTTPHEADER     => $headers,
         ]);
-
-        if ($this->caCertPath && file_exists($this->caCertPath)) {
-            curl_setopt($ch, CURLOPT_CAINFO, $this->caCertPath);
-        }
 
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -459,7 +471,7 @@ class GitHubReleaseProvider
         if ($curlErrNo === 28 || str_contains($lower, 'timed out')) {
             return 'github_network_timeout';
         }
-        if ($curlErrNo !== 0 && (str_contains($lower, 'ssl') || str_contains($lower, 'certificate'))) {
+        if ($curlErrNo !== 0 && (str_contains($lower, 'ssl') || str_contains($lower, 'certificate') || str_contains($lower, 'ca cert'))) {
             return 'github_ssl_error';
         }
 
@@ -487,19 +499,6 @@ class GitHubReleaseProvider
 
     private function resolveCaCertPath(): ?string
     {
-        $baseDir = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: dirname(__DIR__, 2));
-        $candidates = [
-            $baseDir . '/backend/certs/cacert.pem',
-            $baseDir . '/certs/cacert.pem',
-            dirname(__DIR__) . '/certs/cacert.pem',
-        ];
-
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return null;
+        return UpdateRuntimePaths::getCaBundlePath();
     }
 }

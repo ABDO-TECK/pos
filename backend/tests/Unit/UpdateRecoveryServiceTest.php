@@ -6,18 +6,22 @@ namespace Tests\Unit;
 
 use App\Services\UpdateRecoveryService;
 use App\Services\UpdateService;
+use App\Services\UpdateTelemetryService;
 use PHPUnit\Framework\TestCase;
 
 final class UpdateRecoveryServiceTest extends TestCase
 {
     private string $storage;
     private UpdateRecoveryService $service;
+    private UpdateTelemetryService $telemetryMock;
 
     protected function setUp(): void
     {
         $this->storage = sys_get_temp_dir() . '/pos-recovery-' . bin2hex(random_bytes(6));
         mkdir($this->storage, 0755, true);
-        $this->service = new UpdateRecoveryService($this->storage, $this->storage);
+        $this->telemetryMock = $this->createMock(UpdateTelemetryService::class);
+        $this->telemetryMock->method('recordEvent')->willReturn(true);
+        $this->service = new UpdateRecoveryService($this->storage, $this->storage, null, $this->telemetryMock);
     }
 
     protected function tearDown(): void
@@ -52,7 +56,7 @@ final class UpdateRecoveryServiceTest extends TestCase
             ->with($snapshot)
             ->willReturn(['ok' => true, 'snapshot' => $snapshot, 'logs' => ['restored']]);
 
-        $freshProcess = new UpdateRecoveryService($this->storage, $this->storage, $updateService);
+        $freshProcess = new UpdateRecoveryService($this->storage, $this->storage, $updateService, $this->telemetryMock);
         $freshProcess->writeStateFile([
             'state' => 'migrating',
             'to_version' => '1.1.49',

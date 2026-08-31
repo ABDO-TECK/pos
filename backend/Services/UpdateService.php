@@ -240,6 +240,7 @@ class UpdateService
             CURLOPT_URL            => $this->repoUrl,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
             CURLOPT_TIMEOUT        => 15,
             CURLOPT_FOLLOWLOCATION => true,
@@ -252,7 +253,7 @@ class UpdateService
         ];
 
         $certPath = $this->resolveCurlCaBundlePath();
-        if (file_exists($certPath)) {
+        if ($certPath !== null && $certPath !== '' && !str_starts_with($certPath, 'phar://') && is_file($certPath)) {
             $curlOptions[CURLOPT_CAINFO] = $certPath;
         }
 
@@ -314,21 +315,9 @@ class UpdateService
         ];
     }
 
-    private function resolveCurlCaBundlePath(): string
+    private function resolveCurlCaBundlePath(): ?string
     {
-        $candidates = [
-            $this->rootDir . '/backend/certs/cacert.pem',
-            $this->rootDir . '/certs/cacert.pem',
-            dirname(__DIR__) . '/certs/cacert.pem',
-        ];
-
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return $candidates[0] ?? '';
+        return UpdateRuntimePaths::getCaBundlePath($this->rootDir);
     }
 
     private function classifyRemoteFailure(int $httpCode, string $curlErr, int $curlErrNo): string

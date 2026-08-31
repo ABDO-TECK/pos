@@ -270,6 +270,78 @@ class UserPasswordSecurityTest extends TestCase
         return $controller;
     }
 
+    public function testExpiredAccessTokenIsRejectedByAuthMiddleware(): void
+    {
+        $this->seedUser(1, 'cashier@pos.test', 'Password123', 'cashier', 0);
+        $expiredToken = 'expired_access_token_123';
+        $stmt = $this->db->prepare('INSERT INTO tokens (user_id, token, expires_at) VALUES (?, ?, ?)');
+        $stmt->execute([
+            1,
+            hash('sha256', $expiredToken),
+            gmdate('Y-m-d H:i:s', time() - 3600),
+        ]);
+
+        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $expiredToken;
+        $authService = new AuthService();
+        $middleware = new AuthMiddleware($authService);
+
+        $nextCalled = false;
+        $response = $middleware->handle(function () use (&$nextCalled) {
+            $nextCalled = true;
+            return ['status' => 'ok'];
+        });
+
+        $this->assertFalse($nextCalled, 'Next handler must not be reached for expired token');
+        $this->assertSame(401, $response['status_code']);
+        $this->assertSame('Token expired', $response['body']['message']);
+    }
+
+    public function testExpiredRefreshTokenIsRejected(): void
+    {
+        $this->seedUser(1, 'cashier@pos.test', 'Password123', 'cashier', 0);
+        $expiredRefresh = 'expired_refresh_token_123';
+        $stmt = $this->db->prepare(
+            'INSERT INTO refresh_tokens (user_id, token, family_id, expires_at) VALUES (?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            1,
+            hash('sha256', $expiredRefresh),
+            'fam_123',
+            gmdate('Y-m-d H:i:s', time() - 3600),
+        ]);
+
+        $this->assertNull($this->userModel->findRefreshToken($expiredRefresh));
+        $rotationResult = $this->userModel->rotateRefreshToken($expiredRefresh);
+        $this->assertSame(['status' => 'invalid'], $rotationResult);
+    }
+
+    public function testPurgeExpiredTokensRemovesExpiredRowsOnly(): void
+    {
+        $this->seedUser(1, 'cashier@pos.test', 'Password123', 'cashier', 0);
+        $this->db->sqliteCreateFunction(
+            'DATE_SUB',
+            static fn (string $date, string $interval): string => gmdate('Y-m-d H:i:s', strtotime($date . ' - 1 hour'))
+        );
+
+        $stmt = $this->db->prepare('INSERT INTO tokens (user_id, token, expires_at) VALUES (?, ?, ?)');
+        $stmt->execute([1, 'active_hash', gmdate('Y-m-d H:i:s', time() + 7200)]);
+        $stmt->execute([1, 'expired_hash', gmdate('Y-m-d H:i:s', time() - 7200)]);
+
+        $stmt = $this->db->prepare('INSERT INTO refresh_tokens (user_id, token, family_id, expires_at) VALUES (?, ?, ?, ?)');
+        $stmt->execute([1, 'active_ref_hash', 'fam1', gmdate('Y-m-d H:i:s', time() + 7200)]);
+        $stmt->execute([1, 'expired_ref_hash', 'fam2', gmdate('Y-m-d H:i:s', time() - 7200)]);
+
+        $purged = $this->userModel->purgeExpiredTokens();
+        $this->assertSame(1, $purged['access']);
+        $this->assertSame(1, $purged['refresh']);
+
+        $remainingTokens = $this->db->query('SELECT token FROM tokens')->fetchAll(PDO::FETCH_COLUMN);
+        $this->assertSame(['active_hash'], $remainingTokens);
+
+        $remainingRefresh = $this->db->query('SELECT token FROM refresh_tokens')->fetchAll(PDO::FETCH_COLUMN);
+        $this->assertSame(['active_ref_hash'], $remainingRefresh);
+    }
+
     private function seedUser(
         int $id,
         string $email,
