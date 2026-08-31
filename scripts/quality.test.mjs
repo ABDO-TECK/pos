@@ -9,6 +9,7 @@ import {
   classifyMySqlProbe,
   enforcedTypeScriptFiles,
   findForbiddenTypeSuppressions,
+  runStep,
 } from './quality.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -167,4 +168,18 @@ test('Electron manifest, lock, and hardened renderer APIs stay compatible', () =
   ]) {
     execFileSync(process.execPath, ['--check', file], { cwd: repoRoot })
   }
+})
+
+test('quality runner terminates a hanging step within its configured timeout', () => {
+  assert.throws(
+    () => {
+      runStep({
+        label: 'Deliberately hanging step',
+        command: process.execPath,
+        args: ['-e', 'setInterval(() => {}, 1000)'],
+        timeout: 250,
+      })
+    },
+    (error) => error instanceof Error && error.message.includes('timed out after 0.25 seconds'),
+  )
 })

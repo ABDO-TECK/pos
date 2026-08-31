@@ -6,6 +6,33 @@ import { DecodeHintType } from '@zxing/library'
 import { X } from 'lucide-react'
 import styles from './BarcodeScanner.module.css'
 
+interface LegacyNavigator extends Navigator {
+  getUserMedia?: (
+    constraints: MediaStreamConstraints | undefined,
+    success: (stream: MediaStream) => void,
+    error: (err: unknown) => void
+  ) => void
+  webkitGetUserMedia?: (
+    constraints: MediaStreamConstraints | undefined,
+    success: (stream: MediaStream) => void,
+    error: (err: unknown) => void
+  ) => void
+  mozGetUserMedia?: (
+    constraints: MediaStreamConstraints | undefined,
+    success: (stream: MediaStream) => void,
+    error: (err: unknown) => void
+  ) => void
+  msGetUserMedia?: (
+    constraints: MediaStreamConstraints | undefined,
+    success: (stream: MediaStream) => void,
+    error: (err: unknown) => void
+  ) => void
+}
+
+interface CameraCapabilities extends MediaTrackCapabilities {
+  focusMode?: string[]
+}
+
 /**
  * على HTTP (ما عدا localhost) المتصفحات الحديثة لا تعرّف `navigator.mediaDevices` — فينهار ZXing عند قراءة getUserMedia.
  * بعض الأجهزة تعرض فقط الواجهة المسبوقة (webkitGetUserMedia).
@@ -13,28 +40,30 @@ import styles from './BarcodeScanner.module.css'
 function ensureCameraApi() {
   if (typeof navigator === 'undefined') return false
 
-  if (typeof (navigator as any).mediaDevices?.getUserMedia === 'function') {
+  const nav = navigator as LegacyNavigator
+
+  if (typeof nav.mediaDevices?.getUserMedia === 'function') {
     return true
   }
 
   const legacy =
-    (navigator as any).getUserMedia ||
-    (navigator as any).webkitGetUserMedia ||
-    (navigator as any).mozGetUserMedia ||
-    (navigator as any).msGetUserMedia
+    nav.getUserMedia ||
+    nav.webkitGetUserMedia ||
+    nav.mozGetUserMedia ||
+    nav.msGetUserMedia
 
   if (typeof legacy !== 'function') {
     return false
   }
 
   try {
-    if (!(navigator as any).mediaDevices) {
-      (navigator as any).mediaDevices = {}
+    if (!nav.mediaDevices) {
+      (nav as { mediaDevices?: Partial<MediaDevices> }).mediaDevices = {}
     }
-    if (typeof navigator.mediaDevices.getUserMedia !== 'function') {
-      navigator.mediaDevices.getUserMedia = function (constraints) {
+    if (typeof nav.mediaDevices.getUserMedia !== 'function') {
+      nav.mediaDevices.getUserMedia = function (constraints) {
         return new Promise((resolve, reject) => {
-          legacy.call(navigator, constraints, resolve, reject)
+          legacy.call(nav, constraints, resolve, reject)
         })
       }
     }
@@ -258,9 +287,9 @@ export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCamer
       try {
         const track = stream?.getVideoTracks()[0]
         if (track) {
-          const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}
-          if ((caps as any).focusMode && (caps as any).focusMode.includes('continuous')) {
-            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] })
+          const caps = (typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}) as CameraCapabilities
+          if (caps.focusMode && caps.focusMode.includes('continuous')) {
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] })
           }
         }
       } catch {
@@ -295,11 +324,12 @@ export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCamer
       }
     }
 
-    startCamera().catch((e: any) => {
+    startCamera().catch((e: unknown) => {
       if (finished) return
       setStarting(false)
-      const raw = String(e?.message || '')
-      const name = e?.name || ''
+      const err = e as { message?: string; name?: string } | undefined
+      const raw = String(err?.message || '')
+      const name = err?.name || ''
       let msg = 'تعذر تشغيل الكاميرا.'
 
       if (
@@ -314,8 +344,8 @@ export default function BarcodeCameraScanner({ onResult, onClose }: BarcodeCamer
         msg = 'لم يُعثر على كاميرا في هذا الجهاز.'
       } else if (raw.toLowerCase().includes('secure')) {
         msg = 'الكاميرا تتطلب اتصالاً آمناً (HTTPS) في معظم المتصفحات.'
-      } else if (e?.message) {
-        msg = String(e.message)
+      } else if (err?.message) {
+        msg = String(err.message)
       }
       setError(msg)
     })

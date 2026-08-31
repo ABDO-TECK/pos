@@ -7,12 +7,6 @@ const api = axios.create({
   withCredentials: true,
 })
 
-// Helper: read a cookie by name
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-  return match ? decodeURIComponent(match[2]) : null
-}
-
 // CSRF HMAC signature storage — set by authStore after calling /csrf-cookie
 let csrfSignature: string | null = null
 export function setCsrfSignature(sig: string | null) { csrfSignature = sig }
@@ -99,7 +93,7 @@ api.interceptors.response.use(
             }
           }
         }
-      } catch (err) { }
+      } catch (_ignored) { }
       return Promise.reject(err)
     }
 

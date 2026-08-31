@@ -508,6 +508,10 @@ final class MySqlWorkerProcess
 
         $this->process = $process;
         $this->pipes = $pipes;
+        if (isset($this->pipes[0]) && is_resource($this->pipes[0])) {
+            fclose($this->pipes[0]);
+            unset($this->pipes[0]);
+        }
         stream_set_blocking($this->pipes[1], false);
         stream_set_blocking($this->pipes[2], false);
         $this->control = $control;
@@ -579,15 +583,26 @@ final class MySqlWorkerProcess
             return;
         }
         $this->closed = true;
-        fclose($this->control);
+        if (is_resource($this->control)) {
+            fclose($this->control);
+        }
         foreach ($this->pipes as $pipe) {
-            fclose($pipe);
+            if (is_resource($pipe)) {
+                fclose($pipe);
+            }
         }
-        $status = proc_get_status($this->process);
-        if ($status['running']) {
-            proc_terminate($this->process);
+        if (is_resource($this->process)) {
+            $status = proc_get_status($this->process);
+            if ($status['running']) {
+                proc_terminate($this->process, 15);
+                usleep(50_000);
+                $status = proc_get_status($this->process);
+                if ($status['running']) {
+                    proc_terminate($this->process, 9);
+                }
+            }
+            proc_close($this->process);
         }
-        proc_close($this->process);
     }
 
     public function __destruct()

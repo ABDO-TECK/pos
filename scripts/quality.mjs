@@ -163,7 +163,7 @@ function probeMySql(phpCommand, environment) {
   return classifyMySqlProbe(result.status)
 }
 
-function runStep({ label, command, args, displayCommand = command, displayArgs = args, environment = {} }) {
+export function runStep({ label, command, args, displayCommand = command, displayArgs = args, environment = {}, timeout = 300_000 }) {
   const printable = [displayCommand, ...displayArgs].join(' ')
   console.log(`\n[quality] ${label}\n> ${printable}`)
   if (dryRun) {
@@ -174,9 +174,14 @@ function runStep({ label, command, args, displayCommand = command, displayArgs =
     cwd: repoRoot,
     stdio: 'inherit',
     windowsHide: true,
+    timeout,
+    killSignal: 'SIGKILL',
     env: { ...process.env, ...environment },
   })
   if (result.error) {
+    if (result.error.name === 'Error' && (result.error.code === 'ETIMEDOUT' || result.signal === 'SIGKILL')) {
+      throw new Error(`${label} timed out after ${timeout / 1000} seconds.`)
+    }
     throw new Error(`${label} could not start: ${result.error.message}`)
   }
   if (result.status !== 0) {

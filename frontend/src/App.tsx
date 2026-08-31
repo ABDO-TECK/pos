@@ -114,7 +114,7 @@ function AppShell() {
   const toastStyle = {
     fontFamily: 'Tajawal, sans-serif',
     fontSize: '0.9rem',
-    direction: 'rtl' as 'rtl',
+    direction: 'rtl' as const,
     ...(themeMode === 'dark'
       ? { background: '#1f2937', color: '#f3f4f6', border: '1px solid #374151' }
       : {}),
