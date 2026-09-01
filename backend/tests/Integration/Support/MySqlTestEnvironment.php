@@ -503,6 +503,96 @@ final class MySqlTestEnvironment
         return empty($diagnostics) ? '' : ' [DB Lock State: ' . implode(' | ', $diagnostics) . ']';
     }
 
+    /**
+     * Creates a temporary database-scoped restricted user with NO global privileges (NO SUPER).
+     * Uses host '%' for portability across loopback and CI Docker bridge networking.
+     *
+     * @return array{username: string, password: string, host: string}
+     */
+    public static function createRestrictedUser(PDO $rootPdo, string $database, string $prefix = 'pos_test'): array
+    {
+        self::assertSafeDatabaseName($database);
+        $username = sprintf('%s_%s', $prefix, bin2hex(random_bytes(4)));
+        $password = sprintf('pass_%s', bin2hex(random_bytes(8)));
+        $host = '%';
+
+        $rootPdo->exec(sprintf("DROP USER IF EXISTS '%s'@'%s', '%s'@'127.0.0.1'", $username, $host, $username));
+        $rootPdo->exec(sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s'", $username, $host, $password));
+        $rootPdo->exec(sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%s'", $database, $username, $host));
+        $rootPdo->exec('FLUSH PRIVILEGES');
+
+        return [
+            'username' => $username,
+            'password' => $password,
+            'host' => $host,
+        ];
+    }
+
+    /**
+     * Connects as a restricted user to a specific database.
+     */
+    public static function connectAs(string $username, string $password, string $database): PDO
+    {
+        $configuration = self::configuration($database);
+        $pdo = new PDO(
+            sprintf(
+                'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                $configuration['host'],
+                $configuration['port'],
+                $database
+            ),
+            $username,
+            $password,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_TIMEOUT => 3,
+            ]
+        );
+        $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5');
+
+        return $pdo;
+    }
+
+    /**
+     * Deterministically drops a test user.
+     */
+    public static function dropUser(PDO $rootPdo, string $username, string $host = '%'): void
+    {
+        $rootPdo->exec(sprintf("DROP USER IF EXISTS '%s'@'%s', '%s'@'127.0.0.1'", $username, $host, $username));
+        $rootPdo->exec('FLUSH PRIVILEGES');
+    }
+
+    /**
+     * Asserts that the currently connected user has only database-scoped privileges,
+     * with no global administrative privileges (no SUPER, no SYSTEM_VARIABLES_ADMIN, no ALL on *.*).
+     */
+    public static function assertDatabaseScopedPrivilegesOnly(PDO $restrictedPdo, string $database): void
+    {
+        $grants = $restrictedPdo->query('SHOW GRANTS FOR CURRENT_USER')->fetchAll(PDO::FETCH_COLUMN);
+        $grantString = implode("\n", $grants);
+
+        // Ensure no global administrative privileges
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('ALL PRIVILEGES ON *.*', $grantString);
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('SUPER', $grantString);
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('SYSTEM_VARIABLES_ADMIN', $grantString);
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('RELOAD', $grantString);
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('SHUTDOWN', $grantString);
+        \PHPUnit\Framework\Assert::assertStringNotContainsString('PROCESS', $grantString);
+
+        // Verify DB-level grant exists
+        $hasDbScope = false;
+        foreach ($grants as $grant) {
+            if (stripos($grant, 'ALL PRIVILEGES ON `' . $database . '`.*') !== false
+                || stripos($grant, 'ALL PRIVILEGES ON ' . $database . '.*') !== false) {
+                $hasDbScope = true;
+                break;
+            }
+        }
+        \PHPUnit\Framework\Assert::assertTrue($hasDbScope, "Grants must contain ALL PRIVILEGES on `{$database}`.*. Found grants:\n" . $grantString);
+    }
+
     /** @param list<string> $statements */
     private static function executeStatements(PDO $pdo, array $statements): void
     {
