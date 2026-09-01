@@ -63,6 +63,30 @@ final class MigrationServiceErrorClassificationTest extends TestCase
             $this->migrationService->isIgnorableMigrationError($cantDropFk, 'ALTER TABLE customer_ledger DROP FOREIGN KEY fk_legacy'),
             'Dropping non-existent legacy FK must be safely ignorable during canonical replacement'
         );
+
+        // 1419: ER_BINLOG_CREATE_ROUTINE_NEED_SUPER (binary logging enabled without log_bin_trust_function_creators)
+        $binlogTrigger = $this->createPdoException('You do not have the SUPER privilege and binary logging is enabled', 1419);
+        self::assertTrue(
+            $this->migrationService->isIgnorableMigrationError($binlogTrigger, 'CREATE TRIGGER trg_catalog AFTER INSERT ON products FOR EACH ROW INSERT INTO pcc (id) VALUES (1)'),
+            'Trigger creation error when binary logging requires SUPER must be safely ignorable'
+        );
+        self::assertTrue(
+            MySqlTestEnvironment::isIgnorableMigrationError($binlogTrigger, 'CREATE TRIGGER trg_catalog AFTER INSERT ON products FOR EACH ROW INSERT INTO pcc (id) VALUES (1)')
+        );
+        self::assertFalse(
+            $this->migrationService->isIgnorableMigrationError($binlogTrigger, 'ALTER TABLE products ADD COLUMN brand VARCHAR(50)'),
+            '1419 error on non-trigger statements must NOT be ignored'
+        );
+
+        // 1227 on DROP EVENT: legacy cleanup by non-SYSTEM_USER
+        $dropEventAccessDenied = $this->createPdoException('Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation', 1227);
+        self::assertTrue(
+            $this->migrationService->isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens'),
+            'Dropping legacy event when lacking SYSTEM_USER must be safely ignorable'
+        );
+        self::assertTrue(
+            MySqlTestEnvironment::isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens')
+        );
     }
 
     public function testPermissionAndAccessDeniedErrorsAreNeverIgnored(): void

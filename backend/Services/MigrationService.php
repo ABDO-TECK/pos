@@ -290,7 +290,25 @@ class MigrationService {
         // safe when a migration is replacing it with the canonical one.
         if (
             $driverCode === 1091
-            && preg_match('/\\bDROP\\s+FOREIGN\\s+KEY\\b/i', $sql) === 1
+            && preg_match('/\bDROP\s+FOREIGN\s+KEY\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        // On MySQL servers with binary logging enabled and log_bin_trust_function_creators=0,
+        // a database-scoped user without SUPER cannot create or drop triggers.
+        if (
+            $driverCode === 1419
+            && preg_match('/\b(CREATE|DROP)\s+TRIGGER\b/i', $sql) === 1
+        ) {
+            return true;
+        }
+
+        // When cleaning up legacy events, a restricted user without SYSTEM_USER privilege
+        // cannot drop events defined by a SYSTEM_USER/root.
+        if (
+            $driverCode === 1227
+            && preg_match('/\bDROP\s+EVENT\b/i', $sql) === 1
         ) {
             return true;
         }

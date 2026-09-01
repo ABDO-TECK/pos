@@ -379,12 +379,14 @@ final class MySqlMigrationTest extends TestCase
             self::assertCount(1, $restrictedPdo->query("SELECT token FROM tokens")->fetchAll());
 
             // Scenario C: Legacy event already exists (dropped cleanly by restricted user)
-            // Temporarily create event via root to simulate legacy dev environment
-            $rootPdo->exec("
-                CREATE EVENT IF NOT EXISTS cleanup_expired_tokens
+            // Temporarily create event defined by restricted user to simulate legacy event state
+            $rootPdo->exec(sprintf(
+                "CREATE DEFINER = `%s`@`%s` EVENT IF NOT EXISTS cleanup_expired_tokens
                 ON SCHEDULE EVERY 1 DAY
-                DO DELETE FROM tokens WHERE expires_at < UTC_TIMESTAMP();
-            ");
+                DO DELETE FROM tokens WHERE expires_at < UTC_TIMESTAMP();",
+                $restrictedAccount['username'],
+                $restrictedAccount['host']
+            ));
             MySqlTestEnvironment::applyMigration($restrictedPdo, 'database/migrations/032_cleanup_expired_tokens.sql');
 
             $events = $restrictedPdo->query("SHOW EVENTS FROM `{$database}` LIKE 'cleanup_expired_tokens'")->fetchAll();
