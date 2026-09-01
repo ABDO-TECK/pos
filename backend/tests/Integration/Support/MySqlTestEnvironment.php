@@ -565,32 +565,63 @@ final class MySqlTestEnvironment
     }
 
     /**
+     * Validates that an array of SHOW GRANTS rows represents strictly database-scoped
+     * privileges on the target database, with no global administrative privileges.
+     *
+     * Supports both MariaDB ('ALL PRIVILEGES ON `db`.*') and MySQL 8 expanded
+     * ('ALTER, CREATE, DELETE, ... ON `db`.*') grant representations.
+     *
+     * @param list<string> $grants
+     */
+    public static function validateDatabaseScopedGrants(array $grants, string $database): void
+    {
+        $grantString = implode("\n", $grants);
+
+        // 1. Ensure no global administrative privileges
+        $forbiddenKeywords = ['SUPER', 'SYSTEM_VARIABLES_ADMIN', 'FILE', 'SHUTDOWN', 'RELOAD', 'PROCESS'];
+        foreach ($forbiddenKeywords as $keyword) {
+            $hasForbidden = (bool) preg_match('/\b' . preg_quote($keyword, '/') . '\b/i', $grantString);
+            \PHPUnit\Framework\Assert::assertFalse(
+                $hasForbidden,
+                "Restricted user must not have global privilege: {$keyword}. Found grants:\n{$grantString}"
+            );
+        }
+
+        // 2. Ensure any grant on *.* is strictly USAGE (connect only, no global rights)
+        foreach ($grants as $grant) {
+            if (preg_match('/\bON\s+(?:\*|`\*`)\.(?:\*|`\*`)(?:\s|$)/i', $grant)) {
+                $isUsageOnly = (bool) preg_match('/^GRANT\s+USAGE\b/i', trim($grant));
+                \PHPUnit\Framework\Assert::assertTrue(
+                    $isUsageOnly,
+                    "Any global grant on *.* must strictly be USAGE only. Found: {$grant}"
+                );
+            }
+        }
+
+        // 3. Verify a database-scoped grant on the disposable database exists
+        $escapedDb = preg_quote($database, '/');
+        $hasTargetDbGrant = false;
+        foreach ($grants as $grant) {
+            if (preg_match('/\bON\s+(?:`' . $escapedDb . '`|' . $escapedDb . ')\.(?:\*|`\*`)(?:\s|$)/i', $grant)) {
+                $hasTargetDbGrant = true;
+                break;
+            }
+        }
+
+        \PHPUnit\Framework\Assert::assertTrue(
+            $hasTargetDbGrant,
+            "Grants must contain database-scoped privileges on `{$database}`.*. Found grants:\n{$grantString}"
+        );
+    }
+
+    /**
      * Asserts that the currently connected user has only database-scoped privileges,
      * with no global administrative privileges (no SUPER, no SYSTEM_VARIABLES_ADMIN, no ALL on *.*).
      */
     public static function assertDatabaseScopedPrivilegesOnly(PDO $restrictedPdo, string $database): void
     {
         $grants = $restrictedPdo->query('SHOW GRANTS FOR CURRENT_USER')->fetchAll(PDO::FETCH_COLUMN);
-        $grantString = implode("\n", $grants);
-
-        // Ensure no global administrative privileges
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('ALL PRIVILEGES ON *.*', $grantString);
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('SUPER', $grantString);
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('SYSTEM_VARIABLES_ADMIN', $grantString);
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('RELOAD', $grantString);
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('SHUTDOWN', $grantString);
-        \PHPUnit\Framework\Assert::assertStringNotContainsString('PROCESS', $grantString);
-
-        // Verify DB-level grant exists
-        $hasDbScope = false;
-        foreach ($grants as $grant) {
-            if (stripos($grant, 'ALL PRIVILEGES ON `' . $database . '`.*') !== false
-                || stripos($grant, 'ALL PRIVILEGES ON ' . $database . '.*') !== false) {
-                $hasDbScope = true;
-                break;
-            }
-        }
-        \PHPUnit\Framework\Assert::assertTrue($hasDbScope, "Grants must contain ALL PRIVILEGES on `{$database}`.*. Found grants:\n" . $grantString);
+        self::validateDatabaseScopedGrants($grants, $database);
     }
 
     /** @param list<string> $statements */
