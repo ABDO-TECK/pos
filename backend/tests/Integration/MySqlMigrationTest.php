@@ -174,6 +174,87 @@ final class MySqlMigrationTest extends TestCase
         }
     }
 
+    public function testMigration044ExecutesSafelyWhenNoLegacyForeignKeysExist(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_partner_no_fk_test');
+        try {
+            $pdo = MySqlTestEnvironment::connect($database);
+            $this->createLegacyPartnerSchemaWithoutForeignKeys($pdo);
+            $pdo->exec("INSERT INTO branches (id, name) VALUES (1, 'Main')");
+            $pdo->exec("INSERT INTO customers (id, name) VALUES (10, 'Customer')");
+            $pdo->exec("INSERT INTO suppliers (id, name) VALUES (20, 'Supplier')");
+
+            MySqlTestEnvironment::applyMigration(
+                $pdo,
+                'database/migrations/044_scope_business_partners_by_branch.sql'
+            );
+
+            $foreignKeys = $pdo->prepare(
+                'SELECT constraint_name
+                 FROM information_schema.referential_constraints
+                 WHERE constraint_schema = ?
+                   AND table_name IN (\'customer_ledger\', \'supplier_ledger\')
+                 ORDER BY constraint_name'
+            );
+            $foreignKeys->execute([$database]);
+            $names = array_map('strval', $foreignKeys->fetchAll(PDO::FETCH_COLUMN));
+
+            self::assertContains('fk_ledger_customer', $names);
+            self::assertContains('fk_sledger_supplier', $names);
+        } finally {
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+
+    private function createLegacyPartnerSchemaWithoutForeignKeys(PDO $pdo): void
+    {
+        $statements = [
+            'CREATE TABLE branches (id INT PRIMARY KEY, name VARCHAR(100) NOT NULL) ENGINE=InnoDB',
+            'CREATE TABLE customers (
+                id INT PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                deleted_at TIMESTAMP NULL
+            ) ENGINE=InnoDB',
+            'CREATE TABLE suppliers (
+                id INT PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                deleted_at TIMESTAMP NULL
+            ) ENGINE=InnoDB',
+            'CREATE TABLE invoices (
+                id INT PRIMARY KEY,
+                branch_id INT NOT NULL,
+                customer_id INT NULL
+            ) ENGINE=InnoDB',
+            'CREATE TABLE purchase_invoices (
+                id INT PRIMARY KEY,
+                branch_id INT NOT NULL,
+                supplier_id INT NOT NULL
+            ) ENGINE=InnoDB',
+            "CREATE TABLE customer_ledger (
+                id INT PRIMARY KEY,
+                customer_id INT NOT NULL,
+                type ENUM('debit', 'credit') NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB",
+            "CREATE TABLE supplier_ledger (
+                id INT PRIMARY KEY,
+                supplier_id INT NOT NULL,
+                type ENUM('debit', 'credit') NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB",
+            'CREATE TABLE inventory_events (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB',
+        ];
+
+        foreach ($statements as $statement) {
+            $pdo->exec($statement);
+        }
+    }
+
     private function createLegacyPartnerSchema(
         PDO $pdo,
         string $customerForeignKey = 'fk_ledger_customer',

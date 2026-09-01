@@ -78,7 +78,7 @@ ALTER TABLE supplier_ledger ADD CONSTRAINT fk_supplier_ledger_branch FOREIGN KEY
 SET @migration_044_drop_customer_canonical_fk = (
     SELECT CASE WHEN COUNT(*) > 0
         THEN 'ALTER TABLE customer_ledger DROP FOREIGN KEY fk_ledger_customer'
-        ELSE 'SET @migration_044_noop = 1'
+        ELSE 'DO 1'
     END
     FROM information_schema.referential_constraints
     WHERE constraint_schema = DATABASE()
@@ -93,7 +93,7 @@ DEALLOCATE PREPARE migration_044_customer_canonical_fk_stmt;
 SET @migration_044_drop_customer_fk = (
     SELECT CASE WHEN COUNT(*) > 0
         THEN 'ALTER TABLE customer_ledger DROP FOREIGN KEY fk_cl_customer'
-        ELSE 'SET @migration_044_noop = 1'
+        ELSE 'DO 1'
     END
     FROM information_schema.referential_constraints
     WHERE constraint_schema = DATABASE()
@@ -107,7 +107,7 @@ ALTER TABLE customer_ledger ADD CONSTRAINT fk_ledger_customer FOREIGN KEY (branc
 SET @migration_044_drop_supplier_canonical_fk = (
     SELECT CASE WHEN COUNT(*) > 0
         THEN 'ALTER TABLE supplier_ledger DROP FOREIGN KEY fk_sledger_supplier'
-        ELSE 'SET @migration_044_noop = 1'
+        ELSE 'DO 1'
     END
     FROM information_schema.referential_constraints
     WHERE constraint_schema = DATABASE()
@@ -121,7 +121,7 @@ DEALLOCATE PREPARE migration_044_supplier_canonical_fk_stmt;
 SET @migration_044_drop_supplier_fk = (
     SELECT CASE WHEN COUNT(*) > 0
         THEN 'ALTER TABLE supplier_ledger DROP FOREIGN KEY fk_sl_supplier'
-        ELSE 'SET @migration_044_noop = 1'
+        ELSE 'DO 1'
     END
     FROM information_schema.referential_constraints
     WHERE constraint_schema = DATABASE()
