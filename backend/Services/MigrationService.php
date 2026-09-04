@@ -18,7 +18,7 @@ class MigrationService {
     private string $flagFile;
 
     public function __construct(?PDO $db = null) {
-        $this->db = $db ?? Database::getInstance();
+        $this->db = $db ?? Database::getMigrationConnection();
         $pharRunning = \Phar::running(false);
         $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? ($pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage');
         $this->flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
@@ -295,20 +295,12 @@ class MigrationService {
             return true;
         }
 
-        // On MySQL servers with binary logging enabled and log_bin_trust_function_creators=0,
-        // a database-scoped user without SUPER cannot create or drop triggers.
-        if (
-            $driverCode === 1419
-            && preg_match('/\b(CREATE|DROP)\s+TRIGGER\b/i', $sql) === 1
-        ) {
-            return true;
-        }
-
-        // When cleaning up legacy events, a restricted user without SYSTEM_USER privilege
-        // cannot drop events defined by a SYSTEM_USER/root.
+        // When cleaning up legacy events in Migration 032, a database-scoped migration user
+        // without SYSTEM_USER privilege cannot drop an event if previously defined by root.
+        // Narrowed strictly to cleanup_expired_tokens; all other 1227 errors are FATAL.
         if (
             $driverCode === 1227
-            && preg_match('/\bDROP\s+EVENT\b/i', $sql) === 1
+            && preg_match('/\bDROP\s+EVENT\s+(?:IF\s+EXISTS\s+)?`?cleanup_expired_tokens`?\b/i', $sql) === 1
         ) {
             return true;
         }

@@ -43,7 +43,7 @@ DeploymentSecurity::validate(
     $appEnvironment
 );
 
-// ── Database ──────────────────────────────────────────────────
+// ── Database (Runtime) ────────────────────────────────────────
 define('DB_HOST',    EnvLoader::get('DB_HOST', 'localhost'));
 define('DB_NAME',    EnvLoader::get('DB_NAME', 'pos_db'));
 define('DB_USER',    EnvLoader::get('DB_USER', 'root'));
@@ -51,6 +51,13 @@ define('DB_PASS',    EnvLoader::get('DB_PASS', ''));
 define('DB_CHARSET', EnvLoader::get('DB_CHARSET', 'utf8mb4'));
 define('DB_PORT',    EnvLoader::get('DB_PORT', '3306'));
 define('DB_PERSISTENT', EnvLoader::getBool('DB_PERSISTENT', false));
+
+// ── Database (Migration) ──────────────────────────────────────
+define('DB_MIGRATION_USER', EnvLoader::get('DB_MIGRATION_USER', ''));
+define('DB_MIGRATION_PASS', EnvLoader::get('DB_MIGRATION_PASS', ''));
+define('DB_MIGRATION_HOST', EnvLoader::get('DB_MIGRATION_HOST', ''));
+define('DB_MIGRATION_PORT', EnvLoader::get('DB_MIGRATION_PORT', ''));
+define('DB_MIGRATION_NAME', EnvLoader::get('DB_MIGRATION_NAME', ''));
 
 // ── Application ───────────────────────────────────────────────
 define('APP_ENV',   $appEnvironment);

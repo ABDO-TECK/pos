@@ -403,7 +403,8 @@ final class MySqlMigrationTest extends TestCase
     {
         $database = MySqlTestEnvironment::createDatabase('pos_full_mig_test');
         $rootPdo = MySqlTestEnvironment::connect($database);
-        $restrictedAccount = null;
+        $migrationAccount = null;
+        $runtimeAccount = null;
 
         try {
             // Load baseline schema into the disposable database
@@ -417,42 +418,83 @@ final class MySqlMigrationTest extends TestCase
                 $rootPdo->exec($statement);
             }
 
-            // Create restricted user with ONLY db-level privileges (NO SUPER)
-            $restrictedAccount = MySqlTestEnvironment::createRestrictedUser($rootPdo, $database, 'pos_app');
-            $restrictedPdo = MySqlTestEnvironment::connectAs(
-                $restrictedAccount['username'],
-                $restrictedAccount['password'],
+            // 1. Create dedicated migration user (pos_migration) with database-scoped schema administration
+            $migrationAccount = MySqlTestEnvironment::createMigrationUser($rootPdo, $database, 'pos_migration');
+            $migrationPdo = MySqlTestEnvironment::connectAs(
+                $migrationAccount['username'],
+                $migrationAccount['password'],
                 $database
             );
 
-            // Explicitly assert least-privilege grants
-            MySqlTestEnvironment::assertDatabaseScopedPrivilegesOnly($restrictedPdo, $database);
+            // 2. Create runtime user (pos_app) with strictly least-privilege DML grants
+            $runtimeAccount = MySqlTestEnvironment::createRuntimeUser($rootPdo, $database, 'pos_app');
+            $runtimePdo = MySqlTestEnvironment::connectAs(
+                $runtimeAccount['username'],
+                $runtimeAccount['password'],
+                $database
+            );
 
-            // Run MigrationService as restricted user
-            $migrationService = new \App\Services\MigrationService($restrictedPdo);
+            // Assert both identities are strictly database-scoped without global SUPER/SYSTEM_USER
+            MySqlTestEnvironment::assertDatabaseScopedPrivilegesOnly($migrationPdo, $database);
+            MySqlTestEnvironment::assertDatabaseScopedPrivilegesOnly($runtimePdo, $database);
+
+            // Assert runtime user cannot create triggers (least privilege)
+            try {
+                $runtimePdo->exec("CREATE TRIGGER trg_forbidden AFTER INSERT ON products FOR EACH ROW SET @x = 1");
+                self::fail('Runtime user (pos_app) must NOT have permission to create triggers');
+            } catch (PDOException $e) {
+                self::assertContains((int) ($e->errorInfo[1] ?? $e->getCode()), [1142, 1419], 'Runtime trigger attempt must fail with permission denied');
+            }
+
+            // Run MigrationService using dedicated migration connection
+            $migrationService = new \App\Services\MigrationService($migrationPdo);
             $result = $migrationService->runAllMigrations(true);
 
-            self::assertSame([], $result['errors'], 'All migrations must pass without errors under least privilege');
+            self::assertSame([], $result['errors'], 'All migrations must pass without errors under migration account');
             self::assertGreaterThan(0, $result['executed']);
 
-            // Verify 032 and latest 057 are recorded
-            $recorded = $restrictedPdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
+            // Verify Migration 043's three catalog triggers physically exist in information_schema.TRIGGERS
+            $stmt = $migrationPdo->prepare(
+                'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME'
+            );
+            $stmt->execute([$database]);
+            $triggers = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            self::assertContains('trg_products_catalog_insert', $triggers, 'trg_products_catalog_insert must physically exist');
+            self::assertContains('trg_products_catalog_update', $triggers, 'trg_products_catalog_update must physically exist');
+            self::assertContains('trg_products_catalog_delete', $triggers, 'trg_products_catalog_delete must physically exist');
+
+            // Verify normal runtime operations pass under pos_app (runtime account)
+            $runtimePdo->exec("INSERT INTO categories (id, name) VALUES (100, 'General')");
+            $runtimePdo->exec("INSERT INTO products (id, branch_id, name, barcode, price, cost, quantity) VALUES (100, 1, 'Product A', 'BAR100', 50.00, 30.00, 100)");
+            $runtimePdo->exec("UPDATE products SET price = 55.00 WHERE id = 100");
+            $runtimePdo->exec("DELETE FROM products WHERE id = 100");
+
+            // Verify triggers fired and inserted audit records into product_catalog_changes
+            $catalogChanges = $runtimePdo->query("SELECT product_id, branch_id FROM product_catalog_changes WHERE product_id = 100 ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+            self::assertCount(3, $catalogChanges, 'Catalog triggers must have recorded insert, update, and delete events');
+            self::assertSame('100', (string) $catalogChanges[0]['product_id']);
+
+            // Verify 032 and latest 057 are recorded in schema_versions
+            $recorded = $runtimePdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
             self::assertContains('032_cleanup_expired_tokens.sql', $recorded);
             self::assertContains('057_add_product_search_indexes.sql', $recorded);
 
-            // Simulate partial failure scenario: delete 032+ from schema_versions to simulate replay
-            $restrictedPdo->exec("DELETE FROM schema_versions WHERE version >= '032_cleanup_expired_tokens.sql'");
+            // Simulate replay: delete 032+ from schema_versions
+            $migrationPdo->exec("DELETE FROM schema_versions WHERE version >= '032_cleanup_expired_tokens.sql'");
             $replayResult = $migrationService->runAllMigrations(true);
 
             self::assertSame([], $replayResult['errors'], 'Replay of 032+ must be completely idempotent and error-free');
             self::assertGreaterThanOrEqual(25, $replayResult['executed']);
 
-            $replayedVersions = $restrictedPdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
+            $replayedVersions = $runtimePdo->query("SELECT version FROM schema_versions ORDER BY version")->fetchAll(PDO::FETCH_COLUMN);
             self::assertContains('032_cleanup_expired_tokens.sql', $replayedVersions);
             self::assertContains('057_add_product_search_indexes.sql', $replayedVersions);
         } finally {
-            if ($restrictedAccount !== null) {
-                MySqlTestEnvironment::dropUser($rootPdo, $restrictedAccount['username'], $restrictedAccount['host']);
+            if ($runtimeAccount !== null) {
+                MySqlTestEnvironment::dropUser($rootPdo, $runtimeAccount['username'], $runtimeAccount['host']);
+            }
+            if ($migrationAccount !== null) {
+                MySqlTestEnvironment::dropUser($rootPdo, $migrationAccount['username'], $migrationAccount['host']);
             }
             MySqlTestEnvironment::dropDatabase($database);
         }
@@ -478,6 +520,92 @@ final class MySqlMigrationTest extends TestCase
         } finally {
             if ($restrictedAccount !== null) {
                 MySqlTestEnvironment::dropUser($rootPdo, $restrictedAccount['username'], $restrictedAccount['host']);
+            }
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+
+    public function testRuntimeAccountIsLeastPrivilegeAndCannotCreateTriggers(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_runtime_priv_test');
+        $rootPdo = MySqlTestEnvironment::connect($database);
+        $runtimeAccount = null;
+
+        try {
+            $rootPdo->exec("CREATE TABLE branches (id INT PRIMARY KEY, name VARCHAR(100)) ENGINE=InnoDB");
+            $rootPdo->exec("CREATE TABLE products (id INT PRIMARY KEY, branch_id INT, name VARCHAR(100)) ENGINE=InnoDB");
+
+            $runtimeAccount = MySqlTestEnvironment::createRuntimeUser($rootPdo, $database, 'pos_app');
+            $runtimePdo = MySqlTestEnvironment::connectAs($runtimeAccount['username'], $runtimeAccount['password'], $database);
+
+            // Normal DML works
+            $runtimePdo->exec("INSERT INTO branches (id, name) VALUES (1, 'B1')");
+            self::assertSame(1, (int) $runtimePdo->query("SELECT COUNT(*) FROM branches")->fetchColumn());
+
+            // DDL / Trigger creation is strictly denied
+            $denied = false;
+            try {
+                $runtimePdo->exec("CREATE TRIGGER trg_test AFTER INSERT ON products FOR EACH ROW SET @x = 1");
+            } catch (PDOException $e) {
+                $denied = true;
+                self::assertContains((int) ($e->errorInfo[1] ?? $e->getCode()), [1142, 1419]);
+            }
+            self::assertTrue($denied, 'Runtime account pos_app must be denied trigger creation');
+        } finally {
+            if ($runtimeAccount !== null) {
+                MySqlTestEnvironment::dropUser($rootPdo, $runtimeAccount['username'], $runtimeAccount['host']);
+            }
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+
+    public function testMigration043FailureIsFatalWhenTriggerFails(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_fatal_mig_test');
+        $rootPdo = MySqlTestEnvironment::connect($database);
+        $migrationAccount = null;
+
+        try {
+            $rootPdo->exec("CREATE TABLE branches (id INT PRIMARY KEY, name VARCHAR(100)) ENGINE=InnoDB");
+            $rootPdo->exec("CREATE TABLE products (id INT PRIMARY KEY, branch_id INT, name VARCHAR(100)) ENGINE=InnoDB");
+
+            $migrationAccount = MySqlTestEnvironment::createMigrationUser($rootPdo, $database, 'pos_migration');
+            $realPdo = MySqlTestEnvironment::connectAs($migrationAccount['username'], $migrationAccount['password'], $database);
+
+            // Wrap PDO to simulate MySQL 8 binary logging error 1419 on CREATE TRIGGER
+            $simulatedPdo = new class($realPdo) extends PDO {
+                private PDO $inner;
+                public function __construct(PDO $inner) {
+                    $this->inner = $inner;
+                }
+                public function exec(string $statement): int|false {
+                    if (preg_match('/\bCREATE\s+TRIGGER\b/i', $statement)) {
+                        $e = new PDOException("You do not have the SUPER privilege and binary logging is enabled", 1419);
+                        $e->errorInfo = ['HY000', 1419, 'You do not have the SUPER privilege and binary logging is enabled'];
+                        throw $e;
+                    }
+                    return $this->inner->exec($statement);
+                }
+                public function prepare(string $query, array $options = []): \PDOStatement|false {
+                    return $this->inner->prepare($query, $options);
+                }
+                public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): \PDOStatement|false {
+                    return $this->inner->query($query, ...$fetchModeArgs);
+                }
+            };
+
+            $migrationService = new \App\Services\MigrationService($simulatedPdo);
+            $result = $migrationService->runMigrations(['043_add_product_catalog_changes.sql'], true);
+
+            self::assertNotEmpty($result['errors'], 'Migration 043 must fail when trigger creation returns 1419');
+            self::assertStringContainsString('043_add_product_catalog_changes.sql', implode(' ', $result['errors']));
+
+            // It must NOT be recorded in schema_versions
+            $stmt = $rootPdo->query("SELECT COUNT(*) FROM schema_versions WHERE version = '043_add_product_catalog_changes.sql'");
+            self::assertSame(0, (int) $stmt->fetchColumn(), 'Failed Migration 043 must NOT be recorded in schema_versions');
+        } finally {
+            if ($migrationAccount !== null) {
+                MySqlTestEnvironment::dropUser($rootPdo, $migrationAccount['username'], $migrationAccount['host']);
             }
             MySqlTestEnvironment::dropDatabase($database);
         }

@@ -201,9 +201,38 @@ function sqlLiteral(value) {
   return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
 
+function loadStoredDatabaseCredentials(credentialsPath) {
+  try {
+    if (!fs.existsSync(credentialsPath)) return null;
+    const data = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+    if (data && typeof data.password === 'string' && data.password.length > 0) {
+      return {
+        user: data.user || 'pos_app',
+        password: data.password,
+        migrationUser: data.migrationUser || 'pos_migration',
+        migrationPassword: typeof data.migrationPassword === 'string' && data.migrationPassword.length > 0
+          ? data.migrationPassword
+          : null,
+      };
+    }
+  } catch (error) {
+    console.warn('[MySQL Init] Failed to read database credentials file:', error.message);
+  }
+  return null;
+}
+
+function saveDatabaseCredentials(credentialsPath, credentials) {
+  const dir = path.dirname(credentialsPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tempPath = `${credentialsPath}.tmp.${crypto.randomBytes(8).toString('hex')}`;
+  const payload = JSON.stringify(credentials, null, 2);
+  fs.writeFileSync(tempPath, payload, { mode: 0o600, encoding: 'utf8' });
+  fs.renameSync(tempPath, credentialsPath);
+}
+
 function initDatabase(port, runtimePaths = getMysqlPaths()) {
   const { mysqlPath, binaryDir } = runtimePaths;
-  const { getDatabaseDir } = require('../utils/paths');
+  const { getDatabaseDir, getDatabaseCredentialsPath } = require('../utils/paths');
   const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
   if (!fs.existsSync(schemaFile) || !fs.statSync(schemaFile).isFile()) {
     throw setLastMysqlError(
@@ -242,18 +271,100 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
       repairCorruptedTables(mysqlPath, binaryDir, port);
     }
 
-    const appPassword = crypto.randomBytes(32).toString('hex');
-    const appUser = sqlLiteral('pos_app');
-    const appHost = sqlLiteral('127.0.0.1');
-    const password = sqlLiteral(appPassword);
-    runMysqlExecutable(mysqlPath, [
+    const credentialsPath = getDatabaseCredentialsPath();
+    const stored = loadStoredDatabaseCredentials(credentialsPath);
+
+    const existingUsersOutput = runMysqlExecutable(mysqlPath, [
       '-u', 'root',
       `--port=${port}`,
+      '-N', '-B',
       '-e',
-      `CREATE USER IF NOT EXISTS ${appUser}@${appHost} IDENTIFIED BY ${password}; ALTER USER ${appUser}@${appHost} IDENTIFIED BY ${password}; GRANT ALL PRIVILEGES ON pos_db.* TO ${appUser}@${appHost}; FLUSH PRIVILEGES;`,
+      "SELECT User FROM mysql.user WHERE Host = '127.0.0.1' AND User IN ('pos_app', 'pos_migration');",
     ], { cwd: binaryDir });
+    const existingUsers = new Set(String(existingUsersOutput).trim().split(/\s+/).filter(Boolean));
 
-    return { user: 'pos_app', password: appPassword, freshInstall };
+    const hasAppUser = existingUsers.has('pos_app');
+    const hasMigrationUser = existingUsers.has('pos_migration');
+
+    let appPassword = stored?.password || null;
+    let migrationPassword = stored?.migrationPassword || null;
+    let credentialsChanged = false;
+
+    if (!appPassword) {
+      appPassword = crypto.randomBytes(32).toString('hex');
+      credentialsChanged = true;
+    }
+    if (!migrationPassword) {
+      migrationPassword = crypto.randomBytes(32).toString('hex');
+      credentialsChanged = true;
+    }
+
+    const appUserLit = sqlLiteral('pos_app');
+    const migrationUserLit = sqlLiteral('pos_migration');
+    const hostLit = sqlLiteral('127.0.0.1');
+
+    const sqlStatements = [];
+
+    // Provision pos_app if missing from DB, or if password was freshly generated, or on fresh install
+    if (!hasAppUser || credentialsChanged || freshInstall) {
+      const appPassLit = sqlLiteral(appPassword);
+      if (!hasAppUser || credentialsChanged) {
+        sqlStatements.push(
+          `CREATE USER IF NOT EXISTS ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
+          `ALTER USER ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
+          `REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${appUserLit}@${hostLit}; ` +
+          `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON pos_db.* TO ${appUserLit}@${hostLit};`
+        );
+      } else {
+        sqlStatements.push(
+          `REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${appUserLit}@${hostLit}; ` +
+          `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON pos_db.* TO ${appUserLit}@${hostLit};`
+        );
+      }
+    }
+
+    // Provision pos_migration if missing from DB, or if password was freshly generated, or on fresh install
+    if (!hasMigrationUser || credentialsChanged || freshInstall) {
+      const migPassLit = sqlLiteral(migrationPassword);
+      if (!hasMigrationUser || credentialsChanged) {
+        sqlStatements.push(
+          `CREATE USER IF NOT EXISTS ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
+          `ALTER USER ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
+          `GRANT ALL PRIVILEGES ON pos_db.* TO ${migrationUserLit}@${hostLit};`
+        );
+      } else {
+        sqlStatements.push(
+          `GRANT ALL PRIVILEGES ON pos_db.* TO ${migrationUserLit}@${hostLit};`
+        );
+      }
+    }
+
+    if (sqlStatements.length > 0) {
+      sqlStatements.push('FLUSH PRIVILEGES;');
+      runMysqlExecutable(mysqlPath, [
+        '-u', 'root',
+        `--port=${port}`,
+        '-e',
+        sqlStatements.join(' '),
+      ], { cwd: binaryDir });
+    }
+
+    if (credentialsChanged || !stored) {
+      saveDatabaseCredentials(credentialsPath, {
+        user: 'pos_app',
+        password: appPassword,
+        migrationUser: 'pos_migration',
+        migrationPassword,
+      });
+    }
+
+    return {
+      user: 'pos_app',
+      password: appPassword,
+      migrationUser: 'pos_migration',
+      migrationPassword,
+      freshInstall,
+    };
   } catch (error) {
     console.error('[MySQL Init]', error.message);
     if (error.code && error.details) throw error;
@@ -485,4 +596,6 @@ module.exports = {
   resetDatabase,
   getLastMysqlError,
   waitForMysqlReady,
+  loadStoredDatabaseCredentials,
+  saveDatabaseCredentials,
 };

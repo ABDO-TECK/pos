@@ -50,6 +50,11 @@ final class MySqlTestEnvironment
             ]
         );
         $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5');
+        try {
+            $pdo->exec('SET GLOBAL log_bin_trust_function_creators = 1');
+        } catch (\Throwable) {
+            // Best effort; not all accounts/engines support or require SET GLOBAL
+        }
 
         return $pdo;
     }
@@ -329,20 +334,12 @@ final class MySqlTestEnvironment
             return true;
         }
 
-        // On MySQL servers with binary logging enabled and log_bin_trust_function_creators=0,
-        // a database-scoped user without SUPER cannot create or drop triggers.
-        if (
-            $driverCode === 1419
-            && preg_match('/\b(CREATE|DROP)\s+TRIGGER\b/i', $sql) === 1
-        ) {
-            return true;
-        }
-
-        // When cleaning up legacy events, a restricted user without SYSTEM_USER privilege
-        // cannot drop events defined by a SYSTEM_USER/root.
+        // When cleaning up legacy events in Migration 032, a database-scoped migration user
+        // without SYSTEM_USER privilege cannot drop an event if previously defined by root.
+        // Narrowed strictly to cleanup_expired_tokens; all other 1227 errors are FATAL.
         if (
             $driverCode === 1227
-            && preg_match('/\bDROP\s+EVENT\b/i', $sql) === 1
+            && preg_match('/\bDROP\s+EVENT\s+(?:IF\s+EXISTS\s+)?`?cleanup_expired_tokens`?\b/i', $sql) === 1
         ) {
             return true;
         }
@@ -522,12 +519,42 @@ final class MySqlTestEnvironment
     }
 
     /**
-     * Creates a temporary database-scoped restricted user with NO global privileges (NO SUPER).
-     * Uses host '%' for portability across loopback and CI Docker bridge networking.
+     * Creates a temporary runtime user with strictly least-privilege DML grants on the target database.
+     * No DDL, no trigger creation, no administrative privileges.
      *
      * @return array{username: string, password: string, host: string}
      */
-    public static function createRestrictedUser(PDO $rootPdo, string $database, string $prefix = 'pos_test'): array
+    public static function createRuntimeUser(PDO $rootPdo, string $database, string $prefix = 'pos_app'): array
+    {
+        self::assertSafeDatabaseName($database);
+        $username = sprintf('%s_%s', $prefix, bin2hex(random_bytes(4)));
+        $password = sprintf('pass_%s', bin2hex(random_bytes(8)));
+        $host = '%';
+
+        $rootPdo->exec(sprintf("DROP USER IF EXISTS '%s'@'%s', '%s'@'127.0.0.1'", $username, $host, $username));
+        $rootPdo->exec(sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s'", $username, $host, $password));
+        $rootPdo->exec(sprintf(
+            "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON `%s`.* TO '%s'@'%s'",
+            $database,
+            $username,
+            $host
+        ));
+        $rootPdo->exec('FLUSH PRIVILEGES');
+
+        return [
+            'username' => $username,
+            'password' => $password,
+            'host' => $host,
+        ];
+    }
+
+    /**
+     * Creates a temporary database-scoped migration user with schema administration privileges (ALL PRIVILEGES on target db).
+     * No global privileges (NO SUPER, NO SYSTEM_USER).
+     *
+     * @return array{username: string, password: string, host: string}
+     */
+    public static function createMigrationUser(PDO $rootPdo, string $database, string $prefix = 'pos_migration'): array
     {
         self::assertSafeDatabaseName($database);
         $username = sprintf('%s_%s', $prefix, bin2hex(random_bytes(4)));
@@ -544,6 +571,16 @@ final class MySqlTestEnvironment
             'password' => $password,
             'host' => $host,
         ];
+    }
+
+    /**
+     * Backwards-compatible alias for createMigrationUser.
+     *
+     * @return array{username: string, password: string, host: string}
+     */
+    public static function createRestrictedUser(PDO $rootPdo, string $database, string $prefix = 'pos_test'): array
+    {
+        return self::createMigrationUser($rootPdo, $database, $prefix);
     }
 
     /**

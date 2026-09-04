@@ -9,6 +9,7 @@ use PDOException;
 
 class Database {
     private static ?PDO $instance = null;
+    private static ?PDO $migrationInstance = null;
 
     /** عدد محاولات إعادة الاتصال */
     private static int $maxRetries = 3;
@@ -27,6 +28,14 @@ class Database {
         }
 
         return self::$instance;
+    }
+
+    public static function getMigrationConnection(): PDO {
+        if (self::$migrationInstance === null) {
+            self::$migrationInstance = self::createMigrationConnection();
+        }
+
+        return self::$migrationInstance;
     }
 
     /**
@@ -145,5 +154,86 @@ class Database {
     /** بعد استعادة النسخة الاحتياطية يُفضّل إعادة الاتصال */
     public static function resetInstance(): void {
         self::$instance = null;
+        self::$migrationInstance = null;
+    }
+
+    public static function resetMigrationInstance(): void {
+        self::$migrationInstance = null;
+    }
+
+    /**
+     * إنشاء اتصال مخصص للمهاجرات (DDL/Schema Migrations) باستخدام حساب DB_MIGRATION_USER.
+     */
+    private static function createMigrationConnection(): PDO {
+        $host = defined('DB_MIGRATION_HOST') && DB_MIGRATION_HOST !== ''
+            ? DB_MIGRATION_HOST
+            : (defined('DB_HOST') ? DB_HOST : 'localhost');
+        $port = defined('DB_MIGRATION_PORT') && DB_MIGRATION_PORT !== ''
+            ? DB_MIGRATION_PORT
+            : (defined('DB_PORT') ? DB_PORT : '3306');
+        $name = defined('DB_MIGRATION_NAME') && DB_MIGRATION_NAME !== ''
+            ? DB_MIGRATION_NAME
+            : (defined('DB_NAME') ? DB_NAME : 'pos_db');
+        $charset = defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4';
+
+        $dsn = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . $name . ';charset=' . $charset;
+
+        $user = defined('DB_MIGRATION_USER') ? trim((string) DB_MIGRATION_USER) : '';
+        $pass = defined('DB_MIGRATION_PASS') ? (string) DB_MIGRATION_PASS : '';
+        $appEnv = defined('APP_ENV') ? strtolower(trim((string) APP_ENV)) : 'development';
+        $isProduction = $appEnv === 'production';
+        $isPackaged = (bool) \Phar::running(false);
+
+        if ($user === '') {
+            if ($isProduction || $isPackaged) {
+                throw new \RuntimeException(
+                    'Database migration credentials (DB_MIGRATION_USER) must be explicitly configured in production or packaged environments.'
+                );
+            }
+            Logger::notice('DB_MIGRATION_USER is not set; falling back to DB_USER in development/test environment.');
+            $user = defined('DB_USER') ? DB_USER : 'root';
+            $pass = defined('DB_PASS') ? DB_PASS : '';
+        }
+
+        $maxRetries = PHP_SAPI === 'cli' ? self::$maxRetries : 1;
+        $connectionTimeout = PHP_SAPI === 'cli' ? 5 : 2;
+        $options = [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::ATTR_PERSISTENT         => false,
+            PDO::ATTR_STRINGIFY_FETCHES  => false,
+            PDO::MYSQL_ATTR_FOUND_ROWS   => true,
+            PDO::ATTR_TIMEOUT            => $connectionTimeout,
+        ];
+
+        $lastError = null;
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            try {
+                $pdo = new PDO($dsn, $user, $pass, $options);
+                $pdo->exec("SET SESSION wait_timeout = 3600");
+                $pdo->exec("SET SESSION interactive_timeout = 3600");
+
+                if ($attempt > 1) {
+                    Logger::info("Migration database connected after {$attempt} attempts");
+                }
+                return $pdo;
+            } catch (PDOException $e) {
+                $lastError = $e;
+                Logger::warning("Migration database connection attempt {$attempt}/{$maxRetries} failed", [
+                    'exception' => get_class($e),
+                    'code' => (int) $e->getCode(),
+                ]);
+                if ($attempt < $maxRetries) {
+                    sleep(self::$retryDelay);
+                }
+            }
+        }
+
+        Logger::critical('Migration database connection failed after all retries', [
+            'exception' => $lastError ? get_class($lastError) : PDOException::class,
+            'code' => $lastError ? (int) $lastError->getCode() : 0,
+        ]);
+        throw $lastError;
     }
 }

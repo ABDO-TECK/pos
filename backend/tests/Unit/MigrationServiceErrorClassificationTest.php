@@ -64,33 +64,39 @@ final class MigrationServiceErrorClassificationTest extends TestCase
             'Dropping non-existent legacy FK must be safely ignorable during canonical replacement'
         );
 
-        // 1419: ER_BINLOG_CREATE_ROUTINE_NEED_SUPER (binary logging enabled without log_bin_trust_function_creators)
-        $binlogTrigger = $this->createPdoException('You do not have the SUPER privilege and binary logging is enabled', 1419);
+        // 1227 on DROP EVENT: legacy cleanup of cleanup_expired_tokens by non-SYSTEM_USER
+        $dropEventAccessDenied = $this->createPdoException('Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation', 1227);
         self::assertTrue(
-            $this->migrationService->isIgnorableMigrationError($binlogTrigger, 'CREATE TRIGGER trg_catalog AFTER INSERT ON products FOR EACH ROW INSERT INTO pcc (id) VALUES (1)'),
-            'Trigger creation error when binary logging requires SUPER must be safely ignorable'
+            $this->migrationService->isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens'),
+            'Dropping legacy cleanup_expired_tokens event when lacking SYSTEM_USER must be safely ignorable'
         );
         self::assertTrue(
+            MySqlTestEnvironment::isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens')
+        );
+        self::assertFalse(
+            $this->migrationService->isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS other_custom_event'),
+            'Arbitrary DROP EVENT 1227 errors must NOT be ignored'
+        );
+        self::assertFalse(
+            MySqlTestEnvironment::isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS other_custom_event')
+        );
+    }
+
+    public function testPermissionAndAccessDeniedErrorsAreNeverIgnored(): void
+    {
+        // 1419: ER_BINLOG_CREATE_ROUTINE_NEED_SUPER must be FATAL (triggers must not be silently skipped)
+        $binlogTrigger = $this->createPdoException('You do not have the SUPER privilege and binary logging is enabled', 1419);
+        self::assertFalse(
+            $this->migrationService->isIgnorableMigrationError($binlogTrigger, 'CREATE TRIGGER trg_catalog AFTER INSERT ON products FOR EACH ROW INSERT INTO pcc (id) VALUES (1)'),
+            'Trigger creation error 1419 MUST be fatal'
+        );
+        self::assertFalse(
             MySqlTestEnvironment::isIgnorableMigrationError($binlogTrigger, 'CREATE TRIGGER trg_catalog AFTER INSERT ON products FOR EACH ROW INSERT INTO pcc (id) VALUES (1)')
         );
         self::assertFalse(
             $this->migrationService->isIgnorableMigrationError($binlogTrigger, 'ALTER TABLE products ADD COLUMN brand VARCHAR(50)'),
             '1419 error on non-trigger statements must NOT be ignored'
         );
-
-        // 1227 on DROP EVENT: legacy cleanup by non-SYSTEM_USER
-        $dropEventAccessDenied = $this->createPdoException('Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation', 1227);
-        self::assertTrue(
-            $this->migrationService->isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens'),
-            'Dropping legacy event when lacking SYSTEM_USER must be safely ignorable'
-        );
-        self::assertTrue(
-            MySqlTestEnvironment::isIgnorableMigrationError($dropEventAccessDenied, 'DROP EVENT IF EXISTS cleanup_expired_tokens')
-        );
-    }
-
-    public function testPermissionAndAccessDeniedErrorsAreNeverIgnored(): void
-    {
         // 1142: ER_TABLEACCESS_DENIED_ERROR (ALTER/SELECT/CREATE command denied to user)
         $tableAccessDenied = $this->createPdoException('ALTER command denied to user \'pos_user\'@\'localhost\' for table \'customers\'', 1142);
         self::assertFalse(

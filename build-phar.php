@@ -485,6 +485,7 @@ $phar->setStub($stub);
 $phar->setSignatureAlgorithm(Phar::SHA512);
 
 $phar->stopBuffering();
+unset($phar);
 
 if (file_exists($pharFile)) {
     unlink($pharFile);

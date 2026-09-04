@@ -109,6 +109,16 @@ function readBackendEnvironment() {
 
 function mysqlEnvironment() {
   const backendEnvironment = readBackendEnvironment()
+  const dbUser = process.env.DB_USER
+    || process.env.DB_USERNAME
+    || backendEnvironment.DB_USER
+    || backendEnvironment.DB_USERNAME
+    || 'root'
+  const dbPass = process.env.DB_PASS
+    ?? process.env.DB_PASSWORD
+    ?? backendEnvironment.DB_PASS
+    ?? backendEnvironment.DB_PASSWORD
+    ?? ''
   return {
     DB_HOST: process.env.DB_HOST || backendEnvironment.DB_HOST || '127.0.0.1',
     DB_PORT: process.env.DB_PORT || backendEnvironment.DB_PORT || '3307',
@@ -117,16 +127,14 @@ function mysqlEnvironment() {
       || backendEnvironment.DB_NAME
       || backendEnvironment.DB_DATABASE
       || 'pos',
-    DB_USER: process.env.DB_USER
-      || process.env.DB_USERNAME
-      || backendEnvironment.DB_USER
-      || backendEnvironment.DB_USERNAME
-      || 'root',
-    DB_PASS: process.env.DB_PASS
-      ?? process.env.DB_PASSWORD
-      ?? backendEnvironment.DB_PASS
-      ?? backendEnvironment.DB_PASSWORD
-      ?? '',
+    DB_USER: dbUser,
+    DB_PASS: dbPass,
+    DB_MIGRATION_USER: process.env.DB_MIGRATION_USER
+      || backendEnvironment.DB_MIGRATION_USER
+      || dbUser,
+    DB_MIGRATION_PASS: process.env.DB_MIGRATION_PASS
+      ?? backendEnvironment.DB_MIGRATION_PASS
+      ?? dbPass,
   }
 }
 

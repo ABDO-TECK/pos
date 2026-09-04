@@ -25,6 +25,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=12
+          --log-bin-trust-function-creators=1
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -58,4 +59,6 @@ jobs:
           DB_NAME: pos
           DB_USER: root
           DB_PASS: root
+          DB_MIGRATION_USER: root
+          DB_MIGRATION_PASS: root
         run: node scripts/quality.mjs --skip-install --require-mysql

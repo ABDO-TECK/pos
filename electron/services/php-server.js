@@ -150,7 +150,11 @@ function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations =
     }
     migrationArgs.push(`--migrations=${migrations.join(',')}`);
   }
-  const env = createBackendEnv({ mysqlPort, dbCredentials, apiPort });
+  const env = {
+    ...createBackendEnv({ mysqlPort, dbCredentials, apiPort }),
+    DB_MIGRATION_USER: dbCredentials.migrationUser || dbCredentials.user,
+    DB_MIGRATION_PASS: dbCredentials.migrationPassword || dbCredentials.password,
+  };
   const cwd = backendDir;
 
   return new Promise((resolve, reject) => {

@@ -343,6 +343,10 @@ function getCookiesPath() {
   return path.join(getConfigDir(), 'cookies.json');
 }
 
+function getDatabaseCredentialsPath() {
+  return path.join(getConfigDir(), 'db_credentials.json');
+}
+
 function ensureRuntimeDirs() {
   const config = getConfigDir();
   const data = getDataDir();
@@ -395,5 +399,6 @@ module.exports = {
   getEnvPath,
   getRecoveryAuthPath,
   getCookiesPath,
+  getDatabaseCredentialsPath,
   ensureRuntimeDirs,
 };

@@ -17,6 +17,7 @@ certs/*-key.pem
 .env.*
 !.env.example
 !.env.docker.example
+db_credentials.json
 release/
 
 # ── Frontend ────────────────────────────────────────────
