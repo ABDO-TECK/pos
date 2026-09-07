@@ -12,6 +12,15 @@ let serverInfo = null;
 let lastHealthResponse = null;
 let lastPhpError = null;
 
+const STATUS_DLL_NOT_FOUND = 0xC0000135; // 3221225781 unsigned, -1073741515 signed 32-bit int
+
+function isPhpLoaderDllMissing(code) {
+  if (code === null || code === undefined) return false;
+  const num = Number(code);
+  if (Number.isNaN(num)) return false;
+  return num === 3221225781 || num === -1073741515 || (num >>> 0) === STATUS_DLL_NOT_FOUND;
+}
+
 function findAvailablePort(preferredPort, { maxPort = 65535 } = {}) {
   return new Promise((resolve, reject) => {
     let port = Number(preferredPort) || 8080;
@@ -204,6 +213,25 @@ function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations =
     });
     child.once('close', (code, signal) => {
       if (code !== 0) {
+        if (isPhpLoaderDllMissing(code)) {
+          finish(reject, createPhpProcessError(
+            'PHP_RUNTIME_DLL_MISSING',
+            'PHP runtime failed to initialize: STATUS_DLL_NOT_FOUND (0xC0000135). A required Windows runtime component (Microsoft Visual C++ 2015-2022 Redistributable x64) is missing or not installed.',
+            {
+              stage: 'database-migrations',
+              stdout,
+              stderr,
+              code,
+              signal,
+              cwd,
+              executable: phpBin,
+              ntstatus: 'STATUS_DLL_NOT_FOUND',
+              hexCode: '0xC0000135',
+            },
+          ));
+          return;
+        }
+
         const detail = stderr.trim() || `exit code ${code}${signal ? `, signal ${signal}` : ''}`;
         finish(reject, createPhpProcessError(
           'PHP_MIGRATION_FAILED',
@@ -257,6 +285,23 @@ function waitForPhpReady(port, child, {
       error,
     ));
     const onExit = (code, signal) => {
+      if (isPhpLoaderDllMissing(code)) {
+        fail(createPhpProcessError(
+          'PHP_RUNTIME_DLL_MISSING',
+          'PHP runtime failed to initialize: STATUS_DLL_NOT_FOUND (0xC0000135). A required Windows runtime component (Microsoft Visual C++ 2015-2022 Redistributable x64) is missing or not installed.',
+          {
+            stage: 'php-server',
+            port,
+            code,
+            signal,
+            lastError: lastError ? lastError.message : null,
+            ntstatus: 'STATUS_DLL_NOT_FOUND',
+            hexCode: '0xC0000135',
+          },
+        ));
+        return;
+      }
+
       fail(createPhpProcessError(
         'PHP_PROCESS_EXITED',
         `PHP server exited before becoming ready (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
@@ -376,8 +421,10 @@ async function startPhpServer(options = {}) {
         if (phpProcess !== child) return;
         if (code !== 0) {
           lastPhpError = {
-            code: 'PHP_PROCESS_EXITED',
-            message: `PHP server exited (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
+            code: isPhpLoaderDllMissing(code) ? 'PHP_RUNTIME_DLL_MISSING' : 'PHP_PROCESS_EXITED',
+            message: isPhpLoaderDllMissing(code)
+              ? 'PHP runtime failed to initialize: STATUS_DLL_NOT_FOUND (0xC0000135). A required Windows runtime component (Microsoft Visual C++ 2015-2022 Redistributable x64) is missing or not installed.'
+              : `PHP server exited (code ${code ?? 'unknown'}${signal ? `, signal ${signal}` : ''}).`,
             details: { stage: 'php-process', port: selectedPort, code, signal, executable: phpBin, cwd: backendDir },
           };
         }
@@ -549,4 +596,6 @@ module.exports = {
   waitForHealth,
   getLastHealthResponse,
   getLastPhpError,
+  isPhpLoaderDllMissing,
+  STATUS_DLL_NOT_FOUND,
 };

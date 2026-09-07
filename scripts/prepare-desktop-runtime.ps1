@@ -10,6 +10,8 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $ManifestPath = Join-Path $RepoRoot 'scripts/desktop-runtime.json'
 $PortableDir = Join-Path $RepoRoot 'portable'
 $BuildToolsDir = Join-Path $RepoRoot 'build-tools'
+$BuildDir = Join-Path $RepoRoot 'build'
+$PrerequisitesDir = Join-Path $BuildDir 'prerequisites'
 $Manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 function Assert-ContainedPath {
@@ -36,6 +38,16 @@ function Test-PortableRuntime {
     return $true
 }
 
+function Test-PrerequisiteRuntime {
+    if (-not $Manifest.vcredist) { return $true }
+    $prereqFile = Join-Path $PrerequisitesDir $Manifest.vcredist.archiveName
+    if (-not (Test-Path -LiteralPath $prereqFile -PathType Leaf)) {
+        return $false
+    }
+    $actualHash = Get-Sha256 $prereqFile
+    return $actualHash -eq ([string] $Manifest.vcredist.sha256).ToLowerInvariant()
+}
+
 function Test-PreparedManifest {
     $installedManifestPath = Join-Path $PortableDir 'runtime-manifest.json'
     if (-not (Test-Path -LiteralPath $installedManifestPath -PathType Leaf)) {
@@ -44,8 +56,14 @@ function Test-PreparedManifest {
 
     try {
         $installed = Get-Content -LiteralPath $installedManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $vcredistMatches = $true
+        if ($Manifest.vcredist) {
+            $vcredistMatches = [string] $installed.vcredist.version -eq [string] $Manifest.vcredist.version -and
+                (Test-PrerequisiteRuntime)
+        }
         return [string] $installed.php.version -eq [string] $Manifest.php.version -and
             [string] $installed.mysql.version -eq [string] $Manifest.mysql.version -and
+            $vcredistMatches -and
             (Test-PortableRuntime)
     } catch {
         return $false
@@ -128,7 +146,7 @@ function Configure-PortablePhp {
 }
 
 if (-not $Force -and (Test-PreparedManifest)) {
-    Write-Host 'Verified portable PHP/MariaDB runtime is already prepared.'
+    Write-Host 'Verified portable PHP/MariaDB runtime and Windows VC++ prerequisite are already prepared.'
     exit 0
 }
 
@@ -143,6 +161,10 @@ Assert-ContainedPath $workDirectory $BuildToolsDir
 try {
     $phpArchive = Get-VerifiedArchive $Manifest.php $downloadDirectory
     $mysqlArchive = Get-VerifiedArchive $Manifest.mysql $downloadDirectory
+    $vcredistArchive = $null
+    if ($Manifest.vcredist) {
+        $vcredistArchive = Get-VerifiedArchive $Manifest.vcredist $downloadDirectory
+    }
 
     $phpExtract = Join-Path $workDirectory 'php'
     $mysqlExtract = Join-Path $workDirectory 'mysql'
@@ -157,8 +179,16 @@ try {
     Copy-DirectoryContents $mysqlRoot.FullName (Join-Path $PortableDir 'mysql')
     Configure-PortablePhp
 
+    if ($vcredistArchive) {
+        New-Item -ItemType Directory -Path $PrerequisitesDir -Force | Out-Null
+        Copy-Item -LiteralPath $vcredistArchive -Destination (Join-Path $PrerequisitesDir $Manifest.vcredist.archiveName) -Force
+    }
+
     if (-not (Test-PortableRuntime)) {
         throw 'The prepared portable runtime is missing one or more required files.'
+    }
+    if (-not (Test-PrerequisiteRuntime)) {
+        throw 'The prepared VC++ prerequisite is missing or has an invalid checksum.'
     }
 
     $installedManifest = [ordered]@{
@@ -167,13 +197,16 @@ try {
         php = $Manifest.php
         mysql = $Manifest.mysql
     }
+    if ($Manifest.vcredist) {
+        $installedManifest.vcredist = $Manifest.vcredist
+    }
     $installedManifestJson = $installedManifest | ConvertTo-Json -Depth 10
     [System.IO.File]::WriteAllText(
         (Join-Path $PortableDir 'runtime-manifest.json'),
         $installedManifestJson + [Environment]::NewLine,
         [System.Text.UTF8Encoding]::new($false)
     )
-    Write-Host 'Portable PHP/MariaDB runtime prepared and verified.'
+    Write-Host 'Portable PHP/MariaDB runtime and Windows VC++ prerequisite prepared and verified.'
 } finally {
     if (Test-Path -LiteralPath $workDirectory) {
         Remove-Item -LiteralPath $workDirectory -Recurse -Force

@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { readRuntimeManifest, validateRuntimeDirectory } from './verify-desktop-runtime.mjs'
+import { readRuntimeManifest, validateRuntimeDirectory, validatePrerequisiteInstaller } from './verify-desktop-runtime.mjs'
 
 const packageManifest = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'))
 const mainSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'electron', 'main.js'), 'utf8')
@@ -26,10 +26,30 @@ test('strict desktop runtime verification accepts the pinned manifest and requir
       schemaVersion: manifest.schemaVersion,
       php: { version: manifest.php.version, sha256: manifest.php.sha256 },
       mysql: { version: manifest.mysql.version, sha256: manifest.mysql.sha256 },
+      vcredist: { version: manifest.vcredist.version, sha256: manifest.vcredist.sha256 },
     }))
 
     const result = validateRuntimeDirectory(root, { strict: true, runProbes: false, manifest })
     assert.equal(result.ok, true, result.errors.join('; '))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('validatePrerequisiteInstaller verifies the real build prerequisite and NSIS hook', () => {
+  const result = validatePrerequisiteInstaller({ strict: true })
+  assert.equal(result.ok, true, result.errors.join('; '))
+})
+
+test('validatePrerequisiteInstaller reports missing prerequisite and invalid NSIS config', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'pos-prereq-test-'))
+  try {
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'test' }))
+    const result = validatePrerequisiteInstaller({ repoRootDir: root, strict: true })
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some((err) => err.includes('missing prerequisite installer')))
+    assert.ok(result.errors.some((err) => err.includes('build.nsis.include')))
+    assert.ok(result.errors.some((err) => err.includes('missing custom NSIS script')))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

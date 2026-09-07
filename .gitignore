@@ -72,6 +72,7 @@ node_modules/
 out/
 dist-electron/
 portable/
+build/prerequisites/
 forge.config.js
 convert_icon.js
 create_ico.js

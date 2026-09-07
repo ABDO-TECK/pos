@@ -538,6 +538,9 @@ function applyMysqlStartupInfo(info) {
 
 function getStartupUserMessage(error) {
   const code = error?.code;
+  if (code === 'PHP_RUNTIME_DLL_MISSING') {
+    return 'تعذر تشغيل مكوّن PHP لأن أحد مكونات تشغيل Windows المطلوبة غير مثبت أو مفقود. STATUS_DLL_NOT_FOUND (0xC0000135)';
+  }
   if (code === 'RUNTIME_PHP_MISSING' || code === 'RUNTIME_EXECUTABLE_MISSING' || code === 'RUNTIME_PHP_SPAWN_FAILED') {
     return 'ملفات تشغيل PHP المضمنة مفقودة أو تعذر تشغيلها. أعد تثبيت نسخة POS الموثوقة؛ يجب أن تحتوي الحزمة على portable/php/php.exe.';
   }
@@ -587,6 +590,7 @@ function captureStartupError(error, { stage = null, attempts = 0 } = {}) {
 }
 
 const NON_RETRYABLE_STARTUP_CODES = new Set([
+  'PHP_RUNTIME_DLL_MISSING',
   'RUNTIME_PHP_MISSING',
   'RUNTIME_MYSQL_MISSING',
   'RUNTIME_EXECUTABLE_MISSING',

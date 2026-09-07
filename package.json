@@ -29,6 +29,7 @@
                               "icon":  "electron/assets/icon.ico"
                           },
                   "nsis":  {
+                               "include":  "build/installer.nsh",
                                "oneClick":  false,
                                "allowToChangeInstallationDirectory":  true,
                                "createDesktopShortcut":  true,
