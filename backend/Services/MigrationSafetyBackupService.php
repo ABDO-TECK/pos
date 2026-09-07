@@ -106,7 +106,7 @@ class MigrationSafetyBackupService
     }
 
     /** @return array{ok:bool,error?:string,code?:int} */
-    public function restoreMigrationSafetyBackup(string $backupPath, string $recoveryId): array
+    public function restoreMigrationSafetyBackup(string $backupPath, string $recoveryId, ?array $connectionOverrides = null): array
     {
         $verification = $this->verifyBackup($backupPath, $recoveryId);
         if (!$verification['ok']) {
@@ -118,7 +118,7 @@ class MigrationSafetyBackupService
             if ($content === false) {
                 throw new RuntimeException('Migration recovery backup is unreadable.');
             }
-            $result = $this->backupService->restoreFromSql($content, false);
+            $result = $this->backupService->restoreFromSql($content, false, $connectionOverrides);
             if (!$result['ok']) {
                 return ['ok' => false, 'code' => (int) ($result['code'] ?? 500), 'error' => $result['error'] ?? 'Database restore failed.'];
             }

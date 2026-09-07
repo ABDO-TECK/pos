@@ -52,8 +52,9 @@ try {
         exit((int) ($validation['code'] ?? 400));
     }
 
+    $skipMigrations = in_array('--skip-migrations', $argv, true) || in_array('--no-migrations', $argv, true);
     fwrite(STDOUT, "Restoring validated backup: " . basename($resolvedPath) . "\n");
-    $result = $service->restoreFromSql((string) $validation['content']);
+    $result = $service->restoreFromSql((string) $validation['content'], !$skipMigrations);
     if (!$result['ok']) {
         fwrite(STDERR, (string) $result['error'] . "\n");
         exit((int) ($result['code'] ?? 1));

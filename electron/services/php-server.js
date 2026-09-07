@@ -139,12 +139,13 @@ function createPhpProcessError(code, message, details, cause) {
   return error;
 }
 
-function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations = null }) {
+function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations = null, force = false }) {
   const {
     getBackendDir,
     getLogsDir,
     getTempDir,
     getPhpPath,
+    getDataDir,
     isPackaged,
   } = require('../utils/paths');
   const backendDir = getBackendDir();
@@ -153,6 +154,13 @@ function runDatabaseMigrations({ mysqlPort, dbCredentials, apiPort, migrations =
     ...getPhpRuntimeArgs(phpBin, getTempDir()),
     ...getEntryArgs(backendDir, isPackaged(), ['migrate']),
   ];
+  if (force) {
+    migrationArgs.push('--force');
+    try {
+      const flagPath = path.join(getDataDir(), 'migrations_hash.flag');
+      if (fs.existsSync(flagPath)) fs.unlinkSync(flagPath);
+    } catch {}
+  }
   if (Array.isArray(migrations)) {
     if (!migrations.every((migration) => typeof migration === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]*\.sql$/.test(migration))) {
       return Promise.reject(new Error('Invalid declared migration list.'));

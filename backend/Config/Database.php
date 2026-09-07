@@ -30,7 +30,10 @@ class Database {
         return self::$instance;
     }
 
-    public static function getMigrationConnection(): PDO {
+    public static function getMigrationConnection(?array $overrides = null): PDO {
+        if ($overrides !== null) {
+            return self::createMigrationConnection($overrides);
+        }
         if (self::$migrationInstance === null) {
             self::$migrationInstance = self::createMigrationConnection();
         }
@@ -162,24 +165,25 @@ class Database {
     }
 
     /**
-     * إنشاء اتصال مخصص للمهاجرات (DDL/Schema Migrations) باستخدام حساب DB_MIGRATION_USER.
+     * Get resolved connection parameters for migration / restore operations.
+     * Throws in production or packaged environments if DB_MIGRATION_USER is missing.
+     *
+     * @return array{host: string, port: int, name: string, user: string, pass: string, charset: string}
      */
-    private static function createMigrationConnection(): PDO {
+    public static function getMigrationConnectionParams(): array {
         $host = defined('DB_MIGRATION_HOST') && DB_MIGRATION_HOST !== ''
             ? DB_MIGRATION_HOST
-            : (defined('DB_HOST') ? DB_HOST : 'localhost');
-        $port = defined('DB_MIGRATION_PORT') && DB_MIGRATION_PORT !== ''
+            : (defined('DB_HOST') ? DB_HOST : (getenv('DB_HOST') ?: 'localhost'));
+        $port = (int) (defined('DB_MIGRATION_PORT') && DB_MIGRATION_PORT !== ''
             ? DB_MIGRATION_PORT
-            : (defined('DB_PORT') ? DB_PORT : '3306');
+            : (defined('DB_PORT') ? DB_PORT : (getenv('DB_PORT') ?: (getenv('DB_MIGRATION_PORT') ?: 3306))));
         $name = defined('DB_MIGRATION_NAME') && DB_MIGRATION_NAME !== ''
             ? DB_MIGRATION_NAME
-            : (defined('DB_NAME') ? DB_NAME : 'pos_db');
+            : (defined('DB_NAME') ? DB_NAME : (getenv('DB_NAME') ?: 'pos_db'));
         $charset = defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4';
 
-        $dsn = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . $name . ';charset=' . $charset;
-
-        $user = defined('DB_MIGRATION_USER') ? trim((string) DB_MIGRATION_USER) : '';
-        $pass = defined('DB_MIGRATION_PASS') ? (string) DB_MIGRATION_PASS : '';
+        $user = defined('DB_MIGRATION_USER') ? trim((string) DB_MIGRATION_USER) : (getenv('DB_MIGRATION_USER') ? trim((string) getenv('DB_MIGRATION_USER')) : '');
+        $pass = defined('DB_MIGRATION_PASS') ? (string) DB_MIGRATION_PASS : (getenv('DB_MIGRATION_PASS') !== false ? (string) getenv('DB_MIGRATION_PASS') : '');
         $appEnv = defined('APP_ENV') ? strtolower(trim((string) APP_ENV)) : 'development';
         $isProduction = $appEnv === 'production';
         $isPackaged = (bool) \Phar::running(false);
@@ -190,10 +194,51 @@ class Database {
                     'Database migration credentials (DB_MIGRATION_USER) must be explicitly configured in production or packaged environments.'
                 );
             }
-            Logger::notice('DB_MIGRATION_USER is not set; falling back to DB_USER in development/test environment.');
-            $user = defined('DB_USER') ? DB_USER : 'root';
-            $pass = defined('DB_PASS') ? DB_PASS : '';
+            Logger::info('DB_MIGRATION_USER is not set; falling back to DB_USER in development/test environment.');
+            $user = defined('DB_USER') ? DB_USER : (getenv('DB_USER') ?: 'root');
+            $pass = defined('DB_PASS') ? DB_PASS : (getenv('DB_PASS') !== false ? (string) getenv('DB_PASS') : '');
         }
+
+        return [
+            'host' => $host,
+            'port' => $port,
+            'name' => $name,
+            'user' => $user,
+            'pass' => $pass,
+            'charset' => $charset,
+        ];
+    }
+
+    /**
+     * Create a mysqli instance configured with migration credentials.
+     *
+     * @param array<string, mixed>|null $overrides
+     */
+    public static function getMigrationMysqli(?array $overrides = null): \mysqli {
+        $params = self::getMigrationConnectionParams();
+        if ($overrides !== null) {
+            $params = array_merge($params, $overrides);
+        }
+
+        $mysqli = @new \mysqli($params['host'], $params['user'], $params['pass'], $params['name'], (int) $params['port']);
+        if ($mysqli->connect_errno) {
+            throw new \RuntimeException("Migration database connection failed: ({$mysqli->connect_errno}) {$mysqli->connect_error}");
+        }
+        $mysqli->set_charset($params['charset']);
+        return $mysqli;
+    }
+
+    /**
+     * إنشاء اتصال مخصص للمهاجرات (DDL/Schema Migrations) باستخدام حساب DB_MIGRATION_USER.
+     */
+    private static function createMigrationConnection(?array $overrides = null): PDO {
+        $params = self::getMigrationConnectionParams();
+        if ($overrides !== null) {
+            $params = array_merge($params, $overrides);
+        }
+        $dsn = 'mysql:host=' . $params['host'] . ';port=' . $params['port'] . ';dbname=' . $params['name'] . ';charset=' . $params['charset'];
+        $user = $params['user'];
+        $pass = $params['pass'];
 
         $maxRetries = PHP_SAPI === 'cli' ? self::$maxRetries : 1;
         $connectionTimeout = PHP_SAPI === 'cli' ? 5 : 2;

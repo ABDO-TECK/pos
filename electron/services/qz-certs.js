@@ -12,7 +12,10 @@ const CERTS_DIR_NAME = 'qz-certs';
  * مثال: C:\Users\abdmo\AppData\Roaming\pos-desktop\qz-certs\
  */
 function getCertsDir() {
-  const dir = path.join(app.getPath('userData'), CERTS_DIR_NAME);
+  const base = app && typeof app.getPath === 'function'
+    ? app.getPath('userData')
+    : path.join(require('os').tmpdir(), 'pos-desktop');
+  const dir = path.join(base, CERTS_DIR_NAME);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }

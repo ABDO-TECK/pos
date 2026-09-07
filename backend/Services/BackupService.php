@@ -114,6 +114,32 @@ class BackupService implements BackupServiceInterface {
             flush();
         }
 
+        // Triggers
+        try {
+            $triggers = $this->getDb()->query("SHOW TRIGGERS")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($triggers as $trg) {
+                $trgName = $trg['Trigger'] ?? '';
+                if (!preg_match('/^[a-zA-Z0-9_]+$/', $trgName)) {
+                    continue;
+                }
+                $createStmt = $this->getDb()->query("SHOW CREATE TRIGGER `{$trgName}`")->fetch(PDO::FETCH_ASSOC);
+                $ddl = $createStmt['SQL Original Statement'] ?? null;
+                if (!$ddl && is_array($createStmt)) {
+                    $vals = array_values($createStmt);
+                    $ddl = $vals[2] ?? '';
+                }
+                if ($ddl) {
+                    $cleanDdl = preg_replace('/^CREATE\s+DEFINER=`?[^`@\s]+`?@`?[^`@\s]+`?\s+/i', 'CREATE ', $ddl);
+                    echo "-- Trigger: {$trgName}\n";
+                    echo "DROP TRIGGER IF EXISTS `{$trgName}`;\n";
+                    echo $cleanDdl . ";\n\n";
+                    flush();
+                }
+            }
+        } catch (\Throwable) {
+            // Non-critical: some setups may lack SHOW TRIGGERS
+        }
+
         echo "SET FOREIGN_KEY_CHECKS=1;\n";
         flush();
     }
@@ -183,30 +209,69 @@ class BackupService implements BackupServiceInterface {
      * تنفيذ استعادة قاعدة البيانات من محتوى SQL + إعادة تشغيل الترحيلات.
      *
      * @param string $sqlContent  محتوى SQL المُنظّف
+     * @param bool $runMigrations تشغيل الهجرات التلقائية بعد الاستيراد
+     * @param array<string, mixed>|null $connectionOverrides تخصيص إعدادات الاتصال للاختبارات
      * @return array ['ok' => true, 'message' => string] أو ['ok' => false, 'error' => string, 'code' => int]
      */
-    public function restoreFromSql(string $sqlContent, bool $runMigrations = true): array
+    public function restoreFromSql(string $sqlContent, bool $runMigrations = true, ?array $connectionOverrides = null, bool $cleanDatabase = true): array
     {
         if (PHP_SAPI !== 'cli') {
             throw new RuntimeException('SQL restore is CLI-only');
         }
 
-        // ── استخدام mysqli بدلاً من PDO ──
-        // السبب: PDO لا يدعم multi_query() اللازمة لتنفيذ ملف SQL كامل
-        $mysqli = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
-        if ($mysqli->connect_errno) {
+        if ($connectionOverrides === null && $this->db !== null) {
+            try {
+                $activeDb = $this->db->query('SELECT DATABASE()')->fetchColumn();
+                if ($activeDb) {
+                    $connectionOverrides = ['name' => (string) $activeDb];
+                }
+            } catch (\Throwable) {
+                // Ignore fallback resolution error
+            }
+        }
+
+        try {
+            $mysqli = Database::getMigrationMysqli($connectionOverrides);
+        } catch (\Throwable $e) {
             $reference = bin2hex(random_bytes(8));
             Logger::error('Backup restore database connection failed', [
                 'reference' => $reference,
-                'code' => $mysqli->connect_errno,
+                'error' => $e->getMessage(),
             ]);
             return ['ok' => false, 'error' => "Database restore failed. Reference: {$reference}", 'code' => 500];
         }
+
         $mysqli->set_charset('utf8mb4');
 
         // Relax strict mode only where needed — keep basic safety checks active
         $mysqli->query("SET sql_mode='NO_ENGINE_SUBSTITUTION'");
         $mysqli->query("SET FOREIGN_KEY_CHECKS=0");
+
+        if ($cleanDatabase) {
+            // Drop views first
+            $viewsResult = $mysqli->query("SHOW FULL TABLES WHERE Table_type = 'VIEW'");
+            if ($viewsResult) {
+                while ($row = $viewsResult->fetch_row()) {
+                    $viewName = (string) $row[0];
+                    if (preg_match('/^[a-zA-Z0-9_]+$/', $viewName)) {
+                        $mysqli->query("DROP VIEW IF EXISTS `{$viewName}`");
+                    }
+                }
+                $viewsResult->free();
+            }
+
+            // Drop base tables
+            $tablesResult = $mysqli->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            if ($tablesResult) {
+                while ($row = $tablesResult->fetch_row()) {
+                    $tableName = (string) $row[0];
+                    if (preg_match('/^[a-zA-Z0-9_]+$/', $tableName)) {
+                        $mysqli->query("DROP TABLE IF EXISTS `{$tableName}`");
+                    }
+                }
+                $tablesResult->free();
+            }
+        }
 
         if (!$mysqli->multi_query($sqlContent)) {
             $reference = bin2hex(random_bytes(8));
@@ -242,18 +307,10 @@ class BackupService implements BackupServiceInterface {
         // Interactive restores may upgrade an old backup. Migration-safety
         // restores must leave the exact pre-update schema/version in place.
         if (!$runMigrations) {
-            return ['ok' => true, 'message' => 'Database restored from verified migration safety backup.'];
+            return ['ok' => true, 'message' => 'Database restored from verified backup.'];
         }
 
-        // ── الاستعادة الذكية: ترقية النسخة القديمة ──
-        $freshDb = Database::getInstance();
-        try {
-            $freshDb->exec('DELETE FROM schema_versions');
-        } catch (\Throwable $e) {
-            // الجدول قد لا يكون موجوداً
-        }
-
-        // حذف flag الـ Smart Skip
+        // حذف flag الـ Smart Skip لضمان فحص جميع الترحيلات
         $pharRunning = \Phar::running(false);
         $storageDir = $_ENV['APP_STORAGE_DIR'] ?? (getenv('APP_STORAGE_DIR') ?: null) ?? ($pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage');
         $flagFile = rtrim($storageDir, '/\\') . '/migrations_hash.flag';
@@ -261,18 +318,29 @@ class BackupService implements BackupServiceInterface {
             @unlink($flagFile);
         }
 
-        // تشغيل جميع الهجرات
+        // تشغيل جميع الهجرات بحساب الهجرة (Migration Connection)
         Database::resetInstance();
-        $container = new Container();
-        $migrationService = $container->get(MigrationService::class);
+        $migrationConnection = Database::getMigrationConnection($connectionOverrides);
+        $migrationService = new MigrationService($migrationConnection);
         $migrationResult = $migrationService->runAllMigrations(true);
+
+        if (!empty($migrationResult['errors'])) {
+            $reference = bin2hex(random_bytes(8));
+            Logger::error('Post-restore migrations failed', [
+                'reference' => $reference,
+                'errors' => $migrationResult['errors'],
+            ]);
+            return [
+                'ok' => false,
+                'error' => "Post-restore migrations failed. Reference: {$reference}",
+                'code' => 500,
+                'migration_errors' => $migrationResult['errors'],
+            ];
+        }
 
         $msg = 'تمت استعادة قاعدة البيانات بنجاح';
         if ($migrationResult['executed'] > 0) {
             $msg .= '، وتمت ترقيتها للإصدار الحديث (' . $migrationResult['executed'] . ' تحديثات).';
-        }
-        if (!empty($migrationResult['errors'])) {
-            $msg .= ' ولكن حدثت بعض الأخطاء أثناء الترقية التلقائية.';
         }
 
         return ['ok' => true, 'message' => $msg];
@@ -338,6 +406,31 @@ class BackupService implements BackupServiceInterface {
                 if (!$firstRow) {
                     fwrite($fh, ";\n\n");
                 }
+            }
+
+            // Triggers
+            try {
+                $triggers = $this->getDb()->query("SHOW TRIGGERS")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($triggers as $trg) {
+                    $trgName = $trg['Trigger'] ?? '';
+                    if (!preg_match('/^[a-zA-Z0-9_]+$/', $trgName)) {
+                        continue;
+                    }
+                    $createStmt = $this->getDb()->query("SHOW CREATE TRIGGER `{$trgName}`")->fetch(PDO::FETCH_ASSOC);
+                    $ddl = $createStmt['SQL Original Statement'] ?? null;
+                    if (!$ddl && is_array($createStmt)) {
+                        $vals = array_values($createStmt);
+                        $ddl = $vals[2] ?? '';
+                    }
+                    if ($ddl) {
+                        $cleanDdl = preg_replace('/^CREATE\s+DEFINER=`?[^`@\s]+`?@`?[^`@\s]+`?\s+/i', 'CREATE ', $ddl);
+                        fwrite($fh, "-- Trigger: {$trgName}\n");
+                        fwrite($fh, "DROP TRIGGER IF EXISTS `{$trgName}`;\n");
+                        fwrite($fh, $cleanDdl . ";\n\n");
+                    }
+                }
+            } catch (\Throwable) {
+                // Non-critical: some setups may lack SHOW TRIGGERS
             }
 
             fwrite($fh, "SET FOREIGN_KEY_CHECKS=1;\n");

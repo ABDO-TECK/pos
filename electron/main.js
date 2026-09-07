@@ -207,6 +207,16 @@ function runBackendCli(args, input = null) {
   });
 }
 
+function runPrivilegedBackendCli(args, input = null) {
+  const { runPrivilegedBackendCli: runPrivilegedCli } = require('./services/privileged-cli');
+  return runPrivilegedCli(args, {
+    mysqlPort,
+    dbCredentials,
+    phpPort,
+    input,
+  });
+}
+
 function validateDesktopSqlPath(filePath) {
   if (typeof filePath !== 'string' || filePath.trim() === '') {
     throw new Error('No backup file was selected');
@@ -459,41 +469,85 @@ async function restoreDesktopBackup(filePath) {
     throw new Error('Database restore is available only while the desktop runtime is local');
   }
 
-  const resolvedPath = validateDesktopSqlPath(filePath);
   const phpServer = require('./services/php-server');
   if (!phpServer.getPhpServerInfo()) {
     throw new Error('The local PHP server is not running');
   }
 
-  firstRunAdminCredentials = null;
-  sessionCookies = {};
-  await stopJobWorker();
-  phpServer.stopPhpServer();
-  try {
-    await runBackendCli(['restore-backup', resolvedPath]);
-    // A backup may legitimately contain no users (for example, a schema-only
-    // export). Seed missing defaults and create a temporary administrator
-    // before starting the worker so the restored desktop remains reachable.
-    await restartPhpAndWorker({ startWorker: false });
-    await initializeFreshRuntime({ seed: true });
-    startJobWorker();
-    await clearDesktopSession();
-    await clearDesktopRendererStorage();
-    // Restore invalidates all application tokens. Reload so the renderer
-    // returns to the login screen instead of using stale in-memory state.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      await mainWindow.loadURL('app://pos-app/index.html');
-    }
-    return { success: true };
-  } catch (error) {
-    try {
+  const { executeRestoreStateMachine } = require('./services/restore-manager');
+
+  const hooks = {
+    stopWorker: async () => {
+      await stopJobWorker();
+    },
+    stopPhp: () => {
+      phpServer.stopPhpServer();
+    },
+    createSnapshot: async (recoveryId) => {
+      const { stdout } = await runPrivilegedBackendCli(['create-restore-safety', recoveryId]);
+      const parsed = parseBackendJson(stdout);
+      return {
+        ok: parsed.ok === true,
+        backupPath: parsed.backup_path,
+        recoveryId: parsed.recovery_id,
+        error: parsed.error,
+      };
+    },
+    runRestore: async (validatedPath) => {
+      await runPrivilegedBackendCli(['restore-backup', validatedPath, '--skip-migrations']);
+    },
+    runRollback: async (backupPath, recoveryId) => {
+      await runPrivilegedBackendCli(['restore-migration-safety', backupPath, recoveryId]);
+      return { ok: true };
+    },
+    runMigrations: async () => {
+      await runDatabaseMigrations({
+        mysqlPort,
+        dbCredentials,
+        apiPort: phpPort,
+        force: true,
+      });
+    },
+    verifyDb: async () => {
+      const { stdout } = await runBackendCli(['verify-database']);
+      const parsed = parseBackendJson(stdout);
+      return { ok: parsed.ok === true };
+    },
+    restartPhpAndWorker: async (options) => {
       if (phpServer.getPhpServerInfo()) phpServer.stopPhpServer();
-      await restartPhpAndWorker();
-    } catch (restartError) {
-      console.error('[Backup] Failed to restart PHP after restore error:', restartError.message);
-    }
-    throw error;
-  }
+      await restartPhpAndWorker(options);
+    },
+    clearSession: async () => {
+      firstRunAdminCredentials = null;
+      sessionCookies = {};
+      await clearDesktopSession();
+      await clearDesktopRendererStorage();
+    },
+    reloadWindow: async () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        await mainWindow.loadURL('app://pos-app/index.html');
+      }
+    },
+    deleteSnapshot: async (backupPath) => {
+      try {
+        if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+        const metaPath = backupPath + '.json';
+        if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+      } catch (cleanErr) {
+        console.warn('[Restore] Failed to clean up safety snapshot file:', cleanErr.message);
+      }
+    },
+    enterRecoveryMode: async (recoveryError) => {
+      console.error('[Recovery] Entering Recovery Mode due to restore rollback failure:', recoveryError.message);
+      captureStartupError(recoveryError, {
+        stage: 'restore_rollback',
+        attempts: 1,
+      });
+      await enterRecoveryMode(recoveryError);
+    },
+  };
+
+  return await executeRestoreStateMachine(filePath, hooks);
 }
 
 function saveSessionCookies(cookiesPath, cookies) {
@@ -538,6 +592,9 @@ function applyMysqlStartupInfo(info) {
 
 function getStartupUserMessage(error) {
   const code = error?.code;
+  if (code === 'DATABASE_RESTORE_RECOVERY_FAILED') {
+    return 'فشلت استعادة قاعدة البيانات وفشل التراجع التلقائي إلى النسخة السابقة. تم الحفاظ على نسخة الأمان للتدخل اليدوي.';
+  }
   if (code === 'PHP_RUNTIME_DLL_MISSING') {
     return 'تعذر تشغيل مكوّن PHP لأن أحد مكونات تشغيل Windows المطلوبة غير مثبت أو مفقود. STATUS_DLL_NOT_FOUND (0xC0000135)';
   }
@@ -590,6 +647,7 @@ function captureStartupError(error, { stage = null, attempts = 0 } = {}) {
 }
 
 const NON_RETRYABLE_STARTUP_CODES = new Set([
+  'DATABASE_RESTORE_RECOVERY_FAILED',
   'PHP_RUNTIME_DLL_MISSING',
   'RUNTIME_PHP_MISSING',
   'RUNTIME_MYSQL_MISSING',
@@ -1077,7 +1135,7 @@ app.whenReady().then(async () => {
       let recoveryError = null;
       if (applied?.plan?.db_recovery?.backup_path && applied.plan.db_recovery.recovery_id) {
         try {
-          await runBackendCli([
+          await runPrivilegedBackendCli([
             'restore-migration-safety',
             applied.plan.db_recovery.backup_path,
             applied.plan.db_recovery.recovery_id,
