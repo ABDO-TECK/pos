@@ -51,8 +51,8 @@ try {
 
     // 4. Critical base tables required for startup are readable
     $requiredTables = ['users', 'products', 'branches', 'categories', 'invoices', 'schema_versions'];
+    $check = $db->prepare('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
     foreach ($requiredTables as $table) {
-        $check = $db->prepare('SHOW TABLES LIKE ?');
         $check->execute([$table]);
         if (!$check->fetchColumn()) {
             throw new RuntimeException("Required base table '{$table}' is missing.");

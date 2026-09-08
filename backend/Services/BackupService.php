@@ -183,18 +183,23 @@ class BackupService implements BackupServiceInterface {
             return ['ok' => false, 'error' => 'محتوى الملف لا يبدو ملف SQL صالحاً لقاعدة البيانات', 'code' => 400];
         }
 
-        // منع أوامر خطرة — قائمة موسعة
-        // Strip SQL comments FIRST to prevent bypass via DR/**/OP or DR--\nOP
+        // منع أوامر خطرة — فحص الأوامر الإدارية والخطرة
+        // 1. Strip comments
         $stripped = preg_replace('/\/\*.*?\*\//s', ' ', $content);   // block comments
         $stripped = preg_replace('/--[^\n]*/', ' ', $stripped);       // line comments
+        // 2. Strip string literals so legitimate data values (e.g. descriptions mentioning "system") do not trigger false positives
+        $stripped = preg_replace("/'(?:''|\\\\'|[^'])*'/s", "''", $stripped);
+        // 3. Strip backtick-quoted identifiers so legitimate column names (e.g. `source`) do not trigger false positives
+        $stripped = preg_replace('/`[^`]*`/', ' ', $stripped);
 
         $dangerousPatterns = [
             '/\b(OUTFILE|DUMPFILE|LOAD_FILE|INTO\s+OUTFILE)\b/is',
             '/\b(GRANT|REVOKE|CREATE\s+USER|ALTER\s+USER|DROP\s+USER)\b/is',
-            '/\b(LOAD\s+DATA|SOURCE)\b/is',
-            '/\b(SLEEP|BENCHMARK|GET_LOCK)\b/is',
+            '/\b(LOAD\s+DATA)\b/is',
+            '/\b(SLEEP|BENCHMARK|GET_LOCK)\s*\(/is',
             '/\b(DROP\s+DATABASE)\b/is',
-            '/\b(SYSTEM|SHUTDOWN)\b/is',
+            '/\b(SHUTDOWN)\b/is',
+            '/(?:^|;)\s*SOURCE\s+/is',
         ];
         foreach ($dangerousPatterns as $pattern) {
             if (preg_match($pattern, $stripped)) {

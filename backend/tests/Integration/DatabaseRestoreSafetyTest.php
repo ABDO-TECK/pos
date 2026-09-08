@@ -400,5 +400,91 @@ final class DatabaseRestoreSafetyTest extends TestCase
             MySqlTestEnvironment::dropDatabase($database);
         }
     }
-}
 
+    /**
+     * Regression test: Real production backup (with table columns like `source` and
+     * descriptions like `View system updates`) must pass validateUploadedSqlFile,
+     * and verify-database CLI must successfully verify the schema.
+     */
+    public function testValidateUploadedRealProductionBackupAndVerifyDatabaseCli(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_real_val_test');
+        $rootPdo = MySqlTestEnvironment::connect($database);
+
+        try {
+            // Load base schema
+            $schemaSql = file_get_contents(dirname(__DIR__, 3) . '/database/pos_schema.sql');
+            $schemaSql = preg_replace('/CREATE DATABASE[^;]+;/i', '', $schemaSql);
+            $schemaSql = preg_replace('/USE pos_db;/i', '', $schemaSql);
+            $rootPdo->exec($schemaSql);
+
+            // Apply all migrations to bring DB to current schema 057
+            $migrationService = new \App\Services\MigrationService($rootPdo);
+            $migResult = $migrationService->runAllMigrations(true);
+            self::assertEmpty($migResult['errors'], 'All migrations must succeed');
+
+            // Generate real backup using BackupService
+            $backupService = new BackupService();
+            $backupService->setDb($rootPdo);
+            $backupDir = sys_get_temp_dir() . '/pos_val_bk_' . bin2hex(random_bytes(4));
+            $backupFile = $backupService->createBackupFile($backupDir);
+            self::assertFileExists($backupFile);
+
+            // 1. Validate the generated production backup file
+            $validation = $backupService->validateUploadedSqlFile([
+                'name' => basename($backupFile),
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($backupFile),
+                'tmp_name' => $backupFile,
+            ]);
+
+            self::assertTrue(
+                $validation['ok'],
+                'Real production backup must pass validateUploadedSqlFile: ' . ($validation['error'] ?? '')
+            );
+
+            // 2. Test verify-database CLI script against this database
+            $phpBin = PHP_BINARY;
+            $verifyScript = dirname(__DIR__, 2) . '/cli/verify-database.php';
+            $port = MySqlTestEnvironment::configuration()['port'];
+            $cmd = sprintf(
+                '"%s" "%s"',
+                $phpBin,
+                $verifyScript
+            );
+
+            $descriptors = [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
+
+            $env = array_merge(getenv(), [
+                'DB_HOST' => MySqlTestEnvironment::configuration()['host'],
+                'DB_PORT' => (string) $port,
+                'DB_NAME' => $database,
+                'DB_USER' => MySqlTestEnvironment::configuration()['user'],
+                'DB_PASS' => MySqlTestEnvironment::configuration()['password'],
+            ]);
+
+            $process = proc_open($cmd, $descriptors, $pipes, dirname(__DIR__, 2), $env);
+            self::assertIsResource($process);
+            fclose($pipes[0]);
+            $stdout = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+
+            self::assertSame(0, $exitCode, "verify-database.php must exit with 0. stderr: {$stderr}");
+            $parsed = json_decode((string) $stdout, true);
+            self::assertTrue($parsed['ok'] ?? false, 'verify-database must return ok=true');
+        } finally {
+            if (isset($backupDir) && is_dir($backupDir)) {
+                @array_map('unlink', glob("$backupDir/*.*") ?: []);
+                @rmdir($backupDir);
+            }
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
+}

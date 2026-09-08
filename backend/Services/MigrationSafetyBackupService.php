@@ -16,7 +16,9 @@ class MigrationSafetyBackupService
         private readonly BackupService $backupService,
         ?string $storageDir = null,
     ) {
-        $storage = $storageDir ?? ($_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR') ?: __DIR__ . '/../storage');
+        $pharRunning = \Phar::running(false);
+        $defaultStorage = $pharRunning ? dirname($pharRunning) . '/storage' : __DIR__ . '/../storage';
+        $storage = $storageDir ?? ($_ENV['APP_STORAGE_DIR'] ?? getenv('APP_STORAGE_DIR') ?: $defaultStorage);
         $this->backupRoot = rtrim(str_replace('\\', '/', $storage), '/') . '/update-backups/migration-safety';
     }
 
