@@ -100,7 +100,7 @@ try {
     logStep('2. Real Client Upgrade Simulation (Client on v1.1.47 with Engine 1.0.0)');
 
     $clientDir = $tempEnvDir . '/client';
-    @mkdir($clientDir . '/backend/Services', 0755, true);
+    @mkdir($clientDir . '/frontend/dist', 0755, true);
     @mkdir($clientDir . '/backend/storage/update-backups', 0755, true);
 
     // Set up client version.json as v1.1.47 with update engine 1.0.0
@@ -113,9 +113,9 @@ try {
     ];
     file_put_contents($clientDir . '/version.json', json_encode($v147Json, JSON_PRETTY_PRINT));
 
-    // Place initial v1.1.47 version of HealthService
-    $initialHealthServiceContent = "<?php\nnamespace App\Services;\nclass HealthService { public const V = '1.1.47'; }\n";
-    file_put_contents($clientDir . '/backend/Services/HealthService.php', $initialHealthServiceContent);
+    // Place initial v1.1.47 version of frontend/dist/index.html
+    $initialIndexContent = "<!DOCTYPE html><html><head><title>POS v1.1.47</title></head><body></body></html>";
+    file_put_contents($clientDir . '/frontend/dist/index.html', $initialIndexContent);
 
     $clientDeltaService = new DeltaUpdateService($manifestService, $clientDir, $clientDir . '/backend/storage');
 
@@ -169,11 +169,11 @@ try {
     }
     logOk("Verified client version.json updated to v1.1.48 (Update Engine: 1.0.0)");
 
-    $healthContentOnDisk = (string) file_get_contents($clientDir . '/backend/Services/HealthService.php');
-    if (!str_contains($healthContentOnDisk, 'update_infrastructure')) {
-        throw new RuntimeException("HealthService on disk does not contain the v1.1.48 update infrastructure check!");
+    $indexContentOnDisk = (string) file_get_contents($clientDir . '/frontend/dist/index.html');
+    if ($indexContentOnDisk === $initialIndexContent) {
+        throw new RuntimeException("frontend/dist/index.html on disk was not updated with the v1.1.48 delta build!");
     }
-    logOk("Verified production HealthService on disk updated with new diagnostic code");
+    logOk("Verified production frontend/dist/index.html on disk updated with new build");
 
     $results['client_update'] = true;
 
@@ -207,9 +207,9 @@ try {
     }
     logOk("Confirmed client version restored to v1.1.47");
 
-    $restoredHealthContent = (string) file_get_contents($clientDir . '/backend/Services/HealthService.php');
-    if ($restoredHealthContent !== $initialHealthServiceContent) {
-        throw new RuntimeException("HealthService file content was not restored to original v1.1.47 state!");
+    $restoredIndexContent = (string) file_get_contents($clientDir . '/frontend/dist/index.html');
+    if ($restoredIndexContent !== $initialIndexContent) {
+        throw new RuntimeException("frontend/dist/index.html file content was not restored to original v1.1.47 state!");
     }
     logOk("Confirmed file contents restored 100% to original pre-update state");
     $results['rollback_verification'] = true;

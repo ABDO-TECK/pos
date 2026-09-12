@@ -17,10 +17,10 @@ use App\Services\UpdateManifestService;
 $rootDir = realpath(__DIR__ . '/..');
 
 // Parse CLI options
-$options = getopt('', ['tag:', 'from-tag:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
+$options = getopt('', ['tag:', 'from-tag:', 'from-ref:', 'from-version:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
 
 if (isset($options['help'])) {
-    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-tag=<from_tag>] [--private-key=<path>] [--output-dir=<dir>]\n";
+    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-tag=<from_tag>] [--from-ref=<from_ref>] [--from-version=<from_version>] [--private-key=<path>] [--output-dir=<dir>]\n";
     exit(0);
 }
 
@@ -220,16 +220,17 @@ if ($isBootstrap) {
         }
     }
 
-    $fromVersion = preg_replace('/^v/', '', $fromTag ?: '');
+    $fromVersion = $options['from-version'] ?? preg_replace('/^v/', '', $fromTag ?: '');
     $fromVersion = explode('-', $fromVersion)[0];
     if (empty($fromVersion)) {
         $fromVersion = '1.1.47';
     }
 
-    echo "Delta comparison: {$fromTag} ({$fromVersion}) -> {$tag} ({$baseVersion})\n";
+    $fromRef = $options['from-ref'] ?? $fromTag;
+    echo "Delta comparison: {$fromRef} ({$fromVersion}) -> {$tag} ({$baseVersion})\n";
 
-    // Detect changed files between tags
-    $diffCmd = "git diff --name-status \"{$fromTag}\" HEAD 2>&1";
+    // Detect changed files between tags/refs
+    $diffCmd = "git diff --name-status \"{$fromRef}\" HEAD 2>&1";
     $diffOutput = (string) shell_exec($diffCmd);
     $lines = array_filter(explode("\n", trim($diffOutput)));
 
