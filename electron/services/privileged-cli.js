@@ -16,6 +16,7 @@ const PRIVILEGED_CLI_ALLOWLIST = Object.freeze([
   'restore-backup',
   'restore-migration-safety',
   'create-restore-safety',
+  'verify-database',
 ]);
 
 function isPrivilegedCliCommandAllowed(command) {

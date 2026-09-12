@@ -43,3 +43,17 @@ test('saveDatabaseCredentials saves credentials atomically and loadStoredDatabas
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('buildUserProvisioningStatements always synchronizes pos_app and pos_migration passwords via ALTER USER', () => {
+  const { buildUserProvisioningStatements } = require('../services/mysql-server');
+  assert.equal(typeof buildUserProvisioningStatements, 'function', 'buildUserProvisioningStatements must be exported');
+
+  const statements = buildUserProvisioningStatements('app_secret_123', 'mig_secret_456');
+  const sql = statements.join(' ');
+
+  assert.match(sql, /CREATE USER IF NOT EXISTS 'pos_app'@'127\.0\.0\.1' IDENTIFIED BY 'app_secret_123';/);
+  assert.match(sql, /ALTER USER 'pos_app'@'127\.0\.0\.1' IDENTIFIED BY 'app_secret_123';/);
+  assert.match(sql, /CREATE USER IF NOT EXISTS 'pos_migration'@'127\.0\.0\.1' IDENTIFIED BY 'mig_secret_456';/);
+  assert.match(sql, /ALTER USER 'pos_migration'@'127\.0\.0\.1' IDENTIFIED BY 'mig_secret_456';/);
+  assert.match(sql, /FLUSH PRIVILEGES;/);
+});

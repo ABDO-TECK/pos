@@ -134,6 +134,7 @@ function installSSLcertSilently(qzTrayDir, javaPath, flagPath) {
     sudo.exec(command, options, (error, stdout, stderr) => {
       if (error) {
         console.error('[QZ Certs] Failed to install SSL silently (User might have cancelled UAC):', error.message);
+        try { fs.writeFileSync(flagPath, 'skipped', 'utf-8'); } catch {}
         resolve(false);
       } else {
         console.log('[QZ Certs] SSL cert installed silently successfully.');

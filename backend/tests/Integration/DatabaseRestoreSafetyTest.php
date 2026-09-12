@@ -487,4 +487,213 @@ final class DatabaseRestoreSafetyTest extends TestCase
             MySqlTestEnvironment::dropDatabase($database);
         }
     }
+
+    /**
+     * Regression test for legacy backup shape (schema 048 recorded, 043 applied, triggers omitted).
+     * Proves:
+     * 1. Before reconciliation: triggers are missing despite 043 recorded in schema_versions.
+     * 2. After post-restore migration reconciliation: all 3 triggers physically exist.
+     * 3. Functional DML by pos_app: INSERT, UPDATE, DELETE on products populates product_catalog_changes.
+     */
+    public function testLegacy048BackupWithMissingTriggersReconcilesAndFiresDmlTriggers(): void
+    {
+        $database = MySqlTestEnvironment::createDatabase('pos_legacy_reconcile_test');
+        $rootPdo = MySqlTestEnvironment::connect($database);
+
+        try {
+            // Provision least-privilege pos_app user (DML only)
+            $runtimeUser = MySqlTestEnvironment::createRuntimeUser($rootPdo, $database, 'pos_app_leg_test');
+            $runtimePdo = MySqlTestEnvironment::connectAs($runtimeUser['username'], $runtimeUser['password'], $database);
+
+            // Synthetic sanitized legacy 048 backup SQL (omitting triggers, marking 043 and 048 as applied)
+            $legacySql = "
+SET FOREIGN_KEY_CHECKS=0;
+
+DROP TABLE IF EXISTS `branches`;
+CREATE TABLE `branches` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO `branches` (`id`, `name`) VALUES (1, 'Main Branch');
+
+DROP TABLE IF EXISTS `categories`;
+CREATE TABLE `categories` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `products`;
+CREATE TABLE `products` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) NOT NULL,
+  `barcode` varchar(100) NOT NULL,
+  `price` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `cost` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `quantity` decimal(10,3) NOT NULL DEFAULT 0.000,
+  `branch_id` int(11) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `barcode` (`barcode`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO `products` (`id`, `name`, `barcode`, `price`, `cost`, `quantity`, `branch_id`)
+VALUES (1, 'Existing Legacy Product', 'LEGACY_BC_001', 15.00, 10.00, 50, 1);
+
+DROP TABLE IF EXISTS `product_catalog_changes`;
+CREATE TABLE `product_catalog_changes` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `branch_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_catalog_changes_branch_sequence` (`branch_id`,`id`),
+  KEY `idx_catalog_changes_product` (`product_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `users`;
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(150) NOT NULL,
+  `email` varchar(150) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `role` enum('admin','cashier') NOT NULL DEFAULT 'cashier',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `invoices`;
+CREATE TABLE `invoices` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `total` decimal(10,2) NOT NULL DEFAULT 0.00,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `permissions`;
+CREATE TABLE `permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL UNIQUE,
+  `description` varchar(255) DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `role_permissions`;
+CREATE TABLE `role_permissions` (
+  `role` varchar(20) NOT NULL,
+  `permission_id` int(11) NOT NULL,
+  PRIMARY KEY (`role`, `permission_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `job_queue`;
+CREATE TABLE `job_queue` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `job_name` varchar(100) NOT NULL,
+  `status` enum('pending','processing','completed','failed') DEFAULT 'pending',
+  `last_error` text DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS `schema_versions`;
+CREATE TABLE `schema_versions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `version` varchar(255) NOT NULL,
+  `executed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `version` (`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+";
+
+            // Populate all migrations up to 048 into the backup SQL text (exact shape of 048 backup)
+            $migDir = dirname(__DIR__, 3) . '/database/migrations/';
+            $allMigFiles = scandir($migDir) ?: [];
+            $migsUpTo048 = array_values(array_filter($allMigFiles, fn($f) => str_ends_with($f, '.sql') && $f <= '048_add_prevent_negative_stock_setting.sql'));
+            sort($migsUpTo048);
+            $valuesSql = implode(",\n", array_map(fn($v) => "('" . addslashes($v) . "')", $migsUpTo048));
+            $legacySql .= "\nINSERT INTO `schema_versions` (`version`) VALUES\n" . $valuesSql . ";\n";
+            $legacySql .= "\nSET FOREIGN_KEY_CHECKS=1;\n";
+
+
+            // 1. Restore the legacy backup WITHOUT migrations (stage 3)
+            $backupService = new BackupService();
+            $backupService->setDb($rootPdo);
+            $restoreResult = $backupService->restoreFromSql($legacySql, false, [
+                'name' => $database,
+                'host' => MySqlTestEnvironment::configuration()['host'],
+                'port' => MySqlTestEnvironment::configuration()['port'],
+            ]);
+            self::assertTrue($restoreResult['ok'], 'Restore of legacy 048 backup SQL must succeed');
+
+            // 2. Assert that prior to post-restore migrations/reconciliation, triggers are MISSING
+            $trgStmt = $rootPdo->prepare("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? AND EVENT_OBJECT_TABLE = 'products' ORDER BY TRIGGER_NAME");
+            $trgStmt->execute([$database]);
+            $triggersBefore = $trgStmt->fetchAll(PDO::FETCH_COLUMN);
+            self::assertEmpty($triggersBefore, 'Legacy 048 backup must not contain triggers on products table');
+
+            // Prove that without triggers, DML produces NO rows in product_catalog_changes
+            $runtimePdo->exec("INSERT INTO products (name, barcode, price, cost, quantity, branch_id) VALUES ('Pre-Fix Item', 'PRE_001', 20.00, 10.00, 5, 1)");
+            $changesCountBefore = (int) $runtimePdo->query("SELECT COUNT(*) FROM product_catalog_changes")->fetchColumn();
+            self::assertSame(0, $changesCountBefore, 'Without triggers, product_catalog_changes must receive 0 rows');
+
+            // 3. Now run post-restore migrations with privileged migration connection
+            $migService = new \App\Services\MigrationService($rootPdo);
+            $migResult = $migService->runAllMigrations(true);
+            self::assertEmpty($migResult['errors'], 'Post-restore migrations with legacy reconciliation must succeed');
+
+            // 4. Assert all 3 triggers physically exist after post-restore migration
+            $trgStmt->execute([$database]);
+            $triggersAfter = $trgStmt->fetchAll(PDO::FETCH_COLUMN);
+            self::assertContains('trg_products_catalog_insert', $triggersAfter, 'trg_products_catalog_insert must exist');
+            self::assertContains('trg_products_catalog_update', $triggersAfter, 'trg_products_catalog_update must exist');
+            self::assertContains('trg_products_catalog_delete', $triggersAfter, 'trg_products_catalog_delete must exist');
+
+            // 5. Functional verification: perform runtime DML as pos_app
+            $runtimePdo->exec("INSERT INTO products (id, name, barcode, price, cost, quantity, branch_id) VALUES (5001, 'Tracked Item', 'TRACK_001', 25.00, 12.00, 10, 1)");
+            $runtimePdo->exec("UPDATE products SET price = 30.00 WHERE id = 5001");
+            $runtimePdo->exec("DELETE FROM products WHERE id = 5001");
+
+            // Verify product_catalog_changes received all 3 events
+            $changesStmt = $runtimePdo->prepare("SELECT product_id, branch_id FROM product_catalog_changes WHERE product_id = 5001 ORDER BY id ASC");
+            $changesStmt->execute();
+            $loggedChanges = $changesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            self::assertCount(3, $loggedChanges, 'product_catalog_changes must receive exactly 3 audit entries for INSERT, UPDATE, DELETE');
+            foreach ($loggedChanges as $entry) {
+                self::assertSame('5001', (string) $entry['product_id']);
+                self::assertSame('1', (string) $entry['branch_id']);
+            }
+
+            // 6. Verify CLI verify-database passes and validates triggers
+            $phpBin = PHP_BINARY;
+            $verifyScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'cli' . DIRECTORY_SEPARATOR . 'verify-database.php';
+            $cmd = sprintf('"%s" "%s"', $phpBin, $verifyScript);
+            $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+            $env = array_merge(getenv(), [
+                'DB_HOST' => MySqlTestEnvironment::configuration()['host'],
+                'DB_PORT' => (string) MySqlTestEnvironment::configuration()['port'],
+                'DB_NAME' => $database,
+                'DB_USER' => MySqlTestEnvironment::configuration()['user'],
+                'DB_PASS' => MySqlTestEnvironment::configuration()['password'],
+            ]);
+            $process = proc_open($cmd, $descriptors, $pipes, dirname(__DIR__, 2), $env);
+            self::assertIsResource($process);
+            fclose($pipes[0]);
+            $stdout = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+
+            self::assertSame(0, $exitCode, "verify-database.php must exit with 0. stderr: {$stderr}");
+            $parsed = json_decode((string) $stdout, true);
+            self::assertTrue($parsed['ok'] ?? false, 'verify-database must return ok=true');
+        } finally {
+            if (isset($runtimeUser)) {
+                MySqlTestEnvironment::dropUser($rootPdo, $runtimeUser['username']);
+            }
+            MySqlTestEnvironment::dropDatabase($database);
+        }
+    }
 }

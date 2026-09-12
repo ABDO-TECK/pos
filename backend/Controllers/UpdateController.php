@@ -43,7 +43,7 @@ class UpdateController extends Controller
         $state = $this->updateService->getDeltaUpdateService()->getUpdateState();
 
         // Check if there is cached or active release info
-        $remote = $this->updateService->fetchRemoteVersion() ?? [];
+        $remote = $this->updateService->fetchRemoteVersion(null, false) ?? [];
         $latestVersion = $remote['version'] ?? null;
         $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
 
@@ -133,7 +133,9 @@ class UpdateController extends Controller
 
     public function check()
     {
-        $result = $this->updateService->checkForUpdate($this->hasDesktopHandoffCapability());
+        $body = $this->getBody();
+        $force = isset($body['force']) ? filter_var($body['force'], FILTER_VALIDATE_BOOLEAN) : true;
+        $result = $this->updateService->checkForUpdate($this->hasDesktopHandoffCapability(), $force);
         return Response::success($result);
     }
 

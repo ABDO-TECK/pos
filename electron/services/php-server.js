@@ -98,7 +98,7 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
     ...process.env,
     DB_HOST: '127.0.0.1',
     DB_PORT: String(mysqlPort),
-    DB_NAME: 'pos_db',
+    DB_NAME: process.env.DB_NAME || 'pos_db',
     DB_USER: dbCredentials.user,
     DB_PASS: dbCredentials.password,
     ENABLE_AUTO_UPDATE: process.env.ENABLE_AUTO_UPDATE || 'false',

@@ -15,7 +15,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-const { startPHP, stopPHP } = require('./services/php-server');
+const { startPHP, stopPHP, runDatabaseMigrations } = require('./services/php-server');
 const { startMySQL, stopMySQL, resetDatabase } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
 const {
@@ -509,7 +509,7 @@ async function restoreDesktopBackup(filePath) {
       });
     },
     verifyDb: async () => {
-      const { stdout } = await runBackendCli(['verify-database']);
+      const { stdout } = await runPrivilegedBackendCli(['verify-database']);
       const parsed = parseBackendJson(stdout);
       return { ok: parsed.ok === true };
     },
@@ -772,22 +772,27 @@ function startLogCleanup() {
   }
 }
 
+function startQZBackgroundService() {
+  (async () => {
+    try {
+      setSplashStatus('جاري تشغيل خدمة الطباعة...');
+      const { getJavaPath, getQZTrayPath } = require('./utils/paths');
+      const qzTrayDir = path.dirname(getQZTrayPath());
+      await ensureQZCerts(qzTrayDir, getJavaPath());
+      await startQZTray();
+    } catch (error) {
+      console.warn('[QZ Service] Background startup warning:', error.message);
+    }
+  })();
+}
+
 async function startPostStartupServices() {
   setSplashStatus('جاري تهيئة قاعدة البيانات...');
   await initializeFreshRuntime({ seed: dbCredentials.freshInstall === true });
   await startHttpsProxy(phpPort, 8443);
   startLogCleanup();
   startJobWorker();
-
-  setSplashStatus('جاري تشغيل خدمة الطباعة...');
-  try {
-    const { getJavaPath, getQZTrayPath } = require('./utils/paths');
-    const qzTrayDir = path.dirname(getQZTrayPath());
-    await ensureQZCerts(qzTrayDir, getJavaPath());
-  } catch (error) {
-    console.warn('[QZ Certs] Skipped cert generation:', error.message);
-  }
-  await startQZTray();
+  startQZBackgroundService();
 }
 
 function createMainWindow() {
@@ -861,6 +866,12 @@ app.on('second-instance', () => {
   // the desktop shortcut must wake that hidden window before focusing it.
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
+});
+
+app.on('window-all-closed', () => {
+  if (forceQuit || process.platform !== 'win32') {
+    app.quit();
+  }
 });
 
 app.whenReady().then(async () => {
@@ -1576,11 +1587,6 @@ app.whenReady().then(async () => {
 
     // Keep the worker owned by Electron. A detached worker survives app
     // restarts and can continue running an older backend indefinitely.
-
-    // 3.5. تشغيل QZ Tray (الطباعة المباشرة)
-    splash.webContents.executeJavaScript(
-      `document.getElementById('status').textContent = 'جاري تشغيل خدمة الطباعة...'`
-    );
 
     // 4. فتح النافذة الرئيسية
     await showMainApplication();

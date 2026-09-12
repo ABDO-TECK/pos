@@ -262,3 +262,32 @@ test('Phase 1.G - rollback failure triggers Recovery Mode and retains safety art
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('regression: restoreDesktopBackup hooks in electron/main.js have all dependencies in scope', () => {
+  const mainPath = path.resolve(__dirname, '../main.js');
+  const mainCode = fs.readFileSync(mainPath, 'utf8');
+
+  // Verify runDatabaseMigrations is explicitly imported from php-server
+  assert.match(
+    mainCode,
+    /const\s*\{[^}]*\brunDatabaseMigrations\b[^}]*\}\s*=\s*require\(['"]\.\/services\/php-server['"]\)/,
+    'runDatabaseMigrations must be explicitly imported from ./services/php-server in electron/main.js to avoid ReferenceError during restore'
+  );
+});
+
+test('regression: mysqld starts with --skip-name-resolve and clients bind to 127.0.0.1', () => {
+  const mysqlServerPath = path.resolve(__dirname, '../services/mysql-server.js');
+  const mysqlCode = fs.readFileSync(mysqlServerPath, 'utf8');
+
+  assert.match(
+    mysqlCode,
+    /--skip-name-resolve/,
+    'mysqld must be started with --skip-name-resolve to prevent Windows reverse DNS lookup delays on local connections'
+  );
+
+  assert.match(
+    mysqlCode,
+    /'-h',\s*'127\.0\.0\.1'/,
+    'runMysqlExecutable calls must specify -h 127.0.0.1 to avoid Windows IPv6 localhost connection timeout'
+  );
+});

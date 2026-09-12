@@ -502,10 +502,24 @@ $phar->setSignatureAlgorithm(Phar::SHA512);
 
 $phar->stopBuffering();
 unset($phar);
+gc_collect_cycles();
 
 if (file_exists($pharFile)) {
-    unlink($pharFile);
+    @unlink($pharFile);
 }
-rename($tempPharFile, $pharFile);
+
+$renamed = false;
+for ($i = 0; $i < 10; $i++) {
+    if (@rename($tempPharFile, $pharFile)) {
+        $renamed = true;
+        break;
+    }
+    usleep(200000);
+}
+
+if (!$renamed && file_exists($tempPharFile)) {
+    copy($tempPharFile, $pharFile);
+    @unlink($tempPharFile);
+}
 
 echo "backend.phar generated successfully ({$addedFileCount} backend files, {$addedMigrationCount} migrations, {$addedSeederCount} seeders; SHA-512 integrity check).\n";

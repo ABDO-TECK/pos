@@ -89,7 +89,7 @@ final class ErrorHandler
 
             if (PHP_SAPI === 'cli') {
                 fwrite(STDERR, "Unhandled application exception. Check the maintenance log.\n");
-                return;
+                exit(1);
             }
 
             if (!headers_sent()) {

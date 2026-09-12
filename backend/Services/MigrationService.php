@@ -115,6 +115,13 @@ class MigrationService {
         }
 
         if (empty($errors)) {
+            $reconciliationErrors = $this->reconcileLegacyArtifacts();
+            if (!empty($reconciliationErrors)) {
+                $errors = array_merge($errors, $reconciliationErrors);
+            }
+        }
+
+        if (empty($errors)) {
             $this->updateFlag();
         }
 
@@ -337,5 +344,99 @@ class MigrationService {
         }
 
         return $statements;
+    }
+
+    /**
+     * Reconcile required schema artifacts from legacy backups where earlier
+     * backup generators did not export certain database objects (such as triggers).
+     *
+     * @return string[] List of error messages, if any.
+     */
+    public function reconcileLegacyArtifacts(): array
+    {
+        $errors = [];
+
+        // Legacy compatibility: Migration 043 introduced product catalog change triggers,
+        // but backups created prior to trigger-export support mark 043 as applied without
+        // containing the physical CREATE TRIGGER definitions.
+        if ($this->hasMigrationRun('043_add_product_catalog_changes.sql')) {
+            try {
+                $tableCheck = $this->db->query("
+                    SELECT TABLE_NAME
+                    FROM information_schema.TABLES
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'products'
+                ")->fetchColumn();
+
+                if ($tableCheck) {
+                    $stmt = $this->db->query("
+                        SELECT TRIGGER_NAME
+                        FROM information_schema.TRIGGERS
+                        WHERE TRIGGER_SCHEMA = DATABASE()
+                          AND EVENT_OBJECT_TABLE = 'products'
+                    ");
+                    $existingTriggers = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+                    $requiredTriggers = [
+                        'trg_products_catalog_insert' => "
+                            CREATE TRIGGER trg_products_catalog_insert
+                            AFTER INSERT ON products
+                            FOR EACH ROW
+                            INSERT INTO product_catalog_changes (branch_id, product_id)
+                            VALUES (NEW.branch_id, NEW.id)
+                        ",
+                        'trg_products_catalog_update' => "
+                            CREATE TRIGGER trg_products_catalog_update
+                            AFTER UPDATE ON products
+                            FOR EACH ROW
+                            INSERT INTO product_catalog_changes (branch_id, product_id)
+                            VALUES (NEW.branch_id, NEW.id)
+                        ",
+                        'trg_products_catalog_delete' => "
+                            CREATE TRIGGER trg_products_catalog_delete
+                            AFTER DELETE ON products
+                            FOR EACH ROW
+                            INSERT INTO product_catalog_changes (branch_id, product_id)
+                            VALUES (OLD.branch_id, OLD.id)
+                        ",
+                    ];
+
+                    $missingTriggers = [];
+                    foreach (array_keys($requiredTriggers) as $triggerName) {
+                        if (!in_array($triggerName, $existingTriggers, true)) {
+                            $missingTriggers[] = $triggerName;
+                        }
+                    }
+
+                    if (!empty($missingTriggers)) {
+                        $this->db->exec("
+                            CREATE TABLE IF NOT EXISTS product_catalog_changes (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                branch_id INT NOT NULL,
+                                product_id INT NOT NULL,
+                                changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                PRIMARY KEY (id),
+                                KEY idx_catalog_changes_branch_sequence (branch_id, id),
+                                KEY idx_catalog_changes_product (product_id, id)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                        ");
+
+                        foreach ($missingTriggers as $triggerName) {
+                            $this->db->exec("DROP TRIGGER IF EXISTS `{$triggerName}`");
+                            $this->db->exec(trim($requiredTriggers[$triggerName]));
+                            Logger::info("Reconciled missing legacy trigger: {$triggerName}");
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                Logger::error("Failed to reconcile legacy migration 043 triggers", [
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                ]);
+                $errors[] = "Failed to reconcile legacy triggers: " . $e->getMessage();
+            }
+        }
+
+        return $errors;
     }
 }

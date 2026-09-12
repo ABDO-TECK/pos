@@ -60,6 +60,38 @@ try {
         $db->query("SELECT 1 FROM `{$table}` LIMIT 1");
     }
 
+    // 5. Critical triggers for applied migrations are present
+    if (in_array('043_add_product_catalog_changes.sql', $recordedVersions, true)) {
+        $requiredTriggers = [
+            'trg_products_catalog_insert',
+            'trg_products_catalog_update',
+            'trg_products_catalog_delete',
+        ];
+
+        $migUser = defined('DB_MIGRATION_USER') ? (string) DB_MIGRATION_USER : (string) (getenv('DB_MIGRATION_USER') ?: '');
+        $triggerCheckDb = $db;
+        if ($migUser !== '') {
+            try {
+                $triggerCheckDb = Database::getMigrationConnection();
+            } catch (\Throwable) {
+                $triggerCheckDb = $db;
+            }
+        }
+
+        $trgStmt = $triggerCheckDb->query("
+            SELECT TRIGGER_NAME
+            FROM information_schema.TRIGGERS
+            WHERE TRIGGER_SCHEMA = DATABASE()
+              AND EVENT_OBJECT_TABLE = 'products'
+        ");
+        $existingTriggers = $trgStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        foreach ($requiredTriggers as $triggerName) {
+            if (!in_array($triggerName, $existingTriggers, true)) {
+                throw new RuntimeException("Required trigger '{$triggerName}' is missing on products table.");
+            }
+        }
+    }
+
     echo json_encode([
         'ok' => true,
         'verified' => true,

@@ -181,16 +181,31 @@ class UpdateService
     /**
      * جلب النسخة البعيدة من GitHub Releases أو خادم التحديثات
      */
-    public function fetchRemoteVersion(?string $channel = null): ?array
+    public function fetchRemoteVersion(?string $channel = null, bool $force = false): ?array
     {
-        $result = $this->fetchRemoteVersionDiagnostics($channel);
+        $targetChannel = $channel ?? $this->getClientChannel();
+        $safeChannel = preg_replace('/[^a-z0-9_-]/i', '', $targetChannel) ?: 'stable';
+        $storageDir = $this->deltaUpdateService->getStorageDir();
+        $cacheFile = rtrim($storageDir, '/\\') . '/remote_version_cache_' . $safeChannel . '.json';
+
+        if (!$force && is_file($cacheFile)) {
+            $mtime = @filemtime($cacheFile);
+            if ($mtime !== false && (time() - $mtime) < 300) {
+                $cached = @json_decode((string) @file_get_contents($cacheFile), true);
+                if (is_array($cached) && !empty($cached['ok']) && !empty($cached['data'])) {
+                    return $cached['data'];
+                }
+            }
+        }
+
+        $result = $this->fetchRemoteVersionDiagnostics($channel, $force);
         return $result['ok'] ? $result['data'] : null;
     }
 
     /**
      * جلب النسخة البعيدة مع تشخيص آمن لفحص التحديثات.
      */
-    protected function fetchRemoteVersionDiagnostics(?string $channel = null): array
+    protected function fetchRemoteVersionDiagnostics(?string $channel = null, bool $force = false): array
     {
         if (!$this->isAllowedUpdateUrl($this->repoUrl)) {
             Logger::warning('fetchRemoteVersion rejected a non-allowlisted update URL', [
@@ -201,12 +216,15 @@ class UpdateService
         }
 
         $targetChannel = $channel ?? $this->getClientChannel();
+        $storageDir = $this->deltaUpdateService->getStorageDir();
+        $safeChannel = preg_replace('/[^a-z0-9_-]/i', '', $targetChannel) ?: 'stable';
+        $cacheFile = rtrim($storageDir, '/\\') . '/remote_version_cache_' . $safeChannel . '.json';
 
         // If repoUrl points specifically to GitHub releases endpoint, use GitHubReleaseProvider
         if (str_contains($this->repoUrl, '/releases')) {
             $ghRelease = $this->githubProvider->getLatestRelease($targetChannel);
             if ($ghRelease['ok'] && !empty($ghRelease['latest_version'])) {
-                return [
+                $cachePayload = [
                     'ok' => true,
                     'data' => [
                         'version' => $ghRelease['latest_version'],
@@ -226,6 +244,10 @@ class UpdateService
                     'errorCode' => null,
                     'details' => null,
                 ];
+                if (is_dir(dirname($cacheFile))) {
+                    @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                }
+                return $cachePayload;
             }
 
             return $this->remoteFailure(
@@ -242,7 +264,8 @@ class UpdateService
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_USERAGENT      => 'ABDO-TECK-POS-Updater/1.0',
-            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT        => 6,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
@@ -269,13 +292,17 @@ class UpdateService
                 return $this->remoteFailure('invalid_version_json', 'Update server returned invalid version data.', $httpCode);
             }
 
-            return [
+            $cachePayload = [
                 'ok' => true,
                 'data' => $data,
                 'checkedUrl' => $this->repoUrl,
                 'errorCode' => null,
                 'details' => null,
             ];
+            if (is_dir(dirname($cacheFile))) {
+                @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            }
+            return $cachePayload;
         }
 
         $errorCode = $this->classifyRemoteFailure($httpCode, $curlErr, $curlErrNo);
@@ -394,7 +421,7 @@ class UpdateService
     /**
      * مقارنة النسخة المحلية والبعيدة من GitHub Releases والتحقق من التوقيع الرقمي RSA.
      */
-    public function checkForUpdate(bool $deltaCapable = false): array
+    public function checkForUpdate(bool $deltaCapable = false, bool $force = true): array
     {
         $local   = $this->getLocalVersion();
         $enabled = EnvLoader::getBool('ENABLE_UPDATE_CHECKS', true);
@@ -420,7 +447,7 @@ class UpdateService
             ];
         }
 
-        $remoteResult = $this->fetchRemoteVersionDiagnostics();
+        $remoteResult = $this->fetchRemoteVersionDiagnostics(null, $force);
         $remote = $remoteResult['ok'] ? $remoteResult['data'] : null;
         $checkedUrl = $remoteResult['checkedUrl'] ?? $this->repoUrl;
 

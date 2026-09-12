@@ -230,6 +230,27 @@ function saveDatabaseCredentials(credentialsPath, credentials) {
   fs.renameSync(tempPath, credentialsPath);
 }
 
+function buildUserProvisioningStatements(appPassword, migrationPassword) {
+  const appUserLit = sqlLiteral('pos_app');
+  const migrationUserLit = sqlLiteral('pos_migration');
+  const hostLit = sqlLiteral('127.0.0.1');
+  const appPassLit = sqlLiteral(appPassword);
+  const migPassLit = sqlLiteral(migrationPassword);
+
+  return [
+    `CREATE USER IF NOT EXISTS ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
+    `ALTER USER ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
+    `REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${appUserLit}@${hostLit}; ` +
+    `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON pos_db.* TO ${appUserLit}@${hostLit};`,
+
+    `CREATE USER IF NOT EXISTS ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
+    `ALTER USER ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
+    `GRANT ALL PRIVILEGES ON pos_db.* TO ${migrationUserLit}@${hostLit};`,
+
+    'FLUSH PRIVILEGES;',
+  ];
+}
+
 function initDatabase(port, runtimePaths = getMysqlPaths()) {
   const { mysqlPath, binaryDir } = runtimePaths;
   const { getDatabaseDir, getDatabaseCredentialsPath } = require('../utils/paths');
@@ -244,6 +265,7 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
 
   try {
     runMysqlExecutable(mysqlPath, [
+      '-h', '127.0.0.1',
       '-u', 'root',
       `--port=${port}`,
       '--default-character-set=utf8mb4',
@@ -252,6 +274,7 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
     ], { cwd: binaryDir });
 
     const result = runMysqlExecutable(mysqlPath, [
+      '-h', '127.0.0.1',
       '-u', 'root',
       `--port=${port}`,
       'pos_db',
@@ -262,6 +285,7 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
 
     if (freshInstall) {
       runMysqlExecutable(mysqlPath, [
+        '-h', '127.0.0.1',
         '-u', 'root',
         `--port=${port}`,
         '--default-character-set=utf8mb4',
@@ -273,18 +297,6 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
 
     const credentialsPath = getDatabaseCredentialsPath();
     const stored = loadStoredDatabaseCredentials(credentialsPath);
-
-    const existingUsersOutput = runMysqlExecutable(mysqlPath, [
-      '-u', 'root',
-      `--port=${port}`,
-      '-N', '-B',
-      '-e',
-      "SELECT User FROM mysql.user WHERE Host = '127.0.0.1' AND User IN ('pos_app', 'pos_migration');",
-    ], { cwd: binaryDir });
-    const existingUsers = new Set(String(existingUsersOutput).trim().split(/\s+/).filter(Boolean));
-
-    const hasAppUser = existingUsers.has('pos_app');
-    const hasMigrationUser = existingUsers.has('pos_migration');
 
     let appPassword = stored?.password || null;
     let migrationPassword = stored?.migrationPassword || null;
@@ -299,55 +311,14 @@ function initDatabase(port, runtimePaths = getMysqlPaths()) {
       credentialsChanged = true;
     }
 
-    const appUserLit = sqlLiteral('pos_app');
-    const migrationUserLit = sqlLiteral('pos_migration');
-    const hostLit = sqlLiteral('127.0.0.1');
-
-    const sqlStatements = [];
-
-    // Provision pos_app if missing from DB, or if password was freshly generated, or on fresh install
-    if (!hasAppUser || credentialsChanged || freshInstall) {
-      const appPassLit = sqlLiteral(appPassword);
-      if (!hasAppUser || credentialsChanged) {
-        sqlStatements.push(
-          `CREATE USER IF NOT EXISTS ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
-          `ALTER USER ${appUserLit}@${hostLit} IDENTIFIED BY ${appPassLit}; ` +
-          `REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${appUserLit}@${hostLit}; ` +
-          `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON pos_db.* TO ${appUserLit}@${hostLit};`
-        );
-      } else {
-        sqlStatements.push(
-          `REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${appUserLit}@${hostLit}; ` +
-          `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE ON pos_db.* TO ${appUserLit}@${hostLit};`
-        );
-      }
-    }
-
-    // Provision pos_migration if missing from DB, or if password was freshly generated, or on fresh install
-    if (!hasMigrationUser || credentialsChanged || freshInstall) {
-      const migPassLit = sqlLiteral(migrationPassword);
-      if (!hasMigrationUser || credentialsChanged) {
-        sqlStatements.push(
-          `CREATE USER IF NOT EXISTS ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
-          `ALTER USER ${migrationUserLit}@${hostLit} IDENTIFIED BY ${migPassLit}; ` +
-          `GRANT ALL PRIVILEGES ON pos_db.* TO ${migrationUserLit}@${hostLit};`
-        );
-      } else {
-        sqlStatements.push(
-          `GRANT ALL PRIVILEGES ON pos_db.* TO ${migrationUserLit}@${hostLit};`
-        );
-      }
-    }
-
-    if (sqlStatements.length > 0) {
-      sqlStatements.push('FLUSH PRIVILEGES;');
-      runMysqlExecutable(mysqlPath, [
-        '-u', 'root',
-        `--port=${port}`,
-        '-e',
-        sqlStatements.join(' '),
-      ], { cwd: binaryDir });
-    }
+    const sqlStatements = buildUserProvisioningStatements(appPassword, migrationPassword);
+    runMysqlExecutable(mysqlPath, [
+      '-h', '127.0.0.1',
+      '-u', 'root',
+      `--port=${port}`,
+      '-e',
+      sqlStatements.join(' '),
+    ], { cwd: binaryDir });
 
     if (credentialsChanged || !stored) {
       saveDatabaseCredentials(credentialsPath, {
@@ -394,6 +365,7 @@ async function startMySQL(preferredPort = 3307, options = {}) {
       '--console',
       '--skip-networking=0',
       '--bind-address=127.0.0.1',
+      '--skip-name-resolve',
     ];
     let child;
 
@@ -483,12 +455,14 @@ async function resetDatabase(port) {
   }
 
   runMysqlExecutable(mysqlPath, [
+    '-h', '127.0.0.1',
     '-u', 'root',
     `--port=${port}`,
     '-e',
     'DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
   ], { cwd: binaryDir });
   runMysqlExecutable(mysqlPath, [
+    '-h', '127.0.0.1',
     '-u', 'root',
     `--port=${port}`,
     '--default-character-set=utf8mb4',
@@ -501,6 +475,7 @@ async function resetDatabase(port) {
 function repairCorruptedTables(mysqlPath, binaryDir, port) {
   try {
     runMysqlExecutable(mysqlPath, [
+      '-h', '127.0.0.1',
       '-u', 'root',
       `--port=${port}`,
       'pos_db',
@@ -514,12 +489,14 @@ function repairCorruptedTables(mysqlPath, binaryDir, port) {
       const schemaFile = path.join(getDatabaseDir(), 'pos_schema.sql');
       try {
         runMysqlExecutable(mysqlPath, [
+          '-h', '127.0.0.1',
           '-u', 'root',
           `--port=${port}`,
           '-e',
           'DROP DATABASE IF EXISTS pos_db; CREATE DATABASE pos_db;',
         ], { cwd: binaryDir });
         runMysqlExecutable(mysqlPath, [
+          '-h', '127.0.0.1',
           '-u', 'root',
           `--port=${port}`,
           'pos_db',
@@ -566,7 +543,7 @@ function stopMySQL() {
     };
 
     processToStop.once('exit', finish);
-    execFile(runtimePaths.mysqlAdminPath, ['-u', 'root', `--port=${portToStop}`, 'shutdown'], {
+    execFile(runtimePaths.mysqlAdminPath, ['-h', '127.0.0.1', '-u', 'root', `--port=${portToStop}`, 'shutdown'], {
       cwd: runtimePaths.binaryDir,
       windowsHide: true,
       timeout: 5000,
@@ -598,4 +575,5 @@ module.exports = {
   waitForMysqlReady,
   loadStoredDatabaseCredentials,
   saveDatabaseCredentials,
+  buildUserProvisioningStatements,
 };
