@@ -462,6 +462,9 @@ export default function UpdateSection() {
             <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>
               v{currentVersion || '0.0.0'}
             </div>
+            <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>
+              Delta v1.1.48
+            </div>
           </div>
 
           <div>

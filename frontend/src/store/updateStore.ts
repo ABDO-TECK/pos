@@ -54,8 +54,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       const res = await checkUpdate(await hasDeltaHandoffCapability(), { hideGlobalError: true })
       const data = res.data.data
       
-      let localVersion = data?.current_version || null;
-      localVersion = await getInstalledElectronVersion() || localVersion
+      const localVersion = data?.current_version || (await getInstalledElectronVersion()) || null;
 
       set({
         hasUpdate: data?.has_update || false,
@@ -87,8 +86,7 @@ const useUpdateStore = create<UpdateState>((set, get) => ({
       const res = await checkUpdate(await hasDeltaHandoffCapability(), { hideGlobalError: true })
       const data = res.data.data
       
-      let localVersion = data?.current_version || null;
-      localVersion = await getInstalledElectronVersion() || localVersion
+      const localVersion = data?.current_version || (await getInstalledElectronVersion()) || null;
 
       const stateUpdate = {
         hasUpdate: data?.has_update || false,
