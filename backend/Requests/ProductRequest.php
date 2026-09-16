@@ -88,6 +88,18 @@ class ProductRequest extends FormRequest {
             throw new ValidationException($errors);
         }
 
+        if (array_key_exists('cost', $data)) {
+            $data['cost'] = ($data['cost'] === '' || $data['cost'] === null) ? 0.0 : (float) $data['cost'];
+        }
+        if (array_key_exists('quantity', $data)) {
+            $data['quantity'] = ($data['quantity'] === '' || $data['quantity'] === null) ? 0.0 : (float) $data['quantity'];
+        }
+        if (array_key_exists('low_stock_threshold', $data)) {
+            $data['low_stock_threshold'] = ($data['low_stock_threshold'] === '' || $data['low_stock_threshold'] === null)
+                ? (defined('LOW_STOCK_THRESHOLD') ? LOW_STOCK_THRESHOLD : 5)
+                : (int) $data['low_stock_threshold'];
+        }
+
         return $data;
     }
 }

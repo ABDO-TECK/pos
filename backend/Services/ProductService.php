@@ -160,6 +160,11 @@ class ProductService implements ProductServiceInterface
                 return ['ok' => false, 'error' => 'خطأ في صلاحيات مشغلات قاعدة البيانات (Trigger Definer). يرجى تحديث النظام لإعادة بناء المشغلات.', 'code' => 500];
             }
 
+            // Invalid numeric / decimal format (MySQL 1366 / 1265 / SQLSTATE 22007)
+            if ($driverCode === 1366 || $driverCode === 1265 || $sqlState === '22007') {
+                return ['ok' => false, 'error' => 'قيمة عددية غير صالحة تم إدخالها في حقول المنتج (الكمية أو التكلفة أو السعر).', 'code' => 422];
+            }
+
             // Domain exception from barcode assertions
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];
@@ -329,6 +334,9 @@ class ProductService implements ProductServiceInterface
             }
             if ($driverCode === 1449 || $driverCode === 1142 || str_contains($msg, 'definer')) {
                 return ['ok' => false, 'error' => 'خطأ في صلاحيات مشغلات قاعدة البيانات (Trigger Definer). يرجى تحديث النظام لإعادة بناء المشغلات.', 'code' => 500];
+            }
+            if ($driverCode === 1366 || $driverCode === 1265 || $sqlState === '22007') {
+                return ['ok' => false, 'error' => 'قيمة عددية غير صالحة تم إدخالها في حقول المنتج (الكمية أو التكلفة أو السعر).', 'code' => 422];
             }
             if ($e instanceof Exception && str_starts_with($e->getMessage(), 'الباركود')) {
                 return ['ok' => false, 'error' => $e->getMessage(), 'code' => 422];

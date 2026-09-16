@@ -122,6 +122,16 @@ export default function Products() {
     const payload = {
       ...rest,
       category_id: rest.category_id === '' || rest.category_id == null ? null : rest.category_id,
+      quantity: rest.quantity === '' || rest.quantity == null ? 0 : Number(rest.quantity),
+      cost: rest.cost === '' || rest.cost == null ? 0 : Number(rest.cost),
+      low_stock_threshold: rest.low_stock_threshold === '' || rest.low_stock_threshold == null ? 5 : Number(rest.low_stock_threshold),
+      sizes: (rest.sizes || []).map((s: any) => ({
+        ...s,
+        price: s.price === '' || s.price == null ? 0 : Number(s.price),
+        cost: s.cost === '' || s.cost == null ? 0 : Number(s.cost),
+        quantity: s.quantity === '' || s.quantity == null ? 0 : Number(s.quantity),
+        low_stock_threshold: s.low_stock_threshold === '' || s.low_stock_threshold == null ? 5 : Number(s.low_stock_threshold),
+      })),
       barcode: main,
       additional_barcodes,
     }
