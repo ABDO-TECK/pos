@@ -17,21 +17,7 @@ import ProductsTab from './products/ProductsTab'
 import CategoriesTab from './products/CategoriesTab'
 import ProductForm from './products/ProductForm'
 import { extractApiError } from '../utils/apiError'
-
-const emptyProduct = {
-  name: '',
-  barcodes: [''],
-  price: '',
-  cost: '',
-  quantity: '',
-  low_stock_threshold: 5,
-  units_per_box: 1,
-  category_id: null,
-  sell_by_weight: 0,
-  barcode: '',
-  unit_type: 'piece',
-  sizes: [],
-}
+import { emptyProduct, normalizeProductPayload } from './products/productNormalization'
 
 function TabBtn({ active, onClick, children }: any) {
   return (
@@ -115,26 +101,7 @@ export default function Products() {
   }
 
   const handleSaveProduct = async () => {
-    const raw = Array.isArray(productForm.barcodes) ? productForm.barcodes : [productForm.barcode || '']
-    const main = String(raw[0] ?? '').trim()
-    const additional_barcodes = raw.slice(1).map((b) => String(b).trim()).filter(Boolean)
-    const { barcodes: _b, barcode: _old, ...rest } = productForm
-    const payload = {
-      ...rest,
-      category_id: rest.category_id === '' || rest.category_id == null ? null : rest.category_id,
-      quantity: rest.quantity === '' || rest.quantity == null ? 0 : Number(rest.quantity),
-      cost: rest.cost === '' || rest.cost == null ? 0 : Number(rest.cost),
-      low_stock_threshold: rest.low_stock_threshold === '' || rest.low_stock_threshold == null ? 5 : Number(rest.low_stock_threshold),
-      sizes: (rest.sizes || []).map((s: any) => ({
-        ...s,
-        price: s.price === '' || s.price == null ? 0 : Number(s.price),
-        cost: s.cost === '' || s.cost == null ? 0 : Number(s.cost),
-        quantity: s.quantity === '' || s.quantity == null ? 0 : Number(s.quantity),
-        low_stock_threshold: s.low_stock_threshold === '' || s.low_stock_threshold == null ? 5 : Number(s.low_stock_threshold),
-      })),
-      barcode: main,
-      additional_barcodes,
-    }
+    const payload = normalizeProductPayload(productForm)
 
     setSavingProduct(true)
     try {
