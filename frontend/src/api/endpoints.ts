@@ -26,7 +26,8 @@ export async function getProductCatalogPage(
   const limit = Math.max(1, Math.min(500, Math.trunc(pageSize)))
   const response = await api.get<ApiResponse<Product[]>>('/products/sync', {
     params: { checkpoint, limit },
-  })
+    hideGlobalError: true,
+  } as AxiosRequestConfig & { hideGlobalError?: boolean })
   const pagination = response.data.pagination
   if (
     !response.data.catalog_scope

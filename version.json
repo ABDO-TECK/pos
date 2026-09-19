@@ -1,13 +1,12 @@
 {
-    "version": "1.1.48",
-    "application_version": "1.1.48",
+    "version": "1.1.49",
+    "application_version": "1.1.49",
     "update_engine_version": "1.0.0",
     "channel": "stable",
-    "minimum_supported_version": "1.1.47",
-    "released_at": "2026-09-14",
+    "minimum_supported_version": "1.1.48",
+    "released_at": "2026-09-20",
     "changelog": [
-        "إصلاح خطأ إنشاء المنتجات ذات الكمية أو التكلفة الفارغة في بيئة ويندوز الصارمة (MySQL 1366 Strict Mode)",
-        "معالجة وتحسين إدخال البيانات الرقمية في واجهة وخادم المنتجات"
+        "إصلاح عرض رسالة نقطة التحقق (catalog checkpoint) عند بدء التشغيل والتعافي التلقائي في الخلفية"
     ],
     "requires_npm_install": false,
     "update_channel": "stable"

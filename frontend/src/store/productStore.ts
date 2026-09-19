@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import axios from 'axios'
+import toast from 'react-hot-toast'
+import { extractApiError } from '../utils/apiError'
 import { getProducts, getProductCatalogPage, getCategories, getProductByBarcode } from '../api/endpoints'
 import {
   applyProductCatalogPage,
@@ -8,6 +10,23 @@ import {
   getProductByBarcodeFromIDB,
 } from '../utils/idb'
 import useAuthStore from './authStore'
+
+function isRecoverableCheckpointError(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 422) {
+    return false
+  }
+  const data = error.response.data as Record<string, unknown> | undefined
+  if (data?.errors && typeof data.errors === 'object') {
+    const errorKeys = Object.keys(data.errors)
+    if (errorKeys.length > 0 && !errorKeys.includes('checkpoint')) {
+      return false
+    }
+  }
+  const message = typeof data?.message === 'string' ? data.message : ''
+  const errText = typeof data?.error === 'string' ? data.error : ''
+  const combined = `${message} ${errText}`.toLowerCase()
+  return combined.includes('checkpoint')
+}
 
 /** مدة صلاحية الكاش: 5 ثواني (بدلاً من 5 دقائق لتحديث المخزون بسرعة) */
 const CACHE_TTL_MS = 30 * 1000
@@ -77,8 +96,7 @@ const useProductStore = create<ProductState>((set, get) => ({
             if (
               checkpoint
               && !retriedWithoutCheckpoint
-              && axios.isAxiosError(error)
-              && error.response?.status === 422
+              && isRecoverableCheckpointError(error)
             ) {
               checkpoint = undefined
               retriedWithoutCheckpoint = true
@@ -123,6 +141,7 @@ const useProductStore = create<ProductState>((set, get) => ({
 
       return products
     } catch (err: unknown) {
+      toast.error(extractApiError(err, 'فشل تحديث قائمة المنتجات'))
       // Fallback إلى IndexedDB عند فقد الشبكة
       try {
         const branchId = useAuthStore.getState().user?.branch_id
@@ -134,7 +153,7 @@ const useProductStore = create<ProductState>((set, get) => ({
           console.info('[ProductStore] Loaded from offline cache:', cached.length, 'products')
           return cached
         }
-      } catch (err) { // IDB أيضاً فشلت
+      } catch { // IDB أيضاً فشلت
       }
       set({ loading: false })
       throw err
@@ -170,7 +189,8 @@ const useProductStore = create<ProductState>((set, get) => ({
     try {
       const res = await getProductByBarcode(t)
       return checkBox((res.data.data as Product) ?? null)
-    } catch (err) { return null
+    } catch {
+      return null
     }
   },
 
