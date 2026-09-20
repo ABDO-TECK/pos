@@ -41,6 +41,12 @@ class CookieHelperTest extends TestCase
         $this->assertEquals('/api/v1/refresh', $options['path']);
     }
 
+    public function testDesktopCookiesUseTheDeliberateLaxSameSitePolicy()
+    {
+        $options = CookieHelper::options(time() + 3600);
+        $this->assertSame('Lax', $options['samesite']);
+    }
+
     public function testOptionsExpiresMatchesInput()
     {
         $expires = time() + 7200;

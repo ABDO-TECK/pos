@@ -31,13 +31,20 @@ class CsrfMiddleware {
             }
         }
 
-        // Skip CSRF check for desktop runtime (Electron)
-        // Only trust the Origin header (app:// or file://) — NOT User-Agent,
-        // because User-Agent is trivially spoofable by any HTTP client.
+        // Packaged desktop mutations must come from the exact app origin and
+        // still carry the signed double-submit token. Development desktop
+        // tooling may use its explicitly configured browser origin.
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        // Only trust the exact Electron app origin — not any app:// or file:// origin
-        if ($origin === 'app://pos-app') {
-            return $next();
+        $appEnv = \App\Helpers\EnvLoader::get(
+            'APP_ENV',
+            defined('APP_ENV') ? (string) constant('APP_ENV') : 'development'
+        );
+        $deploymentMode = \App\Helpers\EnvLoader::get(
+            'DEPLOYMENT_MODE',
+            defined('DEPLOYMENT_MODE') ? (string) constant('DEPLOYMENT_MODE') : ''
+        );
+        if ($appEnv === 'production' && $deploymentMode === 'desktop' && $origin !== 'app://pos-app') {
+            return Response::forbidden('Origin not allowed');
         }
         
         $cookieNonce = $_COOKIE['XSRF-TOKEN'] ?? '';

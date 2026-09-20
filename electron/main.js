@@ -30,6 +30,11 @@ const { configureFirewall, removeFirewall } = require('./services/firewall');
 const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('./utils/php-runtime');
 const { serializeRuntimeError } = require('./utils/runtime-error');
 const { formatSpawnError, spawnRuntimeProcess } = require('./utils/runtime-process');
+const {
+  getCookieHeader,
+  isTrustedBackendRequest,
+  COOKIE_PATHS,
+} = require('./utils/cookie-proxy-policy');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -44,7 +49,7 @@ let splash = null;
 let jobWorkerProcess = null;
 let firstRunAdminCredentials = null;
 let sessionCookies = {};
-const PERSISTED_COOKIE_NAMES = new Set(['pos_token', 'pos_refresh_token', 'XSRF-TOKEN']);
+const PERSISTED_COOKIE_NAMES = new Set(Object.keys(COOKIE_PATHS));
 
 function assertTrustedAppRenderer(event) {
   const senderUrl = event.senderFrame?.url || '';
@@ -899,8 +904,7 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      const isTrustedInitiator = !initiator || initiator.startsWith('app://');
-      if (isTrustedInitiator) {
+      if (isTrustedBackendRequest({ url: details.url, phpPort, initiator })) {
         // 1. Cookie capture scope (Only capture Set-Cookie from the local PHP backend runtime URL)
         let parsedUrl;
         try {
@@ -910,50 +914,40 @@ app.whenReady().then(async () => {
         }
 
         if (parsedUrl) {
-          const host = parsedUrl.hostname;
-          const isLocalHost = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-          const isHttp = parsedUrl.protocol === 'http:';
-          const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 80;
-          
-          // 6. API port binding: check against dynamic phpPort
-          const isLocalPhpBackend = isHttp && isLocalHost && port === phpPort;
-
-          if (isLocalPhpBackend) {
-            const setCookieKey = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'set-cookie');
-            if (setCookieKey) {
-              const setCookieHeaders = responseHeaders[setCookieKey];
-              const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
-              let hasChanged = false;
-              cookies.forEach(c => {
-                const parts = c.split(';')[0].split('=');
-                if (parts.length === 2) {
-                  const name = parts[0].trim();
-                  const value = parts[1].trim();
-                  if (!PERSISTED_COOKIE_NAMES.has(name)) return;
-                  const isDelete = value === '' || 
-                                   /expires=Thu, 01 Jan 1970/i.test(c) || 
-                                   /Max-Age=0/i.test(c) || 
-                                   /Max-Age=-/i.test(c);
-                  if (isDelete) {
-                    if (sessionCookies[name] !== undefined) {
-                      delete sessionCookies[name];
-                      hasChanged = true;
-                    }
-                  } else {
-                    if (sessionCookies[name] !== value) {
-                      sessionCookies[name] = value;
-                      hasChanged = true;
-                    }
+          const setCookieKey = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'set-cookie');
+          if (setCookieKey) {
+            const setCookieHeaders = responseHeaders[setCookieKey];
+            const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+            let hasChanged = false;
+            cookies.forEach(c => {
+              const parts = c.split(';')[0].split('=');
+              if (parts.length === 2) {
+                const name = parts[0].trim();
+                const value = parts[1].trim();
+                if (!PERSISTED_COOKIE_NAMES.has(name)) return;
+                const isDelete = value === '' ||
+                                 /expires=Thu, 01 Jan 1970/i.test(c) ||
+                                 /Max-Age=0/i.test(c) ||
+                                 /Max-Age=-/i.test(c);
+                if (isDelete) {
+                  if (sessionCookies[name] !== undefined) {
+                    delete sessionCookies[name];
+                    hasChanged = true;
+                  }
+                } else {
+                  if (sessionCookies[name] !== value) {
+                    sessionCookies[name] = value;
+                    hasChanged = true;
                   }
                 }
-              });
-              if (hasChanged) {
-                try {
-                  saveSessionCookies(getCookiesPath(), sessionCookies);
-                  console.log('[CookieProxy] Saved updated cookies to disk');
-                } catch (writeErr) {
-                  console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
-                }
+              }
+            });
+            if (hasChanged) {
+              try {
+                saveSessionCookies(getCookiesPath(), sessionCookies);
+                console.log('[CookieProxy] Saved updated cookies to disk');
+              } catch (writeErr) {
+                console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
               }
             }
           }
@@ -972,8 +966,7 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      const isTrustedInitiator = !initiator || initiator.startsWith('app://');
-      if (isTrustedInitiator) {
+      if (isTrustedBackendRequest({ url: details.url, phpPort, initiator })) {
         // 2. Cookie injection scope (Only inject into outgoing requests targeting same local PHP backend URL)
         let parsedUrl;
         try {
@@ -983,29 +976,16 @@ app.whenReady().then(async () => {
         }
 
         if (parsedUrl) {
-          const host = parsedUrl.hostname;
-          const isLocalHost = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-          const isHttp = parsedUrl.protocol === 'http:';
-          const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 80;
-          
-          // 6. API port binding: check against dynamic phpPort
-          const isLocalPhpBackend = isHttp && isLocalHost && port === phpPort;
-
-          if (isLocalPhpBackend) {
-            const cookieList = [];
-            for (const [name, value] of Object.entries(sessionCookies)) {
-              cookieList.push(`${name}=${value}`);
-            }
+            const cookieHeader = getCookieHeader(sessionCookies, parsedUrl.pathname);
             // Clear any existing cookie headers case-insensitively to avoid duplicates
             for (const key of Object.keys(requestHeaders)) {
               if (key.toLowerCase() === 'cookie') {
                 delete requestHeaders[key];
               }
             }
-            if (cookieList.length > 0) {
-              requestHeaders['Cookie'] = cookieList.join('; ');
+            if (cookieHeader !== '') {
+              requestHeaders['Cookie'] = cookieHeader;
             }
-          }
         }
       }
     } catch (err) {
