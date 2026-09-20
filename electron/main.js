@@ -114,11 +114,8 @@ function startJobWorker() {
   const workerArgs = isPackaged()
     ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
     : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
-  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
   const workerEnv = {
     ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
-    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
     APP_TIMEZONE: resolveSystemTimeZone(),
     APP_STORAGE_DIR: getDataDir(),
     ENV_PATH: getEnvPath(),
@@ -734,12 +731,9 @@ function startLogCleanup() {
   } = require('./utils/paths');
   const phpPath = getPhpPath();
   const backendDir = getBackendDir();
-  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
   const { createBackendEnv } = require('./services/php-server');
   const maintenanceEnv = {
     ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
-    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
     APP_TIMEZONE: resolveSystemTimeZone(),
     APP_STORAGE_DIR: getDataDir(),
     ENV_PATH: getEnvPath(),
