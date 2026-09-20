@@ -87,28 +87,48 @@ class GitHubReleaseProvider
      *   error_code: ?string
      * }
      */
-    public function getLatestRelease(string $channel = 'stable'): array
+    public function getLatestRelease(string $channel = 'stable', ?string $currentVersion = null): array
     {
         $channel = strtolower(trim($channel ?: 'stable'));
         if (!in_array($channel, ['stable', 'beta', 'rc'], true)) {
             $channel = 'stable';
         }
 
-        // If stable channel, attempt GitHub /releases/latest endpoint first (official latest non-prerelease)
+        // Use the same semantic policy as every other discovery/apply path.
+        $isIncompatibleRelease = static function (string $tag) use ($currentVersion): bool {
+            $cleanTag = ltrim(trim($tag), 'vV');
+            if (!ReleaseVersionPolicy::isValid($cleanTag)) {
+                return true;
+            }
+
+            if ($currentVersion === null) {
+                return false;
+            }
+
+            return !ReleaseVersionPolicy::assess($currentVersion, $cleanTag)['compatible'];
+        };
+
+        // If stable channel and /releases/latest is available, verify it is compatible first
         if ($channel === 'stable') {
             $apiUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases/latest";
             $res = $this->fetchSingleReleaseUrl($apiUrl);
-            if ($res['ok']) {
-                $tagLower = strtolower($res['tag_name'] ?? '');
+            if ($res['ok'] && !empty($res['tag_name'])) {
+                $tagLower = strtolower($res['tag_name']);
                 if (!str_contains($tagLower, 'beta') && !str_contains($tagLower, 'rc')) {
-                    $res['channel'] = 'stable';
-                    return $res;
+                    if (!$isIncompatibleRelease($res['tag_name'])) {
+                        $res['channel'] = 'stable';
+                        return $res;
+                    }
+                    Logger::info('GitHubReleaseProvider: /releases/latest points to legacy series, falling back to release enumeration', [
+                        'tag' => $res['tag_name'],
+                        'current_version' => $currentVersion,
+                    ]);
                 }
             }
         }
 
-        // Fetch recent releases list to find the latest matching channel
-        $listUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases?per_page=10";
+        // Fetch recent releases list to find the newest compatible release in the active generation
+        $listUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases?per_page=30";
         if (!$this->isAllowedUrl($listUrl)) {
             $err = "Configured GitHub repository URL '{$listUrl}' is not in the allowed update hosts.";
             Logger::error($err);
@@ -145,13 +165,18 @@ class GitHubReleaseProvider
             return $this->failureResult('no_releases_found', 'No releases found in the configured GitHub repository.');
         }
 
-        // Find highest compatible release matching requested channel
+        // Find all compatible releases matching channel and active generation
+        $compatibleReleases = [];
         foreach ($releases as $rel) {
             if (!is_array($rel) || empty($rel['tag_name'])) {
                 continue;
             }
 
             $tag = (string) $rel['tag_name'];
+            if ($isIncompatibleRelease($tag)) {
+                continue;
+            }
+
             $tagLower = strtolower($tag);
             $isPrerelease = !empty($rel['prerelease']);
             $isBeta = $isPrerelease || str_contains($tagLower, 'beta');
@@ -177,10 +202,21 @@ class GitHubReleaseProvider
 
             $mapped = $this->mapReleaseData($rel);
             $mapped['channel'] = $relChannel;
-            return $mapped;
+            $compatibleReleases[] = $mapped;
         }
 
-        return $this->failureResult('no_matching_release', "No release found matching channel '{$channel}'.");
+        if (empty($compatibleReleases)) {
+            return $this->failureResult('no_matching_release', "No release found matching channel '{$channel}' and active series.");
+        }
+
+        // Sort compatible releases by SemVer descending to pick the newest release
+        usort($compatibleReleases, static function (array $a, array $b): int {
+            $verA = $a['latest_version'] ?? '0.0.0';
+            $verB = $b['latest_version'] ?? '0.0.0';
+            return version_compare($verB, $verA);
+        });
+
+        return $compatibleReleases[0];
     }
 
     /**

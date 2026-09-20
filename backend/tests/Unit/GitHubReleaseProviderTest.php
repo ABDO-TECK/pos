@@ -102,6 +102,40 @@ class GitHubReleaseProviderTest extends TestCase
         $this->assertSame('github_network_timeout', $res['error_code']);
     }
 
+    public function testV001SelectsCompatibleV002InsteadOfLegacyReleases(): void
+    {
+        $provider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+
+        $provider->method('executeCurlGet')->willReturnOnConsecutiveCalls(
+            [
+                'ok' => true,
+                'body' => json_encode(['tag_name' => 'v1.2.0', 'prerelease' => false]),
+                'http_code' => 200,
+                'curl_error' => '',
+                'curl_errno' => 0,
+            ],
+            [
+                'ok' => true,
+                'body' => json_encode([
+                    ['tag_name' => 'v1.2.0', 'prerelease' => false],
+                    ['tag_name' => 'v1.1.48', 'prerelease' => false],
+                    ['tag_name' => 'v0.0.2', 'prerelease' => false],
+                ]),
+                'http_code' => 200,
+                'curl_error' => '',
+                'curl_errno' => 0,
+            ],
+        );
+
+        $result = $provider->getLatestRelease('stable', '0.0.1');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('0.0.2', $result['latest_version']);
+    }
+
     public function testAllowedUrlValidation(): void
     {
         $provider = new GitHubReleaseProvider('ABDO-TECK', 'pos');

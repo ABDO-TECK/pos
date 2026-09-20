@@ -81,6 +81,73 @@ class UpdateControllerTest extends TestCase
         $this->assertSame('completed', $body['data']['update_state']['state']);
     }
 
+    public function testStatusRejectsLegacyReleaseForV001Client(): void
+    {
+        $updateService = $this->createMock(UpdateService::class);
+        $updateService->method('getDeltaUpdateService')->willReturn($this->deltaServiceMock);
+        $updateService->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $updateService->method('fetchRemoteVersion')->willReturn([
+            'version' => '1.2.0',
+            'tag_name' => 'v1.2.0',
+            'changelog' => ['Legacy release'],
+        ]);
+
+        $controller = new UpdateController($this->authMock, $updateService);
+        $response = $controller->status();
+
+        $this->assertSame(200, $response['status_code']);
+        $this->assertFalse($response['body']['data']['update_available']);
+        $this->assertSame('legacy_generation', $response['body']['data']['compatibility_reason_code']);
+    }
+
+    public function testBootstrapRejectsLegacyReleaseForV001Client(): void
+    {
+        $updateService = $this->createMock(UpdateService::class);
+        $updateService->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $updateService->method('fetchRemoteVersion')->willReturn(['version' => '1.2.0']);
+
+        $controller = new UpdateController($this->authMock, $updateService);
+        $response = $controller->bootstrapUpdate();
+
+        $this->assertSame(409, $response['status_code']);
+        $this->assertSame('error', $response['body']['status']);
+        $this->assertSame('legacy_generation', $response['body']['errors']['reason_code']);
+    }
+
+    public function testChangelogHidesLegacyReleaseForV001Client(): void
+    {
+        $updateService = $this->createMock(UpdateService::class);
+        $updateService->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $updateService->method('fetchRemoteVersion')->willReturn([
+            'version' => '1.2.0',
+            'changelog' => ['Legacy release'],
+        ]);
+
+        $controller = new UpdateController($this->authMock, $updateService);
+        $response = $controller->changelog();
+
+        $this->assertSame(200, $response['status_code']);
+        $this->assertSame([], $response['body']['data']);
+    }
+
+    public function testCustomerStatusDoesNotAdvertiseLegacyReleaseForV001Client(): void
+    {
+        $updateService = $this->createMock(UpdateService::class);
+        $updateService->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $updateService->method('fetchRemoteVersion')->willReturn([
+            'version' => '1.2.0',
+            'changelog' => ['Legacy release'],
+        ]);
+
+        $controller = new UpdateController($this->authMock, $updateService);
+        $response = $controller->customerStatus();
+
+        $this->assertSame(200, $response['status_code']);
+        $this->assertFalse($response['body']['data']['update_available']);
+        $this->assertNull($response['body']['data']['available_version']);
+        $this->assertSame('legacy_generation', $response['body']['data']['compatibility_reason_code']);
+    }
+
     public function testCheckInitiatesUpdateCheck(): void
     {
         $this->updateServiceMock->method('checkForUpdate')->willReturn([

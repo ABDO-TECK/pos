@@ -18,6 +18,7 @@ protocol.registerSchemesAsPrivileged([
 const { startPHP, stopPHP, runDatabaseMigrations } = require('./services/php-server');
 const { startMySQL, stopMySQL, resetDatabase } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
+const { assessReleaseCompatibility } = require('./utils/release-version-policy');
 const {
   enableLanAccess,
   startHttpsProxy,
@@ -1117,6 +1118,10 @@ app.whenReady().then(async () => {
     assertTrustedAppRenderer(event);
     if (typeof version !== 'string' || !/^[A-Za-z0-9._-]+$/.test(version)) {
       throw new Error('Invalid staged delta version');
+    }
+    const compatibility = assessReleaseCompatibility(app.getVersion(), version);
+    if (!compatibility.compatible) {
+      throw new Error(`Staged delta rejected: ${compatibility.reason}`);
     }
 
     const { getAppUnpackedPath, getDataDir } = require('./utils/paths');

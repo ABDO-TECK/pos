@@ -222,7 +222,8 @@ class UpdateService
 
         // If repoUrl points specifically to GitHub releases endpoint, use GitHubReleaseProvider
         if (str_contains($this->repoUrl, '/releases')) {
-            $ghRelease = $this->githubProvider->getLatestRelease($targetChannel);
+            $local = $this->getLocalVersion();
+            $ghRelease = $this->githubProvider->getLatestRelease($targetChannel, $local['version'] ?? null);
             if ($ghRelease['ok'] && !empty($ghRelease['latest_version'])) {
                 $cachePayload = [
                     'ok' => true,
@@ -474,7 +475,8 @@ class UpdateService
 
         $currentVersion = $local['version'] ?? '0.0.0';
         $latestVersion = $remote['version'] ?? null;
-        if (!is_string($latestVersion) || $latestVersion === '') {
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, is_string($latestVersion) ? $latestVersion : null);
+        if (!$compatibility['compatible'] && $compatibility['reason_code'] === 'invalid_version') {
             return [
                 'success'             => false,
                 'status'              => 'invalid_version_json',
@@ -500,7 +502,12 @@ class UpdateService
         $clientEngineVersion = $local['update_engine_version'] ?? null;
         $clientChannel = $this->getClientChannel();
         $deviceId = $this->getDeviceId();
-        $hasUpdate = version_compare($latestVersion, $currentVersion, '>');
+
+        // Release generation guard: v0 clients must never update to a newer generation.
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $latestVersion);
+        $hasUpdate = $compatibility['compatible'] && version_compare($latestVersion, $currentVersion, '>');
+        $deltaReason = $compatibility['reason'];
+        $deltaReasonCode = $compatibility['reason_code'];
 
         // Emit update_check_started telemetry
         $this->getTelemetryService()->recordEvent([
@@ -519,7 +526,6 @@ class UpdateService
         $isDelta = false;
         $bootstrapRequired = false;
         $deltaManifest = null;
-        $deltaReason = null;
         $manifestUrl = $remote['manifest_url'] ?? null;
         $signatureUrl = $remote['signature_url'] ?? null;
         $deltaUrl = $remote['delta_url'] ?? null;
@@ -573,10 +579,18 @@ class UpdateService
                     $validation = $this->manifestService->validateManifest($deltaManifest);
                     if ($validation['valid'] && $validation['manifest'] !== null) {
                         $manifestData = $validation['manifest'];
-                        $engineCheck = $this->manifestService->checkEngineCompatibility($clientEngineVersion, $manifestData);
+                        $manifestCompatibility = ReleaseVersionPolicy::assess(
+                            $currentVersion,
+                            $manifestData['version'] ?? null
+                        );
 
-                        if (!$engineCheck['compatible']) {
+                        if (!$manifestCompatibility['compatible']) {
+                            $hasUpdate = false;
+                            $deltaReason = $manifestCompatibility['reason'];
+                            $deltaReasonCode = $manifestCompatibility['reason_code'];
+                        } elseif (!(($engineCheck = $this->manifestService->checkEngineCompatibility($clientEngineVersion, $manifestData))['compatible'] ?? false)) {
                             $deltaReason = $engineCheck['reason'];
+                            $deltaReasonCode = 'engine_incompatible';
                             $hasUpdate = false;
                         } elseif (!empty($manifestData['migration_release']) || ($manifestData['type'] ?? '') === 'full') {
                             $updateType = 'full';
@@ -673,6 +687,9 @@ class UpdateService
             'delta_url'             => $deltaUrl,
             'files_count'           => $deltaManifest ? count($deltaManifest['files'] ?? []) : null,
             'fallback_reason'       => $deltaReason,
+            'fallback_reason_code'  => $deltaReasonCode,
+            'compatibility_reason'  => $deltaReason,
+            'compatibility_reason_code' => $deltaReasonCode,
         ];
 
     }
@@ -732,6 +749,24 @@ class UpdateService
             return ['ok' => false, 'error' => 'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت.', 'code' => 502, 'data' => ['logs' => $output]];
         }
         $targetVersion = $remote['version'] ?? 'unknown';
+        $compatibility = ReleaseVersionPolicy::assess(
+            $currentVersion,
+            is_string($targetVersion) ? $targetVersion : null
+        );
+        if (!$compatibility['compatible']) {
+            $code = $compatibility['reason_code'] === 'legacy_generation' ? 409 : 422;
+            return [
+                'ok' => false,
+                'error' => $compatibility['reason'],
+                'code' => $code,
+                'data' => [
+                    'reason_code' => $compatibility['reason_code'],
+                    'current_version' => $currentVersion,
+                    'target_version' => is_string($targetVersion) ? $targetVersion : null,
+                    'logs' => $output,
+                ],
+            ];
+        }
         $releaseTag = $remote['tag_name'] ?? "v{$targetVersion}";
         $output[] = "✅ الإصدار المتاح: {$releaseTag}";
 
@@ -791,6 +826,25 @@ class UpdateService
         if (is_array($potentialManifest)) {
             $val = $this->manifestService->validateManifest($potentialManifest);
             if ($val['valid'] && $val['manifest'] !== null) {
+                $manifestCompatibility = ReleaseVersionPolicy::assess(
+                    $currentVersion,
+                    $val['manifest']['version'] ?? null
+                );
+                if (!$manifestCompatibility['compatible']) {
+                    $code = $manifestCompatibility['reason_code'] === 'legacy_generation' ? 409 : 422;
+                    return [
+                        'ok' => false,
+                        'error' => $manifestCompatibility['reason'],
+                        'code' => $code,
+                        'data' => [
+                            'reason_code' => $manifestCompatibility['reason_code'],
+                            'current_version' => $currentVersion,
+                            'target_version' => $targetVersion,
+                            'logs' => $output,
+                        ],
+                    ];
+                }
+
                 $compat = $this->manifestService->checkVersionCompatibility(
                     $currentVersion,
                     $val['manifest'],

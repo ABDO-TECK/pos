@@ -1,5 +1,6 @@
 const { app, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { assessReleaseCompatibility } = require('../utils/release-version-policy');
 
 const CHANNEL = 'updater:status';
 
@@ -33,6 +34,14 @@ function registerUpdaterEvents() {
   });
 
   autoUpdater.on('update-available', (info) => {
+    const currentVer = app.getVersion();
+    const remoteVer = info?.version || '';
+    const compatibility = assessReleaseCompatibility(currentVer, remoteVer);
+    if (!compatibility.compatible) {
+      console.warn(`[AutoUpdater] Ignored incompatible update ${remoteVer}: ${compatibility.reason}`);
+      publishStatus('update_not_available', { updateInfo: null, canInstall: false });
+      return;
+    }
     publishStatus('update_available', { updateInfo: info, progress: null, error: null, canInstall: false });
   });
 
