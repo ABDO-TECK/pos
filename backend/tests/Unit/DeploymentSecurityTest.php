@@ -14,10 +14,32 @@ class DeploymentSecurityTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testDesktopIsRejectedInProduction(): void
+    public function testDesktopProductionIsAcceptedWhenDebugDisabled(): void
+    {
+        DeploymentSecurity::validate('desktop', 'pos_user', 'secret', true, true, false, 'production');
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDesktopProductionRejectsDebugEnabled(): void
     {
         $this->expectException(\RuntimeException::class);
-        DeploymentSecurity::validate('desktop', 'pos_user', 'secret', true, true, false, 'production');
+        $this->expectExceptionMessage('APP_DEBUG=false');
+        DeploymentSecurity::validate('desktop', 'root', '', false, false, true, 'production');
+    }
+
+    public function testDesktopDevelopmentAllowsDebugEnabled(): void
+    {
+        // Development desktop allows debug — used during local development
+        DeploymentSecurity::validate('desktop', 'root', '', false, false, true, 'development');
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDesktopProductionSkipsWebSecurityChecks(): void
+    {
+        // Production desktop should NOT require HTTPS, secure cookies, or non-root DB
+        // because the server is bound to 127.0.0.1 with per-installation credentials
+        DeploymentSecurity::validate('desktop', 'root', '', false, false, false, 'production');
+        $this->addToAssertionCount(1);
     }
 
     public function testSecureExternalDeploymentIsAccepted(): void

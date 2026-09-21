@@ -50,12 +50,19 @@ class CookieHelper
         $forceSecure = EnvLoader::getBool('SECURE_COOKIES', false);
         $isHttps     = self::isSecureConnection();
         $isProduction = defined('APP_ENV') && APP_ENV === 'production';
+        $isDesktop = defined('DEPLOYMENT_MODE') && DEPLOYMENT_MODE === 'desktop';
 
         // في الإنتاج: إذا كان الاتصال HTTPS → فرض Secure حتى لو لم يُضبط SECURE_COOKIES
         $secure = $forceSecure || $isHttps;
 
-        // SameSite: Strict في الإنتاج أو إذا كان SECURE_COOKIES مفعل، Lax في التطوير
-        $sameSite = ($forceSecure || $isProduction) ? 'Strict' : 'Lax';
+        // Desktop mode uses app:// scheme → http://127.0.0.1 (cross-origin).
+        // SameSite=Strict would block cookies in these cross-origin requests.
+        // Lax is appropriate for desktop since the server is loopback-only.
+        if ($isDesktop) {
+            $sameSite = 'Lax';
+        } else {
+            $sameSite = ($forceSecure || $isProduction) ? 'Strict' : 'Lax';
+        }
 
         return [
             'expires'  => $expires,

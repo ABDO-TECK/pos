@@ -25,13 +25,16 @@ final class DeploymentSecurity
             );
         }
 
-        if ($isProduction && $mode === 'desktop') {
-            throw new \RuntimeException(
-                'DEPLOYMENT_MODE=desktop is only permitted for loopback development deployments'
-            );
-        }
-
+        // Desktop mode: loopback-only deployment (packaged Electron app).
+        // Production desktop enforces APP_DEBUG=false but skips web-specific
+        // checks (HTTPS, secure cookies, non-root DB) since the server is
+        // bound to 127.0.0.1 and credentials are generated per-installation.
         if ($mode === 'desktop') {
+            if ($isProduction && $appDebug) {
+                throw new \RuntimeException(
+                    'DESKTOP production deployment requires: APP_DEBUG=false'
+                );
+            }
             return;
         }
 
