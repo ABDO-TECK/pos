@@ -100,7 +100,9 @@ final class CombinedDeltaRecoveryTest extends TestCase
             $this->pdo->exec('DROP TABLE IF EXISTS schema_versions');
             $this->pdo->exec('DROP TABLE IF EXISTS recovery_customer');
         }
-        $this->deleteDirectory(dirname($this->fixtureRoot ?? sys_get_temp_dir()));
+        if (isset($this->fixtureRoot)) {
+            $this->deleteDirectory(dirname($this->fixtureRoot));
+        }
     }
 
     public function testPartialMigrationFailureRestoresVerifiedDatabaseAndManagedFiles(): void
