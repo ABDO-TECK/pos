@@ -35,6 +35,13 @@ const {
   isTrustedBackendRequest,
   COOKIE_PATHS,
 } = require('./utils/cookie-proxy-policy');
+const {
+  acquireUpdateLock,
+  isActiveUpdateState,
+  readUpdateState,
+  releaseUpdateLock,
+  writeUpdateState,
+} = require('./utils/update-coordination');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -1100,10 +1107,43 @@ app.whenReady().then(async () => {
 
     const { getAppUnpackedPath, getDataDir } = require('./utils/paths');
     const { applyPendingDelta, rollback, setHandoffState } = require('./services/delta-update-handoff');
-    await stopJobWorker();
-    stopPHP();
+    const storageDir = getDataDir();
+    const currentState = readUpdateState(storageDir);
+    if (isActiveUpdateState(currentState) && currentState.state !== 'desktop_handoff_pending') {
+      return {
+        ok: false,
+        reason_code: 'update_in_progress',
+        error: 'Another update or sale operation is already in progress.',
+        owner: currentState.owner_id || currentState.operation
+          ? {
+            owner_id: currentState.owner_id || null,
+            operation: currentState.operation || 'unknown',
+            phase: currentState.phase || null,
+            updated_at: currentState.updated_at || null,
+          }
+          : null,
+      };
+    }
+    const lease = acquireUpdateLock(storageDir, 'electron_delta_install', {
+      target_version: version,
+    });
+    if (!lease.acquired) {
+      return {
+        ok: false,
+        reason_code: lease.reason_code || 'update_in_progress',
+        error: lease.message || 'Another update or sale operation is already in progress.',
+        owner: lease.owner || null,
+      };
+    }
     let applied;
     try {
+      writeUpdateState(storageDir, 'applying', {
+        operation: 'electron_delta_install',
+        owner_id: lease.owner_id,
+        target_version: version,
+      });
+      await stopJobWorker();
+      stopPHP();
       applied = applyPendingDelta(getDataDir(), version, getAppUnpackedPath());
       if (!applied.ok) throw new Error(applied.error);
       if (Array.isArray(applied.plan.manifest?.migrations) && applied.plan.manifest.migrations.length > 0) {
@@ -1140,6 +1180,13 @@ app.whenReady().then(async () => {
       if (applied?.plan && !recoveryError) {
         rollback(applied.plan);
         setHandoffState(applied.plan, 'rolled_back', { migration_recovery_completed: true });
+      } else if (!applied?.plan) {
+        writeUpdateState(storageDir, 'failed', {
+          operation: 'electron_delta_install',
+          owner_id: lease.owner_id,
+          target_version: version,
+          error: error.message || 'Desktop delta hand-off failed.',
+        });
       }
       try { await restartPhpAndWorker(); } catch (restartError) {
         console.error('[Delta] Failed to restart runtime after hand-off failure:', restartError.message);
@@ -1150,6 +1197,8 @@ app.whenReady().then(async () => {
           ? 'Desktop delta failed and database recovery requires manual intervention.'
           : (error.message || 'Desktop delta hand-off failed.'),
       };
+    } finally {
+      releaseUpdateLock(lease);
     }
   });
   ipcMain.handle('network:enable-lan', async (event) => {

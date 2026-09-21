@@ -302,6 +302,40 @@ class UpdateRecoveryService
             ];
         }
 
+        // A full package can remain downloaded while the operator has not
+        // yet approved the restart. Keep that state visible and actionable;
+        // it must never be treated as a corrupt journal that is safe to clear.
+        if ($status === 'full_ready_to_install') {
+            return [
+                'status'             => 'pending_install',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'none',
+                'message'            => 'A verified full update is waiting for an approved application restart.',
+                'details'            => [
+                    'target_version' => $targetVersion,
+                    'age_seconds'    => $ageSeconds,
+                ],
+            ];
+        }
+
+        // A full installer may have terminated during replacement. The
+        // installer rollback contract is not available here, so escalate for
+        // explicit operator recovery instead of guessing or clearing state.
+        if ($status === 'installing') {
+            return [
+                'status'             => 'interrupted_installation',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'escalate',
+                'message'            => 'The full installer was interrupted; manual release recovery is required.',
+                'details'            => [
+                    'target_version' => $targetVersion,
+                    'age_seconds'    => $ageSeconds,
+                ],
+            ];
+        }
+
         // Case C: Interrupted Applying (Files partially replaced)
         if ($status === 'applying' || $status === 'partial_replace') {
             return [
@@ -391,6 +425,21 @@ class UpdateRecoveryService
             ];
         }
 
+        $operationLock = new UpdateOperationLock($this->storageDir);
+        $operationLease = $operationLock->acquire('update_recovery', [
+            'action' => $action,
+        ]);
+        if (!$operationLease['acquired']) {
+            $this->releaseLock();
+            return [
+                'ok'          => false,
+                'action'      => $action,
+                'error'       => $operationLease['message'] ?? 'Another update or sale operation is already in progress.',
+                'reason_code' => $operationLease['reason_code'] ?? 'update_in_progress',
+                'owner'       => $operationLease['owner'] ?? null,
+            ];
+        }
+
         $diagnosis = $this->diagnoseState();
         $prevState = $diagnosis['state'] ?? 'unknown';
         $problem = $diagnosis['status'] ?? 'unknown';
@@ -435,6 +484,7 @@ class UpdateRecoveryService
             ];
             Logger::error('UpdateRecoveryService action failed', ['action' => $action, 'error' => $e->getMessage()]);
         } finally {
+            $operationLock->release();
             $this->releaseLock();
         }
 

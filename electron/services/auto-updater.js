@@ -1,6 +1,15 @@
 const { app, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { assessReleaseCompatibility } = require('../utils/release-version-policy');
+const { getDataDir } = require('../utils/paths');
+const {
+  acquireUpdateLock,
+  heartbeatUpdateLock,
+  isActiveUpdateState,
+  readUpdateState,
+  releaseUpdateLock,
+  writeUpdateState,
+} = require('../utils/update-coordination');
 
 const CHANNEL = 'updater:status';
 
@@ -16,13 +25,82 @@ let status = {
   progress: null,
   error: null,
   canInstall: false,
+  coordination: null,
 };
+
+let activeDownloadLease = null;
+let activeInstallLease = null;
+let fullReadyHeartbeatTimer = null;
+
+function stopFullReadyHeartbeat() {
+  if (fullReadyHeartbeatTimer !== null) {
+    clearInterval(fullReadyHeartbeatTimer);
+    fullReadyHeartbeatTimer = null;
+  }
+}
+
+function startFullReadyHeartbeat(targetVersion, ownerId) {
+  stopFullReadyHeartbeat();
+  const refresh = () => {
+    writeUpdateState(getDataDir(), 'full_ready_to_install', {
+      operation: 'electron_full_download',
+      owner_id: ownerId || null,
+      target_version: targetVersion || null,
+    });
+  };
+  refresh();
+  fullReadyHeartbeatTimer = setInterval(refresh, 30_000);
+  fullReadyHeartbeatTimer.unref?.();
+}
+
+function restorePendingFullUpdate() {
+  const state = readUpdateState(getDataDir());
+  if (!state || state.state !== 'full_ready_to_install' || !isActiveUpdateState(state)) {
+    return;
+  }
+
+  const compatibility = assessReleaseCompatibility(app.getVersion(), state.target_version || '');
+  if (!compatibility.compatible) {
+    try {
+      writeUpdateState(getDataDir(), 'failed', {
+        operation: state.operation || 'electron_full_download',
+        owner_id: state.owner_id || null,
+        target_version: state.target_version || null,
+        reason_code: compatibility.reasonCode,
+        error: compatibility.reason,
+      });
+    } catch {
+      // Keep startup available even if the stale state cannot be rewritten.
+    }
+    status = {
+      ...status,
+      state: 'error',
+      updateInfo: null,
+      progress: null,
+      error: compatibility.reason,
+      canInstall: false,
+    };
+    return;
+  }
+
+  status = {
+    ...status,
+    state: 'ready_to_install',
+    updateInfo: { version: state.target_version || undefined },
+    progress: null,
+    error: null,
+    canInstall: true,
+    coordination: null,
+  };
+  startFullReadyHeartbeat(state.target_version, state.owner_id);
+}
 
 function setupAutoUpdater(window) {
   mainWindow = window;
   registerUpdaterEvents();
   registerUpdaterIpc();
-  publishStatus('idle');
+  restorePendingFullUpdate();
+  publishStatus(['ready_to_install', 'error'].includes(status.state) ? status.state : 'idle');
 }
 
 function registerUpdaterEvents() {
@@ -50,6 +128,11 @@ function registerUpdaterEvents() {
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    if (activeDownloadLease) {
+      heartbeatUpdateLock(activeDownloadLease, 'downloading', {
+        progress_percent: progress?.percent || 0,
+      });
+    }
     publishStatus('downloading', { progress, error: null, canInstall: false });
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setProgressBar(Math.max(0, Math.min(1, (progress.percent || 0) / 100)));
@@ -59,6 +142,42 @@ function registerUpdaterEvents() {
   autoUpdater.on('update-downloaded', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setProgressBar(-1);
+    }
+    const compatibility = assessReleaseCompatibility(app.getVersion(), info?.version || '');
+    if (!compatibility.compatible) {
+      if (activeDownloadLease) {
+        try {
+          writeUpdateState(getDataDir(), 'failed', {
+            operation: 'electron_full_download',
+            owner_id: activeDownloadLease.owner_id,
+            target_version: info?.version || activeDownloadLease.target_version || null,
+            reason_code: compatibility.reasonCode,
+            error: compatibility.reason,
+          });
+        } catch {
+          // Continue to release the shared lock even if state persistence fails.
+        }
+        releaseUpdateLock(activeDownloadLease);
+        activeDownloadLease = null;
+      }
+      publishStatus('update_not_available', {
+        updateInfo: null,
+        progress: null,
+        error: compatibility.reason,
+        canInstall: false,
+      });
+      return;
+    }
+    if (activeDownloadLease) {
+      writeUpdateState(getDataDir(), 'full_ready_to_install', {
+        operation: 'electron_full_download',
+        owner_id: activeDownloadLease.owner_id,
+        target_version: info?.version || activeDownloadLease.target_version || null,
+      });
+      startFullReadyHeartbeat(
+        info?.version || activeDownloadLease.target_version || null,
+        activeDownloadLease.owner_id
+      );
     }
     publishStatus('ready_to_install', { updateInfo: info, progress: null, error: null, canInstall: true });
   });
@@ -119,6 +238,12 @@ async function downloadUpdate() {
     });
   }
 
+  const storageDir = getDataDir();
+  const currentState = readUpdateState(storageDir);
+  if (isActiveUpdateState(currentState)) {
+    return publishCoordinationBlocked(currentState);
+  }
+
   try {
     if (status.state !== 'update_available') {
       await checkForUpdates();
@@ -127,9 +252,54 @@ async function downloadUpdate() {
       }
     }
 
-    publishStatus('downloading', { error: null, canInstall: false });
-    await autoUpdater.downloadUpdate();
-    return status;
+    const targetVersion = status.updateInfo?.version || null;
+    const compatibility = assessReleaseCompatibility(app.getVersion(), targetVersion || '');
+    if (!compatibility.compatible) {
+      return publishStatus('error', {
+        updateInfo: null,
+        canInstall: false,
+        error: compatibility.reason,
+      });
+    }
+    const lease = acquireUpdateLock(storageDir, 'electron_full_download', {
+      target_version: targetVersion,
+    });
+    if (!lease.acquired) {
+      return publishCoordinationBlocked(lease);
+    }
+    activeDownloadLease = { ...lease, target_version: targetVersion };
+    try {
+      writeUpdateState(storageDir, 'downloading', {
+        operation: 'electron_full_download',
+        owner_id: lease.owner_id,
+        target_version: targetVersion,
+      });
+      publishStatus('downloading', { error: null, canInstall: false });
+      await autoUpdater.downloadUpdate();
+      writeUpdateState(storageDir, 'full_ready_to_install', {
+        operation: 'electron_full_download',
+        owner_id: lease.owner_id,
+        target_version: targetVersion,
+      });
+      startFullReadyHeartbeat(targetVersion, lease.owner_id);
+      releaseUpdateLock(lease);
+      activeDownloadLease = null;
+      return status;
+    } catch (err) {
+      try {
+        writeUpdateState(storageDir, 'failed', {
+          operation: 'electron_full_download',
+          owner_id: lease.owner_id,
+          target_version: targetVersion,
+          error: normalizeUpdaterError(err),
+        });
+      } catch {
+        // The lock release below is still mandatory if state persistence fails.
+      }
+      releaseUpdateLock(lease);
+      activeDownloadLease = null;
+      throw err;
+    }
   } catch (err) {
     return publishStatus('error', { error: normalizeUpdaterError(err), canInstall: false });
   }
@@ -156,9 +326,75 @@ async function installUpdate() {
     return status;
   }
 
-  publishStatus('restarting', { error: null });
-  autoUpdater.quitAndInstall(false, true);
-  return status;
+  const storageDir = getDataDir();
+  const currentState = readUpdateState(storageDir);
+  if (isActiveUpdateState(currentState) && currentState.state !== 'full_ready_to_install') {
+    return publishCoordinationBlocked(currentState);
+  }
+
+  const targetVersion = status.updateInfo?.version || currentState?.target_version || null;
+  const compatibility = assessReleaseCompatibility(app.getVersion(), targetVersion || '');
+  if (!compatibility.compatible) {
+    return publishStatus('error', {
+      updateInfo: null,
+      canInstall: false,
+      error: compatibility.reason,
+    });
+  }
+  const lease = acquireUpdateLock(storageDir, 'electron_full_install', {
+    target_version: targetVersion,
+  });
+  if (!lease.acquired) {
+    return publishCoordinationBlocked(lease);
+  }
+  stopFullReadyHeartbeat();
+  activeInstallLease = lease;
+  try {
+    writeUpdateState(storageDir, 'installing', {
+      operation: 'electron_full_install',
+      owner_id: lease.owner_id,
+      target_version: targetVersion,
+    });
+    publishStatus('restarting', { error: null });
+    autoUpdater.quitAndInstall(false, true);
+    return status;
+  } catch (err) {
+    try {
+      writeUpdateState(storageDir, 'failed', {
+        operation: 'electron_full_install',
+        owner_id: lease.owner_id,
+        target_version: targetVersion,
+        error: normalizeUpdaterError(err),
+      });
+    } catch {
+      // The lock release below is still mandatory if state persistence fails.
+    }
+    releaseUpdateLock(lease);
+    activeInstallLease = null;
+    return publishStatus('error', { error: normalizeUpdaterError(err), canInstall: false });
+  }
+}
+
+function publishCoordinationBlocked(details) {
+  const owner = details?.owner || (
+    details?.owner_id || details?.operation
+      ? {
+        owner_id: details.owner_id || null,
+        operation: details.operation || 'unknown',
+        phase: details.phase || null,
+        updated_at: details.updated_at || null,
+      }
+      : null
+  );
+  return publishStatus('error', {
+    updateInfo: null,
+    canInstall: false,
+    coordination: {
+      reason_code: details?.reason_code || 'update_in_progress',
+      owner,
+    },
+    error: 'Update or sale operation is already in progress. Try again after it completes.',
+  });
 }
 
 function publishStatus(state, patch = {}) {

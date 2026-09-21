@@ -7,6 +7,7 @@ use App\Repositories\InvoiceRepository;
 use App\Repositories\ProductRepository;
 use App\Repositories\InventoryEventRepository;
 use App\Services\SaleService;
+use App\Services\UpdateOperationLock;
 use PHPUnit\Framework\TestCase;
 
 class SaleServiceTest extends TestCase
@@ -240,6 +241,55 @@ class SaleServiceTest extends TestCase
         $this->assertSame(77, $ledgerEntries[1]['invoice_id']);
         $this->assertSame('credit', $ledgerEntries[1]['type']);
         $this->assertSame(25.0, $ledgerEntries[1]['amount']);
+    }
+
+    /**
+     * @runInSeparateProcess
+     */
+    public function testProcessSaleRefusesWhenAnUpdateOwnsTheSharedOperationLock(): void
+    {
+        $storage = sys_get_temp_dir() . '/pos-sale-update-lock-' . bin2hex(random_bytes(5));
+        mkdir($storage, 0755, true);
+        $previousStorage = getenv('APP_STORAGE_DIR');
+        $previousStorageEnv = $_ENV['APP_STORAGE_DIR'] ?? null;
+        putenv('APP_STORAGE_DIR=' . $storage);
+        $_ENV['APP_STORAGE_DIR'] = $storage;
+
+        $lock = new UpdateOperationLock($storage);
+        $lease = $lock->acquire('backend_delta_apply', ['target_version' => '0.0.2']);
+        self::assertTrue($lease['acquired']);
+
+        $dbMock = $this->createMock(\PDO::class);
+        $dbMock->expects($this->never())->method('beginTransaction');
+        $saleService = new SaleService(
+            $this->createMock(InvoiceRepository::class),
+            $this->createMock(ProductRepository::class),
+            $this->createMock(CustomerRepository::class),
+            $this->createMock(InventoryEventRepository::class),
+            $dbMock
+        );
+
+        try {
+            $result = $saleService->processSale([], [], ['idempotency_key' => 'sale-lock-fixture'], ['id' => 1]);
+        } finally {
+            $lock->release();
+            if ($previousStorage === false) {
+                putenv('APP_STORAGE_DIR');
+            } else {
+                putenv('APP_STORAGE_DIR=' . $previousStorage);
+            }
+            if ($previousStorageEnv === null) {
+                unset($_ENV['APP_STORAGE_DIR']);
+            } else {
+                $_ENV['APP_STORAGE_DIR'] = $previousStorageEnv;
+            }
+            @unlink($storage . '/update-operation.lock');
+            @rmdir($storage);
+        }
+
+        self::assertFalse($result['ok']);
+        self::assertSame(409, $result['code']);
+        self::assertSame('update_in_progress', $result['reason_code']);
     }
 
     /**

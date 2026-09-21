@@ -700,7 +700,52 @@ class UpdateService
      * @return array ['ok' => bool, 'data' => array|null, 'error' => string|null, 'code' => int]
      */
     public function applyUpdate(bool $force, bool $deltaCapable = true): array
+    {
+        $lock = new UpdateOperationLock($this->deltaUpdateService->getStorageDir());
+        $state = $this->deltaUpdateService->getUpdateState();
+        if (UpdateOperationLock::isActiveState($state)) {
+            return $this->updateCoordinationFailure($state['owner_id'] ?? null, $state['operation'] ?? null);
+        }
 
+        $lease = $lock->acquire('backend_delta_apply');
+        if (!$lease['acquired']) {
+            return $this->updateCoordinationFailure(
+                $lease['owner']['owner_id'] ?? null,
+                $lease['owner']['operation'] ?? null,
+                $lease
+            );
+        }
+
+        try {
+            $lock->heartbeat('starting');
+            $this->deltaUpdateService->setUpdateState('applying', [
+                'operation' => 'backend_delta_apply',
+                'owner_id' => $lease['owner_id'],
+            ]);
+
+            $result = $this->applyUpdateUnlocked($force, $deltaCapable);
+            if (!$result['ok']) {
+                $currentState = $this->deltaUpdateService->getUpdateState();
+                if (!in_array($currentState['state'] ?? null, [
+                    'failed',
+                    'rolled_back',
+                    'database_recovery_failed',
+                    'backup_failed',
+                ], true)) {
+                    $this->deltaUpdateService->setUpdateState('failed', [
+                        'error' => $result['error'] ?? 'Update operation failed.',
+                        'operation' => 'backend_delta_apply',
+                        'owner_id' => $lease['owner_id'],
+                    ]);
+                }
+            }
+            return $result;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function applyUpdateUnlocked(bool $force, bool $deltaCapable = true): array
     {
         $output = [];
         $currentVersion = $this->getLocalVersion()['version'] ?? '0.0.0';
@@ -1261,6 +1306,30 @@ class UpdateService
             ]);
         }
         return $res;
+    }
+
+    private function updateCoordinationFailure(
+        ?string $ownerId,
+        ?string $operation,
+        ?array $lockResult = null
+    ): array {
+        $owner = $lockResult['owner'] ?? null;
+        if ($owner === null && ($ownerId !== null || $operation !== null)) {
+            $owner = [
+                'owner_id' => $ownerId,
+                'operation' => $operation,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'error' => 'Another update or sale operation is already in progress.',
+            'code' => 409,
+            'data' => [
+                'reason_code' => $lockResult['reason_code'] ?? 'update_in_progress',
+                'owner' => $owner,
+            ],
+        ];
     }
 
     private function requiresUpdateSignature(): bool

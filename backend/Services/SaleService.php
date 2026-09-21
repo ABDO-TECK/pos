@@ -393,6 +393,30 @@ class SaleService implements SaleServiceInterface
 
     public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array
     {
+        $lock = new UpdateOperationLock($this->getUpdateCoordinationStorageDir());
+        $lease = $lock->acquire('sale_transaction', [
+            'user_id' => isset($authUser['id']) ? (int) $authUser['id'] : null,
+            'branch_id' => \App\Services\AuthService::getGlobalBranchId(),
+        ]);
+        if (!$lease['acquired']) {
+            return [
+                'ok' => false,
+                'error' => 'An update is in progress; the sale was not started.',
+                'code' => 409,
+                'reason_code' => $lease['reason_code'] ?? 'update_in_progress',
+                'owner' => $lease['owner'] ?? null,
+            ];
+        }
+
+        try {
+            return $this->processSaleUnlocked($enrichedItems, $totals, $data, $authUser);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function processSaleUnlocked(array $enrichedItems, array $totals, array $data, array $authUser): array
+    {
         $idempotencyKey = (string) ($data['idempotency_key'] ?? '');
         $requestHash = $this->hashSaleRequest($data);
         $replaceInvoiceId = isset($data['invoice_id']) ? (int) $data['invoice_id'] : 0;
@@ -635,6 +659,14 @@ class SaleService implements SaleServiceInterface
             'response_code' => $responseCode,
             'response_message' => $responseMessage,
         ];
+    }
+
+    private function getUpdateCoordinationStorageDir(): string
+    {
+        $configured = \App\Helpers\EnvLoader::get('APP_STORAGE_DIR', '');
+        return $configured !== ''
+            ? $configured
+            : (realpath(__DIR__ . '/../storage') ?: __DIR__ . '/../storage');
     }
 
     // ── Customer ledger entries ──────────────────────────────

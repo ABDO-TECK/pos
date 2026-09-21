@@ -8,6 +8,7 @@ use App\Services\GitService;
 use App\Services\FrontendBuildService;
 use App\Services\BackupService;
 use App\Services\MigrationSafetyBackupService;
+use App\Services\UpdateOperationLock;
 
 class UpdateServiceTest extends TestCase
 {
@@ -976,5 +977,40 @@ class UpdateServiceTest extends TestCase
         $this->assertSame(409, $result['code']);
         $this->assertSame('legacy_generation', $result['data']['reason_code']);
         @rmdir($storage);
+    }
+
+    public function testApplyUpdateRefusesWhenAConcurrentSaleOwnsTheSharedOperationLock(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+        $_ENV['UPDATE_SERVER_URL'] = 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json';
+
+        $storage = sys_get_temp_dir() . '/update_sale_lock_' . bin2hex(random_bytes(4));
+        @mkdir($storage, 0755, true);
+        $deltaMock = $this->createMock(\App\Services\DeltaUpdateService::class);
+        $deltaMock->method('getStorageDir')->willReturn($storage);
+        $deltaMock->expects($this->never())->method('checkDiskSpace');
+
+        $saleLock = new UpdateOperationLock($storage);
+        $saleLease = $saleLock->acquire('sale_transaction', ['branch_id' => 7]);
+        self::assertTrue($saleLease['acquired']);
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock])
+            ->onlyMethods(['fetchRemoteVersion', 'getLocalVersion'])
+            ->getMock();
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->expects($this->never())->method('fetchRemoteVersion');
+
+        try {
+            $result = $service->applyUpdate(false);
+        } finally {
+            $saleLock->release();
+            @rmdir($storage);
+        }
+
+        self::assertFalse($result['ok']);
+        self::assertSame(409, $result['code']);
+        self::assertSame('update_in_progress', $result['data']['reason_code']);
+        self::assertSame('sale_transaction', $result['data']['owner']['operation']);
     }
 }

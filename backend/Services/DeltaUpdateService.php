@@ -152,6 +152,15 @@ class DeltaUpdateService
             json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
             LOCK_EX
         );
+
+        if (isset($payload['owner_id']) && is_string($payload['owner_id']) && $payload['owner_id'] !== '') {
+            UpdateOperationLock::heartbeatOwner(
+                $this->storageDir,
+                $payload['owner_id'],
+                $state,
+                ['to_version' => $payload['to_version'] ?? null]
+            );
+        }
     }
 
     /**
@@ -200,7 +209,16 @@ class DeltaUpdateService
             ];
         }
 
-        $activeStates = ['applying', 'migrating', 'backing_up', 'downloading', 'verifying'];
+        $activeStates = [
+            'applying',
+            'migrating',
+            'backing_up',
+            'downloading',
+            'verifying',
+            'desktop_handoff_pending',
+            'full_ready_to_install',
+            'installing',
+        ];
         if (in_array($state['state'], $activeStates, true)) {
             $updatedAt = isset($state['updated_at']) ? strtotime($state['updated_at']) : 0;
             $elapsed = time() - $updatedAt;
