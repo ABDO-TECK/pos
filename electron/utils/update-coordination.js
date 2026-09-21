@@ -3,6 +3,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const LOCK_TTL_MS = 300_000;
+const COORDINATION_GATE_TTL_MS = 15_000;
+const COORDINATION_GATE_WAIT_MS = 2_000;
+const SALE_LOCK_PREFIX = 'sale-operation-';
 const ACTIVE_UPDATE_STATES = new Set([
   'backing_up',
   'downloading',
@@ -13,11 +16,13 @@ const ACTIVE_UPDATE_STATES = new Set([
   'full_ready_to_install',
   'installing',
 ]);
+const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 function getCoordinationPaths(storageDir) {
   return {
     lockPath: path.join(storageDir, 'update-operation.lock'),
     statePath: path.join(storageDir, 'update-state.json'),
+    gatePath: path.join(storageDir, 'update-coordination.gate'),
   };
 }
 
@@ -37,6 +42,14 @@ function ownerAgeMs(owner) {
   return Number.isFinite(updatedAt) ? Math.max(0, Date.now() - updatedAt) : LOCK_TTL_MS + 1;
 }
 
+function fileAgeMs(filePath) {
+  try {
+    return Math.max(0, Date.now() - (fs.statSync(filePath).mtimeMs || 0));
+  } catch {
+    return LOCK_TTL_MS + 1;
+  }
+}
+
 function safeOwner(owner) {
   return {
     owner_id: String(owner?.owner_id || ''),
@@ -50,91 +63,185 @@ function safeOwner(owner) {
   };
 }
 
-function acquireUpdateLock(storageDir, operation, context = {}, options = {}) {
-  const ttlMs = Number.isFinite(options.ttlMs) ? Math.max(1, options.ttlMs) : LOCK_TTL_MS;
-  const { lockPath } = getCoordinationPaths(storageDir);
-  fs.mkdirSync(storageDir, { recursive: true });
-  const ownerId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const payload = {
-    owner_id: ownerId,
-    operation,
+function sleepSync(milliseconds) {
+  Atomics.wait(sleepBuffer, 0, 0, milliseconds);
+}
+
+function quarantine(filePath) {
+  if (!fs.existsSync(filePath)) return true;
+  const stalePath = `${filePath}.stale-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    fs.renameSync(filePath, stalePath);
+    try { fs.unlinkSync(stalePath); } catch { /* best effort cleanup */ }
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    return false;
+  }
+}
+
+function listSaleLeasePaths(storageDir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(storageDir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.startsWith(SALE_LOCK_PREFIX) && entry.endsWith('.lock'))
+    .sort()
+    .map((entry) => path.join(storageDir, entry));
+}
+
+function findActiveSaleOwner(storageDir, ttlMs) {
+  let recoveredFrom = null;
+  for (const salePath of listSaleLeasePaths(storageDir)) {
+    const owner = readJson(salePath);
+    if (owner && ownerAgeMs(owner) <= ttlMs) {
+      return { owner, recoveredFrom, unavailable: false };
+    }
+    if (!owner && fileAgeMs(salePath) <= ttlMs) {
+      return { owner: null, recoveredFrom, unavailable: true };
+    }
+    if (!quarantine(salePath)) {
+      return { owner: null, recoveredFrom, unavailable: true };
+    }
+    if (!recoveredFrom) recoveredFrom = owner;
+  }
+  return { owner: null, recoveredFrom, unavailable: false };
+}
+
+function acquireCoordinationGate(storageDir) {
+  const { gatePath } = getCoordinationPaths(storageDir);
+  const gateId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const payload = JSON.stringify({
+    gate_id: gateId,
     pid: process.pid,
     time: Math.floor(Date.now() / 1000),
-    started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    context,
-  };
-  let recoveredFrom = null;
+  });
+  const deadline = Date.now() + COORDINATION_GATE_WAIT_MS;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  while (Date.now() < deadline) {
+    let fd;
+    try {
+      fd = fs.openSync(gatePath, 'wx');
+      fs.writeFileSync(fd, payload, 'utf8');
+      fs.closeSync(fd);
+      return { gateId, gatePath };
+    } catch (error) {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* best effort */ }
+      }
+      if (error.code !== 'EEXIST') return null;
+    }
+
+    const gate = readJson(gatePath);
+    if (
+      (gate && ownerAgeMs(gate) > COORDINATION_GATE_TTL_MS)
+      || (!gate && fs.existsSync(gatePath) && fileAgeMs(gatePath) > COORDINATION_GATE_TTL_MS)
+    ) {
+      quarantine(gatePath);
+      continue;
+    }
+    sleepSync(10);
+  }
+
+  return null;
+}
+
+function releaseCoordinationGate(gate) {
+  if (!gate?.gateId || !gate.gatePath) return false;
+  const owner = readJson(gate.gatePath);
+  if (!owner || owner.gate_id !== gate.gateId) return false;
+  try {
+    fs.unlinkSync(gate.gatePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function unavailable(message) {
+  return {
+    acquired: false,
+    reason_code: 'update_lock_unavailable',
+    message,
+    owner: null,
+  };
+}
+
+function busy(owner) {
+  return {
+    acquired: false,
+    reason_code: 'update_in_progress',
+    message: 'Another update or sale operation is in progress.',
+    owner: safeOwner(owner),
+  };
+}
+
+function acquireUpdateLock(storageDir, operation, context = {}, options = {}) {
+  const ttlMs = Number.isFinite(options.ttlMs) ? Math.max(1, options.ttlMs) : LOCK_TTL_MS;
+  fs.mkdirSync(storageDir, { recursive: true });
+  const gate = acquireCoordinationGate(storageDir);
+  if (!gate) return unavailable('The update coordination gate is unavailable.');
+
+  try {
+    const { lockPath } = getCoordinationPaths(storageDir);
+    let recoveredFrom = null;
+    const existing = readJson(lockPath);
+    if (existing && ownerAgeMs(existing) <= ttlMs) {
+      return busy(existing);
+    }
+    if (fs.existsSync(lockPath)) {
+      if (!existing && fileAgeMs(lockPath) <= ttlMs) {
+        return unavailable('The shared update coordination lock is unreadable.');
+      }
+      if (!quarantine(lockPath)) {
+        return unavailable('The stale shared update coordination lock could not be recovered.');
+      }
+      recoveredFrom = existing;
+    }
+
+    const saleCheck = findActiveSaleOwner(storageDir, ttlMs);
+    if (saleCheck.unavailable) {
+      return unavailable('An active sale coordination lease is unreadable.');
+    }
+    if (saleCheck.owner) {
+      return busy(saleCheck.owner);
+    }
+    if (!recoveredFrom) recoveredFrom = saleCheck.recoveredFrom;
+
+    const ownerId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const payload = {
+      owner_id: ownerId,
+      operation,
+      pid: process.pid,
+      time: Math.floor(Date.now() / 1000),
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      context,
+    };
     let fd;
     try {
       fd = fs.openSync(lockPath, 'wx');
       fs.writeFileSync(fd, `${JSON.stringify(payload)}\n`, 'utf8');
       fs.closeSync(fd);
-      const lease = { acquired: true, owner_id: ownerId, operation, lock_path: lockPath };
-      if (recoveredFrom) lease.recovered_from = safeOwner(recoveredFrom);
-      return lease;
     } catch (error) {
       if (fd !== undefined) {
         try { fs.closeSync(fd); } catch { /* best effort */ }
       }
-      if (error.code !== 'EEXIST') {
-        return {
-          acquired: false,
-          reason_code: 'update_lock_unavailable',
-          message: 'The shared update coordination lock could not be created.',
-          owner: null,
-        };
-      }
+      const latest = readJson(lockPath);
+      if (latest && ownerAgeMs(latest) <= ttlMs) return busy(latest);
+      return unavailable('The shared update coordination lock could not be created.');
     }
 
-    const owner = readJson(lockPath);
-    if (owner && ownerAgeMs(owner) <= ttlMs) {
-      return {
-        acquired: false,
-        reason_code: 'update_in_progress',
-        message: 'Another update or sale operation is in progress.',
-        owner: safeOwner(owner),
-      };
-    }
-    if (!owner && fs.existsSync(lockPath)) {
-      const ageMs = Date.now() - (fs.statSync(lockPath).mtimeMs || 0);
-      if (ageMs <= ttlMs) {
-        return {
-          acquired: false,
-          reason_code: 'update_lock_unavailable',
-          message: 'The shared update coordination lock is unreadable.',
-          owner: null,
-        };
-      }
-    }
-
-    const stalePath = `${lockPath}.stale-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    try {
-      fs.renameSync(lockPath, stalePath);
-      try { fs.unlinkSync(stalePath); } catch { /* best effort cleanup */ }
-      recoveredFrom = owner;
-    } catch (error) {
-      // Another process may have claimed or quarantined the stale file after
-      // our read. Retry the atomic create before reporting a failure, never
-      // unlinking a newer owner.
-      if (error.code === 'ENOENT') continue;
-      return {
-        acquired: false,
-        reason_code: 'update_lock_unavailable',
-        message: 'The stale shared update coordination lock could not be recovered.',
-        owner: owner ? safeOwner(owner) : null,
-      };
-    }
+    const lease = { acquired: true, owner_id: ownerId, operation, lock_path: lockPath };
+    if (recoveredFrom) lease.recovered_from = safeOwner(recoveredFrom);
+    return lease;
+  } finally {
+    releaseCoordinationGate(gate);
   }
-
-  return {
-    acquired: false,
-    reason_code: 'update_lock_unavailable',
-    message: 'The shared update coordination lock could not be acquired.',
-    owner: null,
-  };
 }
 
 function releaseUpdateLock(lease) {
@@ -156,7 +263,10 @@ function heartbeatUpdateLock(lease, phase, context = {}) {
   const payload = {
     ...owner,
     phase,
-    ...context,
+    context: {
+      ...(owner.context && typeof owner.context === 'object' ? owner.context : {}),
+      ...context,
+    },
     time: Math.floor(Date.now() / 1000),
     updated_at: new Date().toISOString(),
   };

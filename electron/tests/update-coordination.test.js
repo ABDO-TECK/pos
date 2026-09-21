@@ -78,6 +78,49 @@ test('shared coordination recovers a stale owner and keeps the previous owner di
   }
 });
 
+test('Electron rejects an update while a PHP-shaped sale lease is active', () => {
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-update-coordination-sale-'));
+  try {
+    fs.writeFileSync(path.join(storage, 'sale-operation-sale-owner.lock'), JSON.stringify({
+      owner_id: 'sale-owner',
+      operation: 'sale_transaction',
+      pid: 5678,
+      time: Math.floor(Date.now() / 1000),
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      context: { branch_id: 1 },
+    }));
+
+    const updateLease = acquireUpdateLock(storage, 'electron_delta_install');
+    assert.equal(updateLease.acquired, false);
+    assert.equal(updateLease.reason_code, 'update_in_progress');
+    assert.equal(updateLease.owner.owner_id, 'sale-owner');
+    assert.equal(updateLease.owner.operation, 'sale_transaction');
+  } finally {
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+});
+
+test('Electron recovers a stale PHP-shaped sale lease', () => {
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-update-coordination-stale-sale-'));
+  try {
+    fs.writeFileSync(path.join(storage, 'sale-operation-stale-sale.lock'), JSON.stringify({
+      owner_id: 'stale-sale',
+      operation: 'sale_transaction',
+      pid: 5678,
+      time: Math.floor(Date.now() / 1000) - 301,
+      updated_at: new Date(Date.now() - 301_000).toISOString(),
+    }));
+
+    const updateLease = acquireUpdateLock(storage, 'electron_delta_install');
+    assert.equal(updateLease.acquired, true);
+    assert.equal(updateLease.recovered_from.owner_id, 'stale-sale');
+    assert.equal(releaseUpdateLock(updateLease), true);
+  } finally {
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+});
+
 test('shared state marks active update operations and preserves recovery context', () => {
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-update-state-'));
   try {

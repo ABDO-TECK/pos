@@ -63,4 +63,29 @@ final class UpdateOperationLockTest extends TestCase
         self::assertSame('stale-owner', $lease['recovered_from']['owner_id']);
         self::assertTrue($lock->release());
     }
+
+    public function testConcurrentSalesShareTheBoundaryButBlockExclusiveUpdates(): void
+    {
+        $first = new UpdateOperationLock($this->storage);
+        $second = new UpdateOperationLock($this->storage);
+        $update = new UpdateOperationLock($this->storage);
+
+        $firstSale = $first->acquireSale(['branch_id' => 1]);
+        $secondSale = $second->acquireSale(['branch_id' => 1]);
+
+        self::assertTrue($firstSale['acquired']);
+        self::assertTrue($secondSale['acquired']);
+
+        $updateLease = $update->acquire('backend_delta_apply');
+        self::assertFalse($updateLease['acquired']);
+        self::assertSame('update_in_progress', $updateLease['reason_code']);
+        self::assertSame('sale_transaction', $updateLease['owner']['operation']);
+
+        self::assertTrue($second->release());
+        self::assertTrue($first->release());
+
+        $updateLease = $update->acquire('backend_delta_apply');
+        self::assertTrue($updateLease['acquired']);
+        self::assertTrue($update->release());
+    }
 }

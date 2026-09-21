@@ -394,7 +394,7 @@ class SaleService implements SaleServiceInterface
     public function processSale(array $enrichedItems, array $totals, array $data, array $authUser): array
     {
         $lock = new UpdateOperationLock($this->getUpdateCoordinationStorageDir());
-        $lease = $lock->acquire('sale_transaction', [
+        $lease = $lock->acquireSale([
             'user_id' => isset($authUser['id']) ? (int) $authUser['id'] : null,
             'branch_id' => \App\Services\AuthService::getGlobalBranchId(),
         ]);
