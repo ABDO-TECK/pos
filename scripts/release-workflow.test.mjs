@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -31,6 +32,8 @@ const phpBinary = process.env.POS_PHP || (process.platform === 'win32' ? 'C:\\xa
 const builder = path.join(repoRoot, 'scripts', 'build-release-package.php');
 const packageVerifier = path.join(repoRoot, 'scripts', 'verify-release-package.php');
 const sourceFixture = path.join(repoRoot, 'scratch', 'final-release-integration-20260922', 'source-v0.0.4');
+const currentVersion = JSON.parse(read('version.json')).version;
+const currentTag = `v${currentVersion}`;
 
 function runPhp(script, args, cwd = repoRoot, env = process.env) {
   const resolvedCwd = path.resolve(cwd);
@@ -51,6 +54,65 @@ function runPhp(script, args, cwd = repoRoot, env = process.env) {
     encoding: 'utf8',
     env: childEnv,
   });
+}
+
+function sha256File(filePath) {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex').toUpperCase();
+}
+
+function makeEphemeralBuilderFixture() {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-ephemeral-'));
+  execFileSync('git', ['clone', '--quiet', '--no-local', repoRoot, fixture], { stdio: 'pipe' });
+  execFileSync('git', ['checkout', '--quiet', '--detach', 'fcf180073a76f52743599d167bb64d953fc1e02e'], {
+    cwd: fixture,
+    stdio: 'pipe',
+  });
+  fs.copyFileSync(builder, path.join(fixture, 'scripts', 'build-release-package.php'));
+  fs.copyFileSync(packageVerifier, path.join(fixture, 'scripts', 'verify-release-package.php'));
+
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const privateKeyPath = path.join(fixture, 'ephemeral-test-key.pem');
+  fs.writeFileSync(privateKeyPath, privateKey, { encoding: 'utf8', mode: 0o600 });
+  fs.writeFileSync(path.join(fixture, 'backend', 'certs', 'update_public_key.pem'), publicKey, 'utf8');
+
+  fs.mkdirSync(path.join(fixture, 'backend', 'storage'), { recursive: true });
+  const vendorSource = path.join(repoRoot, 'backend', 'vendor');
+  const fixtureVendor = path.join(fixture, 'backend', 'vendor');
+  assert.ok(
+    fs.existsSync(path.join(vendorSource, 'autoload.php')),
+    'Composer dependencies must be installed from backend/composer.lock before building the release fixture.',
+  );
+  fs.cpSync(vendorSource, fixtureVendor, { recursive: true });
+  assert.ok(
+    fs.existsSync(path.join(fixtureVendor, 'autoload.php')),
+    'the cloned builder fixture must contain the installed Composer autoloader.',
+  );
+  execFileSync('git', ['config', 'user.email', 'release-test@example.invalid'], { cwd: fixture, stdio: 'pipe' });
+  execFileSync('git', ['config', 'user.name', 'Release Test'], { cwd: fixture, stdio: 'pipe' });
+
+  return { fixture, privateKeyPath, publicKey };
+}
+
+function resetEphemeralBuilderFixture(fixture, publicKey) {
+  execFileSync('git', ['reset', '--hard', '--quiet', 'fcf180073a76f52743599d167bb64d953fc1e02e'], {
+    cwd: fixture,
+    stdio: 'pipe',
+  });
+  fs.copyFileSync(builder, path.join(fixture, 'scripts', 'build-release-package.php'));
+  fs.copyFileSync(packageVerifier, path.join(fixture, 'scripts', 'verify-release-package.php'));
+  fs.writeFileSync(path.join(fixture, 'backend', 'certs', 'update_public_key.pem'), publicKey, 'utf8');
+}
+
+function commitEphemeralFixtureChange(fixture, relativePath, contents) {
+  const target = path.join(fixture, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents, 'utf8');
+  execFileSync('git', ['add', '--', relativePath], { cwd: fixture, stdio: 'pipe' });
+  execFileSync('git', ['commit', '--quiet', '-m', `test: change ${relativePath}`], { cwd: fixture, stdio: 'pipe' });
 }
 
 function makeGitFixture({ targetPackageVersion = '0.0.1', targetFrontendVersion = '0.0.1' } = {}) {
@@ -232,6 +294,21 @@ test('Delta validation rejects an unknown scope and a mutable baseline ref', () 
   }
 });
 
+test('Delta validation rejects an omitted scope instead of defaulting silently', () => {
+  const { fixture, baselineRef } = makeGitFixture();
+  try {
+    const omittedScope = runValidator([
+      '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
+      '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--release-channel', 'prerelease',
+    ]);
+    assert.notEqual(omittedScope.status, 0);
+    assert.match(omittedScope.stderr, /delta-scope.*required|scope/i);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test('manifest validation accepts a path relative to the working directory', () => {
   const { fixture, baselineRef } = makeGitFixture();
   const manifestPath = path.join(fixture, 'manifest.json');
@@ -248,6 +325,7 @@ test('manifest validation accepts a path relative to the working directory', () 
       '--tag', 'v0.0.4',
       '--baseline-ref', baselineRef,
       '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
       '--manifest', path.relative(repoRoot, manifestPath),
     ]);
@@ -262,6 +340,7 @@ test('Delta validation rejects missing or unverifiable baselines', () => {
   try {
     const missing = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
     ]);
     assert.notEqual(missing.status, 0);
@@ -270,6 +349,7 @@ test('Delta validation rejects missing or unverifiable baselines', () => {
     const wrongVersion = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
       '--baseline-ref', baselineRef, '--baseline-version', '0.0.2',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
     ]);
     assert.notEqual(wrongVersion.status, 0);
@@ -278,6 +358,7 @@ test('Delta validation rejects missing or unverifiable baselines', () => {
     const missingRef = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
       '--baseline-ref', 'does-not-exist', '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
     ]);
     assert.notEqual(missingRef.status, 0);
@@ -297,6 +378,8 @@ test('release builder refuses missing signing credentials before packaging', () 
         '--tag=v0.0.4',
         '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
         '--from-version=0.0.1',
+        '--delta-scope=backend',
+        '--release-channel=prerelease',
         `--output-dir=${outputDir}`,
       ],
       fixture,
@@ -310,12 +393,194 @@ test('release builder refuses missing signing credentials before packaging', () 
   }
 });
 
+test('Delta builder requires an explicit supported scope before credentials', () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-scope-'));
+  const commonArgs = [
+    `--tag=${currentTag}`,
+    '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+    '--from-version=0.0.1',
+    '--release-channel=prerelease',
+    `--output-dir=${outputDir}`,
+  ];
+  try {
+    const missingChannel = runPhp(builder, [
+      `--tag=${currentTag}`,
+      '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+      '--from-version=0.0.1',
+      '--delta-scope=backend',
+      `--output-dir=${outputDir}`,
+    ], repoRoot, { ...process.env, UPDATE_PRIVATE_KEY: '' });
+    assert.notEqual(missingChannel.status, 0);
+    assert.match(`${missingChannel.stdout}\n${missingChannel.stderr}`, /release.channel.*required|explicit.*release.channel/i);
+
+    const omitted = runPhp(builder, commonArgs, repoRoot, { ...process.env, UPDATE_PRIVATE_KEY: '' });
+    assert.notEqual(omitted.status, 0);
+    assert.match(`${omitted.stdout}\n${omitted.stderr}`, /delta.scope.*required|explicit.*delta.scope/i);
+
+    const unsupported = runPhp(builder, [...commonArgs, '--delta-scope=desktop'], repoRoot, { ...process.env, UPDATE_PRIVATE_KEY: '' });
+    assert.notEqual(unsupported.status, 0);
+    assert.match(`${unsupported.stdout}\n${unsupported.stderr}`, /delta.scope.*invalid|supported.*backend.*frontend.*mixed/i);
+  } finally {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('backend-scoped builder accepts the v0.0.4 scripts-only package metadata diff', () => {
+  const { fixture, privateKeyPath } = makeEphemeralBuilderFixture();
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-backend-'));
+  try {
+    const fixtureVendor = path.join(fixture, 'backend', 'vendor');
+    const realVendorPath = fs.realpathSync(fixtureVendor);
+    const relativeVendorPath = path.relative(fixture, realVendorPath);
+    assert.ok(
+      relativeVendorPath && !relativeVendorPath.startsWith('..') && !path.isAbsolute(relativeVendorPath),
+      'the cloned builder fixture must contain Composer dependencies, not link outside its temporary checkout',
+    );
+    assert.ok(fs.existsSync(path.join(fixtureVendor, 'autoload.php')));
+
+    const build = runPhp(path.join(fixture, 'scripts', 'build-release-package.php'), [
+      '--tag=v0.0.4',
+      '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+      '--from-version=0.0.1',
+      '--delta-scope=backend',
+      '--release-channel=prerelease',
+      `--private-key=${privateKeyPath}`,
+      `--output-dir=${outputDir}`,
+    ], fixture);
+    assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
+
+    const verified = runPhp(path.join(fixture, 'scripts', 'verify-release-package.php'), [
+      `--release-dir=${outputDir}`,
+      '--target-version=0.0.4',
+      '--minimum-version=0.0.1',
+    ]);
+    assert.equal(verified.status, 0, `${verified.stdout}\n${verified.stderr}`);
+    console.log(`STAGING TEST FIXTURE — NOT FOR PRODUCTION; delta_sha256=${sha256File(path.join(outputDir, 'delta-0.0.1-to-0.0.4.zip'))}; manifest_sha256=${sha256File(path.join(outputDir, 'manifest.json'))}`);
+    console.log(verified.stdout.trim());
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.type, 'delta');
+    assert.equal(manifest.version, '0.0.4');
+    assert.equal(manifest.minimum_version, '0.0.1');
+    assert.equal(manifest.channel, 'beta');
+    assert.deepEqual(manifest.files.map((entry) => entry.path), ['version.json']);
+
+    const tamperedZipDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-tampered-zip-'));
+    fs.cpSync(outputDir, tamperedZipDir, { recursive: true });
+    fs.appendFileSync(path.join(tamperedZipDir, 'delta-0.0.1-to-0.0.4.zip'), Buffer.from('tampered'));
+    const tamperedZip = runPhp(path.join(fixture, 'scripts', 'verify-release-package.php'), [
+      `--release-dir=${tamperedZipDir}`,
+      '--target-version=0.0.4',
+      '--minimum-version=0.0.1',
+    ]);
+    assert.notEqual(tamperedZip.status, 0);
+    assert.match(`${tamperedZip.stdout}\n${tamperedZip.stderr}`, /ZIP|hash|integrity|archive/i);
+    fs.rmSync(tamperedZipDir, { recursive: true, force: true });
+
+    const tamperedSignatureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-tampered-signature-'));
+    fs.cpSync(outputDir, tamperedSignatureDir, { recursive: true });
+    const signaturePath = path.join(tamperedSignatureDir, 'manifest.sig');
+    const invalidSignature = fs.readFileSync(signaturePath);
+    invalidSignature[0] ^= 0xff;
+    fs.writeFileSync(signaturePath, invalidSignature);
+    const tamperedSignature = runPhp(path.join(fixture, 'scripts', 'verify-release-package.php'), [
+      `--release-dir=${tamperedSignatureDir}`,
+      '--target-version=0.0.4',
+      '--minimum-version=0.0.1',
+    ]);
+    assert.notEqual(tamperedSignature.status, 0);
+    assert.match(`${tamperedSignature.stdout}\n${tamperedSignature.stderr}`, /RSA|signature/i);
+    fs.rmSync(tamperedSignatureDir, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('Delta builder rejects out-of-scope, app.asar, runtime-package, and unsupported changes', () => {
+  const { fixture, privateKeyPath, publicKey } = makeEphemeralBuilderFixture();
+  const cases = [
+    {
+      path: 'frontend/src/delta-scope-test.js',
+      contents: 'export const scopeTest = true;\n',
+      scope: 'backend',
+      expected: /outside the backend Delta scope/i,
+    },
+    {
+      path: 'backend/Services/DeltaScopeTest.php',
+      contents: '<?php\n',
+      scope: 'frontend',
+      expected: /outside the frontend Delta scope/i,
+    },
+    {
+      path: 'electron/delta-scope-test.js',
+      contents: 'module.exports = {};\n',
+      scope: 'mixed',
+      expected: /app\.asar|bootstrap/i,
+    },
+    {
+      path: 'database/pos_schema.sql',
+      contents: '-- unsupported Delta test change\n',
+      scope: 'mixed',
+      expected: /not a supported deployable Delta path|app\.asar/i,
+    },
+  ];
+
+  try {
+    for (const scenario of cases) {
+      resetEphemeralBuilderFixture(fixture, publicKey);
+      commitEphemeralFixtureChange(fixture, scenario.path, scenario.contents);
+      const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-rejected-'));
+      try {
+        const result = runPhp(path.join(fixture, 'scripts', 'build-release-package.php'), [
+          '--tag=v0.0.4',
+          '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+          '--from-version=0.0.1',
+          `--delta-scope=${scenario.scope}`,
+          '--release-channel=prerelease',
+          `--private-key=${privateKeyPath}`,
+          `--output-dir=${outputDir}`,
+        ], fixture);
+        assert.notEqual(result.status, 0, scenario.path);
+        assert.match(`${result.stdout}\n${result.stderr}`, scenario.expected, scenario.path);
+      } finally {
+        fs.rmSync(outputDir, { recursive: true, force: true });
+      }
+    }
+
+    resetEphemeralBuilderFixture(fixture, publicKey);
+    const packageJsonPath = path.join(fixture, 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    packageJson.description = 'runtime metadata changed';
+    commitEphemeralFixtureChange(fixture, 'package.json', `${JSON.stringify(packageJson, null, 2)}\n`);
+    const packageOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-package-rejected-'));
+    try {
+      const result = runPhp(path.join(fixture, 'scripts', 'build-release-package.php'), [
+        '--tag=v0.0.4',
+        '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+        '--from-version=0.0.1',
+        '--delta-scope=backend',
+        '--release-channel=prerelease',
+        `--private-key=${privateKeyPath}`,
+        `--output-dir=${packageOutputDir}`,
+      ], fixture);
+      assert.notEqual(result.status, 0);
+      assert.match(`${result.stdout}\n${result.stderr}`, /package\.json changes runtime|bootstrap/i);
+    } finally {
+      fs.rmSync(packageOutputDir, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test('v0 stable publication is rejected and tag mismatch is rejected', () => {
   const { fixture, baselineRef } = makeGitFixture();
   try {
     const stable = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
       '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend',
       '--release-channel', 'stable',
     ]);
     assert.notEqual(stable.status, 0);
@@ -324,6 +589,7 @@ test('v0 stable publication is rejected and tag mismatch is rejected', () => {
     const mismatch = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.3',
       '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
     ]);
     assert.notEqual(mismatch.status, 0);
@@ -332,6 +598,7 @@ test('v0 stable publication is rejected and tag mismatch is rejected', () => {
     const bootstrap = runValidator([
       '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4-bootstrap',
       '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend',
       '--release-channel', 'prerelease',
     ]);
     assert.notEqual(bootstrap.status, 0);
@@ -375,6 +642,8 @@ test('explicit baseline builds and package verification reject tampering', { ski
       '--tag=v0.0.4',
       `--from-ref=${baselineCommit}`,
       '--from-version=0.0.1',
+      '--delta-scope=backend',
+      '--release-channel=prerelease',
       `--private-key=${path.join(repoRoot, 'release', 'private_key.pem')}`,
       `--output-dir=${outputDir}`,
     ], sourceFixture);
@@ -428,6 +697,8 @@ test('explicit baseline builds and package verification reject tampering', { ski
       '--tag=v0.0.4',
       `--from-ref=${baselineCommit}`,
       '--from-version=0.0.1',
+      '--delta-scope=backend',
+      '--release-channel=prerelease',
       '--private-key=missing.pem',
       `--output-dir=${path.join(outputDir, 'missing-secret')}`,
     ], sourceFixture, { ...process.env, UPDATE_PRIVATE_KEY: '' });
@@ -450,6 +721,10 @@ test('verification workflow is read-only and has no tag publication trigger', ()
   assert.match(workflow, /delta_scope/);
   assert.match(workflow, /UPDATE_PRIVATE_KEY/);
   assert.doesNotMatch(workflow, /--private-key/);
+  assert.match(
+    jobBlock(workflow, 'verify-release-build'),
+    /php scripts\/build-release-package\.php[\s\S]*?--release-channel\s+"\$RELEASE_CHANNEL"/u,
+  );
 });
 
 test('pull-request verification runs automation tests without legacy source validation', () => {
@@ -458,6 +733,25 @@ test('pull-request verification runs automation tests without legacy source vali
   assert.match(automationJob, /npm run test:release-workflow/u);
   assert.doesNotMatch(automationJob, /validate-release-source\.mjs/u);
   assert.doesNotMatch(automationJob, /working-tree source consistency/u);
+});
+
+test('release automation CI installs locked PHP dependencies and checks out full history', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const automationJob = jobBlock(workflow, 'automation-verification', 'resolve-release-source');
+  const checkoutStep = automationJob.match(/- name: Check out workflow and release automation[\s\S]*?(?=\r?\n      - name:|$)/u)?.[0] || '';
+
+  assert.match(checkoutStep, /fetch-depth:\s*0/u, 'the fixture clone needs the immutable parent commit');
+  assert.match(automationJob, /shivammathur\/setup-php@v2/u);
+  assert.match(automationJob, /php-version:\s*['"]?8\.2/u);
+  assert.match(
+    automationJob,
+    /composer install --working-dir=backend --no-interaction --prefer-dist --no-progress/u,
+  );
+  assert.ok(
+    automationJob.indexOf('composer install --working-dir=backend')
+      < automationJob.indexOf('npm run test:release-workflow'),
+    'locked Composer dependencies must be installed before the PHP builder tests run',
+  );
 });
 
 test('required automation verification runs for every pull-request file category', () => {
@@ -486,6 +780,12 @@ test('all publication workflows are explicit, protected, and non-overwriting', (
   assert.match(updatePublisher, /from_ref/);
   assert.match(updatePublisher, /from_version/);
   assert.match(updatePublisher, /delta_scope/);
+  assert.match(updatePublisher, /--release-channel\s+"\$RELEASE_CHANNEL"/u);
+  assert.match(updatePublisher, /--delta-scope\s+"\$DELTA_SCOPE"/u);
+  assert.match(
+    jobBlock(updatePublisher, 'build', 'publish'),
+    /php scripts\/build-release-package\.php[\s\S]*?--release-channel\s+"\$RELEASE_CHANNEL"/u,
+  );
   assert.doesNotMatch(updatePublisher, /--private-key/);
   assert.match(updatePublisher, /environment:\s*\n?\s+name:\s*github-release-approval|environment:\s+github-release-approval/);
   assert.match(updatePublisher, /contents:\s+write/);

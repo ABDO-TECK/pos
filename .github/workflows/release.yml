@@ -46,12 +46,24 @@ jobs:
     steps:
       - name: Check out workflow and release automation
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      - name: Set up PHP 8.2 for the release builder
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
+          coverage: none
+
+      - name: Install locked backend dependencies
+        run: composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
 
       - name: Run release automation regression tests
         run: npm run test:release-workflow
@@ -208,6 +220,8 @@ jobs:
             --tag "$RELEASE_TAG" \
             --from-ref "$BASELINE_REF" \
             --from-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL" \
             --output-dir "release/$CLEAN_VERSION"
 
       - name: Verify signed manifest, hashes, ZIP contents, and assets

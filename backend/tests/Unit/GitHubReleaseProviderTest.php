@@ -221,6 +221,69 @@ class GitHubReleaseProviderTest extends TestCase
         $this->assertSame('0.0.2', $result['latest_version']);
     }
 
+    public function testBetaDiscoversPrereleaseWhileStableExcludesIt(): void
+    {
+        $releaseList = json_encode([
+            [
+                'tag_name' => 'v0.0.4',
+                'prerelease' => true,
+                'published_at' => '2026-09-22T10:00:00Z',
+            ],
+            [
+                'tag_name' => 'v0.0.3',
+                'prerelease' => false,
+                'published_at' => '2026-09-21T10:00:00Z',
+            ],
+        ]);
+
+        $betaProvider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+        $betaProvider->expects($this->once())
+            ->method('executeCurlGet')
+            ->willReturn([
+                'ok' => true,
+                'body' => $releaseList,
+                'http_code' => 200,
+                'curl_error' => '',
+                'curl_errno' => 0,
+            ]);
+
+        $stableProvider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+        $stableProvider->expects($this->exactly(2))
+            ->method('executeCurlGet')
+            ->willReturnOnConsecutiveCalls(
+                [
+                    'ok' => true,
+                    'body' => json_encode(['tag_name' => 'v0.0.4', 'prerelease' => true]),
+                    'http_code' => 200,
+                    'curl_error' => '',
+                    'curl_errno' => 0,
+                ],
+                [
+                    'ok' => true,
+                    'body' => $releaseList,
+                    'http_code' => 200,
+                    'curl_error' => '',
+                    'curl_errno' => 0,
+                ],
+            );
+
+        $beta = $betaProvider->getLatestRelease('beta', '0.0.1');
+        $stable = $stableProvider->getLatestRelease('stable', '0.0.1');
+
+        $this->assertTrue($beta['ok']);
+        $this->assertSame('0.0.4', $beta['latest_version']);
+        $this->assertSame('beta', $beta['channel']);
+        $this->assertTrue($stable['ok']);
+        $this->assertSame('0.0.3', $stable['latest_version']);
+        $this->assertSame('stable', $stable['channel']);
+    }
+
     public function testAllowedUrlValidation(): void
     {
         $provider = new GitHubReleaseProvider('ABDO-TECK', 'pos');

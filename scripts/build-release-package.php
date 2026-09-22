@@ -47,11 +47,110 @@ function readGitFile(string $rootDir, string $commit, string $relativePath): str
     return implode("\n", $output);
 }
 
+/**
+ * Decode a tracked JSON file and fail closed when the release comparison
+ * cannot establish its source contract.
+ */
+function decodeJsonObject(string $contents, string $label): array
+{
+    $decoded = json_decode($contents, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException("{$label} is not a valid JSON object.");
+    }
+    return $decoded;
+}
+
+/**
+ * Root package metadata is not itself a Delta artifact. Only additive test
+ * scripts are accepted as source-only metadata; runtime, dependency, and
+ * Electron packaging changes require a bootstrap desktop release.
+ */
+function assertSafeRootPackageMetadataChange(array $baselinePackage, array $targetPackage): void
+{
+    $baselineScripts = $baselinePackage['scripts'] ?? [];
+    $targetScripts = $targetPackage['scripts'] ?? [];
+    if (!is_array($baselineScripts) || !is_array($targetScripts)) {
+        throw new RuntimeException('package.json scripts metadata is invalid; publish a bootstrap desktop release for this change.');
+    }
+
+    $baselineComparable = $baselinePackage;
+    $targetComparable = $targetPackage;
+    unset($baselineComparable['scripts'], $targetComparable['scripts']);
+    if ($baselineComparable !== $targetComparable) {
+        throw new RuntimeException('package.json changes runtime or Electron packaging metadata; publish a bootstrap desktop release for this change.');
+    }
+
+    foreach ($baselineScripts as $name => $command) {
+        if (!array_key_exists($name, $targetScripts) || $targetScripts[$name] !== $command) {
+            throw new RuntimeException("package.json script '{$name}' changed; publish a bootstrap desktop release for this change.");
+        }
+    }
+
+    foreach ($targetScripts as $name => $_command) {
+        if (!array_key_exists($name, $baselineScripts) && !preg_match('/^test(?::|$)/', (string) $name)) {
+            throw new RuntimeException("package.json added non-test script '{$name}'; publish a bootstrap desktop release for this change.");
+        }
+    }
+}
+
+function isReleaseMetadataPath(string $path): bool
+{
+    if ($path === 'scripts/build-phar.mjs') {
+        return false;
+    }
+
+    foreach (['.github/', '.agents/', '.superpowers/', 'docs/', 'scripts/', 'scratch/'] as $prefix) {
+        if (str_starts_with($path, $prefix)) {
+            return true;
+        }
+    }
+
+    return in_array($path, ['README.md', 'README.txt', 'LICENSE', 'AGENTS.md'], true);
+}
+
+/**
+ * Enforce the selected deployable Delta scope independently of workflow
+ * validation. This prevents a missing or mismatched workflow argument from
+ * silently dropping source changes into an incomplete package.
+ */
+function assertDeltaScopePath(string $path, string $deltaScope): void
+{
+    if ($path === 'version.json') {
+        return;
+    }
+
+    $isBackendPath = str_starts_with($path, 'backend/')
+        || str_starts_with($path, 'database/migrations/')
+        || $path === 'build-phar.php'
+        || $path === 'scripts/build-phar.mjs';
+    $isFrontendPath = str_starts_with($path, 'frontend/');
+
+    if ($isBackendPath) {
+        if ($deltaScope === 'frontend') {
+            throw new RuntimeException("{$path} is outside the frontend Delta scope; select mixed or publish the matching Delta.");
+        }
+        return;
+    }
+
+    if ($isFrontendPath) {
+        if ($deltaScope === 'backend') {
+            throw new RuntimeException("{$path} is outside the backend Delta scope; select mixed or publish the matching Delta.");
+        }
+        return;
+    }
+
+    if (str_starts_with($path, 'electron/') || $path === 'package-lock.json' || str_starts_with($path, 'portable/') || str_starts_with($path, 'build/')) {
+        throw new RuntimeException("{$path} is stored in app.asar or installer resources and cannot be emitted as a PHP Delta artifact. Publish a bootstrap desktop release for this change.");
+    }
+
+    throw new RuntimeException("{$path} is not a supported deployable Delta path; refusing to generate a partial release.");
+}
+
 // Parse CLI options
-$options = getopt('', ['tag:', 'from-tag:', 'from-ref:', 'from-version:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
+$options = getopt('', ['tag:', 'from-tag:', 'from-ref:', 'from-version:', 'delta-scope:', 'release-channel:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
 
 if (isset($options['help'])) {
-    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-ref=<immutable_commit_sha>] [--from-version=<version>] [--private-key=<path>] [--output-dir=<dir>]\n";
+    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-ref=<immutable_commit_sha>] [--from-version=<version>] [--delta-scope=<backend|frontend|mixed>] [--release-channel=<prerelease|stable>] [--private-key=<path>] [--output-dir=<dir>]\n";
     exit(0);
 }
 
@@ -91,6 +190,33 @@ if ($localAppVersion !== $baseVersion) {
     exit(1);
 }
 echo "✔ Version match validated: {$baseVersion}\n";
+
+// A Delta must carry its deployable scope all the way to the artifact builder.
+// Do not infer a scope here: omission is safer than silently dropping files.
+$deltaScope = null;
+$manifestChannel = $versionData['channel'] ?? 'stable';
+if (!$isBootstrap) {
+    $deltaScope = isset($options['delta-scope']) ? trim((string) $options['delta-scope']) : '';
+    if ($deltaScope === '') {
+        throw new RuntimeException('Delta release requires an explicit --delta-scope value: backend, frontend, or mixed.');
+    }
+    if (!in_array($deltaScope, ['backend', 'frontend', 'mixed'], true)) {
+        throw new RuntimeException("Delta scope '{$deltaScope}' is invalid; expected backend, frontend, or mixed.");
+    }
+
+    $releaseChannel = isset($options['release-channel']) ? strtolower(trim((string) $options['release-channel'])) : '';
+    if ($releaseChannel === '') {
+        throw new RuntimeException('Delta release requires an explicit --release-channel value: prerelease or stable.');
+    }
+    if (!in_array($releaseChannel, ['prerelease', 'stable'], true)) {
+        throw new RuntimeException("Release channel '{$releaseChannel}' is invalid; expected prerelease or stable.");
+    }
+
+    // GitHub's publication channel and the runtime update channel are
+    // intentionally different contracts. A prerelease must be signed as a
+    // beta manifest so Stable clients cannot accept it accidentally.
+    $manifestChannel = $releaseChannel === 'prerelease' ? 'beta' : 'stable';
+}
 
 // 3. Resolve Private Key
 $privateKeyPem = null;
@@ -303,6 +429,12 @@ if ($isBootstrap) {
         }
     }
 
+    if (in_array('package.json', $sourceChanges, true)) {
+        $baselinePackage = decodeJsonObject(readGitFile($rootDir, $baselineCommit, 'package.json'), "Baseline package.json");
+        $targetPackage = decodeJsonObject((string) file_get_contents($rootDir . '/package.json'), 'Target package.json');
+        assertSafeRootPackageMetadataChange($baselinePackage, $targetPackage);
+    }
+
     // Map source changes to the files that actually exist in an installed
     // app.asar.unpacked tree. PHP source and canonical migrations are shipped
     // together inside backend/backend.phar; frontend source produces Vite
@@ -329,6 +461,16 @@ if ($isBootstrap) {
     };
 
     foreach ($sourceChanges as $sourcePath) {
+        if (isReleaseMetadataPath($sourcePath)) {
+            continue;
+        }
+        if ($sourcePath === 'package.json') {
+            // The safe, additive test-script case was validated above. It is
+            // not a deployed runtime file and must not enter the Delta.
+            continue;
+        }
+        assertDeltaScopePath($sourcePath, $deltaScope);
+
         if (str_starts_with($sourcePath, 'database/migrations/') && str_ends_with($sourcePath, '.sql')) {
             $migrationFiles[] = basename($sourcePath);
         }
@@ -344,12 +486,18 @@ if ($isBootstrap) {
             $addFrontendDist();
         } elseif ($sourcePath === 'version.json') {
             $addArtifact('version.json');
-        } elseif (str_starts_with($sourcePath, 'electron/') || $sourcePath === 'package.json') {
-            throw new RuntimeException("{$sourcePath} is stored in app.asar and cannot be emitted as a PHP delta artifact. Publish a bootstrap desktop release for this change.");
         }
     }
 
     foreach ($sourceDeletes as $sourcePath) {
+        if (isReleaseMetadataPath($sourcePath)) {
+            continue;
+        }
+        if ($sourcePath === 'package.json' || $sourcePath === 'version.json') {
+            throw new RuntimeException("{$sourcePath} is required by the packaged application and cannot be deleted in a PHP Delta. Publish a bootstrap desktop release for this change.");
+        }
+        assertDeltaScopePath($sourcePath, $deltaScope);
+
         if (str_starts_with($sourcePath, 'frontend/dist/') || str_starts_with($sourcePath, 'frontend/public/')) {
             $deletedFiles[] = $sourcePath;
         } elseif (str_starts_with($sourcePath, 'backend/') || str_starts_with($sourcePath, 'database/migrations/')) {
@@ -435,7 +583,7 @@ if ($isBootstrap) {
         'type' => 'delta',
         'minimum_version' => $fromVersion,
         'update_engine_version' => '1.0.0',
-        'channel' => 'stable',
+        'channel' => $manifestChannel,
         'released_at' => date('Y-m-d'),
         'changelog' => $changelog,
         'files' => $manifestFiles,

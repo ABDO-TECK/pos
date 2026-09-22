@@ -102,7 +102,7 @@ try {
     if (!preg_match('/^[0-9a-f]{40}$/i', $baselineCommit)) {
         throw new RuntimeException('Could not resolve the v1.1.47 test baseline to a full commit SHA.');
     }
-    $cmd2 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --from-ref={$baselineCommit} --from-version=1.1.47 --private-key=\"{$privateKeyPath}\" --output-dir=\"{$deltaOut}\" 2>&1";
+    $cmd2 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --from-ref={$baselineCommit} --from-version=1.1.47 --delta-scope=backend --release-channel=stable --private-key=\"{$privateKeyPath}\" --output-dir=\"{$deltaOut}\" 2>&1";
     $origVersionJson = file_get_contents($rootDir . '/version.json');
     $mock148 = json_decode($origVersionJson, true);
     $mock148['version'] = '1.1.48';
@@ -146,7 +146,7 @@ try {
 
     $noKeyOut = $tempTestDir . '/no_key';
     putenv('UPDATE_PRIVATE_KEY=');
-    $cmd4 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --private-key=nonexistent.pem --output-dir=\"{$noKeyOut}\" 2>&1";
+    $cmd4 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --delta-scope=backend --release-channel=stable --private-key=nonexistent.pem --output-dir=\"{$noKeyOut}\" 2>&1";
     exec($cmd4, $out4, $code4);
 
     if ($code4 === 0) {
