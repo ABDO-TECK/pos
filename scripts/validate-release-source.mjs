@@ -215,7 +215,7 @@ if (expectedCommit && headCommit !== expectedCommit) {
 let baselineVersion = null;
 let deltaScope = null;
 if (mode === 'delta') {
-  deltaScope = args['delta-scope'] || 'backend';
+  deltaScope = requireArgument('delta-scope');
   if (!['backend', 'frontend', 'mixed'].includes(deltaScope)) {
     fail(`Delta scope '${deltaScope}' is invalid; expected backend, frontend, or mixed`);
   }

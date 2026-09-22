@@ -169,7 +169,7 @@ You can test the release generation and signing logic locally before pushing:
 
 ```bash
 # Test Delta release packaging locally with an explicit immutable baseline
-php scripts/build-release-package.php --tag=v1.1.48 --from-ref=<approved-baseline-commit> --from-version=1.1.47 --private-key=release/private_key.pem --output-dir=release/1.1.48
+php scripts/build-release-package.php --tag=v1.1.48 --from-ref=<approved-baseline-commit> --from-version=1.1.47 --delta-scope=backend --release-channel=stable --private-key=release/private_key.pem --output-dir=release/1.1.48
 
 # Verify the signed package before any authorized publication
 php scripts/verify-release-package.php --release-dir=release/1.1.48 --target-version=1.1.48 --minimum-version=1.1.47

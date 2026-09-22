@@ -208,6 +208,8 @@ jobs:
             --tag "$RELEASE_TAG" \
             --from-ref "$BASELINE_REF" \
             --from-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL" \
             --output-dir "release/$CLEAN_VERSION"
 
       - name: Verify signed manifest, hashes, ZIP contents, and assets

@@ -122,7 +122,8 @@ class GitHubReleaseProvider
             }
             if ($res['ok'] && !empty($res['tag_name'])) {
                 $tagLower = strtolower($res['tag_name']);
-                if (!str_contains($tagLower, 'beta') && !str_contains($tagLower, 'rc')) {
+                $latestIsPrerelease = !empty($res['prerelease']);
+                if (!$latestIsPrerelease && !str_contains($tagLower, 'beta') && !str_contains($tagLower, 'rc')) {
                     if (!$isIncompatibleRelease($res['tag_name'])) {
                         $res['channel'] = 'stable';
                         return $res;
@@ -341,6 +342,7 @@ class GitHubReleaseProvider
             'full_package_url' => $fullPackageUrl,
             'assets' => $assetsMap,
             'channel' => 'stable',
+            'prerelease' => !empty($data['prerelease']),
             'error' => null,
             'error_code' => null,
         ];
