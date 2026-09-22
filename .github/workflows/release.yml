@@ -2,14 +2,6 @@ name: POS Update Engine Release Verification
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/**'
-      - 'backend/**'
-      - 'frontend/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/**'
-      - 'version.json'
   workflow_dispatch:
     inputs:
       tag:

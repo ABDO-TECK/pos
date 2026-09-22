@@ -443,6 +443,20 @@ test('pull-request verification runs automation tests without legacy source vali
   assert.doesNotMatch(automationJob, /working-tree source consistency/u);
 });
 
+test('required automation verification runs for every pull-request file category', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const pullRequestEvent = workflow.match(/\n  pull_request:([\s\S]*?)(?=\n  workflow_dispatch:)/u)?.[1] || '';
+  const automationJob = workflow.match(/  automation-verification:[\s\S]*?(?=\n  verify-release-build:)/u)?.[0] || '';
+
+  for (const category of ['documentation-only', 'workflow-only', 'application-code']) {
+    assert.equal(pullRequestEvent.trim(), '', `${category} PRs must not be filtered by event configuration`);
+  }
+  assert.doesNotMatch(pullRequestEvent, /paths|paths-ignore|branches|branches-ignore/u);
+  assert.doesNotMatch(automationJob, /\n\s+if:/u);
+  assert.doesNotMatch(automationJob, /\n\s+needs:/u);
+  assert.doesNotMatch(automationJob, /continue-on-error/u);
+});
+
 test('all publication workflows are explicit, protected, and non-overwriting', () => {
   const updatePublisher = read('.github/workflows/publish-release.yml');
   const desktopPublisher = read('.github/workflows/release-desktop.yml');
@@ -462,6 +476,7 @@ test('all publication workflows are explicit, protected, and non-overwriting', (
   assert.match(updatePublisher, /404 Not Found/);
   assert.match(updatePublisher, /verify-tag/);
   assert.doesNotMatch(updatePublisher, /--clobber|softprops\/action-gh-release/);
+  assert.doesNotMatch(updatePublisher, /\n\s+pull_request:/u);
 
   assert.match(desktopPublisher, /workflow_dispatch:/);
   assert.match(desktopPublisher, /confirm_publish/);
@@ -470,6 +485,7 @@ test('all publication workflows are explicit, protected, and non-overwriting', (
   assert.match(desktopPublisher, /existing desktop asset conflicts|existing.*asset|asset.*conflict/i);
   assert.doesNotMatch(desktopPublisher, /--clobber/);
   assert.doesNotMatch(desktopPublisher, /-RequireAuthenticode|require-production-signing/);
+  assert.doesNotMatch(desktopPublisher, /\n\s+pull_request:/u);
 });
 
 test('no workflow can publish from an automatic tag trigger', () => {
