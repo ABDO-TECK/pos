@@ -20,6 +20,13 @@ function runValidator(args) {
   });
 }
 
+function jobBlock(workflow, jobName, nextJobName) {
+  const nextBoundary = nextJobName
+    ? `(?=\\r?\\n  ${nextJobName}:)`
+    : '(?=\\r?\\n[^ \\r\\n]|$)';
+  return workflow.match(new RegExp(`\\r?\\n  ${jobName}:[\\s\\S]*?${nextBoundary}`, 'u'))?.[0] || '';
+}
+
 const phpBinary = process.env.POS_PHP || (process.platform === 'win32' ? 'C:\\xampp\\php\\php.exe' : 'php');
 const builder = path.join(repoRoot, 'scripts', 'build-release-package.php');
 const packageVerifier = path.join(repoRoot, 'scripts', 'verify-release-package.php');
@@ -437,7 +444,7 @@ test('verification workflow is read-only and has no tag publication trigger', ()
 
 test('pull-request verification runs automation tests without legacy source validation', () => {
   const workflow = read('.github/workflows/release.yml');
-  const automationJob = workflow.match(/  automation-verification:[\s\S]*?(?=\n  verify-release-build:)/u)?.[0] || '';
+  const automationJob = jobBlock(workflow, 'automation-verification', 'resolve-release-source');
   assert.match(automationJob, /npm run test:release-workflow/u);
   assert.doesNotMatch(automationJob, /validate-release-source\.mjs/u);
   assert.doesNotMatch(automationJob, /working-tree source consistency/u);
@@ -446,7 +453,7 @@ test('pull-request verification runs automation tests without legacy source vali
 test('required automation verification runs for every pull-request file category', () => {
   const workflow = read('.github/workflows/release.yml');
   const pullRequestEvent = workflow.match(/\n  pull_request:([\s\S]*?)(?=\n  workflow_dispatch:)/u)?.[1] || '';
-  const automationJob = workflow.match(/  automation-verification:[\s\S]*?(?=\n  verify-release-build:)/u)?.[0] || '';
+  const automationJob = jobBlock(workflow, 'automation-verification', 'resolve-release-source');
 
   for (const category of ['documentation-only', 'workflow-only', 'application-code']) {
     assert.equal(pullRequestEvent.trim(), '', `${category} PRs must not be filtered by event configuration`);
@@ -494,5 +501,94 @@ test('no workflow can publish from an automatic tag trigger', () => {
     if (/gh\s+release|softprops\/action-gh-release/.test(workflow)) {
       assert.doesNotMatch(workflow, /push:\s*\n\s+tags:/, `${name} must not publish on tag push`);
     }
+  }
+});
+
+test('signing credentials are scoped to protected jobs and never enter PR verification', () => {
+  const publicationWorkflow = read('.github/workflows/publish-release.yml');
+  const publicationBuild = jobBlock(publicationWorkflow, 'build', 'publish');
+  assert.match(publicationBuild, /environment:\s*\n\s+name:\s*github-release-approval/u);
+  assert.match(publicationBuild, /UPDATE_PRIVATE_KEY:\s*\$\{\{\s*secrets\.UPDATE_PRIVATE_KEY\s*\}\}/u);
+  assert.match(publicationBuild, /UPDATE_PRIVATE_KEY is not configured; refusing to publish/u);
+  assert.ok(
+    publicationBuild.indexOf('verify-release-package.php') < publicationBuild.indexOf('actions/upload-artifact@v4'),
+    'signed artifacts must be verified before they are uploaded for publication',
+  );
+
+  const verificationWorkflow = read('.github/workflows/release.yml');
+  const pullRequestJob = jobBlock(verificationWorkflow, 'automation-verification', 'resolve-release-source');
+  const manualBuild = jobBlock(verificationWorkflow, 'verify-release-build');
+  assert.doesNotMatch(pullRequestJob, /UPDATE_PRIVATE_KEY|secrets\./u);
+  assert.match(manualBuild, /environment:\s*\n\s+name:\s*github-release-approval/u);
+  assert.match(manualBuild, /UPDATE_PRIVATE_KEY:\s*\$\{\{\s*secrets\.UPDATE_PRIVATE_KEY\s*\}\}/u);
+});
+
+test('release workflows resolve fully qualified tags and check out the immutable commit', () => {
+  for (const name of ['publish-release.yml', 'release.yml', 'release-desktop.yml']) {
+    const workflow = read(path.join('.github', 'workflows', name));
+    assert.match(workflow, /refs\/tags\//u, `${name} must resolve a fully qualified tag ref`);
+    assert.match(workflow, /release_sha/u, `${name} must expose the resolved release SHA`);
+    assert.match(workflow, /--expected-commit\s+['"$]?[A-Z_.${}/-]+/u, `${name} must verify the checked-out SHA`);
+  }
+
+  const publicationWorkflow = read('.github/workflows/publish-release.yml');
+  assert.match(publicationWorkflow, /ref:\s*\$\{\{\s*needs\.resolve-release-source\.outputs\.release_sha\s*\}\}/u);
+  assert.match(publicationWorkflow, /release-provenance\.json/u);
+  assert.match(publicationWorkflow, /release_commit/u);
+  assert.match(publicationWorkflow, /source.*tag|tag.*source/u);
+});
+
+test('source validation accepts annotated tags only through their commit target', () => {
+  const { fixture, baselineRef } = makeGitFixture();
+  const git = (...args) => execFileSync('git', args, { cwd: fixture, stdio: 'pipe' }).toString().trim();
+  git('tag', '-a', 'v0.0.4-annotated', '-m', 'annotated release tag');
+  const targetCommit = git('rev-parse', 'HEAD');
+  try {
+    const result = runValidator([
+      '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4-annotated',
+      '--expected-commit', targetCommit,
+      '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend', '--release-channel', 'prerelease',
+    ]);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('source validation rejects missing, changed, or unexpected release commits', () => {
+  const { fixture, baselineRef } = makeGitFixture();
+  const git = (...args) => execFileSync('git', args, { cwd: fixture, stdio: 'pipe' }).toString().trim();
+  const targetCommit = git('rev-parse', 'HEAD');
+  git('tag', 'v0.0.4-wrong-target', baselineRef);
+  try {
+    const missing = runValidator([
+      '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4-missing',
+      '--expected-commit', targetCommit,
+      '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend', '--release-channel', 'prerelease',
+    ]);
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /release tag|refs\/tags|resolve/i);
+
+    const wrongCommit = runValidator([
+      '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4',
+      '--expected-commit', baselineRef,
+      '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend', '--release-channel', 'prerelease',
+    ]);
+    assert.notEqual(wrongCommit.status, 0);
+    assert.match(wrongCommit.stderr, /expected|checked-out|commit/i);
+
+    const changedTag = runValidator([
+      '--mode', 'delta', '--root', fixture, '--tag', 'v0.0.4-wrong-target',
+      '--expected-commit', targetCommit,
+      '--baseline-ref', baselineRef, '--baseline-version', '0.0.1',
+      '--delta-scope', 'backend', '--release-channel', 'prerelease',
+    ]);
+    assert.notEqual(changedTag.status, 0);
+    assert.match(changedTag.stderr, /checked-out|tag|commit/i);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
   }
 });

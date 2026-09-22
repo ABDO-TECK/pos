@@ -56,24 +56,91 @@ jobs:
       - name: Run release automation regression tests
         run: npm run test:release-workflow
 
-  verify-release-build:
-    name: Build and verify release without publishing
+  resolve-release-source:
+    name: Resolve immutable release tag for manual verification
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      release_ref: ${{ steps.resolve.outputs.release_ref }}
+      release_sha: ${{ steps.resolve.outputs.release_sha }}
     env:
       RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve fully qualified tag to a commit
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo '::error::The release tag must be a version-matched vX.Y.Z tag.'
+            exit 1
+          fi
+
+          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")" || {
+            echo '::error::The requested release tag does not exist.'
+            exit 1
+          }
+          object_type="$(jq -r '.object.type' <<<"$ref_json")"
+          object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          case "$object_type" in
+            commit)
+              release_sha="$object_sha"
+              ;;
+            tag)
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")" || {
+                echo '::error::The annotated release tag target could not be resolved.'
+                exit 1
+              }
+              target_type="$(jq -r '.object.type' <<<"$tag_json")"
+              if [ "$target_type" != 'commit' ]; then
+                echo '::error::The annotated release tag does not target a commit.'
+                exit 1
+              fi
+              release_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+              ;;
+            *)
+              echo "::error::Unsupported release tag object type: $object_type"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::The release tag did not resolve to a full commit SHA.'
+            exit 1
+          fi
+
+          echo "release_ref=refs/tags/$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "Workflow definition revision: $GITHUB_SHA"
+          echo "Release source commit: $release_sha"
+
+  verify-release-build:
+    name: Build and verify release without publishing
+    needs: resolve-release-source
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-release-approval
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ needs.resolve-release-source.outputs.release_ref }}
+      EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
       BASELINE_REF: ${{ inputs.from_ref }}
       BASELINE_VERSION: ${{ inputs.from_version }}
       DELTA_SCOPE: ${{ inputs.delta_scope }}
       RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      WORKFLOW_REVISION: ${{ github.sha }}
     steps:
       - name: Check out the exact requested tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.resolve-release-source.outputs.release_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -100,6 +167,7 @@ jobs:
             --mode delta \
             --root . \
             --tag "$RELEASE_TAG" \
+            --expected-commit "$EXPECTED_RELEASE_SHA" \
             --baseline-ref "$BASELINE_REF" \
             --baseline-version "$BASELINE_VERSION" \
             --delta-scope "$DELTA_SCOPE" \

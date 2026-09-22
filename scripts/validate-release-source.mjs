@@ -84,6 +84,13 @@ function compareVersions(left, right) {
   return 0;
 }
 
+function normalizeCommit(value, label) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/i.test(value.trim())) {
+    fail(`${label} must be a full 40-character commit SHA`);
+  }
+  return value.trim().toLowerCase();
+}
+
 function resolveGitRef(ref, label) {
   try {
     return execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
@@ -94,6 +101,20 @@ function resolveGitRef(ref, label) {
   } catch (error) {
     const detail = String(error.stderr || '').trim();
     fail(`could not resolve ${label} '${ref}'${detail ? `: ${detail}` : ''}`);
+  }
+}
+
+function resolveReleaseTagCommit(tag) {
+  const qualifiedTag = `refs/tags/${tag}`;
+  try {
+    return execFileSync('git', ['rev-parse', '--verify', `${qualifiedTag}^{commit}`], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    const detail = String(error.stderr || '').trim();
+    fail(`could not resolve release tag '${qualifiedTag}'${detail ? `: ${detail}` : ''}`);
   }
 }
 
@@ -179,10 +200,16 @@ if (targetVersion.startsWith('0.') && releaseChannel === 'stable') {
   fail(`v0 release '${tag}' must be published as a prerelease`);
 }
 
+const expectedCommit = args['expected-commit'] === undefined
+  ? null
+  : normalizeCommit(args['expected-commit'], 'expected-commit');
 const headCommit = resolveGitRef('HEAD', 'checked-out HEAD');
-const tagCommit = resolveGitRef(tag, 'release tag');
+const tagCommit = resolveReleaseTagCommit(tag);
 if (headCommit !== tagCommit) {
   fail(`checked-out HEAD ${headCommit} does not match tag ${tag} at ${tagCommit}`);
+}
+if (expectedCommit && headCommit !== expectedCommit) {
+  fail(`checked-out HEAD ${headCommit} does not match expected release commit ${expectedCommit}`);
 }
 
 let baselineVersion = null;

@@ -40,9 +40,71 @@ jobs:
             exit 1
           fi
 
-  release:
+  resolve-release-source:
+    name: Resolve immutable desktop release tag
     needs: confirm-publish
     if: ${{ needs.confirm-publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_ref: ${{ steps.resolve.outputs.release_ref }}
+      release_sha: ${{ steps.resolve.outputs.release_sha }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve fully qualified tag to a commit
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo '::error::The release tag must be a version-matched vX.Y.Z tag.'
+            exit 1
+          fi
+
+          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")" || {
+            echo '::error::The requested release tag does not exist.'
+            exit 1
+          }
+          object_type="$(jq -r '.object.type' <<<"$ref_json")"
+          object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          case "$object_type" in
+            commit)
+              release_sha="$object_sha"
+              ;;
+            tag)
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")" || {
+                echo '::error::The annotated release tag target could not be resolved.'
+                exit 1
+              }
+              target_type="$(jq -r '.object.type' <<<"$tag_json")"
+              if [ "$target_type" != 'commit' ]; then
+                echo '::error::The annotated release tag does not target a commit.'
+                exit 1
+              fi
+              release_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+              ;;
+            *)
+              echo "::error::Unsupported release tag object type: $object_type"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::The release tag did not resolve to a full commit SHA.'
+            exit 1
+          fi
+
+          echo "release_ref=refs/tags/$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "Workflow definition revision: $GITHUB_SHA"
+          echo "Release source commit: $release_sha"
+
+  release:
+    needs: [confirm-publish, resolve-release-source]
+    if: ${{ needs.resolve-release-source.result == 'success' }}
     runs-on: windows-latest
     environment:
       name: github-release-approval
@@ -51,13 +113,16 @@ jobs:
       actions: read
     env:
       RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ needs.resolve-release-source.outputs.release_ref }}
+      EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
       RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      WORKFLOW_REVISION: ${{ github.sha }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.resolve-release-source.outputs.release_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -80,7 +145,7 @@ jobs:
 
       - name: Validate full desktop source and release channel
         shell: pwsh
-        run: node scripts/validate-release-source.mjs --mode full --root . --tag $env:RELEASE_TAG --release-channel $env:RELEASE_CHANNEL
+        run: node scripts/validate-release-source.mjs --mode full --root . --tag $env:RELEASE_TAG --expected-commit $env:EXPECTED_RELEASE_SHA --release-channel $env:RELEASE_CHANNEL
 
       - name: Build frontend
         run: npm run frontend:build
@@ -107,6 +172,24 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: ./scripts/verify-desktop-release.ps1 -ReleaseDirectory dist-electron -Tag $env:RELEASE_TAG
+
+      - name: Verify release tag has not changed since source resolution
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $ref = gh api "repos/$env:REPOSITORY/git/ref/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $target = $ref.object
+          if ($target.type -eq 'tag') {
+            $target = gh api "repos/$env:REPOSITORY/git/tags/$($target.sha)" | ConvertFrom-Json | Select-Object -ExpandProperty object
+          }
+          if ($target.type -ne 'commit' -or $target.sha -ne $env:EXPECTED_RELEASE_SHA) {
+            throw "Release tag $env:RELEASE_TAG no longer resolves to the approved source commit."
+          }
+          Write-Host "Verified $env:RELEASE_REF at $($target.sha) for workflow revision $env:GITHUB_SHA."
 
       - name: Verify the existing GitHub release channel
         shell: pwsh
