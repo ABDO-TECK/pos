@@ -109,6 +109,17 @@ function SessionInteractionReset() {
   return null
 }
 
+function SessionHydrator() {
+  const { isAuthenticated, _hasHydrated, sessionRefreshRequired, refreshSession } = useAuthStore()
+
+  useEffect(() => {
+    if (!_hasHydrated || !isAuthenticated || !sessionRefreshRequired) return
+    void refreshSession()
+  }, [_hasHydrated, isAuthenticated, sessionRefreshRequired, refreshSession])
+
+  return null
+}
+
 function AppShell() {
   const themeMode = useThemeStore((s) => s.mode)
   const toastStyle = {
@@ -127,6 +138,7 @@ function AppShell() {
       <Toaster position="top-center" toastOptions={{ style: toastStyle }} />
       <ConflictResolutionDialog />
       <SessionInteractionReset />
+      <SessionHydrator />
       <SettingsLoader />
       <SSELoader />
       <Suspense fallback={<PageLoader />}>

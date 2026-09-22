@@ -302,6 +302,40 @@ class UpdateRecoveryService
             ];
         }
 
+        // A full package can remain downloaded while the operator has not
+        // yet approved the restart. Keep that state visible and actionable;
+        // it must never be treated as a corrupt journal that is safe to clear.
+        if ($status === 'full_ready_to_install') {
+            return [
+                'status'             => 'pending_install',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'none',
+                'message'            => 'A verified full update is waiting for an approved application restart.',
+                'details'            => [
+                    'target_version' => $targetVersion,
+                    'age_seconds'    => $ageSeconds,
+                ],
+            ];
+        }
+
+        // A full installer may have terminated during replacement. The
+        // installer rollback contract is not available here, so escalate for
+        // explicit operator recovery instead of guessing or clearing state.
+        if ($status === 'installing') {
+            return [
+                'status'             => 'interrupted_installation',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'escalate',
+                'message'            => 'The full installer was interrupted; manual release recovery is required.',
+                'details'            => [
+                    'target_version' => $targetVersion,
+                    'age_seconds'    => $ageSeconds,
+                ],
+            ];
+        }
+
         // Case C: Interrupted Applying (Files partially replaced)
         if ($status === 'applying' || $status === 'partial_replace') {
             return [
@@ -314,6 +348,43 @@ class UpdateRecoveryService
                     'target_version'  => $targetVersion,
                     'snapshot'        => $snapshot,
                     'has_snapshot'    => !empty($snapshot),
+                ],
+            ];
+        }
+
+        // A rollback is a healthy terminal state only when rollbackFiles()
+        // completed every required restoration and persisted this state.
+        if ($status === 'rolled_back') {
+            return [
+                'status'             => 'rolled_back',
+                'state'              => $status,
+                'problem_detected'   => false,
+                'recommended_action' => 'none',
+                'message'            => 'Update rollback completed and the pre-update snapshot is active.',
+                'details'            => [
+                    'target_version'  => $targetVersion,
+                    'snapshot'        => $snapshot,
+                    'rolled_back_at'  => $state['rolled_back_at'] ?? null,
+                    'restored_files'  => $state['restored_files'] ?? [],
+                ],
+            ];
+        }
+
+        // A failed restoration is never safe to clear automatically. Keep the
+        // durable state visible and require explicit operator escalation.
+        if ($status === 'rollback_failed') {
+            return [
+                'status'             => 'rollback_failed',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'escalate',
+                'message'            => 'Update rollback did not restore every required file; manual recovery is required.',
+                'details'            => [
+                    'target_version'  => $targetVersion,
+                    'snapshot'        => $snapshot,
+                    'error'           => $state['recovery_error'] ?? $state['error'] ?? null,
+                    'rollback_errors' => $state['rollback_errors'] ?? [],
+                    'restored_files'  => $state['restored_files'] ?? [],
                 ],
             ];
         }
@@ -391,6 +462,21 @@ class UpdateRecoveryService
             ];
         }
 
+        $operationLock = new UpdateOperationLock($this->storageDir);
+        $operationLease = $operationLock->acquire('update_recovery', [
+            'action' => $action,
+        ]);
+        if (!$operationLease['acquired']) {
+            $this->releaseLock();
+            return [
+                'ok'          => false,
+                'action'      => $action,
+                'error'       => $operationLease['message'] ?? 'Another update or sale operation is already in progress.',
+                'reason_code' => $operationLease['reason_code'] ?? 'update_in_progress',
+                'owner'       => $operationLease['owner'] ?? null,
+            ];
+        }
+
         $diagnosis = $this->diagnoseState();
         $prevState = $diagnosis['state'] ?? 'unknown';
         $problem = $diagnosis['status'] ?? 'unknown';
@@ -435,6 +521,7 @@ class UpdateRecoveryService
             ];
             Logger::error('UpdateRecoveryService action failed', ['action' => $action, 'error' => $e->getMessage()]);
         } finally {
+            $operationLock->release();
             $this->releaseLock();
         }
 
@@ -521,6 +608,13 @@ class UpdateRecoveryService
                 $state['recovery_error'] = $error;
                 $state['updated_at'] = date('Y-m-d H:i:s');
                 $this->writeStateFile($state);
+            } else {
+                $state['status'] = 'rollback_failed';
+                $state['state'] = 'rollback_failed';
+                $state['recovery_action'] = 'rollback';
+                $state['recovery_error'] = $error;
+                $state['updated_at'] = date('Y-m-d H:i:s');
+                $this->writeStateFile($state);
             }
 
             return [
@@ -533,6 +627,7 @@ class UpdateRecoveryService
 
         // Keep snapshot preserved (NEVER delete snapshot during recovery)
         $state['status'] = 'rolled_back';
+        $state['state'] = 'rolled_back';
         $state['rolled_back_at'] = date('Y-m-d H:i:s');
         $state['recovery_action'] = 'rollback';
         $this->writeStateFile($state);

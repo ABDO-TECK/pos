@@ -18,6 +18,7 @@ protocol.registerSchemesAsPrivileged([
 const { startPHP, stopPHP, runDatabaseMigrations } = require('./services/php-server');
 const { startMySQL, stopMySQL, resetDatabase } = require('./services/mysql-server');
 const { setupAutoUpdater } = require('./services/auto-updater');
+const { assessReleaseCompatibility } = require('./utils/release-version-policy');
 const {
   enableLanAccess,
   startHttpsProxy,
@@ -29,6 +30,18 @@ const { configureFirewall, removeFirewall } = require('./services/firewall');
 const { getPhpRuntimeArgs, resolveSystemTimeZone } = require('./utils/php-runtime');
 const { serializeRuntimeError } = require('./utils/runtime-error');
 const { formatSpawnError, spawnRuntimeProcess } = require('./utils/runtime-process');
+const {
+  getCookieHeader,
+  isTrustedBackendRequest,
+  COOKIE_PATHS,
+} = require('./utils/cookie-proxy-policy');
+const {
+  acquireUpdateLock,
+  isActiveUpdateState,
+  readUpdateState,
+  releaseUpdateLock,
+  writeUpdateState,
+} = require('./utils/update-coordination');
 
 // Disable code signing auto-discovery to prevent build issues
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
@@ -43,7 +56,7 @@ let splash = null;
 let jobWorkerProcess = null;
 let firstRunAdminCredentials = null;
 let sessionCookies = {};
-const PERSISTED_COOKIE_NAMES = new Set(['pos_token', 'pos_refresh_token', 'XSRF-TOKEN']);
+const PERSISTED_COOKIE_NAMES = new Set(Object.keys(COOKIE_PATHS));
 
 function assertTrustedAppRenderer(event) {
   const senderUrl = event.senderFrame?.url || '';
@@ -113,11 +126,8 @@ function startJobWorker() {
   const workerArgs = isPackaged()
     ? [...phpRuntimeArgs, path.join(backendDir, 'backend.phar'), 'process-jobs', '--daemon']
     : [...phpRuntimeArgs, path.join(backendDir, 'cli', 'process-jobs.php'), '--daemon'];
-  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
   const workerEnv = {
     ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
-    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
     APP_TIMEZONE: resolveSystemTimeZone(),
     APP_STORAGE_DIR: getDataDir(),
     ENV_PATH: getEnvPath(),
@@ -733,12 +743,9 @@ function startLogCleanup() {
   } = require('./utils/paths');
   const phpPath = getPhpPath();
   const backendDir = getBackendDir();
-  const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
   const { createBackendEnv } = require('./services/php-server');
   const maintenanceEnv = {
     ...createBackendEnv({ mysqlPort, dbCredentials, apiPort: phpPort }),
-    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
     APP_TIMEZONE: resolveSystemTimeZone(),
     APP_STORAGE_DIR: getDataDir(),
     ENV_PATH: getEnvPath(),
@@ -904,8 +911,17 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      const isTrustedInitiator = !initiator || initiator.startsWith('app://');
-      if (isTrustedInitiator) {
+      const trustedWebContentsId = mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow.webContents.id
+        : null;
+      if (isTrustedBackendRequest({
+        url: details.url,
+        phpPort,
+        initiator,
+        webContentsId: details.webContentsId,
+        trustedWebContentsId,
+        frameUrl: details.frame?.url,
+      })) {
         // 1. Cookie capture scope (Only capture Set-Cookie from the local PHP backend runtime URL)
         let parsedUrl;
         try {
@@ -915,50 +931,40 @@ app.whenReady().then(async () => {
         }
 
         if (parsedUrl) {
-          const host = parsedUrl.hostname;
-          const isLocalHost = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-          const isHttp = parsedUrl.protocol === 'http:';
-          const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 80;
-          
-          // 6. API port binding: check against dynamic phpPort
-          const isLocalPhpBackend = isHttp && isLocalHost && port === phpPort;
-
-          if (isLocalPhpBackend) {
-            const setCookieKey = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'set-cookie');
-            if (setCookieKey) {
-              const setCookieHeaders = responseHeaders[setCookieKey];
-              const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
-              let hasChanged = false;
-              cookies.forEach(c => {
-                const parts = c.split(';')[0].split('=');
-                if (parts.length === 2) {
-                  const name = parts[0].trim();
-                  const value = parts[1].trim();
-                  if (!PERSISTED_COOKIE_NAMES.has(name)) return;
-                  const isDelete = value === '' || 
-                                   /expires=Thu, 01 Jan 1970/i.test(c) || 
-                                   /Max-Age=0/i.test(c) || 
-                                   /Max-Age=-/i.test(c);
-                  if (isDelete) {
-                    if (sessionCookies[name] !== undefined) {
-                      delete sessionCookies[name];
-                      hasChanged = true;
-                    }
-                  } else {
-                    if (sessionCookies[name] !== value) {
-                      sessionCookies[name] = value;
-                      hasChanged = true;
-                    }
+          const setCookieKey = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'set-cookie');
+          if (setCookieKey) {
+            const setCookieHeaders = responseHeaders[setCookieKey];
+            const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+            let hasChanged = false;
+            cookies.forEach(c => {
+              const parts = c.split(';')[0].split('=');
+              if (parts.length === 2) {
+                const name = parts[0].trim();
+                const value = parts[1].trim();
+                if (!PERSISTED_COOKIE_NAMES.has(name)) return;
+                const isDelete = value === '' ||
+                                 /expires=Thu, 01 Jan 1970/i.test(c) ||
+                                 /Max-Age=0/i.test(c) ||
+                                 /Max-Age=-/i.test(c);
+                if (isDelete) {
+                  if (sessionCookies[name] !== undefined) {
+                    delete sessionCookies[name];
+                    hasChanged = true;
+                  }
+                } else {
+                  if (sessionCookies[name] !== value) {
+                    sessionCookies[name] = value;
+                    hasChanged = true;
                   }
                 }
-              });
-              if (hasChanged) {
-                try {
-                  saveSessionCookies(getCookiesPath(), sessionCookies);
-                  console.log('[CookieProxy] Saved updated cookies to disk');
-                } catch (writeErr) {
-                  console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
-                }
+              }
+            });
+            if (hasChanged) {
+              try {
+                saveSessionCookies(getCookiesPath(), sessionCookies);
+                console.log('[CookieProxy] Saved updated cookies to disk');
+              } catch (writeErr) {
+                console.error('[CookieProxy] Failed to write cookies to disk:', writeErr.message);
               }
             }
           }
@@ -977,8 +983,17 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      const isTrustedInitiator = !initiator || initiator.startsWith('app://');
-      if (isTrustedInitiator) {
+      const trustedWebContentsId = mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow.webContents.id
+        : null;
+      if (isTrustedBackendRequest({
+        url: details.url,
+        phpPort,
+        initiator,
+        webContentsId: details.webContentsId,
+        trustedWebContentsId,
+        frameUrl: details.frame?.url,
+      })) {
         // 2. Cookie injection scope (Only inject into outgoing requests targeting same local PHP backend URL)
         let parsedUrl;
         try {
@@ -988,29 +1003,16 @@ app.whenReady().then(async () => {
         }
 
         if (parsedUrl) {
-          const host = parsedUrl.hostname;
-          const isLocalHost = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-          const isHttp = parsedUrl.protocol === 'http:';
-          const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 80;
-          
-          // 6. API port binding: check against dynamic phpPort
-          const isLocalPhpBackend = isHttp && isLocalHost && port === phpPort;
-
-          if (isLocalPhpBackend) {
-            const cookieList = [];
-            for (const [name, value] of Object.entries(sessionCookies)) {
-              cookieList.push(`${name}=${value}`);
-            }
+            const cookieHeader = getCookieHeader(sessionCookies, parsedUrl.pathname);
             // Clear any existing cookie headers case-insensitively to avoid duplicates
             for (const key of Object.keys(requestHeaders)) {
               if (key.toLowerCase() === 'cookie') {
                 delete requestHeaders[key];
               }
             }
-            if (cookieList.length > 0) {
-              requestHeaders['Cookie'] = cookieList.join('; ');
+            if (cookieHeader !== '') {
+              requestHeaders['Cookie'] = cookieHeader;
             }
-          }
         }
       }
     } catch (err) {
@@ -1118,13 +1120,50 @@ app.whenReady().then(async () => {
     if (typeof version !== 'string' || !/^[A-Za-z0-9._-]+$/.test(version)) {
       throw new Error('Invalid staged delta version');
     }
+    const compatibility = assessReleaseCompatibility(app.getVersion(), version);
+    if (!compatibility.compatible) {
+      throw new Error(`Staged delta rejected: ${compatibility.reason}`);
+    }
 
     const { getAppUnpackedPath, getDataDir } = require('./utils/paths');
     const { applyPendingDelta, rollback, setHandoffState } = require('./services/delta-update-handoff');
-    await stopJobWorker();
-    stopPHP();
+    const storageDir = getDataDir();
+    const currentState = readUpdateState(storageDir);
+    if (isActiveUpdateState(currentState) && currentState.state !== 'desktop_handoff_pending') {
+      return {
+        ok: false,
+        reason_code: 'update_in_progress',
+        error: 'Another update or sale operation is already in progress.',
+        owner: currentState.owner_id || currentState.operation
+          ? {
+            owner_id: currentState.owner_id || null,
+            operation: currentState.operation || 'unknown',
+            phase: currentState.phase || null,
+            updated_at: currentState.updated_at || null,
+          }
+          : null,
+      };
+    }
+    const lease = acquireUpdateLock(storageDir, 'electron_delta_install', {
+      target_version: version,
+    });
+    if (!lease.acquired) {
+      return {
+        ok: false,
+        reason_code: lease.reason_code || 'update_in_progress',
+        error: lease.message || 'Another update or sale operation is already in progress.',
+        owner: lease.owner || null,
+      };
+    }
     let applied;
     try {
+      writeUpdateState(storageDir, 'applying', {
+        operation: 'electron_delta_install',
+        owner_id: lease.owner_id,
+        target_version: version,
+      });
+      await stopJobWorker();
+      stopPHP();
       applied = applyPendingDelta(getDataDir(), version, getAppUnpackedPath());
       if (!applied.ok) throw new Error(applied.error);
       if (Array.isArray(applied.plan.manifest?.migrations) && applied.plan.manifest.migrations.length > 0) {
@@ -1161,6 +1200,13 @@ app.whenReady().then(async () => {
       if (applied?.plan && !recoveryError) {
         rollback(applied.plan);
         setHandoffState(applied.plan, 'rolled_back', { migration_recovery_completed: true });
+      } else if (!applied?.plan) {
+        writeUpdateState(storageDir, 'failed', {
+          operation: 'electron_delta_install',
+          owner_id: lease.owner_id,
+          target_version: version,
+          error: error.message || 'Desktop delta hand-off failed.',
+        });
       }
       try { await restartPhpAndWorker(); } catch (restartError) {
         console.error('[Delta] Failed to restart runtime after hand-off failure:', restartError.message);
@@ -1171,6 +1217,8 @@ app.whenReady().then(async () => {
           ? 'Desktop delta failed and database recovery requires manual intervention.'
           : (error.message || 'Desktop delta hand-off failed.'),
       };
+    } finally {
+      releaseUpdateLock(lease);
     }
   });
   ipcMain.handle('network:enable-lan', async (event) => {
@@ -1305,6 +1353,17 @@ app.whenReady().then(async () => {
         success: false,
         error: 'Database restore failed. Check the error log for the reference.',
       };
+    }
+  });
+
+  ipcMain.handle('auth:clear-session', async (event) => {
+    assertTrustedAppRenderer(event);
+    try {
+      await clearDesktopSession();
+      return { success: true };
+    } catch (error) {
+      console.error('[Auth] Failed to clear the local desktop session:', error.message);
+      return { success: false, error: 'Unable to clear the local desktop session.' };
     }
   });
 

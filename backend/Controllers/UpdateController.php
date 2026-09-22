@@ -9,6 +9,7 @@ use App\Helpers\JobQueue;
 use App\Helpers\Logger;
 use App\Helpers\Response;
 use App\Services\AuthService;
+use App\Services\ReleaseVersionPolicy;
 use App\Services\UpdateService;
 use Throwable;
 
@@ -45,12 +46,17 @@ class UpdateController extends Controller
         // Check if there is cached or active release info
         $remote = $this->updateService->fetchRemoteVersion(null, false) ?? [];
         $latestVersion = $remote['version'] ?? null;
-        $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $latestVersion);
+        $hasUpdate = $compatibility['compatible']
+            && version_compare((string) $latestVersion, (string) $currentVersion, '>');
+        $visibleLatestVersion = $compatibility['compatible'] ? $latestVersion : null;
 
         $type = 'full';
         $bootstrapRequired = false;
         $filesCount = null;
-        if (!empty($remote['manifest']['files']) && is_array($remote['manifest']['files'])) {
+        if (!$compatibility['compatible']) {
+            $type = 'none';
+        } elseif (!empty($remote['manifest']['files']) && is_array($remote['manifest']['files'])) {
             $type = 'delta';
             $filesCount = count($remote['manifest']['files']);
         } elseif (!empty($remote['delta_url'])) {
@@ -63,14 +69,14 @@ class UpdateController extends Controller
         }
 
         $releaseInfo = [
-            'title' => $remote['tag_name'] ?? ($latestVersion ? "Release v{$latestVersion}" : null),
-            'tag_name' => $remote['tag_name'] ?? ($latestVersion ? "v{$latestVersion}" : null),
-            'changelog' => $remote['changelog'] ?? [],
-            'released_at' => $remote['released_at'] ?? null,
+            'title' => $compatibility['compatible'] ? ($remote['tag_name'] ?? ($latestVersion ? "Release v{$latestVersion}" : null)) : null,
+            'tag_name' => $compatibility['compatible'] ? ($remote['tag_name'] ?? ($latestVersion ? "v{$latestVersion}" : null)) : null,
+            'changelog' => $compatibility['compatible'] ? ($remote['changelog'] ?? []) : [],
+            'released_at' => $compatibility['compatible'] ? ($remote['released_at'] ?? null) : null,
             'files_count' => $filesCount,
-            'release_url' => $remote['release_url'] ?? null,
-            'download_url' => $remote['delta_url'] ?? ($remote['download_url'] ?? null),
-            'full_package_url' => $remote['full_package_url'] ?? null,
+            'release_url' => $compatibility['compatible'] ? ($remote['release_url'] ?? null) : null,
+            'download_url' => $compatibility['compatible'] ? ($remote['delta_url'] ?? ($remote['download_url'] ?? null)) : null,
+            'full_package_url' => $compatibility['compatible'] ? ($remote['full_package_url'] ?? null) : null,
         ];
 
         $interruptedUpdate = $this->updateService->getDeltaUpdateService()->detectInterruptedUpdate();
@@ -78,7 +84,7 @@ class UpdateController extends Controller
 
         return Response::success([
             'current_version'    => $currentVersion,
-            'latest_version'     => $latestVersion,
+            'latest_version'     => $visibleLatestVersion,
             'update_available'   => $hasUpdate,
             'type'               => $type,
             'bootstrap_required' => $bootstrapRequired,
@@ -88,6 +94,8 @@ class UpdateController extends Controller
             'release_info'       => $releaseInfo,
             'update_state'       => $state,
             'interrupted_update' => $interruptedUpdate,
+            'compatibility_reason' => $compatibility['reason'],
+            'compatibility_reason_code' => $compatibility['reason_code'],
         ]);
     }
 
@@ -145,6 +153,7 @@ class UpdateController extends Controller
      */
     public function bootstrapUpdate()
     {
+        $currentVersion = $this->updateService->getLocalVersion()['version'] ?? '0.0.0';
         $remote = $this->updateService->fetchRemoteVersion();
         if (!$remote || empty($remote['version'])) {
             return Response::error('Bootstrap release metadata unavailable.', 503);
@@ -152,6 +161,15 @@ class UpdateController extends Controller
 
         $manifest = $remote['manifest'] ?? [];
         $targetVersion = $remote['version'];
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $targetVersion);
+        if (!$compatibility['compatible']) {
+            $statusCode = $compatibility['reason_code'] === 'legacy_generation' ? 409 : 422;
+            return Response::error($compatibility['reason'], $statusCode, [
+                'reason_code' => $compatibility['reason_code'],
+                'current_version' => $currentVersion,
+                'target_version' => $targetVersion,
+            ]);
+        }
         $packageUrl = $remote['full_package_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/full-package.zip";
         $manifestUrl = $remote['manifest_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/manifest.json";
         $signatureUrl = $remote['signature_url'] ?? "https://github.com/ABDO-TECK/pos/releases/download/v{$targetVersion}/manifest.sig";
@@ -172,7 +190,12 @@ class UpdateController extends Controller
 
     public function changelog()
     {
+        $currentVersion = $this->updateService->getLocalVersion()['version'] ?? '0.0.0';
         $remote = $this->updateService->fetchRemoteVersion();
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $remote['version'] ?? null);
+        if (!$compatibility['compatible']) {
+            return Response::success([]);
+        }
         return Response::success($remote['changelog'] ?? []);
     }
 
@@ -368,11 +391,14 @@ class UpdateController extends Controller
         $currentVersion = $local['version'] ?? ($local['application_version'] ?? '1.1.46');
         $remote = $this->updateService->fetchRemoteVersion() ?? [];
         $latestVersion = $remote['version'] ?? null;
-        $hasUpdate = $latestVersion ? version_compare($latestVersion, $currentVersion, '>') : false;
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $latestVersion);
+        $hasUpdate = $compatibility['compatible']
+            && version_compare((string) $latestVersion, (string) $currentVersion, '>');
+        $visibleLatestVersion = $compatibility['compatible'] ? $latestVersion : null;
 
         $updateType = 'delta_update';
         $size = 0;
-        $manifest = $remote['manifest'] ?? [];
+        $manifest = $compatibility['compatible'] ? ($remote['manifest'] ?? []) : [];
         if (!empty($manifest['type']) && $manifest['type'] === 'bootstrap_installer') {
             $updateType = 'bootstrap_installer';
             $size = (int) ($manifest['installer_size'] ?? 296929980);
@@ -382,17 +408,19 @@ class UpdateController extends Controller
 
         $releaseNotes = is_array($remote['changelog'] ?? null) 
             ? implode("\n", $remote['changelog']) 
-            : ($remote['changelog'] ?? 'تحديثات وتحسينات في الأداء والاستقرار.');
+            : ($compatibility['compatible'] ? ($remote['changelog'] ?? 'تحديثات وتحسينات في الأداء والاستقرار.') : '');
 
         return Response::success([
             'current_version'   => $currentVersion,
-            'available_version' => $latestVersion,
+            'available_version' => $visibleLatestVersion,
             'update_available'  => $hasUpdate,
             'update_type'       => $updateType,
             'size'              => $size,
             'release_notes'     => $releaseNotes,
             'mandatory'         => (bool) ($manifest['mandatory'] ?? false),
-            'installer_name'    => $manifest['installer_name'] ?? ($updateType === 'bootstrap_installer' ? "POS-Desktop-Setup-{$latestVersion}.exe" : null),
+            'installer_name'    => $manifest['installer_name'] ?? ($updateType === 'bootstrap_installer' && $visibleLatestVersion ? "POS-Desktop-Setup-{$visibleLatestVersion}.exe" : null),
+            'compatibility_reason' => $compatibility['reason'],
+            'compatibility_reason_code' => $compatibility['reason_code'],
         ]);
     }
 

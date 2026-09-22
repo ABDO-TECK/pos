@@ -8,6 +8,7 @@ use App\Services\GitService;
 use App\Services\FrontendBuildService;
 use App\Services\BackupService;
 use App\Services\MigrationSafetyBackupService;
+use App\Services\UpdateOperationLock;
 
 class UpdateServiceTest extends TestCase
 {
@@ -30,10 +31,14 @@ class UpdateServiceTest extends TestCase
         unset($_ENV['UPDATE_SERVER_URL']);
         putenv('ENABLE_UPDATE_CHECKS');
         putenv('UPDATE_SERVER_URL');
+
+        $this->cleanCacheFiles();
     }
 
     protected function tearDown(): void
     {
+        $this->cleanCacheFiles();
+
         // Restore env vars
         foreach ($this->envBackup as $key => $val) {
             if ($val === null) {
@@ -42,6 +47,19 @@ class UpdateServiceTest extends TestCase
             } else {
                 $_ENV[$key] = $val;
                 putenv("{$key}={$val}");
+            }
+        }
+    }
+
+    private function cleanCacheFiles(): void
+    {
+        $storage = realpath(__DIR__ . '/../../storage');
+        if ($storage && is_dir($storage)) {
+            $files = glob($storage . '/remote_version_cache_*.json');
+            if (is_array($files)) {
+                foreach ($files as $f) {
+                    @unlink($f);
+                }
             }
         }
     }
@@ -479,7 +497,7 @@ class UpdateServiceTest extends TestCase
         $this->assertSame(['backend/Helpers/Logger.php'], $res['data']['applied_files']);
     }
 
-    public function testApplyUpdateMigrationFailureTriggersAutomaticRollback(): void
+    public function testApplyUpdateMigrationFailureDoesNotClaimRollbackWhenFileRestoreFails(): void
     {
         $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
         $_ENV['UPDATE_SERVER_URL'] = 'https://api.github.com/repos/ABDO-TECK/pos/contents/version.json?ref=main';
@@ -526,11 +544,11 @@ class UpdateServiceTest extends TestCase
             ->method('rollbackFiles')
             ->with($tempRoot . '/backend/storage/snapshot_mig_fail')
             ->willReturn([
-                'ok' => true,
-                'restored_files' => ['backend/Helpers/Logger.php'],
+                'ok' => false,
+                'restored_files' => [],
                 'removed_new_files' => [],
-                'errors' => [],
-                'logs' => ['Rollback complete.'],
+                'errors' => ['Failed to restore backend/Helpers/Logger.php from backup.'],
+                'logs' => ['Rollback failed.'],
             ]);
 
         $migrationMock = $this->createMock(\App\Services\MigrationService::class);
@@ -579,7 +597,8 @@ class UpdateServiceTest extends TestCase
         $this->assertFalse($res['ok']);
         $this->assertSame(500, $res['code']);
         $this->assertStringContainsString('فشل ترحيل قاعدة البيانات', $res['error']);
-        $this->assertStringContainsString('تم التراجع التلقائي', $res['error']);
+        $this->assertStringContainsString('فشل استعادة ملفات التحديث', $res['error']);
+        $this->assertStringNotContainsString('تم التراجع التلقائي بنجاح', $res['error']);
     }
 
     public function testRollbackUpdateDelegatesToDeltaService(): void
@@ -761,6 +780,7 @@ class UpdateServiceTest extends TestCase
     public function testCheckForUpdateNoUpdateWhenVersionMatches(): void
     {
         $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+        $_ENV['UPDATE_SERVER_URL'] = 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest';
 
         $ghMock = $this->createMock(\App\Services\GitHubReleaseProvider::class);
         $ghMock->method('getLatestRelease')->willReturn([
@@ -799,5 +819,199 @@ class UpdateServiceTest extends TestCase
         $this->assertTrue($res['ok']);
         $this->assertFalse($res['has_update']);
         $this->assertSame('no_update_available', $res['status']);
+    }
+
+    public function testCheckForUpdateRejectsV1148ForV001AndPreservesReason(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock])
+            ->onlyMethods(['fetchRemoteVersionDiagnostics', 'getLocalVersion'])
+            ->getMock();
+
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersionDiagnostics')->willReturn([
+            'ok' => true,
+            'data' => ['version' => '1.1.48', 'changelog' => ['Legacy release']],
+            'checkedUrl' => 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json',
+            'errorCode' => null,
+            'details' => null,
+        ]);
+
+        $result = $service->checkForUpdate(true);
+
+        $this->assertFalse($result['has_update']);
+        $this->assertSame('no_update_available', $result['status']);
+        $this->assertSame('Release belongs to a legacy series and cannot be applied.', $result['fallback_reason']);
+        $this->assertSame($result['fallback_reason'], $result['message']);
+    }
+
+    public function testCheckForUpdateRejectsV120ForV001(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock])
+            ->onlyMethods(['fetchRemoteVersionDiagnostics', 'getLocalVersion'])
+            ->getMock();
+
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersionDiagnostics')->willReturn([
+            'ok' => true,
+            'data' => ['version' => '1.2.0'],
+            'checkedUrl' => 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest',
+            'errorCode' => null,
+            'details' => null,
+        ]);
+
+        $result = $service->checkForUpdate(true);
+
+        $this->assertFalse($result['updateAvailable']);
+        $this->assertSame('legacy_generation', $result['fallback_reason_code']);
+    }
+
+    public function testCheckForUpdateDiscoversCompatibleV002ForV001(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock])
+            ->onlyMethods(['fetchRemoteVersionDiagnostics', 'getLocalVersion'])
+            ->getMock();
+
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersionDiagnostics')->willReturn([
+            'ok' => true,
+            'data' => ['version' => '0.0.2', 'changelog' => ['Compatible patch']],
+            'checkedUrl' => 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json',
+            'errorCode' => null,
+            'details' => null,
+        ]);
+
+        $result = $service->checkForUpdate(true);
+
+        $this->assertTrue($result['has_update']);
+        $this->assertSame('0.0.2', $result['latest_version']);
+    }
+
+    public function testCheckForUpdateRejectsInvalidVersionMetadata(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock])
+            ->onlyMethods(['fetchRemoteVersionDiagnostics', 'getLocalVersion'])
+            ->getMock();
+
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersionDiagnostics')->willReturn([
+            'ok' => true,
+            'data' => ['version' => 'not-semver'],
+            'checkedUrl' => 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json',
+            'errorCode' => null,
+            'details' => null,
+        ]);
+
+        $result = $service->checkForUpdate(true);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('invalid_version_json', $result['errorCode']);
+        $this->assertFalse($result['has_update']);
+    }
+
+    public function testCheckForUpdateRejectsIncompatibleManifestVersion(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock])
+            ->onlyMethods(['fetchRemoteVersionDiagnostics', 'getLocalVersion'])
+            ->getMock();
+
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersionDiagnostics')->willReturn([
+            'ok' => true,
+            'data' => [
+                'version' => '0.0.2',
+                'manifest' => [
+                    'version' => '1.2.0',
+                    'minimum_version' => '0.0.1',
+                    'files' => [],
+                ],
+            ],
+            'checkedUrl' => 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json',
+            'errorCode' => null,
+            'details' => null,
+        ]);
+
+        $result = $service->checkForUpdate(true);
+
+        $this->assertFalse($result['has_update']);
+        $this->assertSame('legacy_generation', $result['fallback_reason_code']);
+        $this->assertStringContainsString('legacy series', $result['fallback_reason']);
+    }
+
+    public function testApplyUpdateRejectsLegacyReleaseBeforeDownload(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+        $_ENV['UPDATE_SERVER_URL'] = 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json';
+
+        $storage = sys_get_temp_dir() . '/update_generation_' . bin2hex(random_bytes(4));
+        @mkdir($storage, 0755, true);
+        $deltaMock = $this->createMock(\App\Services\DeltaUpdateService::class);
+        $deltaMock->method('getStorageDir')->willReturn($storage);
+        $deltaMock->method('checkDiskSpace')->willReturn(['ok' => true, 'free_bytes' => 1024 * 1024 * 1024]);
+        $deltaMock->expects($this->never())->method('downloadFilesToStaging');
+        $deltaMock->expects($this->never())->method('downloadReleaseZipToStaging');
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock])
+            ->onlyMethods(['fetchRemoteVersion', 'getLocalVersion'])
+            ->getMock();
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->method('fetchRemoteVersion')->willReturn(['version' => '1.2.0']);
+
+        $result = $service->applyUpdate(false);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(409, $result['code']);
+        $this->assertSame('legacy_generation', $result['data']['reason_code']);
+        @rmdir($storage);
+    }
+
+    public function testApplyUpdateRefusesWhenAConcurrentSaleOwnsTheSharedOperationLock(): void
+    {
+        $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
+        $_ENV['UPDATE_SERVER_URL'] = 'https://raw.githubusercontent.com/ABDO-TECK/pos/main/version.json';
+
+        $storage = sys_get_temp_dir() . '/update_sale_lock_' . bin2hex(random_bytes(4));
+        @mkdir($storage, 0755, true);
+        $deltaMock = $this->createMock(\App\Services\DeltaUpdateService::class);
+        $deltaMock->method('getStorageDir')->willReturn($storage);
+        $deltaMock->expects($this->never())->method('checkDiskSpace');
+
+        $saleLock = new UpdateOperationLock($storage);
+        $saleLease = $saleLock->acquire('sale_transaction', ['branch_id' => 7]);
+        self::assertTrue($saleLease['acquired']);
+
+        $service = $this->getMockBuilder(UpdateService::class)
+            ->setConstructorArgs([$this->gitMock, $this->buildMock, $this->backupMock, $deltaMock])
+            ->onlyMethods(['fetchRemoteVersion', 'getLocalVersion'])
+            ->getMock();
+        $service->method('getLocalVersion')->willReturn(['version' => '0.0.1']);
+        $service->expects($this->never())->method('fetchRemoteVersion');
+
+        try {
+            $result = $service->applyUpdate(false);
+        } finally {
+            $saleLock->release();
+            @rmdir($storage);
+        }
+
+        self::assertFalse($result['ok']);
+        self::assertSame(409, $result['code']);
+        self::assertSame('update_in_progress', $result['data']['reason_code']);
+        self::assertSame('sale_transaction', $result['data']['owner']['operation']);
     }
 }

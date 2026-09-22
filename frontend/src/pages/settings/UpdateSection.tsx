@@ -32,6 +32,7 @@ import {
 } from '../../api/endpoints'
 
 import useUpdateStore from '../../store/updateStore'
+import useCartStore from '../../store/cartStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import SectionTitle from '../../components/common/SectionTitle'
 
@@ -234,7 +235,13 @@ export default function UpdateSection() {
   }
 
   const handleApplyUpdate = async (force = false) => {
-      const deltaCapable = await hasDeltaHandoffCapability()
+    const activeCartItems = useCartStore.getState().items
+    if (activeCartItems.length > 0) {
+      toast.error('لا يمكن تطبيق التحديث أثناء وجود عملية بيع جارية أو عناصر في السلة. يرجى إتمام عملية البيع أو إفراغ السلة أولاً.')
+      return
+    }
+
+    const deltaCapable = await hasDeltaHandoffCapability()
     if (!deltaCapable && updaterApi) {
       setApplyingUpdate(true)
       setUpdateLogs(['🚀 جاري تحميل تحديث التطبيق المطلوب...'])
@@ -281,12 +288,17 @@ export default function UpdateSection() {
     } catch (error: unknown) {
       setApplyingUpdate(false)
       const errData = isAxiosError(error)
-        ? (error.response?.data as { message?: string; errors?: { logs?: string[] }; data?: { logs?: string[] } })
+        ? (error.response?.data as { message?: string; errors?: { logs?: string[]; reason_code?: string }; data?: { logs?: string[] } })
         : undefined
       const msg = errData?.message || (error instanceof Error ? error.message : 'فشل تطبيق التحديث.')
       const logs = errData?.errors?.logs || errData?.data?.logs || [error instanceof Error ? error.message : 'Update failed']
       setUpdateLogs(logs)
       await loadStatusAndHistory()
+
+      if (errData?.errors?.reason_code === 'update_in_progress') {
+        toast.error(msg)
+        return
+      }
 
       if (isAxiosError(error) && error.response?.status === 409 && !force) {
         const forceConfirm = await confirm(

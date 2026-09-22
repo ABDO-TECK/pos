@@ -16,12 +16,26 @@ const {
   RESTORE_STAGES,
 } = require('../services/restore-manager');
 
+const pathRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-restore-paths-'));
+const originalProgramData = process.env.PROGRAMDATA;
+const originalLocalAppData = process.env.LOCALAPPDATA;
+process.env.PROGRAMDATA = pathRoot;
+process.env.LOCALAPPDATA = pathRoot;
+
 const mockCredentials = {
   user: 'pos_app',
   password: 'app_secret_password_123',
   migrationUser: 'pos_migration',
   migrationPassword: 'migration_secret_password_456',
 };
+
+test.after(() => {
+  if (originalProgramData === undefined) delete process.env.PROGRAMDATA;
+  else process.env.PROGRAMDATA = originalProgramData;
+  if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+  else process.env.LOCALAPPDATA = originalLocalAppData;
+  fs.rmSync(pathRoot, { recursive: true, force: true });
+});
 
 test('Phase 1.B - normal backend environment does NOT receive migration credentials', () => {
   const env = createBackendEnv({

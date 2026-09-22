@@ -102,6 +102,125 @@ class GitHubReleaseProviderTest extends TestCase
         $this->assertSame('github_network_timeout', $res['error_code']);
     }
 
+    public function testGetLatestReleaseClassifiesPrimaryRateLimitAndReturnsSafeDiagnostics(): void
+    {
+        $provider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+
+        $provider->expects($this->once())
+            ->method('executeCurlGet')
+            ->willReturn([
+                'ok' => false,
+                'body' => '{"message":"API rate limit exceeded for 203.0.113.10."}',
+                'http_code' => 403,
+                'curl_error' => '',
+                'curl_errno' => 0,
+                'response_headers' => [
+                    'x-ratelimit-limit' => '60',
+                    'x-ratelimit-remaining' => '0',
+                    'x-ratelimit-reset' => '1790028328',
+                    'x-ratelimit-resource' => 'core',
+                ],
+            ]);
+
+        $result = $provider->getLatestRelease('stable', '0.0.1');
+
+        self::assertFalse($result['ok']);
+        self::assertSame('github_primary_rate_limited', $result['error_code']);
+        self::assertSame(403, $result['diagnostics']['http_code']);
+        self::assertSame('0', $result['diagnostics']['rate_limit_remaining']);
+        self::assertSame('1790028328', $result['diagnostics']['rate_limit_reset']);
+        self::assertArrayNotHasKey('body', $result['diagnostics']);
+        self::assertStringNotContainsString('203.0.113.10', (string) ($result['error'] ?? ''));
+    }
+
+    public function testGetLatestReleaseClassifiesSecondaryRateLimit(): void
+    {
+        $provider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+
+        $provider->method('executeCurlGet')->willReturn([
+            'ok' => false,
+            'body' => '{"message":"You have exceeded a secondary rate limit."}',
+            'http_code' => 403,
+            'curl_error' => '',
+            'curl_errno' => 0,
+            'response_headers' => [
+                'retry-after' => '30',
+                'x-ratelimit-remaining' => '58',
+            ],
+        ]);
+
+        $result = $provider->getLatestRelease('beta', '0.0.1');
+
+        self::assertFalse($result['ok']);
+        self::assertSame('github_secondary_rate_limited', $result['error_code']);
+        self::assertSame('30', $result['diagnostics']['retry_after']);
+        self::assertSame('58', $result['diagnostics']['rate_limit_remaining']);
+    }
+
+    public function testGetLatestReleaseDoesNotTreatEveryForbiddenResponseAsRateLimit(): void
+    {
+        $provider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+
+        $provider->method('executeCurlGet')->willReturn([
+            'ok' => false,
+            'body' => '{"message":"Resource not accessible by integration"}',
+            'http_code' => 403,
+            'curl_error' => '',
+            'curl_errno' => 0,
+            'response_headers' => [
+                'x-ratelimit-remaining' => '59',
+            ],
+        ]);
+
+        $result = $provider->getLatestRelease('beta', '0.0.1');
+
+        self::assertFalse($result['ok']);
+        self::assertSame('github_http_403_forbidden', $result['error_code']);
+    }
+
+    public function testV001SelectsCompatibleV002InsteadOfLegacyReleases(): void
+    {
+        $provider = $this->getMockBuilder(GitHubReleaseProvider::class)
+            ->setConstructorArgs(['ABDO-TECK', 'pos'])
+            ->onlyMethods(['executeCurlGet'])
+            ->getMock();
+
+        $provider->method('executeCurlGet')->willReturnOnConsecutiveCalls(
+            [
+                'ok' => true,
+                'body' => json_encode(['tag_name' => 'v1.2.0', 'prerelease' => false]),
+                'http_code' => 200,
+                'curl_error' => '',
+                'curl_errno' => 0,
+            ],
+            [
+                'ok' => true,
+                'body' => json_encode([
+                    ['tag_name' => 'v1.2.0', 'prerelease' => false],
+                    ['tag_name' => 'v1.1.48', 'prerelease' => false],
+                    ['tag_name' => 'v0.0.2', 'prerelease' => false],
+                ]),
+                'http_code' => 200,
+                'curl_error' => '',
+                'curl_errno' => 0,
+            ],
+        );
+
+        $result = $provider->getLatestRelease('stable', '0.0.1');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('0.0.2', $result['latest_version']);
+    }
+
     public function testAllowedUrlValidation(): void
     {
         $provider = new GitHubReleaseProvider('ABDO-TECK', 'pos');

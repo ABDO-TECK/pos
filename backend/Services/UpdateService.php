@@ -14,6 +14,7 @@ class UpdateService
 {
     private string $repoUrl;
     private string $localVersionFile;
+    private string $clientChannelFile;
     private string $rootDir;
     /** @var list<string> */
     private array $allowedUpdateHosts;
@@ -53,6 +54,11 @@ class UpdateService
         $this->githubProvider   = $githubProvider ?? new GitHubReleaseProvider();
         $this->signatureService = $signatureService ?? new ManifestSignatureService();
         $this->telemetryService = $telemetryService;
+        $storageDir = trim((string) $this->deltaUpdateService->getStorageDir());
+        if ($storageDir === '') {
+            $storageDir = $normalizedPath . '/backend/storage';
+        }
+        $this->clientChannelFile = rtrim(str_replace('\\', '/', $storageDir), '/') . '/update_channel.json';
         $this->migrationSafetyBackupService = $migrationSafetyBackupService
             ?? new MigrationSafetyBackupService($backupService, $this->deltaUpdateService->getStorageDir());
         $this->repoUrl          = EnvLoader::get('UPDATE_SERVER_URL', 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest');
@@ -109,6 +115,15 @@ class UpdateService
      */
     public function getClientChannel(): string
     {
+        $preference = @file_get_contents($this->clientChannelFile);
+        if ($preference !== false) {
+            $data = json_decode($preference, true);
+            $storedChannel = is_array($data) ? strtolower(trim((string) ($data['channel'] ?? ''))) : '';
+            if (in_array($storedChannel, ['stable', 'beta', 'rc'], true)) {
+                return $storedChannel;
+            }
+        }
+
         $local = $this->getLocalVersion();
         $channel = strtolower(trim($local['update_channel'] ?? EnvLoader::get('APP_UPDATE_CHANNEL', 'stable')));
         return in_array($channel, ['stable', 'beta', 'rc'], true) ? $channel : 'stable';
@@ -124,11 +139,16 @@ class UpdateService
             return ['ok' => false, 'error' => 'قناة التحديث المحددة غير صحيحة. القنوات المسموحة: stable, beta, rc.'];
         }
 
-        $local = $this->getLocalVersion();
-        $local['update_channel'] = $channel;
+        $storageDir = dirname($this->clientChannelFile);
+        if (!is_dir($storageDir) && !@mkdir($storageDir, 0750, true) && !is_dir($storageDir)) {
+            return ['ok' => false, 'error' => 'تعذر حفظ إعدادات قناة التحديث.'];
+        }
 
-        $json = json_encode($local, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if (@file_put_contents($this->localVersionFile, $json) === false) {
+        $json = json_encode([
+            'channel' => $channel,
+            'updated_at' => date('c'),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false || @file_put_contents($this->clientChannelFile, $json . "\n", LOCK_EX) === false) {
             return ['ok' => false, 'error' => 'تعذر حفظ إعدادات قناة التحديث.'];
         }
 
@@ -219,10 +239,17 @@ class UpdateService
         $storageDir = $this->deltaUpdateService->getStorageDir();
         $safeChannel = preg_replace('/[^a-z0-9_-]/i', '', $targetChannel) ?: 'stable';
         $cacheFile = rtrim($storageDir, '/\\') . '/remote_version_cache_' . $safeChannel . '.json';
+        $failureCacheFile = rtrim($storageDir, '/\\') . '/remote_version_failure_cache_' . $safeChannel . '.json';
+
+        $cachedFailure = $this->readRemoteFailureCache($failureCacheFile);
+        if ($cachedFailure !== null) {
+            return $cachedFailure;
+        }
 
         // If repoUrl points specifically to GitHub releases endpoint, use GitHubReleaseProvider
         if (str_contains($this->repoUrl, '/releases')) {
-            $ghRelease = $this->githubProvider->getLatestRelease($targetChannel);
+            $local = $this->getLocalVersion();
+            $ghRelease = $this->githubProvider->getLatestRelease($targetChannel, $local['version'] ?? null);
             if ($ghRelease['ok'] && !empty($ghRelease['latest_version'])) {
                 $cachePayload = [
                     'ok' => true,
@@ -247,13 +274,18 @@ class UpdateService
                 if (is_dir(dirname($cacheFile))) {
                     @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
                 }
+                @unlink($failureCacheFile);
                 return $cachePayload;
             }
 
-            return $this->remoteFailure(
+            $failure = $this->remoteFailure(
                 $ghRelease['error_code'] ?? 'github_fetch_failed',
-                $ghRelease['error'] ?? 'Failed to fetch latest release from GitHub.'
+                $ghRelease['error'] ?? 'Failed to fetch latest release from GitHub.',
+                (int) ($ghRelease['diagnostics']['http_code'] ?? 0),
+                is_array($ghRelease['diagnostics'] ?? null) ? $ghRelease['diagnostics'] : [],
             );
+            $this->writeRemoteFailureCache($failureCacheFile, $failure);
+            return $failure;
         }
 
 
@@ -302,7 +334,8 @@ class UpdateService
             if (is_dir(dirname($cacheFile))) {
                 @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             }
-            return $cachePayload;
+                @unlink($failureCacheFile);
+                return $cachePayload;
         }
 
         $errorCode = $this->classifyRemoteFailure($httpCode, $curlErr, $curlErrNo);
@@ -317,7 +350,9 @@ class UpdateService
             'host' => $this->updateHostForLog($this->repoUrl),
             'error_code' => $errorCode,
         ]);
-        return $this->remoteFailure($errorCode, $details, $httpCode);
+        $failure = $this->remoteFailure($errorCode, $details, $httpCode);
+        $this->writeRemoteFailureCache($failureCacheFile, $failure);
+        return $failure;
     }
 
     /**
@@ -405,7 +440,7 @@ class UpdateService
         return is_string($host) && $host !== '' ? strtolower($host) : 'invalid';
     }
 
-    private function remoteFailure(string $errorCode, string $details, int $httpCode = 0): array
+    private function remoteFailure(string $errorCode, string $details, int $httpCode = 0, array $diagnostics = []): array
     {
         return [
             'ok' => false,
@@ -415,7 +450,74 @@ class UpdateService
             'details' => $httpCode > 0 && !str_contains($details, 'HTTP')
                 ? "HTTP {$httpCode}: {$details}"
                 : $details,
+            'diagnostics' => $diagnostics,
         ];
+    }
+
+    /**
+     * Read a short-lived rate-limit failure cache. A forced check may bypass
+     * successful-result caching, but it must not hammer a known rate-limited
+     * endpoint before the server's retry window has elapsed.
+     */
+    private function readRemoteFailureCache(string $cacheFile): ?array
+    {
+        if (!is_file($cacheFile)) {
+            return null;
+        }
+
+        $cached = json_decode((string) @file_get_contents($cacheFile), true);
+        if (!is_array($cached) || ($cached['ok'] ?? true) !== false) {
+            return null;
+        }
+
+        $retryAt = (int) ($cached['retry_at'] ?? 0);
+        if ($retryAt <= time()) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'data' => null,
+            'checkedUrl' => (string) ($cached['checkedUrl'] ?? $this->repoUrl),
+            'errorCode' => (string) ($cached['errorCode'] ?? 'github_rate_limited'),
+            'details' => (string) ($cached['details'] ?? 'GitHub update discovery is temporarily rate limited.'),
+            'diagnostics' => is_array($cached['diagnostics'] ?? null) ? $cached['diagnostics'] : [],
+        ];
+    }
+
+    private function writeRemoteFailureCache(string $cacheFile, array $failure): void
+    {
+        $errorCode = (string) ($failure['errorCode'] ?? '');
+        if (!in_array($errorCode, ['github_primary_rate_limited', 'github_secondary_rate_limited'], true)) {
+            return;
+        }
+
+        $diagnostics = is_array($failure['diagnostics'] ?? null) ? $failure['diagnostics'] : [];
+        $retryAt = time() + 60;
+        if ($errorCode === 'github_primary_rate_limited') {
+            $reset = (int) ($diagnostics['rate_limit_reset'] ?? 0);
+            if ($reset > time()) {
+                $retryAt = $reset;
+            }
+        } else {
+            $retryAfter = (int) ($diagnostics['retry_after'] ?? 0);
+            if ($retryAfter > 0) {
+                $retryAt = time() + min($retryAfter, 900);
+            }
+        }
+
+        $payload = [
+            'ok' => false,
+            'checkedUrl' => $failure['checkedUrl'] ?? $this->repoUrl,
+            'errorCode' => $errorCode,
+            'details' => $failure['details'] ?? 'GitHub update discovery is temporarily rate limited.',
+            'diagnostics' => $diagnostics,
+            'retry_at' => $retryAt,
+        ];
+        $directory = dirname($cacheFile);
+        if (is_dir($directory)) {
+            @file_put_contents($cacheFile, json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+        }
     }
 
     /**
@@ -468,13 +570,15 @@ class UpdateService
                 'checkedUrl'          => $checkedUrl,
                 'errorCode'           => $remoteResult['errorCode'] ?? 'github_network_timeout',
                 'details'             => $remoteResult['details'] ?? null,
+                'diagnostics'         => $remoteResult['diagnostics'] ?? [],
                 'changelog'           => [],
             ];
         }
 
         $currentVersion = $local['version'] ?? '0.0.0';
         $latestVersion = $remote['version'] ?? null;
-        if (!is_string($latestVersion) || $latestVersion === '') {
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, is_string($latestVersion) ? $latestVersion : null);
+        if (!$compatibility['compatible'] && $compatibility['reason_code'] === 'invalid_version') {
             return [
                 'success'             => false,
                 'status'              => 'invalid_version_json',
@@ -500,7 +604,12 @@ class UpdateService
         $clientEngineVersion = $local['update_engine_version'] ?? null;
         $clientChannel = $this->getClientChannel();
         $deviceId = $this->getDeviceId();
-        $hasUpdate = version_compare($latestVersion, $currentVersion, '>');
+
+        // Release generation guard: v0 clients must never update to a newer generation.
+        $compatibility = ReleaseVersionPolicy::assess($currentVersion, $latestVersion);
+        $hasUpdate = $compatibility['compatible'] && version_compare($latestVersion, $currentVersion, '>');
+        $deltaReason = $compatibility['reason'];
+        $deltaReasonCode = $compatibility['reason_code'];
 
         // Emit update_check_started telemetry
         $this->getTelemetryService()->recordEvent([
@@ -519,7 +628,6 @@ class UpdateService
         $isDelta = false;
         $bootstrapRequired = false;
         $deltaManifest = null;
-        $deltaReason = null;
         $manifestUrl = $remote['manifest_url'] ?? null;
         $signatureUrl = $remote['signature_url'] ?? null;
         $deltaUrl = $remote['delta_url'] ?? null;
@@ -573,10 +681,18 @@ class UpdateService
                     $validation = $this->manifestService->validateManifest($deltaManifest);
                     if ($validation['valid'] && $validation['manifest'] !== null) {
                         $manifestData = $validation['manifest'];
-                        $engineCheck = $this->manifestService->checkEngineCompatibility($clientEngineVersion, $manifestData);
+                        $manifestCompatibility = ReleaseVersionPolicy::assess(
+                            $currentVersion,
+                            $manifestData['version'] ?? null
+                        );
 
-                        if (!$engineCheck['compatible']) {
+                        if (!$manifestCompatibility['compatible']) {
+                            $hasUpdate = false;
+                            $deltaReason = $manifestCompatibility['reason'];
+                            $deltaReasonCode = $manifestCompatibility['reason_code'];
+                        } elseif (!(($engineCheck = $this->manifestService->checkEngineCompatibility($clientEngineVersion, $manifestData))['compatible'] ?? false)) {
                             $deltaReason = $engineCheck['reason'];
+                            $deltaReasonCode = 'engine_incompatible';
                             $hasUpdate = false;
                         } elseif (!empty($manifestData['migration_release']) || ($manifestData['type'] ?? '') === 'full') {
                             $updateType = 'full';
@@ -673,6 +789,9 @@ class UpdateService
             'delta_url'             => $deltaUrl,
             'files_count'           => $deltaManifest ? count($deltaManifest['files'] ?? []) : null,
             'fallback_reason'       => $deltaReason,
+            'fallback_reason_code'  => $deltaReasonCode,
+            'compatibility_reason'  => $deltaReason,
+            'compatibility_reason_code' => $deltaReasonCode,
         ];
 
     }
@@ -683,7 +802,52 @@ class UpdateService
      * @return array ['ok' => bool, 'data' => array|null, 'error' => string|null, 'code' => int]
      */
     public function applyUpdate(bool $force, bool $deltaCapable = true): array
+    {
+        $lock = new UpdateOperationLock($this->deltaUpdateService->getStorageDir());
+        $state = $this->deltaUpdateService->getUpdateState();
+        if (UpdateOperationLock::isActiveState($state)) {
+            return $this->updateCoordinationFailure($state['owner_id'] ?? null, $state['operation'] ?? null);
+        }
 
+        $lease = $lock->acquire('backend_delta_apply');
+        if (!$lease['acquired']) {
+            return $this->updateCoordinationFailure(
+                $lease['owner']['owner_id'] ?? null,
+                $lease['owner']['operation'] ?? null,
+                $lease
+            );
+        }
+
+        try {
+            $lock->heartbeat('starting');
+            $this->deltaUpdateService->setUpdateState('applying', [
+                'operation' => 'backend_delta_apply',
+                'owner_id' => $lease['owner_id'],
+            ]);
+
+            $result = $this->applyUpdateUnlocked($force, $deltaCapable);
+            if (!$result['ok']) {
+                $currentState = $this->deltaUpdateService->getUpdateState();
+                if (!in_array($currentState['state'] ?? null, [
+                    'failed',
+                    'rolled_back',
+                    'database_recovery_failed',
+                    'backup_failed',
+                ], true)) {
+                    $this->deltaUpdateService->setUpdateState('failed', [
+                        'error' => $result['error'] ?? 'Update operation failed.',
+                        'operation' => 'backend_delta_apply',
+                        'owner_id' => $lease['owner_id'],
+                    ]);
+                }
+            }
+            return $result;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function applyUpdateUnlocked(bool $force, bool $deltaCapable = true): array
     {
         $output = [];
         $currentVersion = $this->getLocalVersion()['version'] ?? '0.0.0';
@@ -732,6 +896,24 @@ class UpdateService
             return ['ok' => false, 'error' => 'تعذر الاتصال بخادم التحديثات. تحقق من اتصالك بالإنترنت.', 'code' => 502, 'data' => ['logs' => $output]];
         }
         $targetVersion = $remote['version'] ?? 'unknown';
+        $compatibility = ReleaseVersionPolicy::assess(
+            $currentVersion,
+            is_string($targetVersion) ? $targetVersion : null
+        );
+        if (!$compatibility['compatible']) {
+            $code = $compatibility['reason_code'] === 'legacy_generation' ? 409 : 422;
+            return [
+                'ok' => false,
+                'error' => $compatibility['reason'],
+                'code' => $code,
+                'data' => [
+                    'reason_code' => $compatibility['reason_code'],
+                    'current_version' => $currentVersion,
+                    'target_version' => is_string($targetVersion) ? $targetVersion : null,
+                    'logs' => $output,
+                ],
+            ];
+        }
         $releaseTag = $remote['tag_name'] ?? "v{$targetVersion}";
         $output[] = "✅ الإصدار المتاح: {$releaseTag}";
 
@@ -791,6 +973,25 @@ class UpdateService
         if (is_array($potentialManifest)) {
             $val = $this->manifestService->validateManifest($potentialManifest);
             if ($val['valid'] && $val['manifest'] !== null) {
+                $manifestCompatibility = ReleaseVersionPolicy::assess(
+                    $currentVersion,
+                    $val['manifest']['version'] ?? null
+                );
+                if (!$manifestCompatibility['compatible']) {
+                    $code = $manifestCompatibility['reason_code'] === 'legacy_generation' ? 409 : 422;
+                    return [
+                        'ok' => false,
+                        'error' => $manifestCompatibility['reason'],
+                        'code' => $code,
+                        'data' => [
+                            'reason_code' => $manifestCompatibility['reason_code'],
+                            'current_version' => $currentVersion,
+                            'target_version' => $targetVersion,
+                            'logs' => $output,
+                        ],
+                    ];
+                }
+
                 $compat = $this->manifestService->checkVersionCompatibility(
                     $currentVersion,
                     $val['manifest'],
@@ -946,7 +1147,37 @@ class UpdateService
                                 $this->deltaUpdateService->recordHistory($currentVersion, $targetVersion, 'delta', 'database_recovery_failed', count($applyResult['applied_files']), $snapshot['snapshot_path'], $recoveryError, 'github_release', $releaseTag);
                                 return ['ok' => false, 'error' => $recoveryError, 'code' => 500, 'data' => ['logs' => $output]];
                             }
-                            $this->deltaUpdateService->rollbackFiles($snapshot['snapshot_path']);
+                            $fileRollback = $this->deltaUpdateService->rollbackFiles($snapshot['snapshot_path']);
+                            $output = array_merge($output, $fileRollback['logs'] ?? []);
+                            if (empty($fileRollback['ok'])) {
+                                $fileRollbackErrors = $fileRollback['errors'] ?? ['Unknown file restoration error.'];
+                                $fileRollbackError = 'فشل استعادة ملفات التحديث: ' . implode('; ', $fileRollbackErrors);
+                                $output[] = "❌ {$fileRollbackError}";
+                                $this->deltaUpdateService->setUpdateState('rollback_failed', [
+                                    'error' => $fileRollbackError,
+                                    'backup_snapshot' => $snapshot['snapshot_path'],
+                                    'rollback_errors' => $fileRollbackErrors,
+                                    'restored_files' => $fileRollback['restored_files'] ?? [],
+                                ]);
+                                $this->deltaUpdateService->recordHistory(
+                                    $currentVersion,
+                                    $targetVersion,
+                                    'delta',
+                                    'rollback_failed',
+                                    count($applyResult['applied_files']),
+                                    $snapshot['snapshot_path'],
+                                    "{$migrationErr}; {$fileRollbackError}",
+                                    'github_release',
+                                    $releaseTag
+                                );
+
+                                return [
+                                    'ok' => false,
+                                    'error' => "{$migrationErr}; {$fileRollbackError}",
+                                    'code' => 500,
+                                    'data' => ['logs' => $output],
+                                ];
+                            }
                             $this->deltaUpdateService->recordHistory(
                                 $currentVersion,
                                 $targetVersion,
@@ -1207,6 +1438,30 @@ class UpdateService
             ]);
         }
         return $res;
+    }
+
+    private function updateCoordinationFailure(
+        ?string $ownerId,
+        ?string $operation,
+        ?array $lockResult = null
+    ): array {
+        $owner = $lockResult['owner'] ?? null;
+        if ($owner === null && ($ownerId !== null || $operation !== null)) {
+            $owner = [
+                'owner_id' => $ownerId,
+                'operation' => $operation,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'error' => 'Another update or sale operation is already in progress.',
+            'code' => 409,
+            'data' => [
+                'reason_code' => $lockResult['reason_code'] ?? 'update_in_progress',
+                'owner' => $owner,
+            ],
+        ];
     }
 
     private function requiresUpdateSignature(): bool

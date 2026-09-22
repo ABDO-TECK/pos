@@ -210,6 +210,34 @@ describe('UpdateSection Admin Update Center Flow', () => {
     expect(applyUpdate).toHaveBeenCalledWith(false, false)
   })
 
+  it('does not turn a shared update lock conflict into a force-update retry', async () => {
+    confirm.mockResolvedValue(true)
+    vi.mocked(applyUpdate).mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          message: 'Another update or sale operation is already in progress.',
+          errors: { reason_code: 'update_in_progress' },
+        },
+      },
+    } as never)
+
+    await act(async () => {
+      root.render(<UpdateSection />)
+    })
+
+    const applyButton = Array.from(container.querySelectorAll('button'))
+      .find((b) => b.textContent?.includes('تثبيت التحديث الآن'))
+
+    await act(async () => {
+      applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(applyUpdate).toHaveBeenCalledTimes(1)
+    expect(confirm).toHaveBeenCalledTimes(1)
+  })
+
   it('displays update history table when history button is clicked', async () => {
     await act(async () => {
       root.render(<UpdateSection />)

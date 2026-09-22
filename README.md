@@ -1,202 +1,170 @@
-# 🛒 Smart POS System (نظام إدارة الكاشير ونقاط البيع)
+# 🛒 نظام نقاط البيع وإدارة المبيعات (POS Desktop)
 
-![Version](https://img.shields.io/badge/version-1.1.48-blue.svg)
+![الإصدار](https://img.shields.io/badge/version-0.0.1-blue.svg)
+![الترخيص](https://img.shields.io/badge/license-Open%20Source-green.svg)
+![المنصة](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)
-![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)
+![PHP](https://img.shields.io/badge/PHP-8.2%20NTS-777BB4?logo=php&logoColor=white)
+![MariaDB](https://img.shields.io/badge/MariaDB-10.4-003545?logo=mariadb&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-43.2-47848F?logo=electron&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)
 
-نظام نقاط بيع (POS) متكامل وسريع تم تصميمه خصيصاً لإدارة السوبر ماركت والمحلات التجارية بكفاءة عالية. النظام مبني باستخدام **React 19** للواجهة الأمامية وتطبيق سطح المكتب (Electron)، مع واجهة برمجة تطبيقات (API) قوية مبنية بـ **PHP Native MVC**.
+نظام متكامل واحترافي لإدارة نقاط البيع (POS)، المخزون، المبيعات، وحسابات العملاء والموردين، مخصص للعمل على أجهزة الكمبيوتر المكتبية بنظام Windows. تم بناء التطبيق ليكون **مستقلاً تماماً ومدمجاً بذاته**، حيث يحتوي داخلياً على كافة بيئات التشغيل وخوادم البيانات دون الحاجة إلى تثبيت أي برامج مساعدة أو خوادم خارجية مثل XAMPP أو Node.js.
 
 ---
 
-## ✨ المميزات الرئيسية (Features)
+## ✨ المميزات الرئيسية المؤكدة
 
-- ⚡ **نقطة بيع فائقة السرعة (Fast POS):** دعم كامل لأجهزة قراءة الباركود، اختصارات لوحة المفاتيح، والبحث اللحظي مع تنبيهات صوتية.
-- 📶 **دعم العمل بدون إنترنت (Offline-First):** إمكانية البيع والعمل حتى في حال انقطاع الاتصال بالسيرفر بفضل `IndexedDB` والمزامنة التلقائية عند عودة الاتصال.
-- 📦 **إدارة المخزون والمشتريات:** تتبع دقيق للمخزون، تنبيهات بالنواقص، وإدارة فواتير المشتريات وحسابات الموردين (Ledger).
-- 👥 **إدارة العملاء والولاء:** تسجيل بيانات العملاء، إدارة الحسابات الآجلة (الديون)، ونظام نقاط الولاء للعملاء المتميزين.
-- 🖨️ **طباعة الفواتير والباركود:** تكامل مع `QZ Tray` لطباعة الإيصالات والباركود بصمت وبسرعة على طابعات الكاشير والحرارية.
-- 🖥️ **تطبيق Portable Desktop:** النظام يعمل كتطبيق ويب (PWA) أو تطبيق سطح مكتب مستقل مبني بـ `Electron` يدمج بداخله (PHP و MySQL) ليعمل بدون أي تثبيت مسبق.
-- 🚀 **تحديثات لحظية (Real-time):** الاعتماد على تقنيات الـ `ETag Caching` و `Server-Sent Events` لضمان تزامن البيانات لحظياً بين المستخدمين دون التحميل على السيرفر.
-
----
-
-## 🛠️ التقنيات المستخدمة (Tech Stack)
-
-### 🎨 الواجهة الأمامية (Frontend)
-- **الإطار:** React 19.2 + Vite
-- **إدارة الحالة:** Zustand
-- **التوجيه:** React Router 7.18.2
-- **قاعدة البيانات المحلية:** IndexedDB (idb)
-- **الرسوم البيانية:** Recharts
-
-### ⚙️ الواجهة الخلفية (Backend)
-- **اللغة:** PHP 8.2 (Service Layer + Repository Pattern)
-- **قواعد البيانات:** MySQL 8.0
-- **نظام التخزين المؤقت:** Redis / APCu / File Cache مع دعم الإبطال التلقائي (Cache Invalidation).
-- **المهام بالخلفية:** Job Queue & Event Dispatcher.
-
-### 💻 تطبيق سطح المكتب (Desktop App)
-- **الإطار:** Electron 43.2
-- **إدارة الخدمات:** تشغيل (PHP Server، MySQL المدمج، HTTPS Proxy) في الخلفية.
-- **التحديث التلقائي:** عبر GitHub Releases (electron-updater).
+- ⚡ **شاشة كاشير سريعة وعصرية:** واجهة تفاعلية مبنية بأحدث إصدار من React 19، تدعم قراءة الباركود السريعة، واختصارات لوحة المفاتيح، والبيع بالوزن أو الحبة أو الكرتون.
+- 📶 **العمل دون اتصال بالإنترنت (Offline-First):** إمكانية مواصلة عمليات البيع وحفظ الفواتير محلياً في المتصفح عبر `IndexedDB` في حال انقطاع الشبكة، مع مزامنة تلقائية فورية فور استعادة الاتصال.
+- 📦 **إدارة المخزون والمستودعات:** متابعة دقيقة لكميات الأصناف، تنبيهات بالنواقص وتواريخ الصلاحية، ودعم الباركود المتعدد للصنف الواحد.
+- 👥 **إدارة العملاء والديون والولاء:** تسجيل بيانات العملاء، متابعة الحسابات الآجلة (سجل الديون والمدفوعات)، ونظام آلي لاحتساب واستبدال نقاط الولاء.
+- 🖨️ **الطباعة الحرارية للباركود والفواتير:** تكامل مدمج مع خدمة `QZ Tray` لطباعة الإيصالات والباركود بصمت وبسرعة على مختلف طابعات الكاشير والملصقات.
+- 🔄 **نظام تحديثات تلقائي آمن:** دعم التحديثات الجزئية الخفيفة (Delta Updates) مع توقيع رقمي RSA-2048 ولقطات نسخ احتياطي فورية (Snapshots) للتراجع عند فشل التحديث الجزئي.
+- 🛡️ **حماية واستقلالية البيانات:** عزل محرك قاعدة البيانات MariaDB محلياً مع توليد بيانات اعتماد عشوائية خاصة بكل تثبيت وحفظها في ملف إعدادات محلي محمي بصلاحيات النظام.
 
 ---
 
-## 📂 هيكل المشروع (Project Structure)
+## 💻 متطلبات التشغيل
 
-```text
-/pos
-├── /backend          ← PHP Native MVC API (الواجهة الخلفية)
-│   ├── config/       ← إعدادات قاعدة البيانات والتطبيق
-│   ├── Controllers/  ← دوال التحكم (HTTP)
-│   ├── Services/     ← منطق الأعمال (Business Logic)
-│   ├── Repositories/ ← الوصول لقاعدة البيانات
-│   ├── Models/       ← الكيانات الأساسية
-│   └── index.php     ← نقطة الدخول (Entry Point)
-│
-├── /frontend         ← React 19 + Vite (الواجهة الأمامية)
-│
-├── /electron         ← تطبيق سطح المكتب (إدارة الخدمات)
-│   ├── main.js       ← ملف الإطلاق الأساسي
-│   └── services/     ← خدمات PHP و MySQL المدمجة
-│
-├── /portable         ← بيئات التشغيل المستقلة (PHP, MySQL, Java) المدمجة مع التطبيق
-│
-├── /tray             ← إعدادات وملفات QZ Tray لطباعة الفواتير
-│
-├── /database         ← الجداول وسكربتات التهيئة (Migrations & Schema)
-│
-├── /certs            ← شهادات الـ SSL للاتصال الآمن محلياً
-│
-└── docker-compose.yml
-```
+| المكون | المتطلب الأدنى | المتطلب الموصى به |
+| :--- | :--- | :--- |
+| **نظام التشغيل** | Windows 10 (64-bit) | Windows 11 (64-bit) |
+| **المعالج (CPU)** | معالج ثنائي النواة بتردد 2.0 GHz | معالج رباعي النواة بتردد 2.5 GHz أو أعلى |
+| **الذاكرة العشوائية (RAM)** | 4 جيجابايت | 8 جيجابايت |
+| **المساحة التخزينية** | 2 جيجابايت مساحة فارغة | 5 جيجابايت (SSD موصى به) |
+| **الشاشة** | دقة 1024×768 بكسل | دقة 1920×1080 بكسل (Full HD) |
 
 ---
 
-## 🚀 طريقة التشغيل (Installation & Setup)
+## 🚀 التثبيت والإعداد لأول مرة
 
-### الخيار الأول: باستخدام Docker (مُوصى به للإنتاج)
-بإمكانك تشغيل النظام كاملاً بأمر واحد:
-```bash
-docker-compose up -d --build
-```
-سيكون النظام متاحاً على: `http://localhost:8000`
+> [!IMPORTANT]
+> **حالة توقيع Windows للإصدار 0.0.1:** POS Desktop تطبيق مفتوح المصدر، ولكن مثبت Windows الحالي غير موقع بتوقيع Authenticode تجاري. لذلك قد يعرض Windows تحذير SmartScreen، وهذا قيد مقبول في هذا الإصدار وليس مانعاً للإصدار بحد ذاته. لا تعطل SmartScreen أو UAC أو Defender أو أي حماية أخرى.
+>
+> نزّل المثبت من مستودع GitHub الرسمي فقط، ثم احسب قيمة SHA-256 وقارنها بالقيمة المنشورة مع الإصدار قبل التشغيل. لا يعني نشر المصدر أو checksum أن تحذير SmartScreen سيختفي. يبقى التحقق من التحديثات مستقلاً عن توقيع المثبت: يوقّع التطبيق manifests بتوقيع RSA، ويتحقق من SHA-256 للملفات وSHA-512 في `latest.yml` قبل التطبيق.
 
-### الخيار الثاني: التشغيل المحلي (XAMPP / Node.js) للتطوير
+1. قم بتنزيل ملف التثبيت من صفحة **Releases** في مستودع GitHub الرسمي فقط:
+   `POS-Desktop-Setup-0.0.1.exe`
+2. تحقّق من سلامة الملف بمقارنة SHA-256 المنشور مع ناتج الأمر التالي في PowerShell:
+   ```powershell
+   (Get-FileHash .\POS-Desktop-Setup-0.0.1.exe -Algorithm SHA256).Hash
+   ```
+3. شغّل ملف المثبت، واتبع التعليمات على الشاشة لاختيار مسار التثبيت (المسار الافتراضي: `%LOCALAPPDATA%\Programs\POS Desktop`). إذا ظهر تحذير SmartScreen، تحقّق أولاً من مصدر التنزيل وقيمة SHA-256، ولا تتجاوز تحذيرات Windows الأمنية أو تعطلها.
+4. عند انتهاء التثبيت، سيبدأ تشغيل البرنامج تلقائياً:
+   - في أول تشغيل، يقوم النظام تلقائياً بتهيئة محرك قاعدة البيانات وإنشاء الجداول وبذر الإعدادات الأولية.
+   - يتم إنشاء حساب المدير الافتراضي (`admin@pos.local`) مع كلمة مرور مؤقتة تُعرض على شاشة الدخول الأولى.
+   - يتطلب النظام تغيير كلمة المرور عند أول تسجيل دخول لضمان الأمان.
 
-**1. إعداد المتغيرات البيئية (Environment Variables):**
-قم بنسخ ملف الإعدادات الافتراضي للواجهة الخلفية وتعديله بما يتناسب مع بيئتك (بيانات قاعدة البيانات):
-```bash
-cd backend
-cp .env.example .env
-```
+> [!NOTE]
+> لا يتطلب البرنامج وجود خوادم سابقة (مثل Apache أو MySQL أو XAMPP)، حيث يحتوي المثبت على بيئة تشغيل مستقلة تماماً.
 
-**2. إعداد قاعدة البيانات (Database Setup):**
-استورد ملف الـ Schema لتجهيز الجداول:
-```bash
-mysql -u root -p pos < C:\xampp\htdocs\pos\database\pos_schema.sql
-```
-ثم قم ببذر البيانات الافتراضية (الصلاحيات وغيرها):
-```bash
-mysql -u root -p pos < C:\xampp\htdocs\pos\database\seeders\permissions_seed.sql
-```
+---
 
-**3. تشغيل الواجهة الأمامية (Frontend):**
+## 🔄 التحديثات التلقائية وحماية العمليات
+
+- **الفحص الآلي:** يقوم النظام بفحص وجود تحديثات جديدة بشكل دوري وغير مزعج في الخلفية.
+- **حماية عمليات البيع النشطة:** يمنع النظام تطبيق أي تحديث في حال وجود عناصر داخل سلة المشتريات، كما يفرض الخادم وعمليات سطح المكتب قفل تنسيق مشتركاً عند حدود البيع والتثبيت.
+- **التحديثات الجزئية (Delta Updates):** تنزيل الملفات المعدلة فقط لتوفير استهلاك البيانات وسرعة التثبيت.
+- **التحقق:** يتم فحص توقيع manifest الرقمي RSA-2048 وتجزئة SHA-256 للملفات التي يتضمنها التحديث الجزئي قبل استبدالها.
+- **التراجع في التحديث الجزئي:** قبل تطبيق التحديث الجزئي تُنشأ لقطة للملفات المستهدفة، ويمكن استرجاعها عند تعثر التطبيق. لا يعلن هذا الدليل عن تراجع ذري للمثبت الكامل.
+
+---
+
+## 📂 مسارات البيانات والنسخ الاحتياطي
+
+يختار التطبيق مجلد بيانات التشغيل القابل للكتابة بالترتيب الآتي:
+
+- المسار الأساسي: `%PROGRAMDATA%\POS System`، ويكون افتراضياً `C:\ProgramData\POS System`.
+- المسار البديل عند تعذر الكتابة: `%LOCALAPPDATA%\POS System\Data`.
+
+وتوجد المجلدات التالية داخل المسار الذي اختاره التطبيق:
+
+- **مسار قاعدة البيانات والبيانات النشطة:**
+  `mysql_data`
+- **مسار النسخ الاحتياطية:**
+  `backups`
+- **مسار سجلات التشغيل والأخطاء:**
+  `logs`
+- **مسار إعدادات وبيانات الاعتماد المشفرة:**
+  `%APPDATA%\POS System\db_credentials.json`
+
+ملف `db_credentials.json` يحتوي بيانات اعتماد قاعدة البيانات بصيغة JSON محلية؛ لا يُشفّر بواسطة `safeStorage`، ولذلك يجب حماية حساب Windows ومجلد الإعدادات وعدم نسخ الملف أو نشره.
+
+### أخذ واستعادة النسخ الاحتياطية
+- يمكن لمدير النظام إنشاء نسخة احتياطية من خلال واجهة البرنامج: **الإعدادات ← النسخ الاحتياطي**.
+- يتم حفظ النسخ التي ينشئها `BackupService` كملفات SQL عادية داخل مجلد النسخ الاحتياطية؛ لا يضيف هذا المسار تشفيراً أو ضغطاً للملف، لذلك يجب تقييد الوصول إليه ونسخه إلى وسيط آمن عند الحاجة.
+- بيانات التشغيل تقع خارج مجلد التثبيت. لا تعتمد على إلغاء التثبيت كبديل عن النسخ الاحتياطي؛ أنشئ نسخة SQL وتحقق من وجودها قبل إزالة البرنامج.
+
+---
+
+## 🛠️ استكشاف الأخطاء والأسئلة الشائعة
+
+### 1. تعذر بدء تشغيل قاعدة البيانات (MySQL/MariaDB)
+- تأكد من عدم وجود عملية أخرى تستخدم نفس المنفذ المخصص محلياً.
+- تحقق من وجود حزمة Microsoft Visual C++ 2015-2022 Redistributable x64 (يقوم مثبت البرنامج بتثبيتها تلقائياً).
+
+### 2. تعطل الطباعة أو عدم استجابة الطابعة الحرارية
+- تأكد من توصيل الطابعة وتثبيت التعريف الخاص بها على نظام Windows.
+- تأكد من عمل خدمة `QZ Tray` المدمجة بالانتقال إلى **الإعدادات ← إعدادات الطباعة**.
+
+### 3. إعادة ضبط المصنع (Factory Reset)
+- يتيح النظام لمدير النظام حصراً خيار إعادة ضبط المصنع من خلال: **النظام والصيانة ← إعادة ضبط المصنع**.
+- يتطلب التأكيد كتابة عبارة `RESET_POS_DATA`. هذا الإجراء يعيد تهيئة قاعدة البيانات ويحتفظ بنسخ احتياطية سابقة في مجلد `backups` للطوارئ.
+
+---
+
+## 💻 تعليمات التطوير والبناء من المصدر
+
+### 1. تثبيت الاعتماديات
 ```bash
-cd frontend
 npm install
-npm run dev
+cd frontend && npm install && cd ..
+cd backend && composer install && cd ..
 ```
 
-**3. تشغيل تطبيق سطح المكتب (Electron):**
+### 2. التشغيل في وضع التطوير
 ```bash
+# تشغيل خادم الواجهة الأمامية
+npm --prefix frontend run dev
+
+# تشغيل بيئة سطح المكتب Electron
 npm run electron:dev
 ```
-لعمل حزمة تثبيت (Build) مستقلة (Portable EXE):
+
+### 3. الفحص والتحقق من الجودة
+```bash
+# فحص اختبارات الواجهة الأمامية
+npm --prefix frontend test
+
+# فحص أنواع TypeScript
+npm --prefix frontend run typecheck
+
+# فحص اختبارات الواجهة الخلفية
+php backend/vendor/bin/phpunit --configuration backend/phpunit.xml --exclude-group mysql
+
+# فحص اختبارات Electron
+npm run test:electron
+
+# التحقق من بيئة التشغيل المحمولة
+npm run verify:desktop-runtime
+```
+
+### 4. بناء حزمة التثبيت المحلية
 ```bash
 npm run electron:build
 ```
+ينتج عن هذا الأمر ملف تثبيت محلياً: `dist-electron/POS-Desktop-Setup-0.0.1.exe`. يكون المثبت المحلي غير موقع بتوقيع Windows Authenticode في الإصدار 0.0.1، وقد يظهر تحذير SmartScreen؛ غياب Authenticode مقبول وليس مانعاً لهذا الإصدار. لا تستخدم شهادة مزيفة أو مستعارة أو ذاتية التوقيع لتمثيل المثبت على أنه موثوق علناً، ولا يُعد بناء الملف وحده إصداراً منشوراً قبل اجتياز اختبارات القبول المطلوبة.
 
 ---
 
-## 🔑 إنشاء مدير النظام الأول
+## 🔒 سياسة الأمان
 
-لا يزرع النظام حسابات تفاعلية أو كلمات مرور افتراضية. بعد تهيئة قاعدة البيانات،
-شغّل أداة bootstrap محلياً على جهاز الخادم. الأداة تتطلب كلمة مرور فريدة من
-14 محرفاً على الأقل، وترفض التنفيذ إذا كان هناك مدير نشط بالفعل.
-
-PowerShell:
-
-```powershell
-$env:INITIAL_ADMIN_EMAIL = Read-Host 'Admin email'
-$env:INITIAL_ADMIN_NAME = Read-Host 'Admin name'
-$securePassword = Read-Host 'Admin password (14+ characters)' -AsSecureString
-$env:INITIAL_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $securePassword).Password
-C:\xampp\php\php.exe backend\cli\bootstrap-admin.php
-Remove-Item Env:INITIAL_ADMIN_EMAIL, Env:INITIAL_ADMIN_NAME, Env:INITIAL_ADMIN_PASSWORD
-```
-
-Bash:
-
-```bash
-read -r -p 'Admin email: ' INITIAL_ADMIN_EMAIL
-read -r -p 'Admin name: ' INITIAL_ADMIN_NAME
-read -r -s -p 'Admin password (14+ characters): ' INITIAL_ADMIN_PASSWORD
-echo
-export INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
-php backend/cli/bootstrap-admin.php
-unset INITIAL_ADMIN_EMAIL INITIAL_ADMIN_NAME INITIAL_ADMIN_PASSWORD
-```
-
-نفّذ هذا الإجراء من طرفية محلية موثوقة، ولا تضع بيانات المدير في ملف `.env`
-أو سجل أو سكربت محفوظ.
+- **عزل الصلاحيات:** يعتمد النظام على فحص الصلاحيات الدقيق (RBAC) لكل واجهة برمجية.
+- **حماية بيانات الاعتماد:** تُولّد كلمات مرور قاعدة البيانات عشوائياً لكل جهاز، ولا تُضمّن كلمات مرور مشتركة أو أسراراً داخل حزم التوزيع.
+- **الإبلاغ عن الثغرات:** في حال اكتشاف أي ثغرة أمنية، يرجى التواصل عبر تبويب الأمان (Security Advisories) في المستودع.
 
 ---
 
-## 🧪 الاختبارات (Testing)
+## 📝 المشروع مفتوح المصدر والدعم
 
-النظام يحتوي على بنية اختبارات متكاملة لضمان الجودة:
-
-- **اختبارات الواجهة الخلفية (Backend Unit Tests):**
-  باستخدام `PHPUnit` لاختبار الـ Services والتأكد من صحة العمليات الحسابية ومنطق الأعمال.
-  ```bash
-  cd backend
-  vendor/bin/phpunit tests/
-  ```
-
-- **اختبارات الواجهة الأمامية (Frontend E2E Tests):**
-  باستخدام `Playwright` لاختبار رحلة المستخدم (User Journey) للصفحات الحرجة (مثل المصروفات، الإعدادات، وإدارة الجلسات).
-  ```bash
-  cd frontend
-  npm run test:e2e
-  ```
-
----
-
-## 📖 توثيق الـ API (API Documentation)
-تم توثيق الـ API بشكل احترافي باستخدام **OpenAPI (Swagger)**.
-ملف التوثيق متوفر في: `backend/openapi.yaml`. يمكن استيراده في Postman أو عرضه عبر أدوات Swagger لمعرفة جميع الـ Endpoints وكيفية التخاطب معها.
-
----
-
-## 📝 الترخيص (License)
-هذا النظام مخصص للاستخدام التجاري الخاص. لا يُسمح بإعادة التوزيع أو البيع دون إذن مسبق.
-
-## Desktop first run and factory reset 
-
-The desktop runtime keeps its database and logs in the per-user application
-data directory, so a new installation starts with an empty database and no
-historical error log. It seeds the packaged defaults and creates
-`admin@pos.local` with a cryptographically random temporary password. The
-password is shown once in the local login screen and must be changed after the
-first sign-in; no shared password is embedded in the release.
-
-An administrator can use **System & Maintenance → Factory reset** to drop the
-application database, restore the schema and default seed data, clear runtime
-logs/session/cache state, and create a new temporary administrator credential.
-The reset requires typing `RESET_POS_DATA` and deliberately preserves backup
-files so they remain available for recovery. Existing installations are never
-erased automatically during an upgrade.
+POS Desktop تطبيق مفتوح المصدر. راجع المستودع الرسمي وشروط الترخيص المنشورة فيه قبل إعادة التوزيع أو إنشاء نسخ مشتقة.
