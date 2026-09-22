@@ -123,10 +123,15 @@ test('working-tree validator accepts a complete full-release source fixture', ()
   }
 });
 
-test('working-tree validator fails closed on the current remote-main version mismatch', () => {
+test('working-tree validator accepts the reconciled source version contract', () => {
+  const versionData = JSON.parse(read('version.json'));
+  const rootPackage = JSON.parse(read('package.json'));
   const result = runValidator(['--mode', 'working-tree', '--root', repoRoot]);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /package\.json|frontend\/package\.json|versions differ/i);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    result.stdout,
+    new RegExp(`update=${versionData.version}, desktop-runtime=${rootPackage.version}`),
+  );
 });
 
 test('valid v0.0.4 Delta source uses an immutable baseline commit', () => {
@@ -337,7 +342,12 @@ test('v0 stable publication is rejected and tag mismatch is rejected', () => {
 });
 
 test('Delta builder rejects an omitted baseline instead of guessing a previous tag', {
-  skip: !fs.existsSync(path.join(repoRoot, 'backend', 'vendor', 'autoload.php')),
+  // The builder validates signing credentials before it reaches baseline
+  // resolution. Keep this assertion unavailable when the local private key
+  // is intentionally absent; the missing-credentials fail-closed test above
+  // remains runnable without any key material.
+  skip: !fs.existsSync(path.join(repoRoot, 'backend', 'vendor', 'autoload.php'))
+    || !fs.existsSync(path.join(repoRoot, 'release', 'private_key.pem')),
 }, () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-'));
   try {

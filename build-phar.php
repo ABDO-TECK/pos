@@ -14,6 +14,35 @@
 
 $pharFile = __DIR__ . '/backend/backend.phar';
 $tempPharFile = __DIR__ . '/backend_temp.phar';
+$backendDir = __DIR__ . '/backend';
+$vendorDir = realpath($backendDir . '/vendor');
+
+if ($vendorDir === false || !is_dir($vendorDir)) {
+    throw new RuntimeException('Composer vendor directory is missing or cannot be resolved. Refusing to build backend.phar.');
+}
+
+if (!is_file($vendorDir . '/autoload.php')) {
+    throw new RuntimeException('Composer vendor/autoload.php is missing. Refusing to build backend.phar.');
+}
+
+$composerManifestPath = $backendDir . '/composer.json';
+$composerManifest = is_file($composerManifestPath)
+    ? json_decode((string) file_get_contents($composerManifestPath), true)
+    : null;
+if (!is_array($composerManifest)) {
+    throw new RuntimeException('backend/composer.json is missing or invalid. Refusing to build backend.phar.');
+}
+
+foreach (array_keys($composerManifest['require'] ?? []) as $packageName) {
+    if (!is_string($packageName) || !str_contains($packageName, '/')) {
+        continue;
+    }
+
+    $packagePath = $vendorDir . '/' . $packageName;
+    if (!is_dir($packagePath)) {
+        throw new RuntimeException("Required Composer runtime package '{$packageName}' is missing from {$vendorDir}.");
+    }
+}
 
 if (file_exists($tempPharFile)) {
     unlink($tempPharFile);
@@ -27,11 +56,11 @@ if (!is_dir(dirname($pharFile))) {
 $phar = new Phar($tempPharFile, 0, 'backend.phar');
 $phar->startBuffering();
 $addedFileCount = 0;
+$addedVendorFileCount = 0;
 $addedMigrationCount = 0;
 $addedSeederCount = 0;
 
 // 1. Walk through the backend directory and compile it
-$backendDir = __DIR__ . '/backend';
 $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator($backendDir, FilesystemIterator::SKIP_DOTS)
 );
@@ -307,6 +336,13 @@ foreach ($iterator as $file) {
         }
         $relativePath = str_replace('\\', '/', $relativePath); // Standardize directory separators
 
+        // Composer vendor may be a junction or symlink in a disposable build
+        // workspace. It is traversed explicitly from its resolved target below
+        // so the archive cannot silently omit the runtime dependency tree.
+        if (str_starts_with($relativePath, 'vendor/')) {
+            continue;
+        }
+
         // Filter exclusions
         $exclude = false;
         foreach ($excludePatterns as $pattern) {
@@ -333,6 +369,67 @@ foreach ($iterator as $file) {
             // echo "Excluding: " . $relativePath . "\n";
         }
     }
+}
+
+// Composer vendor is traversed explicitly from its resolved physical target.
+// RecursiveDirectoryIterator does not descend into a Windows junction by
+// default, which previously produced a small but non-runnable PHAR.
+$vendorDirReal = realpath($vendorDir);
+if ($vendorDirReal === false || !is_dir($vendorDirReal)) {
+    throw new RuntimeException('Resolved Composer vendor directory is unavailable. Refusing to build backend.phar.');
+}
+
+$vendorIterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($vendorDirReal, FilesystemIterator::SKIP_DOTS)
+);
+foreach ($vendorIterator as $file) {
+    if (!$file->isFile()) {
+        continue;
+    }
+
+    $filePath = $file->getPathname();
+    $realFilePath = realpath($filePath);
+    if ($realFilePath === false) {
+        throw new RuntimeException("Composer vendor file cannot be resolved: {$filePath}");
+    }
+
+    $vendorPrefix = rtrim(str_replace('\\', '/', $vendorDirReal), '/') . '/';
+    $realFileStandard = str_replace('\\', '/', $realFilePath);
+    if (!str_starts_with(strtolower($realFileStandard), strtolower($vendorPrefix))) {
+        throw new RuntimeException("Composer vendor file resolves outside the vendor tree: {$filePath}");
+    }
+
+    $relativeVendorPath = substr($realFileStandard, strlen($vendorPrefix));
+    $relativePath = 'vendor/' . $relativeVendorPath;
+
+    $exclude = false;
+    foreach ($excludePatterns as $pattern) {
+        if (preg_match($pattern, $relativePath)) {
+            $exclude = true;
+            break;
+        }
+    }
+
+    $ext = pathinfo($relativePath, PATHINFO_EXTENSION);
+    if ($ext === 'md' || $ext === 'log') {
+        $exclude = true;
+    }
+
+    if ($exclude) {
+        continue;
+    }
+
+    $targetPath = getFilteredAutoloadFile($realFilePath, $relativePath, $backendDir);
+    $phar->addFile($targetPath, $relativePath);
+    $addedFileCount++;
+    $addedVendorFileCount++;
+    if ($targetPath !== $realFilePath) {
+        unlink($targetPath);
+    }
+}
+
+if ($addedVendorFileCount === 0) {
+    throw new RuntimeException('No Composer vendor files were packaged. Refusing to build backend.phar.');
 }
 
 // 2. Include database/migrations
@@ -503,6 +600,25 @@ $phar->setSignatureAlgorithm(Phar::SHA512);
 $phar->stopBuffering();
 unset($phar);
 gc_collect_cycles();
+
+$builtPhar = new Phar($tempPharFile);
+$requiredPharEntries = [
+    'vendor/autoload.php',
+    'cli/migrate.php',
+    'cli/verify-database.php',
+    'cli/initialize-admin.php',
+    'router.php',
+    'version.json',
+    'certs/cacert.pem',
+];
+foreach ($requiredPharEntries as $requiredEntry) {
+    if (!isset($builtPhar[$requiredEntry])) {
+        unset($builtPhar);
+        @unlink($tempPharFile);
+        throw new RuntimeException("Generated backend.phar is missing required entry '{$requiredEntry}'.");
+    }
+}
+unset($builtPhar);
 
 if (file_exists($pharFile)) {
     @unlink($pharFile);

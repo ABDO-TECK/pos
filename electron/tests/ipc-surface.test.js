@@ -53,7 +53,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
     Object.keys(exposed.electronAPI).sort(),
     ['auth', 'backup', 'getQZCert', 'getVersion', 'setup', 'signQZMessage', 'updater']
   );
-  assert.deepEqual(Object.keys(exposed.electronAPI.auth).sort(), ['recoverPassword']);
+  assert.deepEqual(Object.keys(exposed.electronAPI.auth).sort(), ['clearSession', 'recoverPassword']);
   assert.deepEqual(Object.keys(exposed.electronAPI.backup).sort(), ['restore']);
   assert.deepEqual(
     Object.keys(exposed.electronAPI.setup).sort(),
@@ -72,6 +72,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
   await exposed.electronAPI.getQZCert();
   await exposed.electronAPI.signQZMessage('payload');
   await exposed.electronAPI.backup.restore();
+  await exposed.electronAPI.auth.clearSession();
   await exposed.electronAPI.auth.recoverPassword({ email: 'user@example.com', password: 'Password1' });
   await exposed.electronAPI.setup.getInitialAdmin();
   await exposed.electronAPI.setup.acknowledgeInitialAdmin();
@@ -92,6 +93,7 @@ test('preload exposes only IPC methods used by the frontend', async () => {
       'qz-get-cert',
       'qz-sign',
       'backup:restore',
+      'auth:clear-session',
       'auth:recover-password',
       'setup:get-initial-admin',
       'setup:acknowledge-initial-admin',

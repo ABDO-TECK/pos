@@ -774,6 +774,15 @@ if (!isset($p['version.json']) || !isset($p['certs/cacert.pem'])) {
         Stop-Release 'PHAR verification failed'
     }
     Write-Host 'PHAR verification result: version.json and certs/cacert.pem found'
+
+    $runtimeVerifier = Join-Path $RepoRoot 'scripts/verify-phar-runtime.php'
+    if (-not (Test-Path -LiteralPath $runtimeVerifier -PathType Leaf)) {
+        Stop-Release 'PHAR runtime verifier is missing.'
+    }
+    & $php $runtimeVerifier "--phar=$PharPath" "--root=$RepoRoot"
+    if ($LASTEXITCODE -ne 0) {
+        Stop-Release 'PHAR runtime verification failed'
+    }
 }
 
 function Remove-DistElectron {

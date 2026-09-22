@@ -81,6 +81,15 @@ function stopPHP() {
   stopPhpServer();
 }
 
+function resolveBackendRuntimeConfig({ packaged, isLanDeployment, environment = process.env }) {
+  return {
+    ENABLE_AUTO_UPDATE: packaged ? 'true' : (environment.ENABLE_AUTO_UPDATE || 'false'),
+    APP_ENV: isLanDeployment ? (environment.APP_ENV || 'production') : (packaged ? 'production' : 'development'),
+    APP_DEBUG: packaged ? 'false' : (environment.APP_DEBUG || 'true'),
+    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+  };
+}
+
 function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
   const {
     getBackupsDir,
@@ -90,8 +99,10 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
     getLogsDir,
     getRuntimeMetadataPath,
     getRuntimePortsPath,
+    isPackaged,
   } = require('../utils/paths');
 
+  const packaged = isPackaged();
   const isLanDeployment = process.env.POS_LAN_ENABLED === 'true';
 
   return {
@@ -101,9 +112,7 @@ function createBackendEnv({ mysqlPort, dbCredentials, apiPort }) {
     DB_NAME: process.env.DB_NAME || 'pos_db',
     DB_USER: dbCredentials.user,
     DB_PASS: dbCredentials.password,
-    ENABLE_AUTO_UPDATE: process.env.ENABLE_AUTO_UPDATE || 'false',
-    APP_ENV: isLanDeployment ? (process.env.APP_ENV || 'production') : 'development',
-    DEPLOYMENT_MODE: isLanDeployment ? 'lan' : 'desktop',
+    ...resolveBackendRuntimeConfig({ packaged, isLanDeployment }),
     APP_TIMEZONE: resolveSystemTimeZone(),
     ENV_PATH: getEnvPath(),
     APP_STORAGE_DIR: getDataDir(),
@@ -595,6 +604,7 @@ module.exports = {
   resolveBackendPharPath,
   resolveBackendEntryPath,
   createBackendEnv,
+  resolveBackendRuntimeConfig,
   runDatabaseMigrations,
   startPhpServer,
   stopPhpServer,

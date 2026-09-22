@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restore: () => ipcRenderer.invoke('backup:restore'),
   },
   auth: {
+    clearSession: () => ipcRenderer.invoke('auth:clear-session'),
     recoverPassword: (payload) => ipcRenderer.invoke('auth:recover-password', payload),
   },
   setup: {

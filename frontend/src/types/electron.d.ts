@@ -10,6 +10,7 @@ interface ElectronAPI {
     }>;
   };
   auth?: {
+    clearSession: () => Promise<{ success: boolean; error?: string }>;
     recoverPassword: (payload: { email: string; password: string }) => Promise<{
       success: boolean;
       error?: string;
