@@ -91,6 +91,21 @@ function makeGitFixture({ targetPackageVersion = '0.0.1', targetFrontendVersion 
   return { fixture, baselineRef };
 }
 
+function makeBuilderFixture() {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-'));
+  fs.mkdirSync(path.join(fixture, 'backend', 'vendor'), { recursive: true });
+  fs.mkdirSync(path.join(fixture, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(fixture, 'backend', 'vendor', 'autoload.php'), "<?php\n");
+  fs.copyFileSync(builder, path.join(fixture, 'scripts', 'build-release-package.php'));
+  fs.writeFileSync(path.join(fixture, 'version.json'), `${JSON.stringify({
+    version: '0.0.4',
+    application_version: '0.0.4',
+    update_engine_version: '1.0.0',
+    minimum_supported_version: '0.0.1',
+  }, null, 2)}\n`);
+  return fixture;
+}
+
 test('working-tree validator accepts a complete full-release source fixture', () => {
   const { fixture } = makeGitFixture({ targetPackageVersion: '0.0.4', targetFrontendVersion: '0.0.4' });
   try {
@@ -165,6 +180,20 @@ test('full releases require target package versions, while Deltas reject target 
   } finally {
     fs.rmSync(fullFixture.fixture, { recursive: true, force: true });
     fs.rmSync(deltaFixture.fixture, { recursive: true, force: true });
+  }
+});
+
+test('full-installer validation rejects inconsistent target version metadata', () => {
+  const { fixture } = makeGitFixture({ targetPackageVersion: '0.0.4', targetFrontendVersion: '0.0.1' });
+  try {
+    const result = runValidator([
+      '--mode', 'full', '--root', fixture, '--tag', 'v0.0.4',
+      '--release-channel', 'prerelease',
+    ]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /versions differ|package version/i);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
   }
 });
 
@@ -243,6 +272,29 @@ test('Delta validation rejects missing or unverifiable baselines', () => {
     assert.match(missingRef.stderr, /baseline ref|baseline-ref|resolve|immutable/i);
   } finally {
     fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('release builder refuses missing signing credentials before packaging', () => {
+  const fixture = makeBuilderFixture();
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-output-'));
+  try {
+    const result = runPhp(
+      path.join(fixture, 'scripts', 'build-release-package.php'),
+      [
+        '--tag=v0.0.4',
+        '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
+        '--from-version=0.0.1',
+        `--output-dir=${outputDir}`,
+      ],
+      fixture,
+      { ...process.env, UPDATE_PRIVATE_KEY: '' },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /UPDATE_PRIVATE_KEY|private key.*missing/i);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
   }
 });
 
@@ -383,6 +435,14 @@ test('verification workflow is read-only and has no tag publication trigger', ()
   assert.doesNotMatch(workflow, /--private-key/);
 });
 
+test('pull-request verification runs automation tests without legacy source validation', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const automationJob = workflow.match(/  automation-verification:[\s\S]*?(?=\n  verify-release-build:)/u)?.[0] || '';
+  assert.match(automationJob, /npm run test:release-workflow/u);
+  assert.doesNotMatch(automationJob, /validate-release-source\.mjs/u);
+  assert.doesNotMatch(automationJob, /working-tree source consistency/u);
+});
+
 test('all publication workflows are explicit, protected, and non-overwriting', () => {
   const updatePublisher = read('.github/workflows/publish-release.yml');
   const desktopPublisher = read('.github/workflows/release-desktop.yml');
@@ -406,7 +466,7 @@ test('all publication workflows are explicit, protected, and non-overwriting', (
   assert.match(desktopPublisher, /workflow_dispatch:/);
   assert.match(desktopPublisher, /confirm_publish/);
   assert.match(desktopPublisher, /github-release-approval/);
-  assert.match(desktopPublisher, /validate-release-source\.mjs/);
+  assert.match(desktopPublisher, /validate-release-source\.mjs\s+--mode full/);
   assert.match(desktopPublisher, /existing desktop asset conflicts|existing.*asset|asset.*conflict/i);
   assert.doesNotMatch(desktopPublisher, /--clobber/);
   assert.doesNotMatch(desktopPublisher, /-RequireAuthenticode|require-production-signing/);

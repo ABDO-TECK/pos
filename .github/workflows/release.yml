@@ -46,13 +46,13 @@ permissions:
   contents: read
 
 jobs:
-  source-consistency:
-    name: Validate working-tree source consistency
+  automation-verification:
+    name: Validate release automation without building a release
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Check out source
+      - name: Check out workflow and release automation
         uses: actions/checkout@v4
 
       - name: Set up Node.js
@@ -61,8 +61,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Validate source package versions
-        run: node scripts/validate-release-source.mjs --mode working-tree --root .
+      - name: Run release automation regression tests
+        run: npm run test:release-workflow
 
   verify-release-build:
     name: Build and verify release without publishing
