@@ -342,7 +342,12 @@ test('v0 stable publication is rejected and tag mismatch is rejected', () => {
 });
 
 test('Delta builder rejects an omitted baseline instead of guessing a previous tag', {
-  skip: !fs.existsSync(path.join(repoRoot, 'backend', 'vendor', 'autoload.php')),
+  // The builder validates signing credentials before it reaches baseline
+  // resolution. Keep this assertion unavailable when the local private key
+  // is intentionally absent; the missing-credentials fail-closed test above
+  // remains runnable without any key material.
+  skip: !fs.existsSync(path.join(repoRoot, 'backend', 'vendor', 'autoload.php'))
+    || !fs.existsSync(path.join(repoRoot, 'release', 'private_key.pem')),
 }, () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-'));
   try {
