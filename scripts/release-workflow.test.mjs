@@ -123,10 +123,15 @@ test('working-tree validator accepts a complete full-release source fixture', ()
   }
 });
 
-test('working-tree validator fails closed on the current remote-main version mismatch', () => {
+test('working-tree validator accepts the reconciled source version contract', () => {
+  const versionData = JSON.parse(read('version.json'));
+  const rootPackage = JSON.parse(read('package.json'));
   const result = runValidator(['--mode', 'working-tree', '--root', repoRoot]);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /package\.json|frontend\/package\.json|versions differ/i);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    result.stdout,
+    new RegExp(`update=${versionData.version}, desktop-runtime=${rootPackage.version}`),
+  );
 });
 
 test('valid v0.0.4 Delta source uses an immutable baseline commit', () => {
