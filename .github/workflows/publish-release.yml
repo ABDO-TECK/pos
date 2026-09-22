@@ -1,0 +1,266 @@
+name: POS Update Engine Release Publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version-matched Git tag to publish, such as v0.0.4
+        required: true
+        type: string
+      from_ref:
+        description: Full 40-character immutable baseline commit SHA for the Delta
+        required: true
+        type: string
+      from_version:
+        description: Baseline application version for the Delta
+        required: true
+        type: string
+      delta_scope:
+        description: Deployable Delta scope; Electron/package versions remain at the baseline
+        required: true
+        default: backend
+        type: choice
+        options:
+          - backend
+          - frontend
+          - mixed
+      release_channel:
+        description: Explicit GitHub release channel
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - stable
+      confirm_publish:
+        description: Confirm that this workflow may create one new GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  confirm-publish:
+    name: Require explicit publication confirmation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
+    steps:
+      - name: Refuse an unconfirmed publication
+        run: |
+          if [ "$CONFIRM_PUBLISH" != 'true' ]; then
+            echo '::error::confirm_publish must be true; no release will be created.'
+            exit 1
+          fi
+          echo 'Publication confirmation accepted; protected approval remains required.'
+
+  build:
+    name: Build and verify signed Delta
+    needs: confirm-publish
+    if: ${{ needs.confirm-publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      BASELINE_REF: ${{ inputs.from_ref }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      DELTA_SCOPE: ${{ inputs.delta_scope }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
+          coverage: none
+
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
+
+      - name: Validate tag, runtime, and immutable baseline
+        run: |
+          node scripts/validate-release-source.mjs \
+            --mode delta \
+            --root . \
+            --tag "$RELEASE_TAG" \
+            --baseline-ref "$BASELINE_REF" \
+            --baseline-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL"
+
+      - name: Run release workflow tests
+        run: node --test scripts/release-workflow.test.mjs
+
+      - name: Build frontend and backend artifacts
+        run: |
+          npm --prefix frontend run build
+          npm run build:phar
+
+      - name: Require the authorized manifest-signing secret
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATE_PRIVATE_KEY" ]; then
+            echo '::error::UPDATE_PRIVATE_KEY is not configured; refusing to publish.'
+            exit 1
+          fi
+
+      - name: Build the signed Delta from the explicit baseline
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/build-release-package.php \
+            --tag "$RELEASE_TAG" \
+            --from-ref "$BASELINE_REF" \
+            --from-version "$BASELINE_VERSION" \
+            --output-dir "release/$CLEAN_VERSION"
+
+      - name: Verify signature, manifest, hashes, ZIP, and required assets
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/verify-release-package.php \
+            --release-dir "release/$CLEAN_VERSION" \
+            --target-version "$CLEAN_VERSION" \
+            --minimum-version "$BASELINE_VERSION"
+
+      - name: Stage only the five approved public assets
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          mkdir -p release-upload
+          cp "release/$CLEAN_VERSION/delta-$BASELINE_VERSION-to-$CLEAN_VERSION.zip" release-upload/
+          cp "release/$CLEAN_VERSION/delta.zip" release-upload/
+          cp "release/$CLEAN_VERSION/manifest.json" release-upload/
+          cp "release/$CLEAN_VERSION/manifest.sig" release-upload/
+          cp "release/$CLEAN_VERSION/release-notes.md" release-upload/
+
+      - name: Upload workflow-only publication artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-release-assets-${{ inputs.tag }}
+          path: release-upload
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Create the explicitly approved GitHub release
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-release-approval
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download verified workflow artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: update-release-assets-${{ inputs.tag }}
+          path: release-upload
+
+      - name: Prove the tag and release are safe to create
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          if [ -z "$tag_sha" ]; then
+            echo '::error::Could not resolve the requested tag.'
+            exit 1
+          fi
+
+          set +e
+          release_probe="$(gh api --include "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" 2>&1)"
+          probe_status=$?
+          set -e
+          if [[ "$release_probe" != *'404 Not Found'* ]]; then
+            echo '::error::Could not prove that the release is absent; refusing to create or overwrite it.'
+            printf '%s\n' "$release_probe"
+            exit 1
+          fi
+          if [ "$probe_status" -eq 0 ]; then
+            echo '::error::The release already exists; refusing to overwrite it.'
+            exit 1
+          fi
+
+      - name: Create one new release without asset clobbering
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_CHANNEL" = 'prerelease' ]; then
+            title="POS Desktop $RELEASE_TAG — TEST RELEASE — NOT FOR PRODUCTION"
+            channel_flag=(--prerelease)
+          else
+            title="POS Desktop $RELEASE_TAG"
+            channel_flag=()
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            release-upload/delta-*.zip \
+            release-upload/manifest.json \
+            release-upload/manifest.sig \
+            release-upload/release-notes.md \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$title" \
+            --notes-file release-upload/release-notes.md \
+            "${channel_flag[@]}"
+
+      - name: Verify uploaded asset names and SHA-256 digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_version="${RELEASE_TAG#v}"
+          target_version="${target_version%%-*}"
+          expected_delta="delta-${BASELINE_VERSION}-to-${target_version}.zip"
+          expected_assets=("$expected_delta" "delta.zip" "manifest.json" "manifest.sig" "release-notes.md")
+
+          actual_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' | sort)"
+          expected_assets_text="$(printf '%s\n' "${expected_assets[@]}" | sort)"
+          if [ "$actual_assets" != "$expected_assets_text" ]; then
+            echo '::error::Published asset set differs from the five verified assets.'
+            printf 'Actual:\n%s\nExpected:\n%s\n' "$actual_assets" "$expected_assets_text"
+            exit 1
+          fi
+
+          rm -rf release-download
+          mkdir -p release-download
+          for asset in "${expected_assets[@]}"; do
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir release-download
+            expected_hash="$(sha256sum "release-download/$asset" | cut -d ' ' -f1)"
+            source_hash="$(sha256sum "release-upload/$asset" | cut -d ' ' -f1)"
+            if [ "$expected_hash" != "$source_hash" ]; then
+              echo "::error::SHA-256 mismatch after publication for $asset"
+              exit 1
+            fi
+          done
+          echo 'All five published assets match their locally verified SHA-256 digests.'

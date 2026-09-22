@@ -14,7 +14,8 @@
                     "electron:publish":  "node scripts/require-production-signing.mjs && npm run build:phar && npm run prepare:desktop-runtime && npm run verify:desktop-runtime && electron-builder --win --publish always",
                     "frontend:build":  "cd frontend && npm run build",
                     "quality":  "node scripts/quality.mjs",
-                    "test:quality":  "node --test scripts/quality.test.mjs"
+                    "test:quality":  "node --test scripts/quality.test.mjs",
+                    "test:release-workflow":  "node --test scripts/release-workflow.test.mjs"
                 },
     "build":  {
                   "appId":  "com.abdoteck.pos",

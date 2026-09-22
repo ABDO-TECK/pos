@@ -4,20 +4,59 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build and publish (for example v1.1.44)
+        description: Existing version-matched release tag to verify and upload
         required: true
         type: string
+      release_channel:
+        description: Expected channel of the existing GitHub release
+        required: true
+        default: stable
+        type: choice
+        options:
+          - prerelease
+          - stable
+      confirm_publish:
+        description: Confirm that verified desktop assets may be uploaded
+        required: true
+        default: false
+        type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  confirm-publish:
+    name: Require explicit desktop publication confirmation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
+    steps:
+      - name: Refuse an unconfirmed upload
+        run: |
+          if [ "$CONFIRM_PUBLISH" != 'true' ]; then
+            echo '::error::confirm_publish must be true; no desktop assets will be uploaded.'
+            exit 1
+          fi
+
   release:
+    needs: confirm-publish
+    if: ${{ needs.confirm-publish.result == 'success' }}
     runs-on: windows-latest
+    environment:
+      name: github-release-approval
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ inputs.tag }}
 
       - name: Set up Node.js
@@ -39,6 +78,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
 
+      - name: Validate full desktop source and release channel
+        shell: pwsh
+        run: node scripts/validate-release-source.mjs --mode full --root . --tag $env:RELEASE_TAG --release-channel $env:RELEASE_CHANNEL
+
       - name: Build frontend
         run: npm run frontend:build
 
@@ -51,29 +94,52 @@ jobs:
       - name: Verify portable runtime before packaging
         run: npm run verify:desktop-runtime
 
-      - name: Require production Windows signing configuration
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-          WINDOWS_SIGNING_PUBLISHER: ${{ vars.WINDOWS_SIGNING_PUBLISHER }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: node scripts/require-production-signing.mjs
-
       - name: Build Windows installer
         env:
-          CSC_LINK: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --publish never
 
       - name: Verify packaged runtime contents
         run: node scripts/verify-desktop-runtime.mjs --root dist-electron/win-unpacked/resources/portable --strict
 
-      - name: Verify final signed installer and updater metadata
+      - name: Verify unsigned installer and updater metadata
         shell: pwsh
         env:
-          WINDOWS_SIGNING_PUBLISHER: ${{ vars.WINDOWS_SIGNING_PUBLISHER }}
-        run: ./scripts/verify-desktop-release.ps1 -ReleaseDirectory dist-electron -Tag '${{ inputs.tag }}' -RequireAuthenticode -ExpectedPublisher $env:WINDOWS_SIGNING_PUBLISHER
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: ./scripts/verify-desktop-release.ps1 -ReleaseDirectory dist-electron -Tag $env:RELEASE_TAG
+
+      - name: Verify the existing GitHub release channel
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $release = gh api "repos/$env:REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $expectedPrerelease = $env:RELEASE_CHANNEL -eq 'prerelease'
+          if ([bool]$release.prerelease -ne $expectedPrerelease) {
+            throw "GitHub release channel mismatch for $env:RELEASE_TAG"
+          }
+
+      - name: Refuse existing desktop asset conflicts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $release = gh api "repos/$env:REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $version = $env:RELEASE_TAG.TrimStart('v') -replace '-.*$', ''
+          $expectedAssets = @(
+            "POS-Desktop-Setup-$version.exe",
+            "POS-Desktop-Setup-$version.exe.blockmap",
+            'latest.yml'
+          )
+          $existingAssets = @($release.assets | ForEach-Object { $_.name })
+          $conflicts = @($expectedAssets | Where-Object { $existingAssets -contains $_ })
+          if ($conflicts.Count -gt 0) {
+            throw "Refusing to overwrite existing desktop assets: $($conflicts -join ', ')"
+          }
 
       - name: Upload verified release assets
         shell: pwsh
@@ -82,7 +148,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          $version = $env:RELEASE_TAG.TrimStart('v')
+          $version = $env:RELEASE_TAG.TrimStart('v') -replace '-.*$', ''
           $installer = "dist-electron/POS-Desktop-Setup-$version.exe"
           $blockmap = "$installer.blockmap"
           if (-not (Test-Path -LiteralPath $installer)) {
@@ -91,4 +157,23 @@ jobs:
           if (-not (Test-Path -LiteralPath $blockmap)) {
             throw "Blockmap was not created: $blockmap"
           }
-          gh release upload $env:RELEASE_TAG $installer $blockmap dist-electron/latest.yml --repo $env:REPOSITORY --clobber
+          gh release upload $env:RELEASE_TAG $installer $blockmap dist-electron/latest.yml --repo $env:REPOSITORY
+
+      - name: Verify uploaded desktop installer SHA-256
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v') -replace '-.*$', ''
+          $installerName = "POS-Desktop-Setup-$version.exe"
+          $downloadDirectory = Join-Path $env:RUNNER_TEMP "pos-desktop-upload-check-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Force -Path $downloadDirectory | Out-Null
+          gh release download $env:RELEASE_TAG --repo $env:REPOSITORY --pattern $installerName --pattern "$installerName.blockmap" --pattern latest.yml --dir $downloadDirectory
+          $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath "dist-electron/$installerName").Hash
+          $remoteHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $downloadDirectory $installerName)).Hash
+          if ($localHash -ne $remoteHash) {
+            throw 'Uploaded installer SHA-256 does not match the verified local installer.'
+          }
+          Write-Host "Uploaded installer SHA-256: $localHash"

@@ -16,11 +16,42 @@ use App\Services\UpdateManifestService;
 
 $rootDir = realpath(__DIR__ . '/..');
 
+/**
+ * Resolve a release baseline through Git without allowing the ref to become
+ * shell syntax. Release automation must use an explicit immutable ref.
+ */
+function resolveGitCommit(string $rootDir, string $ref, string $label): string
+{
+    $command = 'git -C ' . escapeshellarg($rootDir) . ' rev-parse --verify ' . escapeshellarg($ref . '^{commit}') . ' 2>&1';
+    $output = [];
+    exec($command, $output, $exitCode);
+    $commit = trim(implode("\n", $output));
+    if ($exitCode !== 0 || !preg_match('/^[0-9a-f]{40}$/i', $commit)) {
+        throw new RuntimeException("Could not resolve {$label} '{$ref}'.");
+    }
+    return strtolower($commit);
+}
+
+/**
+ * Read a tracked file from an already-resolved commit.
+ */
+function readGitFile(string $rootDir, string $commit, string $relativePath): string
+{
+    $object = $commit . ':' . ltrim($relativePath, '/');
+    $command = 'git -C ' . escapeshellarg($rootDir) . ' show ' . escapeshellarg($object) . ' 2>&1';
+    $output = [];
+    exec($command, $output, $exitCode);
+    if ($exitCode !== 0) {
+        throw new RuntimeException("Git baseline {$commit} does not contain {$relativePath}.");
+    }
+    return implode("\n", $output);
+}
+
 // Parse CLI options
 $options = getopt('', ['tag:', 'from-tag:', 'from-ref:', 'from-version:', 'private-key:', 'output-dir:', 'previous-dist:', 'help']);
 
 if (isset($options['help'])) {
-    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-tag=<from_tag>] [--from-ref=<from_ref>] [--from-version=<from_version>] [--private-key=<path>] [--output-dir=<dir>]\n";
+    echo "Usage: php scripts/build-release-package.php --tag=<tag> [--from-ref=<immutable_commit_sha>] [--from-version=<version>] [--private-key=<path>] [--output-dir=<dir>]\n";
     exit(0);
 }
 
@@ -190,10 +221,10 @@ if ($isBootstrap) {
         'version' => $baseVersion,
         'type' => 'full',
         'migration_release' => true,
-        'minimum_version' => '1.0.0',
-        'update_engine_version' => '1.0.0',
-        'channel' => 'stable',
-        'released_at' => date('Y-m-d'),
+        'minimum_version' => $versionData['minimum_supported_version'] ?? $baseVersion,
+        'update_engine_version' => $versionData['update_engine_version'] ?? '1.0.0',
+        'channel' => $versionData['channel'] ?? 'stable',
+        'released_at' => $versionData['released_at'] ?? date('Y-m-d'),
         'changelog' => $changelog,
         'files' => $manifestFiles,
         'deleted_files' => [],
@@ -205,32 +236,35 @@ if ($isBootstrap) {
     // ══════════════════════════════════════════════════════════════
     echo "📦 Packaging Incremental Delta Release...\n";
 
-    $fromTag = $options['from-tag'] ?? null;
-    if (!$fromTag) {
-        // Find previous tag
-        $prevTagCmd = "git describe --tags --abbrev=0 \"{$tag}^\终\" 2>NUL || git describe --tags --abbrev=0 \"{$tag}^\" 2>/dev/null";
-        $fromTag = trim((string) @shell_exec("git describe --tags --abbrev=0 \"{$tag}^\" 2>&1"));
-        if (str_contains($fromTag, 'fatal') || empty($fromTag)) {
-            // Fallback: previous semver
-            $parts = explode('.', $baseVersion);
-            if (count($parts) === 3 && (int)$parts[2] > 0) {
-                $parts[2] = (string)((int)$parts[2] - 1);
-                $fromTag = 'v' . implode('.', $parts);
-            }
-        }
+    $fromTag = isset($options['from-tag']) ? trim((string) $options['from-tag']) : null;
+    $fromRef = isset($options['from-ref']) ? trim((string) $options['from-ref']) : ($fromTag ?: null);
+    $fromVersionOption = isset($options['from-version']) ? trim((string) $options['from-version']) : '';
+    if (!$fromRef || !$fromVersionOption) {
+        throw new RuntimeException('Delta release requires an explicit baseline: provide --from-ref and --from-version.');
     }
 
-    $fromVersion = $options['from-version'] ?? preg_replace('/^v/', '', $fromTag ?: '');
-    $fromVersion = explode('-', $fromVersion)[0];
-    if (empty($fromVersion)) {
-        $fromVersion = '1.1.47';
+    $fromVersion = explode('-', $fromVersionOption)[0];
+    if (!preg_match('/^\d+\.\d+\.\d+$/', $fromVersion)) {
+        throw new RuntimeException("Invalid explicit baseline version '{$fromVersionOption}'.");
+    }
+    if (!preg_match('/^[0-9a-f]{40}$/i', (string) $fromRef)) {
+        throw new RuntimeException('Delta release requires --from-ref to be a full 40-character immutable commit SHA; tags are not accepted as baselines.');
     }
 
-    $fromRef = $options['from-ref'] ?? $fromTag;
+    $baselineCommit = resolveGitCommit($rootDir, $fromRef, 'baseline ref');
+    $baselineVersionData = json_decode(readGitFile($rootDir, $baselineCommit, 'version.json'), true);
+    if (!is_array($baselineVersionData)) {
+        throw new RuntimeException("Baseline ref '{$fromRef}' contains invalid version.json.");
+    }
+    $baselineDeclaredVersion = (string) ($baselineVersionData['version'] ?? $baselineVersionData['application_version'] ?? '');
+    if ($baselineDeclaredVersion !== $fromVersion) {
+        throw new RuntimeException("Baseline ref '{$fromRef}' declares version '{$baselineDeclaredVersion}', not '{$fromVersion}'.");
+    }
+
     echo "Delta comparison: {$fromRef} ({$fromVersion}) -> {$tag} ({$baseVersion})\n";
 
     // Detect changed files between tags/refs
-    $diffCmd = "git diff --name-status \"{$fromRef}\" HEAD 2>&1";
+    $diffCmd = 'git -C ' . escapeshellarg($rootDir) . ' diff --name-status ' . escapeshellarg($baselineCommit) . ' HEAD 2>&1';
     $diffOutput = (string) shell_exec($diffCmd);
     $lines = array_filter(explode("\n", trim($diffOutput)));
 
@@ -385,7 +419,8 @@ if ($isBootstrap) {
 
     // Collect git commits for changelog
     $nullDev = stripos(PHP_OS, 'WIN') === 0 ? 'NUL' : '/dev/null';
-    $gitLog = (string) @shell_exec("git log \"{$fromTag}..HEAD\" --pretty=format:\"%s\" 2>{$nullDev}");
+    $logRef = $fromTag ?: $baselineCommit;
+    $gitLog = (string) @shell_exec('git -C ' . escapeshellarg($rootDir) . ' log ' . escapeshellarg($logRef . '..HEAD') . ' --pretty=format:%s 2>' . $nullDev);
     $commitEntries = array_values(array_filter(array_map('trim', explode("\n", (string)$gitLog))));
 
 

@@ -1,55 +1,59 @@
-name: POS Update Engine Automated Release
+name: POS Update Engine Release Verification
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'version.json'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build and publish (e.g. v1.1.48 or v1.1.47-bootstrap)'
+        description: Release tag to verify, such as v0.0.4
         required: true
         type: string
+      from_ref:
+        description: Full 40-character immutable baseline commit SHA used for a Delta
+        required: true
+        type: string
+      from_version:
+        description: Baseline application version used for a Delta
+        required: true
+        type: string
+      delta_scope:
+        description: Deployable Delta scope; Electron/package versions remain at the baseline
+        required: true
+        default: backend
+        type: choice
+        options:
+          - backend
+          - frontend
+          - mixed
+      release_channel:
+        description: Expected GitHub publication channel
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - stable
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build, Sign, and Publish Release
+  source-consistency:
+    name: Validate working-tree source consistency
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: pos
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=12
-
+    permissions:
+      contents: read
     steps:
-      - name: Resolve Release Tag
-        id: resolve-tag
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
-          echo "Building release for tag: ${TAG}"
-
-      - name: Checkout repository with full history
+      - name: Check out source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -57,22 +61,59 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Set up PHP 8.2 with OpenSSL & extensions
+      - name: Validate source package versions
+        run: node scripts/validate-release-source.mjs --mode working-tree --root .
+
+  verify-release-build:
+    name: Build and verify release without publishing
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      BASELINE_REF: ${{ inputs.from_ref }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      DELTA_SCOPE: ${{ inputs.delta_scope }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+    steps:
+      - name: Check out the exact requested tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP 8.2
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
           coverage: none
 
-      - name: Install root and frontend dependencies
+      - name: Install locked dependencies
         run: |
           npm ci
           npm --prefix frontend ci
+          composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
 
-      - name: Install backend dependencies
-        run: composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
+      - name: Validate tag, runtime, and immutable Delta baseline
+        run: |
+          node scripts/validate-release-source.mjs \
+            --mode delta \
+            --root . \
+            --tag "$RELEASE_TAG" \
+            --baseline-ref "$BASELINE_REF" \
+            --baseline-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL"
 
-      - name: Run backend unit test suite
+      - name: Run release unit tests
         run: |
           php backend/vendor/bin/phpunit --configuration backend/phpunit.xml \
             backend/tests/Unit/UpdateControllerTest.php \
@@ -81,49 +122,39 @@ jobs:
             backend/tests/Unit/DeltaUpdateServiceTest.php \
             backend/tests/Unit/UpdateManifestServiceTest.php \
             backend/tests/Unit/UpdateServiceTest.php
+          node --test scripts/release-workflow.test.mjs
 
-      - name: Run frontend unit test suite
-        run: npm --prefix frontend test -- --run
-
-      - name: Build frontend production bundle
-        run: npm --prefix frontend run build
-
-      - name: Build packaged backend artifact
-        run: npm run build:phar
-
-      - name: Validate version.json matches release tag
-        id: clean-version
+      - name: Build frontend and backend artifacts
         run: |
-          CLEAN_TAG="${RELEASE_TAG#v}"
-          BASE_VERSION="${CLEAN_TAG%%-*}"
-          JSON_VERSION=$(node -e "const v = require('./version.json'); console.log(v.version || v.application_version);")
-          if [ "$BASE_VERSION" != "$JSON_VERSION" ]; then
-            echo "::error::Version Mismatch! Git tag specifies '${BASE_VERSION}' but version.json contains '${JSON_VERSION}'."
-            exit 1
-          fi
-          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
-          echo "✔ Tag version '${BASE_VERSION}' matches version.json '${JSON_VERSION}'"
+          npm --prefix frontend run build
+          npm run build:phar
 
-
-      - name: Build and sign release package
+      - name: Require the authorized manifest-signing secret
         env:
           UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
         run: |
           if [ -z "$UPDATE_PRIVATE_KEY" ]; then
-            echo "::error::UPDATE_PRIVATE_KEY secret is not configured in repository secrets!"
+            echo '::error::UPDATE_PRIVATE_KEY is not configured; refusing to build a release package.'
             exit 1
           fi
-          php scripts/build-release-package.php --tag="${RELEASE_TAG}"
 
-      - name: Publish GitHub Release and Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ contains(env.RELEASE_TAG, 'bootstrap') && format('POS {0} Bootstrap Update Engine Migration', env.RELEASE_TAG) || format('POS {0}', env.RELEASE_TAG) }}
-          body_path: release/${{ steps.clean-version.outputs.clean_tag }}/release-notes.md
-          draft: false
-          prerelease: false
-          files: |
-            release/${{ steps.clean-version.outputs.clean_tag }}/*
+      - name: Build signed package from the explicit baseline
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/build-release-package.php \
+            --tag "$RELEASE_TAG" \
+            --from-ref "$BASELINE_REF" \
+            --from-version "$BASELINE_VERSION" \
+            --output-dir "release/$CLEAN_VERSION"
+
+      - name: Verify signed manifest, hashes, ZIP contents, and assets
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/verify-release-package.php \
+            --release-dir "release/$CLEAN_VERSION" \
+            --target-version "$CLEAN_VERSION" \
+            --minimum-version "$BASELINE_VERSION"
