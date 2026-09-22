@@ -80,7 +80,17 @@ function makeEphemeralBuilderFixture() {
   fs.writeFileSync(path.join(fixture, 'backend', 'certs', 'update_public_key.pem'), publicKey, 'utf8');
 
   fs.mkdirSync(path.join(fixture, 'backend', 'storage'), { recursive: true });
-  fs.symlinkSync(path.join(repoRoot, 'backend', 'vendor'), path.join(fixture, 'backend', 'vendor'), 'junction');
+  const vendorSource = path.join(repoRoot, 'backend', 'vendor');
+  const fixtureVendor = path.join(fixture, 'backend', 'vendor');
+  assert.ok(
+    fs.existsSync(path.join(vendorSource, 'autoload.php')),
+    'Composer dependencies must be installed from backend/composer.lock before building the release fixture.',
+  );
+  fs.cpSync(vendorSource, fixtureVendor, { recursive: true });
+  assert.ok(
+    fs.existsSync(path.join(fixtureVendor, 'autoload.php')),
+    'the cloned builder fixture must contain the installed Composer autoloader.',
+  );
   execFileSync('git', ['config', 'user.email', 'release-test@example.invalid'], { cwd: fixture, stdio: 'pipe' });
   execFileSync('git', ['config', 'user.name', 'Release Test'], { cwd: fixture, stdio: 'pipe' });
 
@@ -419,6 +429,15 @@ test('backend-scoped builder accepts the v0.0.4 scripts-only package metadata di
   const { fixture, privateKeyPath } = makeEphemeralBuilderFixture();
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-release-builder-backend-'));
   try {
+    const fixtureVendor = path.join(fixture, 'backend', 'vendor');
+    const realVendorPath = fs.realpathSync(fixtureVendor);
+    const relativeVendorPath = path.relative(fixture, realVendorPath);
+    assert.ok(
+      relativeVendorPath && !relativeVendorPath.startsWith('..') && !path.isAbsolute(relativeVendorPath),
+      'the cloned builder fixture must contain Composer dependencies, not link outside its temporary checkout',
+    );
+    assert.ok(fs.existsSync(path.join(fixtureVendor, 'autoload.php')));
+
     const build = runPhp(path.join(fixture, 'scripts', 'build-release-package.php'), [
       '--tag=v0.0.4',
       '--from-ref=45dea24b2905f04cdc920c536e2bb920649a2208',
@@ -714,6 +733,25 @@ test('pull-request verification runs automation tests without legacy source vali
   assert.match(automationJob, /npm run test:release-workflow/u);
   assert.doesNotMatch(automationJob, /validate-release-source\.mjs/u);
   assert.doesNotMatch(automationJob, /working-tree source consistency/u);
+});
+
+test('release automation CI installs locked PHP dependencies and checks out full history', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const automationJob = jobBlock(workflow, 'automation-verification', 'resolve-release-source');
+  const checkoutStep = automationJob.match(/- name: Check out workflow and release automation[\s\S]*?(?=\r?\n      - name:|$)/u)?.[0] || '';
+
+  assert.match(checkoutStep, /fetch-depth:\s*0/u, 'the fixture clone needs the immutable parent commit');
+  assert.match(automationJob, /shivammathur\/setup-php@v2/u);
+  assert.match(automationJob, /php-version:\s*['"]?8\.2/u);
+  assert.match(
+    automationJob,
+    /composer install --working-dir=backend --no-interaction --prefer-dist --no-progress/u,
+  );
+  assert.ok(
+    automationJob.indexOf('composer install --working-dir=backend')
+      < automationJob.indexOf('npm run test:release-workflow'),
+    'locked Composer dependencies must be installed before the PHP builder tests run',
+  );
 });
 
 test('required automation verification runs for every pull-request file category', () => {
