@@ -1,6 +1,6 @@
 {
-    "version": "0.0.1",
-    "application_version": "0.0.1",
+    "version": "0.0.4",
+    "application_version": "0.0.4",
     "update_engine_version": "1.0.0",
     "channel": "stable",
     "minimum_supported_version": "0.0.1",
