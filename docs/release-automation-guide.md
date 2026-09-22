@@ -2,15 +2,35 @@
 
 ## 1. Overview
 
-The POS Update Engine release pipeline is automated via GitHub Actions in [`.github/workflows/release.yml`](file:///c:/xampp/htdocs/pos/.github/workflows/release.yml).
+The POS Update Engine uses two separate GitHub Actions workflows:
+[`release.yml`](file:///c:/xampp/htdocs/pos/.github/workflows/release.yml) is
+read-only verification, while
+[`publish-release.yml`](file:///c:/xampp/htdocs/pos/.github/workflows/publish-release.yml)
+is a manual, protected publication workflow.
 
-Every time a production version tag (`v*`) is pushed, the workflow automatically:
-1. Runs full backend and frontend unit test suites.
-2. Verifies that the Git tag strictly matches the version in [`version.json`](file:///c:/xampp/htdocs/pos/version.json).
-3. Determines release type (**Bootstrap** vs **Delta**).
-4. Packages and computes SHA-256 hashes for release files.
-5. Signs `manifest.json` with the RSA-2048 private key stored in GitHub Secrets.
-6. Automatically creates the GitHub Release and uploads all distribution assets.
+No tag push automatically publishes a release. Verification requires an
+explicit tag, immutable baseline ref, baseline version, and channel. Publication
+also requires explicit confirmation, protected approval, a version-matched tag,
+and a release that does not already exist.
+
+Before using the publication workflow, configure the repository environment
+`github-release-approval` under **Settings → Environments** with required
+reviewers. The environment name in YAML is not, by itself, an approval policy.
+
+### Version validation contract
+
+- A full desktop release must have the same target version in `version.json`,
+  the root `package.json`, and `frontend/package.json`.
+- A backend-only, frontend-only, or mixed Delta advances `version.json` and the
+  signed manifest, while the Electron runtime and frontend package metadata stay
+  at the baseline version. The selected `delta_scope` (`backend`, `frontend`,
+  or `mixed`) is explicit in both manual workflows.
+- Delta validation requires `from_ref` to be a full 40-character commit SHA;
+  the builder receives that same immutable value as `--from-ref`, together with
+  `--from-version` and `--release-channel=prerelease` for v0 releases.
+- The builder reads `UPDATE_PRIVATE_KEY` from the protected GitHub secret and
+  signs through its ephemeral key file. Workflows must not pass a guessed or
+  repository-relative private-key path.
 
 ---
 
@@ -18,25 +38,20 @@ Every time a production version tag (`v*`) is pushed, the workflow automatically
 
 ```mermaid
 graph TD
-    A[Developer Pushes Tag e.g. v1.1.49] --> B[GitHub Actions: release.yml]
-    B --> C[1. Run Backend & Frontend Unit Tests]
-    C --> D{Tests Pass?}
-    D -->|NO| E[FAIL: Abort Pipeline with Error]
-    D -->|YES| F[2. Validate Tag matches version.json]
-    F --> G{Tag Matches?}
-    G -->|NO| E
-    G -->|YES| H{Tag contains '-bootstrap'?}
-    
-    H -->|YES| I[Generate Full Package: full-package.zip]
-    H -->|NO| J[Compute Diff vs Previous Tag & Generate Delta Package: delta.zip]
-    
-    I --> K[Load secrets.UPDATE_PRIVATE_KEY & Sign manifest.json]
-    J --> K
-    
-    K --> L[Verify RSA Signature against update_public_key.pem]
-    L --> M[Wipe Ephemeral Private Key from Memory/Disk]
-    M --> N[Create GitHub Release & Upload Assets]
-    N --> O[POS Clients Automatically Detect & Download Update via GitHub Releases]
+    A[Deploy corrected workflows] --> B[Create approved source commit]
+    B --> C[Create version-matched tag]
+    C --> D[Manual verification: release.yml]
+    D --> E[1. Run Backend & Frontend Unit Tests]
+    E --> F{Tests Pass?}
+    F -->|NO| G[FAIL: Abort Pipeline with Error]
+    F -->|YES| H[2. Validate tag, source, and immutable baseline]
+    H --> I{Validation passes?}
+    I -->|NO| G
+    I -->|YES| J[3. Build and verify signed package]
+    J --> K[Protected publication approval]
+    K --> L[Manual publish-release.yml]
+    L --> M[Create one new release and verify public asset hashes]
+    M --> N[POS clients detect compatible updates]
 ```
 
 ---
@@ -53,6 +68,12 @@ To enable automated cryptographic signing in GitHub Actions:
 
 > [!CAUTION]
 > Never commit `release/private_key.pem` to the Git repository. The workflow reads the key strictly from `secrets.UPDATE_PRIVATE_KEY` into an ephemeral file and wipes it immediately after signing.
+
+Windows Authenticode is not a release gate for the open-source v0.0.1
+installer. The desktop workflow keeps SmartScreen, Defender, UAC, and all
+application integrity checks enabled, but does not require a commercial or
+self-signed certificate. The installer remains unsigned and its `latest.yml`
+SHA-512 plus published SHA-256 must be verified.
 
 ---
 
@@ -84,14 +105,17 @@ Bump the version and update the changelog in `version.json`:
 }
 ```
 
-### Step 3: Commit Changes
+### Step 3: Deploy the corrected workflows and commit changes
 ```bash
-git add .
-git commit -m "release: v1.1.49 invoice performance and export improvements"
-git push origin main
+git add .github/workflows scripts docs version.json package.json frontend/package.json
+git commit -m "ci: gate release publication and require explicit Delta baselines"
 ```
 
-### Step 4: Create and Push Git Release Tag
+Merge/push this workflow correction through the authorized repository process
+before creating a release tag. A local workflow edit does not protect the
+remote repository until the corrected workflow exists on the default branch.
+
+### Step 4: Create and push the version-matched Git release tag
 
 #### For an Incremental Delta Release (Default):
 ```bash
@@ -105,12 +129,37 @@ git tag -a v1.1.49-bootstrap -m "Release v1.1.49-bootstrap: POS Bootstrap Releas
 git push origin v1.1.49-bootstrap
 ```
 
-### Step 5: GitHub Actions Automatically Publishes Release
-The workflow will run and create the release on GitHub with all required assets:
+For a Delta, supply `--from-ref=<approved immutable baseline commit>` and
+`--from-version=<baseline version>`. The builder no longer guesses a previous
+tag. The v0.0.1 baseline tag is absent in the current repository, so do not
+invent one merely to satisfy the command.
+
+### Step 5: GitHub Actions Verification and Explicit Publication
+The verification workflow does not publish or modify GitHub releases. After the
+workflow has been deployed to the default branch, run it manually with the
+version-matched tag, immutable baseline ref, baseline version, Delta scope, and
+channel. The
+separate publication workflow requires explicit confirmation and protected
+approval before creating a new release. It never overwrites an existing release
+or asset. Required assets are:
 - `delta-1.1.48-to-1.1.49.zip` (or `full-package.zip`)
+- `delta.zip` (the generic Delta alias used by the backend provider)
 - `manifest.json`
 - `manifest.sig`
 - `release-notes.md`
+
+The separate desktop workflow is also manual and confirmation-gated. It builds
+the unsigned installer, verifies `latest.yml` and the installer SHA-256, and
+refuses to upload if the target release already contains any expected desktop
+asset. It does not overwrite existing assets.
+
+For the current v0.0.4 test fixture, use `v0.0.4` as a prerelease only. Supply
+the approved immutable v0.0.1 baseline commit and `--from-version=0.0.1`; the
+repository has no v0.0.1 tag, so no replacement tag may be invented. The
+version-only fixture exercises discovery, download, RSA verification, hash
+verification, version transition, restart, channel persistence, and `CURRENT`
+status. It does not by itself prove backend.phar replacement or database
+migrations; those require the already-recorded packaged Sandbox evidence.
 
 ---
 
@@ -119,8 +168,11 @@ The workflow will run and create the release on GitHub with all required assets:
 You can test the release generation and signing logic locally before pushing:
 
 ```bash
-# Test release packaging locally
-php scripts/build-release-package.php --tag=v1.1.48 --private-key=release/private_key.pem
+# Test Delta release packaging locally with an explicit immutable baseline
+php scripts/build-release-package.php --tag=v1.1.48 --from-ref=<approved-baseline-commit> --from-version=1.1.47 --private-key=release/private_key.pem --output-dir=release/1.1.48
+
+# Verify the signed package before any authorized publication
+php scripts/verify-release-package.php --release-dir=release/1.1.48 --target-version=1.1.48 --minimum-version=1.1.47
 
 # Run full release automation validation test suite
 php scripts/test-release-workflow.php

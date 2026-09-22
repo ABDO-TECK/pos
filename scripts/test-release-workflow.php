@@ -98,25 +98,31 @@ try {
     logStep('TEST 2: Delta Tag Release Packaging & Signing');
 
     $deltaOut = $tempTestDir . '/1.1.48';
-    $cmd2 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --from-tag=v1.1.47 --private-key=\"{$privateKeyPath}\" --output-dir=\"{$deltaOut}\" 2>&1";
-    exec($cmd2, $out2, $code2);
-
-    if ($code2 !== 0) {
-        throw new RuntimeException("Delta build script failed with code {$code2}: " . implode("\n", $out2));
+    $baselineCommit = trim((string) @shell_exec('git -C ' . escapeshellarg($rootDir) . ' rev-parse --verify v1.1.47 2>NUL'));
+    if (!preg_match('/^[0-9a-f]{40}$/i', $baselineCommit)) {
+        throw new RuntimeException('Could not resolve the v1.1.47 test baseline to a full commit SHA.');
+    }
+    $cmd2 = "\"{$phpBinary}\" scripts/build-release-package.php --tag=v1.1.48 --from-ref={$baselineCommit} --from-version=1.1.47 --private-key=\"{$privateKeyPath}\" --output-dir=\"{$deltaOut}\" 2>&1";
+    $origVersionJson = file_get_contents($rootDir . '/version.json');
+    $mock148 = json_decode($origVersionJson, true);
+    $mock148['version'] = '1.1.48';
+    $mock148['application_version'] = '1.1.48';
+    file_put_contents($rootDir . '/version.json', json_encode($mock148));
+    try {
+        exec($cmd2, $out2, $code2);
+    } finally {
+        file_put_contents($rootDir . '/version.json', $origVersionJson);
     }
 
-    if (!file_exists($deltaOut . '/manifest.json') || !file_exists($deltaOut . '/manifest.sig') || !file_exists($deltaOut . '/delta.zip')) {
-        throw new RuntimeException("Missing delta artifacts in {$deltaOut}");
+    if ($code2 === 0) {
+        throw new RuntimeException('Security defect: the Delta builder accepted an app.asar/Electron source change that requires a bootstrap release.');
     }
-
-    // Verify RSA signature
-    $deltaMf = (string) file_get_contents($deltaOut . '/manifest.json');
-    $deltaSig = (string) file_get_contents($deltaOut . '/manifest.sig');
-    if (!$sigService->verifySignature($deltaMf, $deltaSig, $pubKeyPath)) {
-        throw new RuntimeException("Delta manifest RSA signature failed verification!");
+    $deltaFailure = implode("\n", $out2);
+    if (!preg_match('/stored in app\.asar|bootstrap/i', $deltaFailure)) {
+        throw new RuntimeException("Delta builder failed for an unexpected reason: {$deltaFailure}");
     }
-    logPass("Delta release generated delta.zip and signed manifest with valid RSA signature");
-    $testResults['delta_packaging'] = true;
+    logPass("Delta builder rejected Electron/app.asar changes and required a bootstrap release (Exit code: {$code2})");
+    $testResults['delta_app_asar_guard'] = true;
 
     // ══════════════════════════════════════════════════════════════
     // TEST 3: Version Mismatch Rejection

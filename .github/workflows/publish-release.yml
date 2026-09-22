@@ -1,0 +1,484 @@
+name: POS Update Engine Release Publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version-matched Git tag to publish, such as v0.0.4
+        required: true
+        type: string
+      from_ref:
+        description: Full 40-character immutable baseline commit SHA for the Delta
+        required: true
+        type: string
+      from_version:
+        description: Baseline application version for the Delta
+        required: true
+        type: string
+      delta_scope:
+        description: Deployable Delta scope; Electron/package versions remain at the baseline
+        required: true
+        default: backend
+        type: choice
+        options:
+          - backend
+          - frontend
+          - mixed
+      release_channel:
+        description: Explicit GitHub release channel
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - stable
+      confirm_publish:
+        description: Confirm that this workflow may create one new GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  confirm-publish:
+    name: Require explicit publication confirmation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
+    steps:
+      - name: Refuse an unconfirmed publication
+        run: |
+          if [ "$CONFIRM_PUBLISH" != 'true' ]; then
+            echo '::error::confirm_publish must be true; no release will be created.'
+            exit 1
+          fi
+          echo 'Publication confirmation accepted; protected approval remains required.'
+
+  resolve-release-source:
+    name: Resolve immutable release tag
+    needs: confirm-publish
+    if: ${{ needs.confirm-publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_ref: ${{ steps.resolve.outputs.release_ref }}
+      release_sha: ${{ steps.resolve.outputs.release_sha }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve fully qualified tag to a commit
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo '::error::The release tag must be a version-matched vX.Y.Z tag.'
+            exit 1
+          fi
+
+          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")" || {
+            echo '::error::The requested release tag does not exist.'
+            exit 1
+          }
+          object_type="$(jq -r '.object.type' <<<"$ref_json")"
+          object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          case "$object_type" in
+            commit)
+              release_sha="$object_sha"
+              ;;
+            tag)
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")" || {
+                echo '::error::The annotated release tag target could not be resolved.'
+                exit 1
+              }
+              target_type="$(jq -r '.object.type' <<<"$tag_json")"
+              if [ "$target_type" != 'commit' ]; then
+                echo '::error::The annotated release tag does not target a commit.'
+                exit 1
+              fi
+              release_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+              ;;
+            *)
+              echo "::error::Unsupported release tag object type: $object_type"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::The release tag did not resolve to a full commit SHA.'
+            exit 1
+          fi
+
+          echo "release_ref=refs/tags/$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "Workflow definition revision: $GITHUB_SHA"
+          echo "Release source commit: $release_sha"
+
+  verify-source:
+    name: Verify release source without signing
+    needs: [confirm-publish, resolve-release-source]
+    if: ${{ needs.resolve-release-source.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ needs.resolve-release-source.outputs.release_ref }}
+      EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
+      BASELINE_REF: ${{ inputs.from_ref }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      DELTA_SCOPE: ${{ inputs.delta_scope }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      WORKFLOW_REVISION: ${{ github.sha }}
+    steps:
+      - name: Check out the resolved release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve-release-source.outputs.release_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
+          coverage: none
+
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
+
+      - name: Validate tag, source commit, runtime, and immutable baseline
+        run: |
+          node scripts/validate-release-source.mjs \
+            --mode delta \
+            --root . \
+            --tag "$RELEASE_TAG" \
+            --expected-commit "$EXPECTED_RELEASE_SHA" \
+            --baseline-ref "$BASELINE_REF" \
+            --baseline-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL"
+
+      - name: Run release workflow tests
+        run: node --test scripts/release-workflow.test.mjs
+
+      - name: Build frontend and backend artifacts without signing
+        run: |
+          npm --prefix frontend run build
+          npm run build:phar
+
+  build:
+    name: Build and verify signed Delta
+    needs: [verify-source, resolve-release-source]
+    if: ${{ needs.verify-source.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-release-approval
+    permissions:
+      contents: read
+      actions: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ needs.resolve-release-source.outputs.release_ref }}
+      EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
+      BASELINE_REF: ${{ inputs.from_ref }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      DELTA_SCOPE: ${{ inputs.delta_scope }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      WORKFLOW_REVISION: ${{ github.sha }}
+    steps:
+      - name: Check out the resolved release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve-release-source.outputs.release_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, gd, mbstring, dom, xml, xmlwriter, zip, openssl
+          coverage: none
+
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          composer install --working-dir=backend --no-interaction --prefer-dist --no-progress
+
+      - name: Re-validate source after protected approval
+        run: |
+          node scripts/validate-release-source.mjs \
+            --mode delta \
+            --root . \
+            --tag "$RELEASE_TAG" \
+            --expected-commit "$EXPECTED_RELEASE_SHA" \
+            --baseline-ref "$BASELINE_REF" \
+            --baseline-version "$BASELINE_VERSION" \
+            --delta-scope "$DELTA_SCOPE" \
+            --release-channel "$RELEASE_CHANNEL"
+
+      - name: Run release workflow tests
+        run: node --test scripts/release-workflow.test.mjs
+
+      - name: Build frontend and backend artifacts
+        run: |
+          npm --prefix frontend run build
+          npm run build:phar
+
+      - name: Require the authorized manifest-signing secret
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATE_PRIVATE_KEY" ]; then
+            echo '::error::UPDATE_PRIVATE_KEY is not configured; refusing to publish.'
+            exit 1
+          fi
+
+      - name: Build the signed Delta from the explicit baseline
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/build-release-package.php \
+            --tag "$RELEASE_TAG" \
+            --from-ref "$BASELINE_REF" \
+            --from-version "$BASELINE_VERSION" \
+            --output-dir "release/$CLEAN_VERSION"
+
+      - name: Verify signature, manifest, hashes, ZIP, and required assets
+        run: |
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          php scripts/verify-release-package.php \
+            --release-dir "release/$CLEAN_VERSION" \
+            --target-version "$CLEAN_VERSION" \
+            --minimum-version "$BASELINE_VERSION"
+
+      - name: Stage verified public assets and non-secret provenance
+        run: |
+          set -euo pipefail
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+          rm -rf release-upload
+          mkdir -p release-upload/public
+          cp "release/$CLEAN_VERSION/delta-$BASELINE_VERSION-to-$CLEAN_VERSION.zip" release-upload/public/
+          cp "release/$CLEAN_VERSION/delta.zip" release-upload/public/
+          cp "release/$CLEAN_VERSION/manifest.json" release-upload/public/
+          cp "release/$CLEAN_VERSION/manifest.sig" release-upload/public/
+          cp "release/$CLEAN_VERSION/release-notes.md" release-upload/public/
+
+          expected_assets=("delta-$BASELINE_VERSION-to-$CLEAN_VERSION.zip" "delta.zip" "manifest.json" "manifest.sig" "release-notes.md")
+          actual_assets="$(find release-upload/public -maxdepth 1 -type f -printf '%f\n' | sort)"
+          expected_assets_text="$(printf '%s\n' "${expected_assets[@]}" | sort)"
+          if [ "$actual_assets" != "$expected_assets_text" ]; then
+            echo '::error::The signed job did not stage exactly the five approved public assets.'
+            exit 1
+          fi
+
+          jq -n \
+            --arg workflow_revision "$WORKFLOW_REVISION" \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg release_ref "$RELEASE_REF" \
+            --arg release_commit "$EXPECTED_RELEASE_SHA" \
+            --arg baseline_ref "$BASELINE_REF" \
+            --arg baseline_version "$BASELINE_VERSION" \
+            --arg delta_scope "$DELTA_SCOPE" \
+            --arg release_channel "$RELEASE_CHANNEL" \
+            --arg target_version "$CLEAN_VERSION" \
+            '{workflow_revision: $workflow_revision, release_tag: $release_tag, release_ref: $release_ref, release_commit: $release_commit, baseline_ref: $baseline_ref, baseline_version: $baseline_version, delta_scope: $delta_scope, release_channel: $release_channel, target_version: $target_version}' \
+            > release-upload/release-provenance.json
+
+      - name: Upload workflow-only publication artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-release-assets-${{ inputs.tag }}
+          path: release-upload
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Create the explicitly approved GitHub release
+    needs: [build, resolve-release-source]
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-release-approval
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ needs.resolve-release-source.outputs.release_ref }}
+      EXPECTED_RELEASE_SHA: ${{ needs.resolve-release-source.outputs.release_sha }}
+      BASELINE_REF: ${{ inputs.from_ref }}
+      BASELINE_VERSION: ${{ inputs.from_version }}
+      DELTA_SCOPE: ${{ inputs.delta_scope }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      WORKFLOW_REVISION: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download verified workflow artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: update-release-assets-${{ inputs.tag }}
+          path: release-upload
+
+      - name: Re-verify provenance and current tag before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          provenance='release-upload/release-provenance.json'
+          if [ ! -f "$provenance" ]; then
+            echo '::error::Signed release provenance is missing.'
+            exit 1
+          fi
+
+          for field_and_value in \
+            "release_tag|$RELEASE_TAG" \
+            "release_ref|$RELEASE_REF" \
+            "release_commit|$EXPECTED_RELEASE_SHA" \
+            "baseline_ref|$BASELINE_REF" \
+            "baseline_version|$BASELINE_VERSION" \
+            "delta_scope|$DELTA_SCOPE" \
+            "release_channel|$RELEASE_CHANNEL"; do
+            field="${field_and_value%%|*}"
+            expected="${field_and_value#*|}"
+            actual="$(jq -r --arg field "$field" '.[$field] // empty' "$provenance")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Release provenance mismatch for $field."
+              exit 1
+            fi
+          done
+
+          resolve_tag_sha() {
+            local ref_json object_type object_sha tag_json target_type
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+            object_type="$(jq -r '.object.type' <<<"$ref_json")"
+            object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            if [ "$object_type" = 'commit' ]; then
+              printf '%s' "$object_sha"
+              return
+            fi
+            if [ "$object_type" != 'tag' ]; then
+              echo '::error::The current release ref is not a commit or annotated tag.' >&2
+              return 1
+            fi
+            tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            target_type="$(jq -r '.object.type' <<<"$tag_json")"
+            if [ "$target_type" != 'commit' ]; then
+              echo '::error::The annotated release tag no longer targets a commit.' >&2
+              return 1
+            fi
+            jq -r '.object.sha' <<<"$tag_json"
+          }
+
+          current_tag_sha="$(resolve_tag_sha)"
+          if [ "$current_tag_sha" != "$EXPECTED_RELEASE_SHA" ]; then
+            echo '::error::The release tag changed after source verification; refusing publication.'
+            exit 1
+          fi
+          echo "Verified $RELEASE_REF at $current_tag_sha for workflow revision $WORKFLOW_REVISION."
+
+      - name: Prove the release is absent and the public asset set is exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_version="${RELEASE_TAG#v}"
+          expected_version="${expected_version%%-*}"
+          expected_assets=("delta-${BASELINE_VERSION}-to-${expected_version}.zip" "delta.zip" "manifest.json" "manifest.sig" "release-notes.md")
+          actual_staged="$(find release-upload/public -maxdepth 1 -type f -printf '%f\n' | sort)"
+          expected_staged="$(printf '%s\n' "${expected_assets[@]}" | sort)"
+          if [ "$actual_staged" != "$expected_staged" ]; then
+            echo '::error::The staged public asset set differs from the approved five assets.'
+            exit 1
+          fi
+
+          set +e
+          release_probe="$(gh api --include "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" 2>&1)"
+          probe_status=$?
+          set -e
+          if [[ "$release_probe" != *'404 Not Found'* ]]; then
+            echo '::error::Could not prove that the release is absent; refusing to create or overwrite it.'
+            printf '%s\n' "$release_probe"
+            exit 1
+          fi
+          if [ "$probe_status" -eq 0 ]; then
+            echo '::error::The release already exists; refusing to overwrite it.'
+            exit 1
+          fi
+
+      - name: Create one new release without asset clobbering
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_CHANNEL" = 'prerelease' ]; then
+            title="POS Desktop $RELEASE_TAG — TEST RELEASE — NOT FOR PRODUCTION"
+            channel_flag=(--prerelease)
+          else
+            title="POS Desktop $RELEASE_TAG"
+            channel_flag=()
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            release-upload/public/delta-*.zip \
+            release-upload/public/manifest.json \
+            release-upload/public/manifest.sig \
+            release-upload/public/release-notes.md \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$title" \
+            --notes-file release-upload/public/release-notes.md \
+            "${channel_flag[@]}"
+
+      - name: Verify uploaded asset names and SHA-256 digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_version="${RELEASE_TAG#v}"
+          target_version="${target_version%%-*}"
+          expected_delta="delta-${BASELINE_VERSION}-to-${target_version}.zip"
+          expected_assets=("$expected_delta" "delta.zip" "manifest.json" "manifest.sig" "release-notes.md")
+
+          actual_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' | sort)"
+          expected_assets_text="$(printf '%s\n' "${expected_assets[@]}" | sort)"
+          if [ "$actual_assets" != "$expected_assets_text" ]; then
+            echo '::error::Published asset set differs from the five verified assets.'
+            printf 'Actual:\n%s\nExpected:\n%s\n' "$actual_assets" "$expected_assets_text"
+            exit 1
+          fi
+
+          rm -rf release-download
+          mkdir -p release-download
+          for asset in "${expected_assets[@]}"; do
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir release-download
+            expected_hash="$(sha256sum "release-download/$asset" | cut -d ' ' -f1)"
+            source_hash="$(sha256sum "release-upload/public/$asset" | cut -d ' ' -f1)"
+            if [ "$expected_hash" != "$source_hash" ]; then
+              echo "::error::SHA-256 mismatch after publication for $asset"
+              exit 1
+            fi
+          done
+          echo 'All five published assets match their locally verified SHA-256 digests.'
