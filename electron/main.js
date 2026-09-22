@@ -911,7 +911,17 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      if (isTrustedBackendRequest({ url: details.url, phpPort, initiator })) {
+      const trustedWebContentsId = mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow.webContents.id
+        : null;
+      if (isTrustedBackendRequest({
+        url: details.url,
+        phpPort,
+        initiator,
+        webContentsId: details.webContentsId,
+        trustedWebContentsId,
+        frameUrl: details.frame?.url,
+      })) {
         // 1. Cookie capture scope (Only capture Set-Cookie from the local PHP backend runtime URL)
         let parsedUrl;
         try {
@@ -973,7 +983,17 @@ app.whenReady().then(async () => {
     try {
       // 5. Origin guard
       const initiator = details.initiator || '';
-      if (isTrustedBackendRequest({ url: details.url, phpPort, initiator })) {
+      const trustedWebContentsId = mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow.webContents.id
+        : null;
+      if (isTrustedBackendRequest({
+        url: details.url,
+        phpPort,
+        initiator,
+        webContentsId: details.webContentsId,
+        trustedWebContentsId,
+        frameUrl: details.frame?.url,
+      })) {
         // 2. Cookie injection scope (Only inject into outgoing requests targeting same local PHP backend URL)
         let parsedUrl;
         try {
@@ -1333,6 +1353,17 @@ app.whenReady().then(async () => {
         success: false,
         error: 'Database restore failed. Check the error log for the reference.',
       };
+    }
+  });
+
+  ipcMain.handle('auth:clear-session', async (event) => {
+    assertTrustedAppRenderer(event);
+    try {
+      await clearDesktopSession();
+      return { success: true };
+    } catch (error) {
+      console.error('[Auth] Failed to clear the local desktop session:', error.message);
+      return { success: false, error: 'Unable to clear the local desktop session.' };
     }
   });
 

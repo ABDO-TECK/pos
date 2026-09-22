@@ -14,6 +14,7 @@ class UpdateService
 {
     private string $repoUrl;
     private string $localVersionFile;
+    private string $clientChannelFile;
     private string $rootDir;
     /** @var list<string> */
     private array $allowedUpdateHosts;
@@ -53,6 +54,11 @@ class UpdateService
         $this->githubProvider   = $githubProvider ?? new GitHubReleaseProvider();
         $this->signatureService = $signatureService ?? new ManifestSignatureService();
         $this->telemetryService = $telemetryService;
+        $storageDir = trim((string) $this->deltaUpdateService->getStorageDir());
+        if ($storageDir === '') {
+            $storageDir = $normalizedPath . '/backend/storage';
+        }
+        $this->clientChannelFile = rtrim(str_replace('\\', '/', $storageDir), '/') . '/update_channel.json';
         $this->migrationSafetyBackupService = $migrationSafetyBackupService
             ?? new MigrationSafetyBackupService($backupService, $this->deltaUpdateService->getStorageDir());
         $this->repoUrl          = EnvLoader::get('UPDATE_SERVER_URL', 'https://api.github.com/repos/ABDO-TECK/pos/releases/latest');
@@ -109,6 +115,15 @@ class UpdateService
      */
     public function getClientChannel(): string
     {
+        $preference = @file_get_contents($this->clientChannelFile);
+        if ($preference !== false) {
+            $data = json_decode($preference, true);
+            $storedChannel = is_array($data) ? strtolower(trim((string) ($data['channel'] ?? ''))) : '';
+            if (in_array($storedChannel, ['stable', 'beta', 'rc'], true)) {
+                return $storedChannel;
+            }
+        }
+
         $local = $this->getLocalVersion();
         $channel = strtolower(trim($local['update_channel'] ?? EnvLoader::get('APP_UPDATE_CHANNEL', 'stable')));
         return in_array($channel, ['stable', 'beta', 'rc'], true) ? $channel : 'stable';
@@ -124,11 +139,16 @@ class UpdateService
             return ['ok' => false, 'error' => 'قناة التحديث المحددة غير صحيحة. القنوات المسموحة: stable, beta, rc.'];
         }
 
-        $local = $this->getLocalVersion();
-        $local['update_channel'] = $channel;
+        $storageDir = dirname($this->clientChannelFile);
+        if (!is_dir($storageDir) && !@mkdir($storageDir, 0750, true) && !is_dir($storageDir)) {
+            return ['ok' => false, 'error' => 'تعذر حفظ إعدادات قناة التحديث.'];
+        }
 
-        $json = json_encode($local, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if (@file_put_contents($this->localVersionFile, $json) === false) {
+        $json = json_encode([
+            'channel' => $channel,
+            'updated_at' => date('c'),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false || @file_put_contents($this->clientChannelFile, $json . "\n", LOCK_EX) === false) {
             return ['ok' => false, 'error' => 'تعذر حفظ إعدادات قناة التحديث.'];
         }
 
@@ -219,6 +239,12 @@ class UpdateService
         $storageDir = $this->deltaUpdateService->getStorageDir();
         $safeChannel = preg_replace('/[^a-z0-9_-]/i', '', $targetChannel) ?: 'stable';
         $cacheFile = rtrim($storageDir, '/\\') . '/remote_version_cache_' . $safeChannel . '.json';
+        $failureCacheFile = rtrim($storageDir, '/\\') . '/remote_version_failure_cache_' . $safeChannel . '.json';
+
+        $cachedFailure = $this->readRemoteFailureCache($failureCacheFile);
+        if ($cachedFailure !== null) {
+            return $cachedFailure;
+        }
 
         // If repoUrl points specifically to GitHub releases endpoint, use GitHubReleaseProvider
         if (str_contains($this->repoUrl, '/releases')) {
@@ -248,13 +274,18 @@ class UpdateService
                 if (is_dir(dirname($cacheFile))) {
                     @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
                 }
+                @unlink($failureCacheFile);
                 return $cachePayload;
             }
 
-            return $this->remoteFailure(
+            $failure = $this->remoteFailure(
                 $ghRelease['error_code'] ?? 'github_fetch_failed',
-                $ghRelease['error'] ?? 'Failed to fetch latest release from GitHub.'
+                $ghRelease['error'] ?? 'Failed to fetch latest release from GitHub.',
+                (int) ($ghRelease['diagnostics']['http_code'] ?? 0),
+                is_array($ghRelease['diagnostics'] ?? null) ? $ghRelease['diagnostics'] : [],
             );
+            $this->writeRemoteFailureCache($failureCacheFile, $failure);
+            return $failure;
         }
 
 
@@ -303,7 +334,8 @@ class UpdateService
             if (is_dir(dirname($cacheFile))) {
                 @file_put_contents($cacheFile, json_encode($cachePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             }
-            return $cachePayload;
+                @unlink($failureCacheFile);
+                return $cachePayload;
         }
 
         $errorCode = $this->classifyRemoteFailure($httpCode, $curlErr, $curlErrNo);
@@ -318,7 +350,9 @@ class UpdateService
             'host' => $this->updateHostForLog($this->repoUrl),
             'error_code' => $errorCode,
         ]);
-        return $this->remoteFailure($errorCode, $details, $httpCode);
+        $failure = $this->remoteFailure($errorCode, $details, $httpCode);
+        $this->writeRemoteFailureCache($failureCacheFile, $failure);
+        return $failure;
     }
 
     /**
@@ -406,7 +440,7 @@ class UpdateService
         return is_string($host) && $host !== '' ? strtolower($host) : 'invalid';
     }
 
-    private function remoteFailure(string $errorCode, string $details, int $httpCode = 0): array
+    private function remoteFailure(string $errorCode, string $details, int $httpCode = 0, array $diagnostics = []): array
     {
         return [
             'ok' => false,
@@ -416,7 +450,74 @@ class UpdateService
             'details' => $httpCode > 0 && !str_contains($details, 'HTTP')
                 ? "HTTP {$httpCode}: {$details}"
                 : $details,
+            'diagnostics' => $diagnostics,
         ];
+    }
+
+    /**
+     * Read a short-lived rate-limit failure cache. A forced check may bypass
+     * successful-result caching, but it must not hammer a known rate-limited
+     * endpoint before the server's retry window has elapsed.
+     */
+    private function readRemoteFailureCache(string $cacheFile): ?array
+    {
+        if (!is_file($cacheFile)) {
+            return null;
+        }
+
+        $cached = json_decode((string) @file_get_contents($cacheFile), true);
+        if (!is_array($cached) || ($cached['ok'] ?? true) !== false) {
+            return null;
+        }
+
+        $retryAt = (int) ($cached['retry_at'] ?? 0);
+        if ($retryAt <= time()) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'data' => null,
+            'checkedUrl' => (string) ($cached['checkedUrl'] ?? $this->repoUrl),
+            'errorCode' => (string) ($cached['errorCode'] ?? 'github_rate_limited'),
+            'details' => (string) ($cached['details'] ?? 'GitHub update discovery is temporarily rate limited.'),
+            'diagnostics' => is_array($cached['diagnostics'] ?? null) ? $cached['diagnostics'] : [],
+        ];
+    }
+
+    private function writeRemoteFailureCache(string $cacheFile, array $failure): void
+    {
+        $errorCode = (string) ($failure['errorCode'] ?? '');
+        if (!in_array($errorCode, ['github_primary_rate_limited', 'github_secondary_rate_limited'], true)) {
+            return;
+        }
+
+        $diagnostics = is_array($failure['diagnostics'] ?? null) ? $failure['diagnostics'] : [];
+        $retryAt = time() + 60;
+        if ($errorCode === 'github_primary_rate_limited') {
+            $reset = (int) ($diagnostics['rate_limit_reset'] ?? 0);
+            if ($reset > time()) {
+                $retryAt = $reset;
+            }
+        } else {
+            $retryAfter = (int) ($diagnostics['retry_after'] ?? 0);
+            if ($retryAfter > 0) {
+                $retryAt = time() + min($retryAfter, 900);
+            }
+        }
+
+        $payload = [
+            'ok' => false,
+            'checkedUrl' => $failure['checkedUrl'] ?? $this->repoUrl,
+            'errorCode' => $errorCode,
+            'details' => $failure['details'] ?? 'GitHub update discovery is temporarily rate limited.',
+            'diagnostics' => $diagnostics,
+            'retry_at' => $retryAt,
+        ];
+        $directory = dirname($cacheFile);
+        if (is_dir($directory)) {
+            @file_put_contents($cacheFile, json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+        }
     }
 
     /**
@@ -469,6 +570,7 @@ class UpdateService
                 'checkedUrl'          => $checkedUrl,
                 'errorCode'           => $remoteResult['errorCode'] ?? 'github_network_timeout',
                 'details'             => $remoteResult['details'] ?? null,
+                'diagnostics'         => $remoteResult['diagnostics'] ?? [],
                 'changelog'           => [],
             ];
         }
@@ -1045,7 +1147,37 @@ class UpdateService
                                 $this->deltaUpdateService->recordHistory($currentVersion, $targetVersion, 'delta', 'database_recovery_failed', count($applyResult['applied_files']), $snapshot['snapshot_path'], $recoveryError, 'github_release', $releaseTag);
                                 return ['ok' => false, 'error' => $recoveryError, 'code' => 500, 'data' => ['logs' => $output]];
                             }
-                            $this->deltaUpdateService->rollbackFiles($snapshot['snapshot_path']);
+                            $fileRollback = $this->deltaUpdateService->rollbackFiles($snapshot['snapshot_path']);
+                            $output = array_merge($output, $fileRollback['logs'] ?? []);
+                            if (empty($fileRollback['ok'])) {
+                                $fileRollbackErrors = $fileRollback['errors'] ?? ['Unknown file restoration error.'];
+                                $fileRollbackError = 'فشل استعادة ملفات التحديث: ' . implode('; ', $fileRollbackErrors);
+                                $output[] = "❌ {$fileRollbackError}";
+                                $this->deltaUpdateService->setUpdateState('rollback_failed', [
+                                    'error' => $fileRollbackError,
+                                    'backup_snapshot' => $snapshot['snapshot_path'],
+                                    'rollback_errors' => $fileRollbackErrors,
+                                    'restored_files' => $fileRollback['restored_files'] ?? [],
+                                ]);
+                                $this->deltaUpdateService->recordHistory(
+                                    $currentVersion,
+                                    $targetVersion,
+                                    'delta',
+                                    'rollback_failed',
+                                    count($applyResult['applied_files']),
+                                    $snapshot['snapshot_path'],
+                                    "{$migrationErr}; {$fileRollbackError}",
+                                    'github_release',
+                                    $releaseTag
+                                );
+
+                                return [
+                                    'ok' => false,
+                                    'error' => "{$migrationErr}; {$fileRollbackError}",
+                                    'code' => 500,
+                                    'data' => ['logs' => $output],
+                                ];
+                            }
                             $this->deltaUpdateService->recordHistory(
                                 $currentVersion,
                                 $targetVersion,

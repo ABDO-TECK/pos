@@ -1095,15 +1095,28 @@ class DeltaUpdateService
                 $logs[] = "🔄 جاري التراجع التلقائي عن التعديلات وإعادة النظام لحالته السابقة...";
                 $rollbackResult = $this->rollbackFiles($snapshotPath);
                 $logs = array_merge($logs, $rollbackResult['logs']);
-                $this->setUpdateState('rolled_back', ['error' => $errMessage]);
+                $rollbackSucceeded = ($rollbackResult['ok'] ?? false) === true;
+                $rollbackErrors = $rollbackResult['errors'] ?? [];
+                if ($rollbackSucceeded) {
+                    $this->setUpdateState('rolled_back', ['error' => $errMessage]);
+                } else {
+                    $this->setUpdateState('rollback_failed', [
+                        'error' => $errMessage,
+                        'backup_snapshot' => $snapshotPath,
+                        'rollback_errors' => $rollbackErrors,
+                        'restored_files' => $rollbackResult['restored_files'] ?? [],
+                    ]);
+                }
 
                 return [
                     'ok' => false,
                     'applied_files' => $appliedFiles,
                     'deleted_files' => $deletedFiles,
-                    'errors' => $errors,
+                    'errors' => array_values(array_merge($errors, $rollbackErrors)),
                     'logs' => $logs,
-                    'rolled_back' => true,
+                    'rolled_back' => $rollbackSucceeded,
+                    'rollback_failed' => !$rollbackSucceeded,
+                    'rollback_errors' => $rollbackErrors,
                 ];
             }
 
@@ -1115,6 +1128,7 @@ class DeltaUpdateService
                 'errors' => $errors,
                 'logs' => $logs,
                 'rolled_back' => false,
+                'rollback_failed' => false,
             ];
         }
 
@@ -1164,6 +1178,10 @@ class DeltaUpdateService
 
         if (!is_file($metadataFile)) {
             $err = "Backup metadata file not found at: {$metadataFile}";
+            $this->setUpdateState('rollback_failed', [
+                'backup_snapshot' => $snapshotPath,
+                'rollback_errors' => [$err],
+            ]);
             return [
                 'ok' => false,
                 'restored_files' => [],
@@ -1176,6 +1194,10 @@ class DeltaUpdateService
         $metadata = json_decode((string) file_get_contents($metadataFile), true);
         if (!is_array($metadata)) {
             $err = "Corrupt snapshot metadata in {$metadataFile}";
+            $this->setUpdateState('rollback_failed', [
+                'backup_snapshot' => $snapshotPath,
+                'rollback_errors' => [$err],
+            ]);
             return [
                 'ok' => false,
                 'restored_files' => [],
@@ -1196,23 +1218,36 @@ class DeltaUpdateService
             $targetFilePath = $this->rootDir . '/' . $relativePath;
             $targetDir = dirname($targetFilePath);
 
-            if (is_file($backupFilePath)) {
-                if (!is_dir($targetDir)) {
-                    @mkdir($targetDir, 0755, true);
-                }
+            if (!is_file($backupFilePath)) {
+                $errors[] = "Required backup file is missing for {$relativePath}.";
+                $logs[] = "❌ ملف النسخة الاحتياطية المطلوب مفقود: {$relativePath}";
+                continue;
+            }
 
-                $tmpRestore = $targetDir . '/.' . basename($relativePath) . '.rback.' . bin2hex(random_bytes(4));
-                if (@copy($backupFilePath, $tmpRestore)) {
-                    if (!@rename($tmpRestore, $targetFilePath)) {
-                        @copy($tmpRestore, $targetFilePath);
-                        @unlink($tmpRestore);
-                    }
-                    $restoredFiles[] = $relativePath;
-                    $logs[] = "↩️ تم استرجاع: {$relativePath}";
+            if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+                $errors[] = "Failed to create restore directory for {$relativePath}.";
+                $logs[] = "❌ فشل إنشاء مجلد الاسترجاع: {$relativePath}";
+                continue;
+            }
+
+            $tmpRestore = $targetDir . '/.' . basename($relativePath) . '.rback.' . bin2hex(random_bytes(4));
+            $restored = false;
+            if (@copy($backupFilePath, $tmpRestore)) {
+                if (@rename($tmpRestore, $targetFilePath)) {
+                    $restored = true;
+                } elseif (@copy($tmpRestore, $targetFilePath) && @unlink($tmpRestore)) {
+                    $restored = true;
                 } else {
-                    $errors[] = "Failed to restore {$relativePath} from backup.";
-                    $logs[] = "❌ فشل استرجاع: {$relativePath}";
+                    @unlink($tmpRestore);
                 }
+            }
+
+            if ($restored) {
+                $restoredFiles[] = $relativePath;
+                $logs[] = "↩️ تم استرجاع: {$relativePath}";
+            } else {
+                $errors[] = "Failed to restore {$relativePath} from backup.";
+                $logs[] = "❌ فشل استرجاع: {$relativePath}";
             }
         }
 
@@ -1238,21 +1273,35 @@ class DeltaUpdateService
             $targetFilePath = $this->rootDir . '/' . $relativePath;
             $targetDir = dirname($targetFilePath);
 
-            if (is_file($backupFilePath)) {
-                if (!is_dir($targetDir)) {
-                    @mkdir($targetDir, 0755, true);
-                }
-                if (@copy($backupFilePath, $targetFilePath)) {
-                    $restoredFiles[] = $relativePath;
-                    $logs[] = "↩️ تم استرجاع الملف المحذوف: {$relativePath}";
-                }
+            if (!is_file($backupFilePath)) {
+                $errors[] = "Required backup file is missing for deleted file {$relativePath}.";
+                $logs[] = "❌ ملف النسخة الاحتياطية للملف المحذوف مفقود: {$relativePath}";
+                continue;
+            }
+
+            if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+                $errors[] = "Failed to create restore directory for deleted file {$relativePath}.";
+                $logs[] = "❌ فشل إنشاء مجلد استرجاع الملف المحذوف: {$relativePath}";
+                continue;
+            }
+
+            if (@copy($backupFilePath, $targetFilePath)) {
+                $restoredFiles[] = $relativePath;
+                $logs[] = "↩️ تم استرجاع الملف المحذوف: {$relativePath}";
+            } else {
+                $errors[] = "Failed to restore deleted file {$relativePath} from backup.";
+                $logs[] = "❌ فشل استرجاع الملف المحذوف: {$relativePath}";
             }
         }
 
         // 4. Restore original version.json
-        if (!empty($metadata['version_json_backup'])) {
-            @file_put_contents($this->rootDir . '/version.json', $metadata['version_json_backup'], LOCK_EX);
-            $logs[] = "📝 تم استرجاع بيانات الإصدار v" . ($metadata['from_version'] ?? '?');
+        if (array_key_exists('version_json_backup', $metadata)) {
+            if (@file_put_contents($this->rootDir . '/version.json', (string) $metadata['version_json_backup'], LOCK_EX) === false) {
+                $errors[] = 'Failed to restore version.json from backup.';
+                $logs[] = '❌ فشل استرجاع بيانات الإصدار.';
+            } else {
+                $logs[] = "📝 تم استرجاع بيانات الإصدار v" . ($metadata['from_version'] ?? '?');
+            }
         }
 
         // 5. Invalidate OPcache
@@ -1261,10 +1310,18 @@ class DeltaUpdateService
             $logs[] = "⚡ تم تفريغ كاش PHP OPcache.";
         }
 
-        $this->setUpdateState('rolled_back', [
-            'backup_snapshot' => $snapshotPath,
-            'restored_files' => $restoredFiles,
-        ]);
+        if (empty($errors)) {
+            $this->setUpdateState('rolled_back', [
+                'backup_snapshot' => $snapshotPath,
+                'restored_files' => $restoredFiles,
+            ]);
+        } else {
+            $this->setUpdateState('rollback_failed', [
+                'backup_snapshot' => $snapshotPath,
+                'restored_files' => $restoredFiles,
+                'rollback_errors' => $errors,
+            ]);
+        }
 
         Logger::warning('Update files rolled back to snapshot', [
             'snapshot' => basename($snapshotPath),
@@ -1314,11 +1371,12 @@ class DeltaUpdateService
             $toVer = $m['to_version'] ?? 'unknown';
         }
 
+        $rollbackStatus = !empty($result['ok']) ? 'rolled_back' : 'rollback_failed';
         $this->recordHistory(
             $toVer,
             $fromVer,
             'delta',
-            'rolled_back',
+            $rollbackStatus,
             count($result['restored_files']),
             $targetSnapshot,
             !empty($result['errors']) ? implode('; ', $result['errors']) : 'Manual rollback executed.',

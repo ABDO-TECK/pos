@@ -352,6 +352,43 @@ class UpdateRecoveryService
             ];
         }
 
+        // A rollback is a healthy terminal state only when rollbackFiles()
+        // completed every required restoration and persisted this state.
+        if ($status === 'rolled_back') {
+            return [
+                'status'             => 'rolled_back',
+                'state'              => $status,
+                'problem_detected'   => false,
+                'recommended_action' => 'none',
+                'message'            => 'Update rollback completed and the pre-update snapshot is active.',
+                'details'            => [
+                    'target_version'  => $targetVersion,
+                    'snapshot'        => $snapshot,
+                    'rolled_back_at'  => $state['rolled_back_at'] ?? null,
+                    'restored_files'  => $state['restored_files'] ?? [],
+                ],
+            ];
+        }
+
+        // A failed restoration is never safe to clear automatically. Keep the
+        // durable state visible and require explicit operator escalation.
+        if ($status === 'rollback_failed') {
+            return [
+                'status'             => 'rollback_failed',
+                'state'              => $status,
+                'problem_detected'   => true,
+                'recommended_action' => 'escalate',
+                'message'            => 'Update rollback did not restore every required file; manual recovery is required.',
+                'details'            => [
+                    'target_version'  => $targetVersion,
+                    'snapshot'        => $snapshot,
+                    'error'           => $state['recovery_error'] ?? $state['error'] ?? null,
+                    'rollback_errors' => $state['rollback_errors'] ?? [],
+                    'restored_files'  => $state['restored_files'] ?? [],
+                ],
+            ];
+        }
+
         // Case D: Interrupted or Failed Migration
         if (in_array($status, ['migrating', 'migration_failed', 'desktop_handoff_pending', 'database_recovery_failed'], true)) {
             return [
@@ -571,6 +608,13 @@ class UpdateRecoveryService
                 $state['recovery_error'] = $error;
                 $state['updated_at'] = date('Y-m-d H:i:s');
                 $this->writeStateFile($state);
+            } else {
+                $state['status'] = 'rollback_failed';
+                $state['state'] = 'rollback_failed';
+                $state['recovery_action'] = 'rollback';
+                $state['recovery_error'] = $error;
+                $state['updated_at'] = date('Y-m-d H:i:s');
+                $this->writeStateFile($state);
             }
 
             return [
@@ -583,6 +627,7 @@ class UpdateRecoveryService
 
         // Keep snapshot preserved (NEVER delete snapshot during recovery)
         $state['status'] = 'rolled_back';
+        $state['state'] = 'rolled_back';
         $state['rolled_back_at'] = date('Y-m-d H:i:s');
         $state['recovery_action'] = 'rollback';
         $this->writeStateFile($state);

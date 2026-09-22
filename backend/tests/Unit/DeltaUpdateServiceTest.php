@@ -352,6 +352,89 @@ class DeltaUpdateServiceTest extends TestCase
         $this->assertSame('<?php echo "Legacy helper";', file_get_contents($depFile));
     }
 
+    public function testRollbackFilesDoesNotClaimSuccessWhenARequiredBackupFileIsMissing(): void
+    {
+        $sourceDir = $this->tempRoot . '/release_missing_backup';
+        @mkdir($sourceDir . '/backend/Helpers', 0755, true);
+
+        $newLogger = '<?php echo "Patched Logger";';
+        file_put_contents($sourceDir . '/backend/Helpers/Logger.php', $newLogger);
+
+        $manifest = [
+            'version' => '1.1.47',
+            'minimum_version' => '1.0.0',
+            'files' => [[
+                'path' => 'backend/Helpers/Logger.php',
+                'action' => 'replace',
+                'sha256' => hash('sha256', $newLogger),
+                'size' => strlen($newLogger),
+            ]],
+            'deleted_files' => [],
+        ];
+
+        $this->assertTrue($this->service->stageFromLocalFiles($manifest, $sourceDir)['ok']);
+        $snapshot = $this->service->createBackupSnapshot('1.1.40', '1.1.47', $manifest);
+        $this->assertTrue($snapshot['ok']);
+        $this->assertTrue($this->service->applyStagedFiles($manifest, $snapshot['snapshot_path'])['ok']);
+
+        unlink($snapshot['snapshot_path'] . '/files/backend/Helpers/Logger.php');
+        $rollback = $this->service->rollbackFiles($snapshot['snapshot_path']);
+
+        $this->assertFalse($rollback['ok']);
+        $this->assertNotEmpty($rollback['errors']);
+        $this->assertSame('rollback_failed', $this->service->getUpdateState()['state']);
+    }
+
+    public function testAutomaticRollbackDoesNotClaimSuccessWhenFileRestoreFails(): void
+    {
+        $sourceDir = $this->tempRoot . '/release_automatic_rollback_failure';
+        @mkdir($sourceDir . '/backend/Helpers', 0755, true);
+        @mkdir($sourceDir . '/backend/Services', 0755, true);
+
+        $newLogger = '<?php echo "New Logger";';
+        $newProduct = '<?php echo "New Product";';
+        file_put_contents($sourceDir . '/backend/Helpers/Logger.php', $newLogger);
+        file_put_contents($sourceDir . '/backend/Services/ProductService.php', $newProduct);
+
+        $manifest = [
+            'version' => '1.1.48',
+            'minimum_version' => '1.0.0',
+            'files' => [
+                [
+                    'path' => 'backend/Helpers/Logger.php',
+                    'action' => 'replace',
+                    'sha256' => hash('sha256', $newLogger),
+                    'size' => strlen($newLogger),
+                ],
+                [
+                    'path' => 'backend/Services/ProductService.php',
+                    'action' => 'replace',
+                    'sha256' => hash('sha256', $newProduct),
+                    'size' => strlen($newProduct),
+                ],
+            ],
+            'deleted_files' => [],
+        ];
+
+        $this->assertTrue($this->service->stageFromLocalFiles($manifest, $sourceDir)['ok']);
+        $snapshot = $this->service->createBackupSnapshot('1.1.40', '1.1.48', $manifest);
+        $this->assertTrue($snapshot['ok']);
+
+        unlink($snapshot['snapshot_path'] . '/files/backend/Helpers/Logger.php');
+        $manifestMock = $this->createMock(UpdateManifestService::class);
+        $manifestMock->method('validateManifestPaths')->willReturn(['ok' => true, 'unsafe_paths' => []]);
+        $manifestMock->method('verifyStagedFiles')->willReturn(['ok' => true]);
+        $manifestMock->method('verifyFileHash')->willReturnOnConsecutiveCalls(true, false);
+        $applyService = new DeltaUpdateService($manifestMock, $this->tempRoot, $this->tempStorage);
+
+        $apply = $applyService->applyStagedFiles($manifest, $snapshot['snapshot_path']);
+
+        $this->assertFalse($apply['ok']);
+        $this->assertFalse($apply['rolled_back']);
+        $this->assertTrue($apply['rollback_failed']);
+        $this->assertSame('rollback_failed', $applyService->getUpdateState()['state']);
+    }
+
     public function testExtractZipToStagingSuccess(): void
     {
         $zipPath = $this->tempRoot . '/test_delta.zip';
@@ -421,5 +504,3 @@ class DeltaUpdateServiceTest extends TestCase
         $this->assertStringContainsString('مساحة القرص غير كافية', $res['error']);
     }
 }
-
-

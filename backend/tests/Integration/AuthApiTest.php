@@ -186,6 +186,30 @@ class AuthApiTest extends TestCase
         ], $response['body']['data']['user']);
     }
 
+    /**
+     * @runInSeparateProcess
+     */
+    public function testLogoutRevokesBothAuthenticationTokens()
+    {
+        $_COOKIE['pos_token'] = 'access-token';
+        $_COOKIE['pos_refresh_token'] = 'refresh-token';
+
+        $userModelMock = $this->createMock(User::class);
+        $authServiceMock = $this->createMock(AuthService::class);
+        $userModelMock->expects($this->once())
+            ->method('deleteToken')
+            ->with('access-token');
+        $userModelMock->expects($this->once())
+            ->method('deleteRefreshToken')
+            ->with('refresh-token');
+
+        $controller = new AuthController($userModelMock, $authServiceMock);
+        @$response = $controller->logout();
+
+        $this->assertSame(200, $response['status_code']);
+        $this->assertSame('success', $response['body']['status']);
+    }
+
     public function testFindByIdIncludesBranchId(): void
     {
         $database = new PDO('sqlite::memory:');

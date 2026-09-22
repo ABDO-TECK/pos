@@ -497,7 +497,7 @@ class UpdateServiceTest extends TestCase
         $this->assertSame(['backend/Helpers/Logger.php'], $res['data']['applied_files']);
     }
 
-    public function testApplyUpdateMigrationFailureTriggersAutomaticRollback(): void
+    public function testApplyUpdateMigrationFailureDoesNotClaimRollbackWhenFileRestoreFails(): void
     {
         $_ENV['ENABLE_UPDATE_CHECKS'] = 'true';
         $_ENV['UPDATE_SERVER_URL'] = 'https://api.github.com/repos/ABDO-TECK/pos/contents/version.json?ref=main';
@@ -544,11 +544,11 @@ class UpdateServiceTest extends TestCase
             ->method('rollbackFiles')
             ->with($tempRoot . '/backend/storage/snapshot_mig_fail')
             ->willReturn([
-                'ok' => true,
-                'restored_files' => ['backend/Helpers/Logger.php'],
+                'ok' => false,
+                'restored_files' => [],
                 'removed_new_files' => [],
-                'errors' => [],
-                'logs' => ['Rollback complete.'],
+                'errors' => ['Failed to restore backend/Helpers/Logger.php from backup.'],
+                'logs' => ['Rollback failed.'],
             ]);
 
         $migrationMock = $this->createMock(\App\Services\MigrationService::class);
@@ -597,7 +597,8 @@ class UpdateServiceTest extends TestCase
         $this->assertFalse($res['ok']);
         $this->assertSame(500, $res['code']);
         $this->assertStringContainsString('فشل ترحيل قاعدة البيانات', $res['error']);
-        $this->assertStringContainsString('تم التراجع التلقائي', $res['error']);
+        $this->assertStringContainsString('فشل استعادة ملفات التحديث', $res['error']);
+        $this->assertStringNotContainsString('تم التراجع التلقائي بنجاح', $res['error']);
     }
 
     public function testRollbackUpdateDelegatesToDeltaService(): void

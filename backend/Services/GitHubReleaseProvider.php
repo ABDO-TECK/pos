@@ -112,6 +112,14 @@ class GitHubReleaseProvider
         if ($channel === 'stable') {
             $apiUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases/latest";
             $res = $this->fetchSingleReleaseUrl($apiUrl);
+            if (!$res['ok'] && in_array($res['error_code'] ?? null, [
+                'github_primary_rate_limited',
+                'github_secondary_rate_limited',
+                'github_http_403_forbidden',
+            ], true)) {
+                $res['channel'] = 'stable';
+                return $res;
+            }
             if ($res['ok'] && !empty($res['tag_name'])) {
                 $tagLower = strtolower($res['tag_name']);
                 if (!str_contains($tagLower, 'beta') && !str_contains($tagLower, 'rc')) {
@@ -146,7 +154,13 @@ class GitHubReleaseProvider
 
         $response = $this->executeCurlGet($listUrl, $headers);
         if (!$response['ok']) {
-            $errorCode = $this->classifyError($response['http_code'], $response['curl_error'], $response['curl_errno']);
+            $errorCode = $this->classifyError(
+                $response['http_code'],
+                $response['curl_error'],
+                $response['curl_errno'],
+                $response['response_headers'] ?? [],
+                $response['body'] ?? false,
+            );
             $msg = $response['http_code'] > 0
                 ? "GitHub API returned HTTP {$response['http_code']}: {$response['curl_error']}"
                 : "Failed to connect to GitHub Releases API: {$response['curl_error']}";
@@ -157,7 +171,7 @@ class GitHubReleaseProvider
                 'error_code' => $errorCode,
             ]);
 
-            return $this->failureResult($errorCode, $msg);
+            return $this->failureResult($errorCode, $msg, $this->responseDiagnostics($response));
         }
 
         $releases = json_decode((string) $response['body'], true);
@@ -239,8 +253,17 @@ class GitHubReleaseProvider
 
         $response = $this->executeCurlGet($apiUrl, $headers);
         if (!$response['ok']) {
-            $errorCode = $this->classifyError($response['http_code'], $response['curl_error'], $response['curl_errno']);
-            return $this->failureResult($errorCode, $response['curl_error']);
+            $errorCode = $this->classifyError(
+                $response['http_code'],
+                $response['curl_error'],
+                $response['curl_errno'],
+                $response['response_headers'] ?? [],
+                $response['body'] ?? false,
+            );
+            $message = $response['http_code'] > 0
+                ? "GitHub API returned HTTP {$response['http_code']}."
+                : $response['curl_error'];
+            return $this->failureResult($errorCode, $message, $this->responseDiagnostics($response));
         }
 
         $data = json_decode((string) $response['body'], true);
@@ -431,10 +454,33 @@ class GitHubReleaseProvider
                 'http_code' => 0,
                 'curl_error' => 'CA certificate bundle not found for TLS verification',
                 'curl_errno' => defined('CURLE_SSL_CACERT') ? (int) constant('CURLE_SSL_CACERT') : 60,
+                'response_headers' => [],
             ];
         }
 
         $ch = curl_init($url);
+        $responseHeaders = [];
+        $headerCallback = static function ($handle, string $headerLine) use (&$responseHeaders): int {
+            $separator = strpos($headerLine, ':');
+            if ($separator === false) {
+                return strlen($headerLine);
+            }
+
+            $name = strtolower(trim(substr($headerLine, 0, $separator)));
+            $allowed = [
+                'retry-after',
+                'x-ratelimit-limit',
+                'x-ratelimit-remaining',
+                'x-ratelimit-reset',
+                'x-ratelimit-used',
+                'x-ratelimit-resource',
+            ];
+            if (in_array($name, $allowed, true)) {
+                $responseHeaders[$name] = trim(substr($headerLine, $separator + 1));
+            }
+
+            return strlen($headerLine);
+        };
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $this->timeout,
@@ -447,6 +493,7 @@ class GitHubReleaseProvider
             CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS=> CURLPROTO_HTTPS,
             CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_HEADERFUNCTION => $headerCallback,
         ]);
 
         $body = curl_exec($ch);
@@ -463,6 +510,7 @@ class GitHubReleaseProvider
             'http_code' => $httpCode,
             'curl_error' => $curlErr,
             'curl_errno' => $curlErrNo,
+            'response_headers' => $responseHeaders,
         ];
     }
 
@@ -495,14 +543,44 @@ class GitHubReleaseProvider
         return false;
     }
 
-    private function classifyError(int $httpCode, string $curlErr, int $curlErrNo): string
+    private function classifyError(
+        int $httpCode,
+        string $curlErr,
+        int $curlErrNo,
+        array $responseHeaders = [],
+        string|false $body = false,
+    ): string
     {
         $lower = strtolower($curlErr);
+        $message = '';
+        if (is_string($body) && $body !== '') {
+            $decoded = json_decode($body, true);
+            if (is_array($decoded) && is_string($decoded['message'] ?? null)) {
+                $message = strtolower($decoded['message']);
+            }
+        }
+
+        $retryAfter = trim((string) ($responseHeaders['retry-after'] ?? ''));
+        $remaining = trim((string) ($responseHeaders['x-ratelimit-remaining'] ?? ''));
+        if (
+            $httpCode === 429
+            || str_contains($message, 'secondary rate limit')
+            || $retryAfter !== ''
+        ) {
+            return 'github_secondary_rate_limited';
+        }
+        if (
+            ($httpCode === 403 && $remaining !== '' && is_numeric($remaining) && (int) $remaining <= 0)
+            || str_contains($message, 'api rate limit exceeded')
+            || str_contains($message, 'rate limit exceeded for')
+        ) {
+            return 'github_primary_rate_limited';
+        }
         if ($httpCode === 404) {
             return 'github_release_not_found';
         }
         if ($httpCode === 403) {
-            return 'github_rate_limited';
+            return 'github_http_403_forbidden';
         }
         if ($curlErrNo === 28 || str_contains($lower, 'timed out')) {
             return 'github_network_timeout';
@@ -514,7 +592,7 @@ class GitHubReleaseProvider
         return 'github_connection_failed';
     }
 
-    private function failureResult(string $code, string $message): array
+    private function failureResult(string $code, string $message, array $diagnostics = []): array
     {
         return [
             'ok' => false,
@@ -530,7 +608,35 @@ class GitHubReleaseProvider
             'assets' => [],
             'error' => $message,
             'error_code' => $code,
+            'diagnostics' => $diagnostics,
         ];
+    }
+
+    /**
+     * Return only non-secret response metadata for diagnostics and backoff.
+     * Response bodies and request headers are intentionally excluded.
+     */
+    private function responseDiagnostics(array $response): array
+    {
+        $headers = is_array($response['response_headers'] ?? null) ? $response['response_headers'] : [];
+        $diagnostics = [
+            'http_code' => (int) ($response['http_code'] ?? 0),
+        ];
+
+        foreach ([
+            'retry-after' => 'retry_after',
+            'x-ratelimit-limit' => 'rate_limit_limit',
+            'x-ratelimit-remaining' => 'rate_limit_remaining',
+            'x-ratelimit-reset' => 'rate_limit_reset',
+            'x-ratelimit-used' => 'rate_limit_used',
+            'x-ratelimit-resource' => 'rate_limit_resource',
+        ] as $source => $target) {
+            if (isset($headers[$source]) && is_scalar($headers[$source])) {
+                $diagnostics[$target] = (string) $headers[$source];
+            }
+        }
+
+        return $diagnostics;
     }
 
     private function resolveCaCertPath(): ?string

@@ -40,8 +40,32 @@ function isLocalPhpBackendUrl(url, phpPort) {
     && port === phpPort;
 }
 
-function isTrustedBackendRequest({ url, phpPort, initiator }) {
-  return isTrustedInitiator(initiator) && isLocalPhpBackendUrl(url, phpPort);
+function isTrustedBackendRequest({
+  url,
+  phpPort,
+  initiator,
+  webContentsId,
+  trustedWebContentsId,
+  frameUrl,
+}) {
+  if (!isLocalPhpBackendUrl(url, phpPort)) return false;
+
+  // webContents identifies the window, not the requesting frame. Require the
+  // current frame URL as a second identity signal so an opaque data: frame or
+  // foreign subframe cannot inherit the window's session credentials.
+  if (!isTrustedInitiator(frameUrl)) return false;
+  if (!Number.isInteger(webContentsId)
+    || !Number.isInteger(trustedWebContentsId)
+    || webContentsId !== trustedWebContentsId) {
+    return false;
+  }
+
+  if (isTrustedInitiator(initiator)) return true;
+
+  // Chromium may omit the initiator for requests originating from the
+  // privileged app:// renderer. Bind that fallback to the current app frame
+  // and main window so a foreign renderer cannot receive or send credentials.
+  return initiator === '' || initiator === undefined;
 }
 
 function isCookiePathAllowed(requestPath, cookiePath) {

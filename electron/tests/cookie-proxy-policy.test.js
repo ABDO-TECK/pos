@@ -23,6 +23,9 @@ test('cookie proxy requires the exact local PHP backend URL and trusted origin',
     url: 'http://127.0.0.1:8080/api/v1/products',
     phpPort: 8080,
     initiator: 'app://pos-app',
+    webContentsId: 42,
+    trustedWebContentsId: 42,
+    frameUrl: 'app://pos-app/index.html',
   };
 
   assert.equal(isTrustedBackendRequest(trustedRequest), true);
@@ -41,6 +44,50 @@ test('cookie proxy requires the exact local PHP backend URL and trusted origin',
   assert.equal(isTrustedBackendRequest({
     ...trustedRequest,
     url: 'http://example.test:8080/api/v1/products',
+  }), false);
+  assert.equal(isTrustedBackendRequest({
+    ...trustedRequest,
+    webContentsId: 43,
+  }), false);
+});
+
+test('cookie proxy accepts a missing initiator only for the trusted app webContents', () => {
+  const request = {
+    url: 'http://127.0.0.1:8080/api/v1/login',
+    phpPort: 8080,
+    initiator: '',
+    webContentsId: 42,
+    trustedWebContentsId: 42,
+    frameUrl: 'app://pos-app/index.html',
+  };
+
+  assert.equal(isTrustedBackendRequest(request), true);
+  assert.equal(isTrustedBackendRequest({ ...request, webContentsId: 43 }), false);
+  assert.equal(isTrustedBackendRequest({ ...request, initiator: 'app://evil' }), false);
+  assert.equal(isTrustedBackendRequest({ ...request, trustedWebContentsId: null }), false);
+});
+
+test('matching webContentsId does not authorize an opaque or foreign subframe', () => {
+  const request = {
+    url: 'http://127.0.0.1:8080/api/v1/products',
+    phpPort: 8080,
+    initiator: '',
+    webContentsId: 42,
+    trustedWebContentsId: 42,
+    frameUrl: 'app://pos-app/index.html',
+  };
+
+  assert.equal(isTrustedBackendRequest({
+    ...request,
+    frameUrl: 'data:text/html,<img>',
+  }), false);
+  assert.equal(isTrustedBackendRequest({
+    ...request,
+    frameUrl: 'http://attacker.test/frame',
+  }), false);
+  assert.equal(isTrustedBackendRequest({
+    ...request,
+    frameUrl: null,
   }), false);
 });
 

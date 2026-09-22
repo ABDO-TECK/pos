@@ -73,6 +73,39 @@ final class UpdateRecoveryServiceTest extends TestCase
         @rmdir($snapshot);
     }
 
+    public function testCompletedRollbackStateIsAHealthyTerminalState(): void
+    {
+        $this->service->writeStateFile([
+            'state' => 'rolled_back',
+            'status' => 'rolled_back',
+            'from_version' => '0.0.1',
+            'to_version' => '0.0.3',
+            'backup_snapshot' => $this->storage . '/snapshot',
+        ]);
+
+        $diagnosis = $this->service->diagnoseState();
+
+        self::assertSame('rolled_back', $diagnosis['status']);
+        self::assertFalse($diagnosis['problem_detected']);
+        self::assertSame('none', $diagnosis['recommended_action']);
+    }
+
+    public function testFailedRollbackStateRequiresEscalation(): void
+    {
+        $this->service->writeStateFile([
+            'state' => 'rollback_failed',
+            'status' => 'rollback_failed',
+            'error' => 'A required snapshot file could not be restored.',
+            'backup_snapshot' => $this->storage . '/snapshot',
+        ]);
+
+        $diagnosis = $this->service->diagnoseState();
+
+        self::assertSame('rollback_failed', $diagnosis['status']);
+        self::assertTrue($diagnosis['problem_detected']);
+        self::assertSame('escalate', $diagnosis['recommended_action']);
+    }
+
     public function testHealthCheckUsesSourceEntrypointForSourceLayout(): void
     {
         $root = $this->storage . '/source';
